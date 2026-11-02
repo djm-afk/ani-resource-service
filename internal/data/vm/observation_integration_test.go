@@ -237,8 +237,8 @@ func TestVMObservationFailureBackoffCannotBeBypassedByEvents(t *testing.T) {
 		t.Fatalf("watch storm bypassed durable backoff: %v", err)
 	}
 	current, err := p.Get(ctx, v.TenantID, v.ID)
-	if err != nil || current.Observed != "Unknown" || current.Reason != "VM_OBSERVATION_TIMEOUT" || !current.ObservedAt.Equal(v.ObservedAt) || len(current.Addresses) != 0 {
-		t.Fatalf("failed observation manufactured fresh running evidence: %+v %v", current, err)
+	if err != nil || current.Observed != v.Observed || current.Reason != v.Reason || !current.ObservedAt.Equal(v.ObservedAt) || len(current.Addresses) != 1 {
+		t.Fatalf("temporary failure replaced still-fresh facts: %+v %v", current, err)
 	}
 	var wait time.Duration
 	var failures int
@@ -262,7 +262,7 @@ func TestVMObservationFailureSurvivesOlderOperationSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = p.SaveObservation(ctx, work, biz.Observation{}, context.DeadlineExceeded); err != nil {
+	if err = p.SaveObservation(ctx, work, biz.Observation{}, biz.ErrUnknown); err != nil {
 		t.Fatal(err)
 	}
 	// This checkpoint has no new native observation. Its captured Running
@@ -271,7 +271,7 @@ func TestVMObservationFailureSurvivesOlderOperationSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, err := p.Get(ctx, v.TenantID, v.ID)
-	if err != nil || current.Observed != "Unknown" || current.Reason != "VM_OBSERVATION_TIMEOUT" || !current.ObservedAt.Equal(v.ObservedAt) || len(current.Addresses) != 0 {
+	if err != nil || current.Observed != "Unknown" || current.Reason != "VM_OBSERVATION_UNAVAILABLE" || !current.ObservedAt.Equal(v.ObservedAt) || len(current.Addresses) != 0 {
 		t.Fatalf("old operation revived unavailable observation: %+v %v", current, err)
 	}
 	// Real newer operation evidence still wins immediately; the observer's

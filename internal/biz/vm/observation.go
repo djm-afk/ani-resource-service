@@ -8,6 +8,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrObservationUnavailable describes a temporary source failure without
+// evidence contradicting the last observation. Identity conflicts, missing
+// objects and expired evidence must remain distinct from this condition.
+var ErrObservationUnavailable = errors.New("VM_OBSERVATION_UNAVAILABLE")
+
 // ObservationWork owns a read-only observation lease, independently from the
 // lease of any user operation. Generation fences notifications arriving while
 // an observation is in flight; Version and Native fence newer VM intent.
@@ -40,6 +45,17 @@ type ObservationNotifier interface {
 // or queue overflow. It wakes durable registrations, never creates VM rows.
 type ObservationRescanNotifier interface {
 	NotifyAllObservations(context.Context) error
+}
+
+// ObservationRecovery is a fresh, shared audit proof for one native VM. A
+// normal event hint cannot stand in for this proof when releasing backoff.
+type ObservationRecovery struct {
+	Native     ObjectRef
+	ObservedAt time.Time
+}
+
+type ObservationRecoveryNotifier interface {
+	RecoverObservations(context.Context, []ObservationRecovery) error
 }
 
 type Observer struct {

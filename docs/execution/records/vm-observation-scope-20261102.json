@@ -1,0 +1,83 @@
+{
+  "base": "0bce651a84634b09c7df29939d2d5b934d76a67d",
+  "branch": "codex/vm-observation-scope-20261102",
+  "execution_host": "fedora",
+  "validated_files_sha256": "2898c918b15e39f1c181af340e17b9a75d3039f4612ee164aa68c3bba686fb2e",
+  "validated_archive_sha256": "1b24f1630bc31aa1db94d916e19a27722281b3f9ca5962394803fb9763346c2c",
+  "checks": [
+    {
+      "phase": "behavior-race",
+      "exit_code": 0,
+      "seconds": 92.138,
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=instanceintegration",
+        "./internal/data/vm",
+        "./internal/biz/vm",
+        "./internal/server",
+        "-run",
+        "TestInvestigationUnrelated|TestVMSharedState|TestVMObservation|TestVMIndependentObservation|TestVMBlockedObservation|TestVMListFilter|TestVMCurrentAddresses|TestRuntimeReader|TestRuntimeRead|TestNativeManual|TestNativeExplicit|TestStopConverges|TestTerminalStop|TestUnknownStartWithRetained",
+        "-count=1",
+        "-timeout=8m"
+      ],
+      "host": "fedora",
+      "base": "0bce651a84634b09c7df29939d2d5b934d76a67d",
+      "files_sha256": "2898c918b15e39f1c181af340e17b9a75d3039f4612ee164aa68c3bba686fb2e"
+    },
+    {
+      "phase": "verify",
+      "exit_code": 0,
+      "seconds": 282.74,
+      "command": [
+        "make",
+        "verify",
+        "TOOLS_DIR=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin"
+      ],
+      "host": "fedora",
+      "base": "0bce651a84634b09c7df29939d2d5b934d76a67d",
+      "files_sha256": "2898c918b15e39f1c181af340e17b9a75d3039f4612ee164aa68c3bba686fb2e"
+    }
+  ],
+  "red": "Unrelated Pod metadata Watch during older shared LIST made a healthy VM Unknown; source proof age about 1ms. Latest-main source regression exit1 before fix; source and PG regression groups exit0 after fix.",
+  "behavior": "Per-VM runtime/owner/launcher proof ignores unrelated Pod and metadata/RV churn. Informer order, nativeUID/tenant/closing/lease/generation fences and60s proof expiry remain enforced. Temporary source errors retain only unexpired original facts. Ordinary hints retain backoff; fresh verified exact-native recovery releases it and fences in-flight older observations.",
+  "boundaries": {
+    "postgresql": "real isolated task database and owner/runtime roles",
+    "kubernetes": "controlled external-boundary LIST/Watch delivery",
+    "shared_observation_budget": "unchanged 2QPS/burst4; shared30s audits; no perVM Kubernetes reads",
+    "vm_commands": "real acceptance/operation worker and PG covered, no target VM power operations"
+  },
+  "cleanup": {
+    "task_postgres_removed": true,
+    "private_dsn_removed": true,
+    "validation_temporary_removed": true
+  },
+  "not_run": [
+    "new image build or deployment",
+    "target-cluster guest shutdown/power-operation/browser acceptance",
+    "capacity benchmark"
+  ],
+  "documentation_added_after_checks": [
+    "docs/execution/status.md",
+    "docs/execution/records/vm-observation-scope-20261102.json"
+  ],
+  "raw_receipts": "/home/chabking/.codex/artifacts/vm-observation-scope-fix-20261102",
+  "deployment_followup": {
+    "first_image_revision": "784bb67d37bba4c643ceb8f05aa4a19aa6156cef",
+    "first_acceptance": "Guest shutdown and normal Start/Stop completed, but a replacement VMI later lost observation freshness. Network client remained near 20 QPS. Full acceptance did not pass.",
+    "regression": "The new callback fence rejected same-UID Delete events whose opaque resourceVersion differed from the cached object; a later same-name VMI could remain blocked behind stale cache state.",
+    "correction": "Delete is fenced by UID; Update retains its previous-resourceVersion fence. No numeric resourceVersion ordering or VM operation dependency was added.",
+    "targeted_test": "TestVMSharedStateDeletedVMIResourceVersionAllowsReplacement uses real SharedInformer delivery, replacement VMI/launcher, three fresh shared audits and a delayed old-UID Delete.",
+    "red_exit_code": 1,
+    "green_exit_code": 0,
+    "native_race_exit_code": 0,
+    "make_verify_exit_code": 0,
+    "make_verify_seconds": 167.794,
+    "execution_host": "fedora",
+    "native_source_sha256": "30a842ac51daa2b0297a834c5c53c77be2cb1936a25477f6bcfe739a5ab3a795",
+    "native_test_sha256": "f9eade6c68b6d96acf71e715f927e4456ef26be2a650173cac441ba245ad49e5",
+    "corrected_image_acceptance": "Pending deployment and real replacement-VMI freshness check at this commit.",
+    "raw_receipts": "/home/chabking/.codex/artifacts/vm-observation-deploy-20261102"
+  }
+}

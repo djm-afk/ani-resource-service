@@ -187,7 +187,9 @@ func TestVMSharedStateNeverRenewsOldOrFailedEvidence(t *testing.T) {
 		}
 	}
 	o.mu.Lock()
-	o.resources[0].collected = time.Now().Add(-61 * time.Second)
+	proof := o.proofs[v.Spec.Namespace+"/"+v.Native.Name]
+	proof.verifiedAt = time.Now().Add(-61 * time.Second)
+	o.proofs[v.Spec.Namespace+"/"+v.Native.Name] = proof
 	o.mu.Unlock()
 	if x, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrUnknown) || x.State != "Unknown" {
 		t.Fatal("stale source reported healthy stopped/running", x, err)
@@ -209,8 +211,9 @@ func TestVMSharedStatePreservesIdentityAndBoundsNotificationQueue(t *testing.T) 
 	notifier.rescans = 0
 	notifier.mu.Unlock()
 	root, _ := client.Resource(vmResource).Namespace(v.Spec.Namespace).Get(context.Background(), v.Native.Name, metav1.GetOptions{})
+	before := root.DeepCopy()
 	root.SetUID("replacement-root")
-	o.changed(o.resources[0], nil, root)
+	o.changed(o.resources[0], before, root)
 	if _, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrOwnership) {
 		t.Fatal("same-name replacement adopted", err)
 	}
@@ -239,7 +242,7 @@ func TestVMSharedStateStartupAndShutdownDoNotWaitForRBAC(t *testing.T) {
 	if err := o.Start(context.Background()); err != nil || time.Since(started) > 100*time.Millisecond {
 		t.Fatal("observation blocked service startup", err)
 	}
-	if _, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrUnknown) {
+	if _, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrObservationUnavailable) {
 		t.Fatal("unsynced source returned facts", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -269,8 +272,8 @@ func TestVMSharedStateOldListCannotOverwriteNewWatchEvent(t *testing.T) {
 	})
 	o.audit(context.Background())
 	x, err := o.ObserveState(context.Background(), v)
-	if !errors.Is(err, biz.ErrUnknown) || x.State != "Unknown" {
-		t.Fatal("inconsistent older shared LIST was presented as fresh runtime evidence", x, err)
+	if err != nil || x.State != "Stopped" || !x.Terminal {
+		t.Fatal("older shared LIST hid the newer ordered Watch fact", x, err)
 	}
 	if err := client.Tracker().Update(vmiResource, newer, v.Spec.Namespace); err != nil {
 		t.Fatal(err)
@@ -280,12 +283,14 @@ func TestVMSharedStateOldListCannotOverwriteNewWatchEvent(t *testing.T) {
 	if err != nil || !x.Terminal || x.State != "Stopped" {
 		t.Fatal("consistent shared audit did not recover the preserved Watch fact", x, err)
 	}
-	// A newer LIST may also arrive before an already queued older callback.
-	// LIST cannot replace the ordered watch facts or renew that older state.
-	o.changed(o.resources[1], newer, old)
+	// A delayed callback carries the version it replaces. It cannot replace
+	// a later Watch fact already received, even after a newer audit.
+	queued := old.DeepCopy()
+	queued.SetResourceVersion("queued-version-is-opaque")
+	o.changed(o.resources[1], old, queued)
 	o.audit(context.Background())
-	if x, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrUnknown) || x.State != "Unknown" {
-		t.Fatal("queued older callback gained freshness from newer LIST", x, err)
+	if x, err := o.ObserveState(context.Background(), v); err != nil || x.State != "Stopped" || !x.Terminal {
+		t.Fatal("queued older callback rolled back the later Watch fact", x, err)
 	}
 }
 

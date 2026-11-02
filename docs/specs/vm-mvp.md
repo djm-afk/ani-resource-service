@@ -143,9 +143,9 @@ CurrentPods 仅为当前 launcher，最多一个；CDI/hotplug helper 不作 VM 
 
 默认 runStrategy=Manual。
 
-VM 电源事实在操作结束后仍独立持续观测，不依赖用户停留在页面或发起新操作。共享 VM/VMI/Pod Watch 唤醒已登记 VM 的持久观察任务，每 30 秒共享 LIST 核验缓存完整性；每个 VM 的状态读取只查共享索引，不重新扫描集群。Informer 是事实的唯一有序来源，LIST 不覆盖事件；不一致、来源超过 60 秒或读取失败时显示 Unknown，保留上次真实证据时间，断线由 client-go 恢复。观测只更新事实，不修改 Desired、业务 version 或重放 Start。调度通过显式 `migrations/vm/003_observation.sql` 回填既有 VM；部署同时应用 [只读观察 RBAC](../../deployments/vm/observation-rbac.yaml)。
+VM 电源事实在操作结束后仍独立持续观测，不依赖用户停留在页面或发起新操作。共享 VM/VMI/Pod Watch 唤醒已登记 VM 的持久观察任务，每 30 秒共享 LIST 核验各 VM 的原生身份、运行事实及关联 launcher 集合；每个 VM 的状态读取只查共享索引，不重新扫描集群。Informer 是事实的唯一有序来源，LIST 不覆盖事件。无关 Pod 或不影响运行事实的 metadata/resourceVersion 更新不使其他 VM 的证明失效；旧 LIST 与新 Watch 交错时保留未过期的真实证明，不为缓存读取或无关事件续期。每个证明绑定原 VM UID，持续无法核验超过 60 秒时显示 Unknown；对象缺失、UID/归属冲突立即失效，断线由 client-go 恢复。临时来源故障可保留尚未过期的真实状态及原观测时间，最迟在其时效到期时重新判断，不能因故障退避长期显示陈旧 Running。观测只更新事实，不修改 Desired、业务 version 或重放 Start。调度通过显式 `migrations/vm/003_observation.sql` 回填既有 VM；部署同时应用 [只读观察 RBAC](../../deployments/vm/observation-rbac.yaml)。
 
-观察任务使用独立租约与执行通道，来源使用独立 2 QPS / burst 4 预算；首次同步、Watch 故障、队列积压不作为开关机受理或执行的新闸门。事件合并后至多每秒调度一次，失败退避 30 秒至 5 分钟且事件不能绕过。详情中可选的 Guest Agent 读取另用独立 2 QPS / burst 4 预算，最多两个在途读取，避免页面刷新耗尽操作请求额度。
+观察任务使用独立租约与执行通道，来源使用独立 2 QPS / burst 4 预算；首次同步、Watch 故障、队列积压不作为开关机受理或执行的新闸门。事件合并后至多每秒调度一次，真实故障退避 30 秒至 5 分钟，普通事件不能绕过。共享核验完成后，只有携带精确原生 UID 与更新且未过期证明时间的恢复通知，才能提前唤醒相应临时故障任务；恢复批次有界，不改变其他 VM、关闭资源或归属冲突的调度，不依赖进程内曾经观察过该 VM。详情中可选的 Guest Agent 读取另用独立 2 QPS / burst 4 预算，最多两个在途读取，避免页面刷新耗尽操作请求额度。
 
 Manual 下客机关机会保留终态 VMI。Succeeded 投影为 Stopped；Failed 保持失败状态。它们不等于对象已清理：Stop 仍要求已退出、无活跃 launcher、无原生变更请求及旧网络地址资格撤销；显式 Start 由 KubeVirt 原生 Start 处理终态 VMI 的替换。未知启动结果重试和快照恢复继续要求 VMI 对象不存在，不能用电源显示状态代替该证明。
 

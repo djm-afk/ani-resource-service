@@ -1,5 +1,13 @@
 # Network 执行状态
 
+## 2026-11-02：VM Unknown 全局失效与恢复退避修复
+
+**源码与 Fedora 统一快照的真实 PostgreSQL 纵向/race 回归、完整 `make verify`：PASS；新修复部署及现场客机关机/电源操作/浏览器验收：NOT_RUN。** 基于最新 main `0bce651`（已含 PR #44）。原缺陷已在该基线确定性复现：无关 namespace 的 Pod metadata Watch 先于旧 LIST 返回，可将刚核验约 1ms 的健康 VM 变为 Unknown；改后该回归通过。
+
+共享核验改为每台 VM 的实际原生身份、VMI 和关联 launcher 运行字段，忽略无关 Pod/metadata/RV 变化；Informer 仍为唯一有序事实源，旧 LIST/过时回调不回退新事实。临时失败保留未过期事实及原时间，到 60 秒最迟复查并失效；缺失、归属/UID 冲突立即 Unknown。普通通知不越过退避，只有新鲜、更新且匹配精确 Native UID 的共享证明可提前唤醒相应临时失败，并提高观察 generation 拦住旧结果；冷启动恢复不依赖内存登记。现有租户/关闭/操作围栏、独立执行和请求预算均保留，无新增迁移或配置字段。
+
+同一最终源码快照在 Fedora 跑真实 PG + `go test -race -tags=instanceintegration`（相关 VM/data/server 行为），92.138 秒退出 0；完整 `make verify`，282.740 秒退出 0。包括观测阻塞期间后端命令及操作仍完成、精确恢复与拒绝旧/未来/错 UID 证明、普通通知不能绕过退避、过期与身份撤销等行为。Kubernetes 仅在外部边界替身；未发布镜像或操作现场 VM。独占 PG、私有 DSN 和短临时目录已清理。固定输入、完整命令和边界见[验证记录](records/vm-observation-scope-20261102.json)。
+
 ## 2026-11-02：VM 操作结束后的独立电源观测
 
 **源码、Fedora 真实 PostgreSQL 纵向回归、Resource 完整 `make verify`、新增并发路径 race 与 Console 定向交互/lint/typecheck：PASS；部署与现场 VM/浏览器验收：NOT_RUN。** 基于 Resource main `36da38a`、Console main `3daab52`。真实业务 worker 与 PG 已跑通 Create/Start 成功→操作结束→客机关机边界事实→独立观测更新 Stopped→已停止筛选命中；Kubernetes、React/Query 与 API transport 仅在外部边界使用受控替身，不冒充现场验收。

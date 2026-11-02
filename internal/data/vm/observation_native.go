@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -28,6 +29,12 @@ type stateCache struct {
 	valid     bool
 }
 
+type stateProof struct {
+	uid        string
+	verifiedAt time.Time
+	invalid    error
+}
+
 // StateObservation is independent from lifecycle clients and their budgets.
 // Watch provides prompt changes; three shared, bounded LISTs periodically renew
 // actual evidence and recover missing events. VM reads never contact Kubernetes.
@@ -47,6 +54,10 @@ type StateObservation struct {
 	capacity      int
 	retryAfter    time.Time
 	changesAt     map[string]time.Time
+	proofs        map[string]stateProof
+	recoveries    map[string]biz.ObservationRecovery
+	recoveryRetry time.Time
+	synced        bool
 }
 
 func NewStateObservation(config *rest.Config, notifier biz.ObservationNotifier) (*StateObservation, error) {
@@ -67,7 +78,7 @@ func NewStateObservation(config *rest.Config, notifier biz.ObservationNotifier) 
 }
 
 func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotifier, auditInterval time.Duration) *StateObservation {
-	o := &StateObservation{client: client, notifier: notifier, pending: map[string]biz.ObjectRef{}, changesAt: map[string]time.Time{}, done: make(chan struct{}), auditInterval: auditInterval, capacity: 4096}
+	o := &StateObservation{client: client, notifier: notifier, pending: map[string]biz.ObjectRef{}, changesAt: map[string]time.Time{}, proofs: map[string]stateProof{}, recoveries: map[string]biz.ObservationRecovery{}, done: make(chan struct{}), auditInterval: auditInterval, capacity: 4096}
 	for _, gvr := range []schema.GroupVersionResource{vmResource, vmiResource, podResource} {
 		r := &stateCache{gvr: gvr, index: newStateIndex()}
 		o.resources = append(o.resources, r)
@@ -90,6 +101,8 @@ func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotif
 		})
 		_ = informer.SetWatchErrorHandler(func(_ *cache.Reflector, _ error) {
 			o.mu.Lock()
+			// A reconnect does not contradict the last real audit. Its proof
+			// still expires after 60 seconds, even if events keep arriving.
 			r.valid = false
 			o.overflow = true
 			o.mu.Unlock()
@@ -137,9 +150,41 @@ func (o *StateObservation) changed(r *stateCache, old, value any) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	object := after
+	if object == nil {
+		object = before
+	}
+	if object == nil {
+		return
+	}
+	current, exists, _ := r.index.GetByKey(object.GetNamespace() + "/" + object.GetName())
+	if exists {
+		u := current.(*unstructured.Unstructured)
+		// Handlers run in informer order. Also fence delayed/duplicate
+		// callbacks against the version they replace; resourceVersions are
+		// opaque and must never be numerically ordered here.
+		if before == nil || before.GetUID() != u.GetUID() {
+			return
+		}
+		// A DELETED event carries its deletion revision, which need not
+		// match the last cached revision. UID still fences replacements;
+		// only an Update supplies the previous object version to match.
+		if after != nil && before.GetResourceVersion() != "" && before.GetResourceVersion() != u.GetResourceVersion() {
+			return
+		}
+		if after != nil && before.GetResourceVersion() == "" && u.GetResourceVersion() != "" {
+			return
+		}
+	} else if after == nil {
+		return
+	}
+	meaningful := !reflect.DeepEqual(stateProjection(before), stateProjection(after))
 	received := time.Now().UTC()
 	for _, u := range []*unstructured.Unstructured{before, after} {
 		if u == nil {
+			continue
+		}
+		if !meaningful {
 			continue
 		}
 		for _, ref := range o.eventRoots(u) {
@@ -234,6 +279,9 @@ func (o *StateObservation) run(ctx context.Context) {
 		if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 			return
 		}
+		o.mu.Lock()
+		o.synced = true
+		o.mu.Unlock()
 		o.audit(ctx)
 		ticker := time.NewTicker(o.auditInterval)
 		defer ticker.Stop()
@@ -261,50 +309,160 @@ func (o *StateObservation) run(ctx context.Context) {
 
 func (o *StateObservation) audit(ctx context.Context) {
 	started := time.Now().UTC()
-	for _, r := range o.resources {
+	listed := make([]cache.Indexer, len(o.resources))
+	for i, r := range o.resources {
 		if ctx.Err() != nil {
 			return
 		}
-		collected := time.Now().UTC()
 		read, cancel := context.WithTimeout(ctx, 5*time.Second)
 		list, err := o.client.Resource(r.gvr).List(read, metav1.ListOptions{})
 		cancel()
+		if err == nil && list != nil {
+			listed[i] = newStateIndex()
+			for j := range list.Items {
+				_ = listed[i].Add(list.Items[j].DeepCopy())
+			}
+		}
 		o.mu.Lock()
 		// Informer callbacks are the only ordered fact source. In particular,
 		// an older LIST response cannot overwrite a later Watch event, and an
 		// already queued older Watch callback cannot roll back a newer LIST.
-		// A mismatch is unavailable evidence until a later consistent audit.
-		r.valid = err == nil && stateCacheMatches(r.index, list)
+		// Compare each VM's runtime evidence only after all three LISTs. A
+		// newer event can make one proof temporarily unverifiable, without
+		// invalidating another VM or deleting a still-live earlier proof.
+		r.valid = listed[i] != nil
 		if r.valid {
-			r.collected = collected
+			r.collected = started
 		}
 		o.mu.Unlock()
 	}
 	o.mu.Lock()
-	for key, at := range o.changesAt {
-		if at.Before(started) {
+	defer o.mu.Unlock()
+	if listed[0] != nil && listed[1] != nil && listed[2] != nil {
+		current := []cache.Indexer{o.resources[0].index, o.resources[1].index, o.resources[2].index}
+		for _, item := range current[0].List() {
+			root := item.(*unstructured.Unstructured)
+			key := root.GetNamespace() + "/" + root.GetName()
+			other, exists, _ := listed[0].GetByKey(key)
+			if !exists || other.(*unstructured.Unstructured).GetUID() != root.GetUID() {
+				// Missing roots and UID conflicts are positive contradictory
+				// evidence, not an ordinary List/Watch timing difference.
+				invalid := biz.ErrUnknown
+				if exists {
+					invalid = biz.ErrOwnership
+				}
+				proof := o.proofs[key]
+				proof.invalid = invalid
+				o.proofs[key] = proof
+				continue
+			}
+			if !reflect.DeepEqual(runtimeProjection(current, root), runtimeProjection(listed, other.(*unstructured.Unstructured))) {
+				continue
+			}
+			o.proofs[key] = stateProof{uid: string(root.GetUID()), verifiedAt: started}
+			if changed := o.changesAt[key]; !changed.After(started) {
+				delete(o.changesAt, key)
+			}
+			// Recovery is only a fresh proof hint, not an Observed write.
+			// Durable registrations fence its UID and the subsequent read
+			// still performs every tenant/owner/runtime validation.
+			o.enqueueRecovery(key, biz.ObservationRecovery{Native: objectRef(root), ObservedAt: started})
+		}
+	}
+	// Drop vanished roots rather than allowing retained proof maps to grow.
+	for key := range o.proofs {
+		if _, exists, _ := o.resources[0].index.GetByKey(key); !exists {
+			delete(o.proofs, key)
 			delete(o.changesAt, key)
+			delete(o.recoveries, key)
 		}
 	}
 	o.overflow = true
-	o.mu.Unlock()
 }
 
-func stateCacheMatches(index cache.Indexer, list *unstructured.UnstructuredList) bool {
-	if list == nil || len(index.ListKeys()) != len(list.Items) {
-		return false
+// stateProjection contains the identity, relation and runtime fields actually
+// consumed below. RVs, annotations, managedFields and unrelated labels cannot
+// turn a normal metadata update into a runtime contradiction.
+func stateProjection(u *unstructured.Unstructured) any {
+	if u == nil {
+		return nil
 	}
-	for i := range list.Items {
-		item := &list.Items[i]
-		current, exists, err := index.GetByKey(item.GetNamespace() + "/" + item.GetName())
-		if err != nil || !exists || !reflect.DeepEqual(current.(*unstructured.Unstructured).Object, item.Object) {
-			return false
+	phase, _, _ := unstructured.NestedString(u.Object, "status", "phase")
+	if u.GetKind() == "Pod" && (u.GetLabels()["kubevirt.io"] == "hotplug-disk" || phase == "Succeeded" || phase == "Failed") {
+		return nil
+	}
+	labelKeys := []string{}
+	if u.GetKind() == "VirtualMachine" || u.GetKind() == "Pod" {
+		labelKeys = append(labelKeys, "ani.io/tenant-id", "vm.ani.io/vm-id", "vm.ani.io/create-digest")
+	}
+	if u.GetKind() == "Pod" {
+		labelKeys = append(labelKeys, "kubevirt.io/created-by", "kubevirt.io")
+	}
+	labels := map[string]string{}
+	for _, key := range labelKeys {
+		if value, ok := u.GetLabels()[key]; ok {
+			labels[key] = value
 		}
 	}
-	return true
+	owners := []string{}
+	for _, owner := range u.GetOwnerReferences() {
+		if owner.APIVersion != "kubevirt.io/v1" || !((u.GetKind() == "VirtualMachineInstance" && owner.Kind == "VirtualMachine") || (u.GetKind() == "Pod" && owner.Kind == "VirtualMachineInstance")) {
+			continue
+		}
+		controller := owner.Controller != nil && *owner.Controller
+		encoded, _ := json.Marshal([]any{owner.APIVersion, owner.Kind, owner.Name, string(owner.UID), controller})
+		owners = append(owners, string(encoded))
+	}
+	sort.Strings(owners)
+	var requests []any
+	if u.GetKind() == "VirtualMachine" {
+		requests, _, _ = unstructured.NestedSlice(u.Object, "status", "stateChangeRequests")
+		phase = ""
+	}
+	return []any{objectRef(u), labels, owners, phase, requests}
+}
+
+func runtimeObjects(indices []cache.Indexer, namespace, name, id string) (*unstructured.Unstructured, []*unstructured.Unstructured) {
+	var instance *unstructured.Unstructured
+	if item, exists, _ := indices[1].GetByKey(namespace + "/" + name); exists {
+		instance = item.(*unstructured.Unstructured)
+	}
+	keys := []string{namespace + "/vmi-name/" + name}
+	if id != "" {
+		keys = append(keys, namespace+"/vm-id/"+id)
+	}
+	if instance != nil {
+		keys = append(keys, namespace+"/vmi-uid/"+string(instance.GetUID()))
+	}
+	pods := []*unstructured.Unstructured{}
+	seen := map[string]bool{}
+	for _, key := range keys {
+		items, _ := indices[2].ByIndex(runtimeRelations, key)
+		for _, item := range items {
+			pod := item.(*unstructured.Unstructured)
+			id := pod.GetNamespace() + "/" + pod.GetName()
+			if !seen[id] {
+				pods = append(pods, pod)
+				seen[id] = true
+			}
+		}
+	}
+	return instance, pods
+}
+
+func runtimeProjection(indices []cache.Indexer, root *unstructured.Unstructured) any {
+	instance, pods := runtimeObjects(indices, root.GetNamespace(), root.GetName(), root.GetLabels()["vm.ani.io/vm-id"])
+	projected := map[string]any{}
+	for _, pod := range pods {
+		if evidence := stateProjection(pod); evidence != nil {
+			projected[pod.GetNamespace()+"/"+pod.GetName()] = evidence
+		}
+	}
+	return []any{stateProjection(root), stateProjection(instance), projected}
 }
 
 func (o *StateObservation) flush(ctx context.Context) {
+	o.flushRecoveries(ctx)
 	o.mu.Lock()
 	if time.Now().Before(o.retryAfter) {
 		o.mu.Unlock()
@@ -347,6 +505,59 @@ func (o *StateObservation) flush(ctx context.Context) {
 	}
 }
 
+func (o *StateObservation) enqueueRecovery(key string, recovery biz.ObservationRecovery) {
+	if _, ok := o.recoveries[key]; !ok && len(o.recoveries) >= o.capacity {
+		// The next shared audit retries this proof. Falling back to an
+		// ordinary rescan must never bypass durable failure backoff.
+		o.overflow = true
+		return
+	}
+	o.recoveries[key] = recovery
+}
+
+func (o *StateObservation) flushRecoveries(ctx context.Context) {
+	notifier, ok := o.notifier.(biz.ObservationRecoveryNotifier)
+	if !ok {
+		return
+	}
+	o.mu.Lock()
+	if time.Now().Before(o.recoveryRetry) {
+		o.mu.Unlock()
+		return
+	}
+	batch := []biz.ObservationRecovery{}
+	for key, recovery := range o.recoveries {
+		proof := o.proofs[key]
+		delete(o.recoveries, key)
+		root, exists, _ := o.resources[0].index.GetByKey(key)
+		if !exists || string(root.(*unstructured.Unstructured).GetUID()) != recovery.Native.UID || proof.invalid != nil || proof.uid != recovery.Native.UID || !proof.verifiedAt.Equal(recovery.ObservedAt) || time.Since(proof.verifiedAt) > 60*time.Second {
+			continue
+		}
+		batch = append(batch, recovery)
+		if len(batch) == 128 {
+			break
+		}
+	}
+	o.mu.Unlock()
+	if len(batch) == 0 {
+		return
+	}
+	write, cancel := context.WithTimeout(ctx, time.Second)
+	err := notifier.RecoverObservations(write, batch)
+	cancel()
+	if err != nil {
+		o.mu.Lock()
+		for _, recovery := range batch {
+			key := recovery.Native.Namespace + "/" + recovery.Native.Name
+			if queued, ok := o.recoveries[key]; !ok || queued.ObservedAt.Before(recovery.ObservedAt) {
+				o.enqueueRecovery(key, recovery)
+			}
+		}
+		o.recoveryRetry = time.Now().Add(5 * time.Second)
+		o.mu.Unlock()
+	}
+}
+
 func (o *StateObservation) Stop(ctx context.Context) error {
 	o.mu.Lock()
 	cancel, started := o.cancel, o.started
@@ -369,48 +580,40 @@ func (o *StateObservation) ObserveState(ctx context.Context, v biz.VM) (biz.Obse
 		return unknown, err
 	}
 	o.mu.Lock()
-	collected := time.Time{}
-	for _, r := range o.resources {
-		if !r.valid || r.collected.IsZero() || time.Since(r.collected) > 60*time.Second {
-			o.mu.Unlock()
-			return unknown, biz.ErrUnknown
-		}
-		if collected.IsZero() || r.collected.Before(collected) {
-			collected = r.collected
-		}
+	if !o.synced {
+		o.mu.Unlock()
+		return unknown, biz.ErrObservationUnavailable
 	}
-	if changed := o.changesAt[v.Spec.Namespace+"/"+v.Native.Name]; changed.After(collected) {
-		collected = changed
-	}
-	root, exists, _ := o.resources[0].index.GetByKey(v.Spec.Namespace + "/" + v.Native.Name)
+	key := v.Spec.Namespace + "/" + v.Native.Name
+	root, exists, _ := o.resources[0].index.GetByKey(key)
 	if !exists {
 		o.mu.Unlock()
 		return unknown, biz.ErrUnknown
 	}
-	vmi, hasVMI, _ := o.resources[1].index.GetByKey(v.Spec.Namespace + "/" + v.Native.Name)
-	keys := []string{v.Spec.Namespace + "/vm-id/" + v.ID, v.Spec.Namespace + "/vmi-name/" + v.Native.Name}
-	if hasVMI {
-		keys = append(keys, v.Spec.Namespace+"/vmi-uid/"+string(vmi.(*unstructured.Unstructured).GetUID()))
-	}
-	pods := []*unstructured.Unstructured{}
-	seen := map[string]bool{}
-	for _, key := range keys {
-		items, _ := o.resources[2].index.ByIndex(runtimeRelations, key)
-		for _, item := range items {
-			pod := item.(*unstructured.Unstructured)
-			id := pod.GetNamespace() + "/" + pod.GetName()
-			if !seen[id] {
-				pods = append(pods, pod)
-				seen[id] = true
-			}
-		}
+	indices := []cache.Indexer{o.resources[0].index, o.resources[1].index, o.resources[2].index}
+	instance, pods := runtimeObjects(indices, v.Spec.Namespace, v.Native.Name, v.ID)
+	x, err := runtimeObservation(v, root.(*unstructured.Unstructured), instance, pods)
+	proof, proven := o.proofs[key]
+	collected := proof.verifiedAt
+	if changed := o.changesAt[key]; changed.After(collected) {
+		collected = changed
 	}
 	o.mu.Unlock()
-	var instance *unstructured.Unstructured
-	if hasVMI {
-		instance = vmi.(*unstructured.Unstructured)
+	if err != nil {
+		return x, err
 	}
-	x, err := runtimeObservation(v, root.(*unstructured.Unstructured), instance, pods)
+	if proof.invalid != nil {
+		return unknown, proof.invalid
+	}
+	if !proven || proof.verifiedAt.IsZero() {
+		return unknown, biz.ErrObservationUnavailable
+	}
+	if proof.uid != v.Native.UID {
+		return unknown, biz.ErrOwnership
+	}
+	if time.Since(proof.verifiedAt) > 60*time.Second {
+		return unknown, biz.ErrUnknown
+	}
 	x.ObservedAt = collected
 	return x, err
 }
