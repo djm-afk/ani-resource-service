@@ -49,12 +49,13 @@ func TestVMBlockedAttachmentPGClosesWithFrozenHistoricalNADAndFreshAbsence(t *te
 		t.Fatal(err)
 	}
 	a := f.prepare(t)
+	f.api.Mu.Lock()
+	namespaceUID := f.api.Objects["namespaces//"+a.Namespace]["metadata"].(map[string]any)["uid"].(string)
+	f.api.Mu.Unlock()
 	currentUID, currentConfig := "nad-uid", historical
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.URL.Path == "/api/v1/namespaces/"+a.Namespace:
-			_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": a.Namespace, "uid": "namespace-uid"}})
 		case strings.HasSuffix(r.URL.Path, "/network-attachment-definitions/main"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition", "metadata": map[string]any{"name": "main", "namespace": a.Namespace, "uid": currentUID}, "spec": map[string]any{"config": currentConfig}})
 		case strings.HasPrefix(r.URL.Path, "/apis/kubevirt.io/"):
@@ -69,7 +70,7 @@ func TestVMBlockedAttachmentPGClosesWithFrozenHistoricalNADAndFreshAbsence(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = kc.ConfigureVMNetworks([]data.ManagedVMNAD{{TenantID: a.TenantID, VPCID: a.VPCID, SubnetID: a.SubnetID, ClusterID: a.ClusterID, Namespace: a.Namespace, NamespaceUID: "namespace-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: a.VMPrimary.KCNSubnetRef}}); err != nil {
+	if err = kc.ConfigureVMNetworks([]data.ManagedVMNAD{{TenantID: a.TenantID, VPCID: a.VPCID, SubnetID: a.SubnetID, ClusterID: a.ClusterID, Namespace: a.Namespace, NamespaceUID: namespaceUID, NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: a.VMPrimary.KCNSubnetRef}}); err != nil {
 		t.Fatal(err)
 	}
 	c := vmConsumerFor(a)

@@ -34,6 +34,7 @@ sql:
       - migrations/0012_lb_listener_parameters.sql
       - migrations/0013_subnet_ip_ranges.sql
       - migrations/0014_lb_deferred_activation.sql
+      - migrations/0015_controller_managed_attachments.sql
       - migrations/0016_virtual_switches.sql
       - migrations/0017_legacy_device_retirement.sql
       - migrations/0018_default_vpc_egress.sql

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 // Test dependency only. All acceptance, leases, constraints and histories below
@@ -184,6 +185,15 @@ func newEgressFixtureWithPublicVerification(t *testing.T, verify bool) *egressFi
 		t.Fatal(err)
 	}
 	f := &egressFixture{p: p, owner: owner, e: e, n: newNetwork(t, p, time.Minute), tenant: uuid.NewString(), provider: &egressProvider{images: []string{"sha256:" + strings.Repeat("a", 64)}}}
+	// The external platform has already provisioned this one tenant Namespace.
+	// Admission still persists and checks its original identity in PostgreSQL.
+	identity := tenantnamespace.Identity{TenantID: f.tenant, ClusterID: "test-cluster", Name: "tenant-" + f.tenant, UID: uuid.NewString()}
+	p.ConfigureTenantNamespaceResolver(func(_ context.Context, tenant string) (tenantnamespace.Identity, error) {
+		if tenant != identity.TenantID {
+			return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
+		}
+		return identity, nil
+	})
 	f.w = egressWorker(t, p, f.provider)
 	f.ctx = biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: f.tenant, PlatformAdministrator: true, Attribution: biz.Attribution{Actor: "controlled-fixture", DirectCaller: "egress-test"}})
 	gateway := f.platform(t, biz.PlatformIntent{Kind: "create_egress_gateway", Name: "fixture-gateway", IdempotencyKey: "gateway"})

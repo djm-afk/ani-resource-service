@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,9 +126,16 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	environment, e := data.NewEnvironment(native, "tenant-", func(ctx context.Context, tenant, cluster, namespace string, s biz.NetworkSelection) (biz.NetworkSelection, error) {
 		policy, e := provider.LookupManagedVMNetwork(ctx, tenant, s.VPCID, s.SubnetID, cluster, namespace)
 		if e != nil {
+			reason := networkbiz.DependencyUnavailable
+			switch value := networkbiz.ReasonOf(e); value {
+			case networkbiz.NetworkNotReady, networkbiz.PlacementMismatch, networkbiz.AttachmentConflict, networkbiz.ResourceNotFound, networkbiz.DependencyUnavailable:
+				reason = value
+			}
+			slog.WarnContext(ctx, "VM network preflight failed", "tenant_id", tenant, "vpc_id", s.VPCID, "subnet_id", s.SubnetID, "stage", "network_preparation", "reason", string(reason))
 			return biz.NetworkSelection{}, e
 		}
 		if s.NADName != "" && (s.NADName != policy.NADName || s.NADUID != policy.NADUID || s.NADDigest != policy.NADConfigDigest) {
+			slog.WarnContext(ctx, "VM network preflight failed", "tenant_id", tenant, "vpc_id", s.VPCID, "subnet_id", s.SubnetID, "stage", "network_selection", "reason", "VM_DEPENDENCY_CHANGED")
 			return biz.NetworkSelection{}, biz.ErrChanged
 		}
 		plan, e := repository.ResolveVMNetworkSelection(ctx, networkbiz.PrepareAttachment{TenantID: tenant, VPCID: s.VPCID, SubnetID: s.SubnetID, ClusterID: cluster, Namespace: namespace, WorkloadMode: "vm_managed", VMExpectation: &networkbiz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}}, freshness)

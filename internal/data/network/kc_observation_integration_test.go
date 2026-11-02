@@ -70,6 +70,7 @@ func TestNET05AWatchStatusReconnectAndUnappliedEvidence(t *testing.T) {
 	awaitNET05A(t, 3*time.Second, func() bool { return observer.Snapshot()["source_synced"] == 1 })
 	n := newNetwork(t, p, policy.StaleAfter)
 	tenant := uuid.NewString()
+	api.Change("namespaces", map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": tenant}}, "status": map[string]any{"phase": "Active"}}, false)
 	v, e := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "watch", CIDR: "10.42.0.0/16", IdempotencyKey: "watch"})
 	if e != nil {
 		t.Fatal(e)
@@ -455,6 +456,7 @@ func TestNET05AOldPaginatedListCannotOverwriteNewWatchFact(t *testing.T) {
 	}
 	n := newNetwork(t, p, time.Minute)
 	tenant := uuid.NewString()
+	api.Change("namespaces", map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": tenant}}, "status": map[string]any{"phase": "Active"}}, false)
 	v := availableVPC(t, n, worker, tenant, "old-list")
 	opts := data.DefaultObservationOptions()
 	opts.AuditInterval = 80 * time.Millisecond
@@ -539,6 +541,7 @@ func TestNET05ASilentWatchAndReplicaWithOlderAuditCannotRegress(t *testing.T) {
 	provider2, worker2 := makeWorker(host2.URL)
 	n := newNetwork(t, p, time.Minute)
 	tenant := uuid.NewString()
+	fresh.Change("namespaces", map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": tenant}}, "status": map[string]any{"phase": "Active"}}, false)
 	v := availableVPC(t, n, worker1, tenant, "silent-replica")
 	start := func(provider *data.KCProvider) *data.KCObservation {
 		options := data.DefaultObservationOptions()
@@ -633,6 +636,7 @@ func TestNET05APostgresOutageAndLostMemoryHintsRestartDurableIntents(t *testing.
 	}
 	n := newNetwork(t, p, time.Minute)
 	tenant := uuid.NewString()
+	api.Change("namespaces", map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": tenant}}, "status": map[string]any{"phase": "Active"}}, false)
 	v := availableVPC(t, n, worker, tenant, "before-outage")
 	missing, e := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "no-cr-yet", CIDR: "10.0.0.0/16", IdempotencyKey: "no-cr-yet"})
 	if e != nil {

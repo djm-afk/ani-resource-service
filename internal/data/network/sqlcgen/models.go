@@ -50,6 +50,17 @@ type NetworkAttachment struct {
 	EvidenceAppliedAt   time.Time
 }
 
+type NetworkAttachmentConsumerSnapshot struct {
+	TenantID                  string
+	AttachmentID              string
+	SnapshotRevision          int64
+	SnapshotHash              string
+	RootController            []byte
+	Snapshot                  []byte
+	ConfirmedSnapshotRevision int64
+	ConfirmedPodUid           string
+}
+
 type NetworkAttachmentHistory struct {
 	TenantID       string
 	HistoryID      string

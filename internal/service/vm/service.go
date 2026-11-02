@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -357,6 +358,29 @@ func validAction(a string) bool {
 	}
 	return false
 }
+
+// Preflight errors keep their public contract; operator logs identify the
+// failed dependency without copying provider messages or the frozen VM spec.
+func commandPreflightError(ctx context.Context, c biz.Command, stage string, err error) error {
+	reason := "VM_DEPENDENCY_NOT_READY"
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		reason = "DEADLINE_EXCEEDED"
+	case errors.Is(err, context.Canceled):
+		reason = "CANCELED"
+	case errors.Is(err, biz.ErrChanged):
+		reason = "VM_DEPENDENCY_CHANGED"
+	case errors.Is(err, biz.ErrOwnership):
+		reason = "VM_OBJECT_OWNERSHIP_CONFLICT"
+	case errors.Is(err, biz.ErrNotFound):
+		reason = "VM_NOT_FOUND"
+	case errors.Is(err, biz.ErrInvalid):
+		reason = "VM_INVALID_REQUEST"
+	}
+	slog.WarnContext(ctx, "VM command preflight failed", "tenant_id", c.TenantID, "vm_id", c.VMID, "action", c.Action, "stage", stage, "reason", reason)
+	return rpcError(err)
+}
+
 func (s *Service) command(ctx context.Context, m proto.Message, action string) (*pb.Operation, error) {
 	x := m.ProtoReflect()
 	tenant := x.Get(x.Descriptor().Fields().ByName("tenant_id")).String()
@@ -432,26 +456,26 @@ func (s *Service) command(ctx context.Context, m proto.Message, action string) (
 		}
 		ns, e := s.environment.ResolveNamespace(ctx, c.TenantID, v.Spec.Namespace)
 		if e != nil {
-			return nil, rpcError(e)
+			return nil, commandPreflightError(ctx, c, "namespace", e)
 		}
 		if ns.UID != v.Spec.NamespaceUID {
-			return nil, rpcError(biz.ErrChanged)
+			return nil, commandPreflightError(ctx, c, "namespace_identity", biz.ErrChanged)
 		}
 		if biz.NeedsBackendState(v.Spec) {
 			native, ok := s.native.(biz.BackendNativePort)
 			if !ok {
-				return nil, rpcError(biz.ErrDependency)
+				return nil, commandPreflightError(ctx, c, "backend_configuration", biz.ErrDependency)
 			}
 			if e = native.ValidateBackendConfiguration(ctx, v.Spec); e != nil {
-				return nil, rpcError(e)
+				return nil, commandPreflightError(ctx, c, "backend_configuration", e)
 			}
 		}
 		network, e := s.environment.ValidateNetwork(ctx, c.TenantID, v.Spec.ClusterID, v.Spec.Namespace, v.Spec.Network)
 		if e != nil {
-			return nil, rpcError(e)
+			return nil, commandPreflightError(ctx, c, "network", e)
 		}
 		if network != v.Spec.Network {
-			return nil, rpcError(biz.ErrChanged)
+			return nil, commandPreflightError(ctx, c, "network_identity", biz.ErrChanged)
 		}
 	}
 	o, e := s.repo.AcceptCommand(ctx, c)

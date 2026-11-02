@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -492,13 +493,16 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 	for _, a := range attachments {
 		t := observationTarget{a.TenantID, a.AttachmentID, "attachment"}
 		v.generations[t.key()] = a.RequestedGeneration
-		keys := []string{"attachment:" + a.AttachmentID, "uid:" + a.PodUid, "podname:" + a.Namespace + "/" + a.PodName, "object:Pod/" + a.Namespace + "/" + a.PodName, "eip-subnet:" + subnetRefs[a.SubnetID]}
-		var prior []attachmentRelation
-		if err := json.Unmarshal(a.ProviderRelations, &prior); err != nil {
+		var consumer *biz.ConsumerSubmission
+		if err := json.Unmarshal(a.ConsumerSnapshot, &consumer); err != nil {
 			return nil, err
 		}
-		for _, r := range prior {
-			keys = append(keys, "uid:"+r.UID, "uid:"+r.OwnerUID, "object:"+r.Kind+"/"+r.Namespace+"/"+r.Name, "vNic:"+r.Namespace+"/"+r.Name)
+		keys, err := attachmentObservationKeys(biz.AttachmentWork{
+			Attachment: biz.Attachment{ID: a.AttachmentID, TenantID: a.TenantID, Namespace: a.Namespace, PodName: a.PodName, PodUID: a.PodUid, WorkloadMode: a.WorkloadMode},
+			Plan:       biz.PodPrimaryPlan{PrimaryNetworkRef: subnetRefs[a.SubnetID]}, Relations: a.ProviderRelations, ConsumerSnapshot: consumer,
+		})
+		if err != nil {
+			return nil, err
 		}
 		for _, gvr := range observationGVRs[2:5] {
 			for _, obj := range indexedObjects(v.indices[gvr], keys) {

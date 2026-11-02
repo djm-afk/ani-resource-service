@@ -130,7 +130,8 @@ func TestKCAdapterExecutesTheVPCContractThroughHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := &controlledKC{}
+	tenant := uuid.NewString()
+	api := &controlledKC{namespace: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": tenant}}, "status": map[string]any{"phase": "Active"}}}
 	host := httptest.NewServer(api)
 	t.Cleanup(host.Close)
 	provider, err := data.NewKCProvider(repository, &rest.Config{Host: host.URL})
@@ -145,7 +146,6 @@ func TestKCAdapterExecutesTheVPCContractThroughHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	tenant := uuid.NewString()
 	accepted, err := network.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "kc", CIDR: "10.42.0.0/16", IdempotencyKey: "kc"})
 	if err != nil {
 		t.Fatal(err)

@@ -151,7 +151,7 @@ func (p *KCProvider) observeAttachment(ctx context.Context, w biz.AttachmentWork
 	livePods := 0
 	for _, o := range allPods {
 		labels := o.GetLabels()
-		candidate := labels[attachmentLabel] == a.ID || podUIDs[string(o.GetUID())] || (a.PodName != "" && o.GetNamespace() == a.Namespace && o.GetName() == a.PodName)
+		candidate := labels[attachmentLabel] == a.ID || podUIDs[string(o.GetUID())] || (a.PodName != "" && o.GetNamespace() == a.Namespace && o.GetName() == a.PodName) || attachmentConsumerPodCandidate(w, o)
 		if !candidate {
 			continue
 		}

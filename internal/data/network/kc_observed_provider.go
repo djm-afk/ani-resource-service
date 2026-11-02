@@ -2,7 +2,6 @@ package data
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,6 +16,13 @@ import (
 func (p *KCProvider) Observe(ctx context.Context, t biz.ProviderTarget) (biz.ProviderObservation, error) {
 	if egressKind(t.Kind) {
 		return p.observeEgress(ctx, t)
+	}
+	if p.observation != nil && sharedTombstone(t) {
+		b, err := p.binding(ctx, t)
+		if err != nil {
+			return biz.ProviderObservation{}, err
+		}
+		return p.observeTombstone(ctx, t, b)
 	}
 	if p.observation != nil && !t.Direct && t.KnownIdentity != "" {
 		b, err := p.binding(ctx, t)
@@ -55,7 +61,7 @@ func (p *KCProvider) Observe(ctx context.Context, t biz.ProviderTarget) (biz.Pro
 }
 
 func (p *KCProvider) ObserveAttachment(ctx context.Context, w biz.AttachmentWork) (biz.AttachmentObservation, error) {
-	if w.Attachment.WorkloadMode == "vm_managed" {
+	if w.Attachment.WorkloadMode == "vm_managed" && p.observation == nil {
 		now, err := p.repository.queries.DatabaseTime(ctx)
 		if err != nil {
 			return biz.AttachmentObservation{}, readFailure(err)
@@ -81,16 +87,9 @@ func (p *KCProvider) ObserveAttachment(ctx context.Context, w biz.AttachmentWork
 		})
 	}
 	a := w.Attachment
-	keys := []string{"attachment:" + a.ID, "uid:" + a.PodUID, "object:Pod/" + a.Namespace + "/" + a.PodName, "podname:" + a.Namespace + "/" + a.PodName, "eip-subnet:" + w.Plan.PrimaryNetworkRef}
-	for _, uid := range w.ConsumerPodUIDs {
-		keys = append(keys, "uid:"+uid)
-	}
-	var prior []attachmentRelation
-	if err := json.Unmarshal(w.Relations, &prior); err != nil {
+	keys, err := attachmentObservationKeys(w)
+	if err != nil {
 		return biz.AttachmentObservation{}, readFailure(err)
-	}
-	for _, r := range prior {
-		keys = append(keys, "uid:"+r.UID, "uid:"+r.OwnerUID, "object:"+r.Kind+"/"+r.Namespace+"/"+r.Name, "vNic:"+r.Namespace+"/"+r.Name)
 	}
 	after := time.Time{}
 	if w.RequireFreshRelations {
@@ -132,8 +131,8 @@ func (p *KCProvider) ObserveAttachment(ctx context.Context, w biz.AttachmentWork
 				}
 			}
 		}
-		proof := biz.ObservationProof{CollectedAt: v.collected, Hash: contentHash(candidatesForHash(candidates)), CoveredGeneration: v.generations[observationTarget{a.TenantID, a.ID, "attachment"}.key()]}
-		if !proof.Covers(w.Requirement) || !p.observation.validAttachment(v, allKeys) {
+		proof := biz.ObservationProof{CollectedAt: v.collected, CoveredGeneration: v.generations[observationTarget{a.TenantID, a.ID, "attachment"}.key()]}
+		if proof.CoveredGeneration < w.Requirement.RequestedGeneration || !p.observation.validAttachment(v, allKeys) {
 			after, err = p.repository.queries.DatabaseTime(ctx)
 			if err != nil {
 				return biz.AttachmentObservation{}, readFailure(err)
@@ -143,21 +142,27 @@ func (p *KCProvider) ObserveAttachment(ctx context.Context, w biz.AttachmentWork
 		result, err := p.observeAttachment(ctx, w, func(_ context.Context, gvr schema.GroupVersionResource) ([]unstructured.Unstructured, error) {
 			return candidates[gvr], nil
 		})
-		result.Proof = proof
+		if err != nil {
+			return biz.AttachmentObservation{}, err
+		}
 		// EIP/orphan objects are never hidden by a Network label selector. Any EIP
 		// referring to this subnet blocks release until the external owner cleans it.
 		eips := candidates[observationGVRs[5]]
 		if len(eips) > 0 {
 			result.HasDependencies = true
 		}
-		if !p.observation.validAttachment(v, allKeys) {
+		// VM/VMI facts are verified by observeAttachment's precise reads. Include
+		// those facts before applying the same-content exception to an older audit.
+		proof.Hash = attachmentObservationHash(w, candidates, result)
+		if !proof.Covers(w.Requirement) || !p.observation.validAttachment(v, allKeys) {
 			after, err = p.repository.queries.DatabaseTime(ctx)
 			if err != nil {
 				return biz.AttachmentObservation{}, readFailure(err)
 			}
 			continue
 		}
-		return result, err
+		result.Proof = proof
+		return result, nil
 	}
 }
 func candidatesForHash(values map[schema.GroupVersionResource][]unstructured.Unstructured) map[string][]unstructured.Unstructured {

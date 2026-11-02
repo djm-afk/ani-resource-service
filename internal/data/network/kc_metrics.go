@@ -29,14 +29,7 @@ type measuredTransport struct {
 }
 
 func (t measuredTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	resource := "other"
-	parts := strings.Split(r.URL.Path, "/")
-	for _, part := range parts {
-		switch part {
-		case "vpcs", "subnets", "pods", "vnics", "vnicips", "eips", "namespaces", "snats", "nats", "eipgateways", "vlannetworks", "nodes", "configmaps", "services", "servicecidrs":
-			resource = part
-		}
-	}
+	resource, collection := providerRequestResource(r.URL.Path)
 	verb := r.Method
 	switch verb {
 	case "GET", "POST", "DELETE", "PATCH":
@@ -45,7 +38,7 @@ func (t measuredTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	if r.URL.Query().Get("watch") == "true" {
 		verb = "WATCH"
-	} else if verb == "GET" && len(parts) > 0 && parts[len(parts)-1] == resource {
+	} else if verb == "GET" && collection {
 		verb = "LIST"
 	}
 	key := verb + "_" + resource
@@ -60,6 +53,32 @@ func (t measuredTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	response.Body = measuredBody{response.Body, t.stats, key}
 	return response, nil
+}
+
+// Resource names occupy a fixed position in Kubernetes REST paths. Namespace
+// and object names may themselves match a resource name; neither is a label.
+func providerRequestResource(path string) (string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	index := -1
+	if len(parts) >= 3 && parts[0] == "api" {
+		index = 2
+	} else if len(parts) >= 4 && parts[0] == "apis" {
+		index = 3
+	}
+	if index < 0 {
+		return "other", false
+	}
+	if parts[index] == "namespaces" && len(parts) > index+2 && parts[index+2] != "status" && parts[index+2] != "finalize" {
+		index += 2
+	}
+	resource := "other"
+	switch parts[index] {
+	case "vpcs", "subnets", "pods", "vnics", "vnicips", "eips", "namespaces", "snats", "nats", "eipgateways", "vlannetworks", "nodes", "configmaps", "services", "servicecidrs", "serviceaccounts":
+		resource = parts[index]
+	case "network-attachment-definitions":
+		resource = "network_attachment_definitions"
+	}
+	return resource, len(parts) == index+1
 }
 
 type measuredBody struct {

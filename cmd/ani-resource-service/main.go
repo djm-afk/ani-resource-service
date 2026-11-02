@@ -50,6 +50,7 @@ func main() {
 	}
 	logger := newRuntimeLogger(logOutput)
 	log.SetDefault(logger)
+	slog.SetDefault(logger)
 	execute := func() error {
 		if sandboxReviewMode {
 			if flagVMMigrate || flagComputeRestore || flagInstanceMigrate || flagSandboxMigrate || flagMigrate || flagImageMigrate || imageAdminAction != "" || baseConnectivityAction != "" {

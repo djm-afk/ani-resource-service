@@ -47,6 +47,8 @@ status-only、deletionTimestamp、归属、标签与引用变化都属于相关�
 4. Finish 只完成已捕获代次；若期间出现新通知，保留下次执行资格，不能无条件用未来时间覆盖新唤醒。禁止借用删除调度的撤销租约行为。
 5. 未发送创建、结果未知、owner 封闭查询和重试 deadline 始终有持久恢复入口，不等待下一条 K8s 事件。重复提示不能无限绕过故障退避。
 
+已完成删除、无活动 operation、无 pending mutation 且无异常的资源墓碑，不再强制每条记录重新采集全量关系。它们保留原 Provider 身份和观察索引，复用完整、仍有效且覆盖通知代次的共享审计；成功核验后的恢复周期为 `max(ObserveEvery, StaleAfter)`（默认 60 秒），相关事件仍可提前唤醒。首次删除收敛、未知请求、迟到依赖与身份冲突继续走原清理路径。干净的 released Attachment 同样降频；已持久验证的 managed owner closed snapshot 可复用，但仍检查实际关系，迟到关系继续建立 protocol fence。墓碑不永久退出恢复范围。
+
 通知代次完成还要求本次事实确实覆盖其对应变化，不能仅因 Claim 读到了最新代次就将其标记完成。多副本缓存可能不同步：A 已应用新事实后，B 即使合法领取最新 PG version，也不能用自己较旧的缓存覆盖状态。观察结果须携带可核验的来源与覆盖证据；不能证明不旧于 Claim 前已持久应用事实、或不能覆盖本次触发时，直接核验/重新同步并保留待处理资格。此约束适用于普通缓存与审计视图，不能靠租约或 resourceVersion 数值比较代替。
 
 完整候选对象集合的摘要不依赖 List/索引返回顺序。计算前只规范化集合顺序，不修改共享视图或省略对象字段；同名异 UID、resourceVersion、地址及状态变化仍改变摘要，对象内部数组仍保留原有顺序。相同事实复用既有摘要不刷新采集时间，也不放宽通知代次、证据过期和 lease/fence 校验。
@@ -89,6 +91,8 @@ Node 的 resourceVersion、managedFields、condition 心跳时间及已知 GPU �
 
 缓存用于普通观察和关系定位。创建、未知请求、UID 冲突、删除及 released 判定继续要求必要的直接 API/完整关系核验。优化这类核验可以共享覆盖完整的集合证据，但不能把每个 Attachment 的全集群扫描仅改名后保留。
 
+VM Attachment 的 Pod/VNic/VNicIP 关系复用同一共享完整审计，候选与通知映射同时包含 owner snapshot 中的 VM/VMI controller 及当前、历史 launcher 的 UID 和名称。候选只定位证据，VM→VMI→launcher、Namespace/NAD、原 UID、主网络与地址资格仍按原业务规则核验；VM/VMI 精确读取和封闭后的系统 Nic 清理检查保留。VM 的证明摘要同时覆盖共享候选、实际核验的 VM/VMI 关系和 owner snapshot；不能因候选集合没变就忽略 VMI 状态或地址变化，也不能把精确读取的当前时间当作整份审计的新采集时间。
+
 实例 owner 的持久提交封闭来自其协议；K8s Watch 无法替代该查询。释放仍要求封闭及实际工作负载/网卡/IP 清理证据。缓存 NotFound、Delete 通知、TTL 或连接健康都不能单独完成 deleted/released；已记录 UID 的意外消失不触发自动重建。
 
 ## 5. 查询、版本与数据库成本
@@ -106,6 +110,8 @@ Get/List/GetOperation 保持纯读。验证查询无副作用时，先停止相�
 Watch 连接配置独立于短请求超时；GET/写请求仍有界。启动、403、429、410、断线和重连由标准机制恢复，并暴露来源同步、错误、队列最老年龄及重新清点进度。新观察范围在同步前不能当作空集合；Watch 失效时真实校验仍须有独立恢复入口。
 
 观察源健康、PG 可持久受理、worker 活跃和 API 查询可用分别表达；Provider 失联不必让纯查询全部失效。GET/写/Watch、对象字节数、缓存/索引内存、请求合并、worker 公平性、PG 事务/UPDATE/WAL 与证据年龄都须可测量。资源 ID、租户 ID 不能成为无界 metrics label。
+
+请求计数按 Kubernetes REST 路径中的实际资源位置归类，Namespace 名或对象名不得改变资源类别；ServiceAccount 与 NAD 不计入 Namespace GET。资源类别保持固定集合。VM 启动/重启预检失败记录安全的阶段与原因；网络过期检查记录 VPC/Subnet 状态、观测年龄和有效期阈值，不记录凭据、原始外部错误或整份冻结配置，公开错误合同保持不变。
 
 ## 7. 推广规则
 

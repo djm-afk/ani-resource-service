@@ -41,10 +41,13 @@ func (e *ProviderError) Unwrap() error { return e.Cause }
 // ProviderTarget contains only domain references and an opaque provider object
 // identity. The adapter resolves namespace/name/cluster from its persisted map.
 type ProviderTarget struct {
-	Deleting                                             bool
-	Egress                                               *EgressWorkSpec
-	Requirement                                          ObservationRequirement
-	Direct                                               bool
+	Deleting    bool
+	Egress      *EgressWorkSpec
+	Requirement ObservationRequirement
+	Direct      bool
+	// Tombstone permits reuse of complete shared absence/dependency evidence
+	// only after deletion and every uncertain mutation have already completed.
+	Tombstone                                            bool
 	TenantID, ResourceID, BindingID, KnownIdentity, CIDR string
 	Kind, VPCID, Gateway                                 string
 }
@@ -207,11 +210,12 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 		progress.NextDelay = w.policy.RetryMin
 		return true, w.finish(ctx, work, progress)
 	}
+	tombstone := work.Resource.State == Deleted && !work.ActiveOperation && work.PendingAction == "" && work.KnownIdentity != "" && work.Resource.Reason == ""
 	target := ProviderTarget{
 		TenantID: work.Resource.TenantID, ResourceID: work.Resource.ID, BindingID: work.BindingID, Egress: work.Resource.Egress,
 		KnownIdentity: work.KnownIdentity, CIDR: work.Resource.CIDR,
 		Deleting:    work.Resource.State == Deleting || work.Resource.State == Deleted,
-		Requirement: work.Requirement, Direct: work.ActiveOperation || work.PendingAction != "" || work.Resource.State == Deleted,
+		Requirement: work.Requirement, Direct: work.ActiveOperation || work.PendingAction != "" || (work.Resource.State == Deleted && !tombstone), Tombstone: tombstone,
 		Kind: work.Resource.Kind, VPCID: work.Resource.VPCID, Gateway: work.Resource.Gateway,
 	}
 	callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
@@ -261,6 +265,10 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	progress.Backoff = observeErr != nil || (work.ActiveOperation && progress.OperationState != Succeeded && progress.OperationState != OpFailed)
 	if progress.Backoff {
 		progress.NextDelay = w.retryDelay(work.Attempt)
+	} else if tombstone && progress.State == Deleted && progress.Reason == "" && progress.Observed && progress.ClearPending {
+		// Keep a durable recovery deadline and event wake-ups for retained
+		// identities; clean tombstones do not need the ordinary hot poll cadence.
+		progress.NextDelay = max(w.policy.ObserveEvery, w.policy.StaleAfter)
 	}
 	if err == nil {
 		err = w.finish(ctx, work, progress)

@@ -1,5 +1,11 @@
 # Network 执行状态
 
+## 2026-11-02：删除终态与 VM 共享观测的请求预算修复
+
+**源码、Fedora 定向回归/真实 PG、静态检查及服务构建：PASS；新修复的发布与现场请求预算验收：NOT_RUN。** 实现基于 Resource `14dcdb5589f2839e5d9566ebc7c417041b8b76f3`，提交前同步最新 main `e9cdb164e35945d4c199ad4e4bc7ab5ce4a91346`，并核对 Governance main `e70b109a9b98baa847b09a1f272a7fcdd7f331e3`。修复集中在 Resource 内部，不改变公开 API 或数据库结构。无未决写入、活动操作或失败原因的已删除资源复用完整共享审计，干净终态的恢复周期默认 60 秒；事件唤醒、原 UID、迟到关系及未知写入围栏保留。VM 关系复用共享 Pod/VNic/VNicIP 集合，证明同时覆盖实际 VM/VMI 关系及 owner snapshot，保留精确身份、系统 Nic 清理和封闭后采集边界。已释放的受管连接复用持久封闭事实；SNAT 与 EIP 均不存在时仍按原 EIP 名称检查孤立 NAT/Service。
+
+新增回归先 RED 后 GREEN，真实 PG 已跑通过期拒绝→后台真实观察→同一 VM 网络预检恢复；仅 Kubernetes/owner 外部边界使用受控 fixture。41 项既有 PG 回归分别通过，容量压测明确跳过；受影响四包默认测试、vet、服务构建、分层及 sqlc 生成一致性通过。基线同样失败的 17 项旧测试已补齐标准 Namespace 外部前置条件，业务校验和原断言未放宽，原始失败保留。另补安全的 Start/Restart 预检阶段/观测年龄日志，并纠正 Namespace、ServiceAccount、NAD 的请求归类。提交前 Fedora 完整 `make verify` PASS（生成、分层、故障构建、tidy、全包默认测试、vet、build、模块与 diff 校验）；初次 Unix socket 临时路径失败保留，仅缩短远端实际 GOTMPDIR/TMPDIR 后原用例与完整门禁通过，源码未变。尚未发布；旧 503 的具体历史分支仍不能由本轮测试追认。命令、固定输入、各次失败和验证边界见[本次回执](records/network-observation-budget-20261102.json)。
+
 ## Container configuration without version selection (2026-10-31)
 
 **源码/正式生成、Fedora 门禁与定向真实 PG：PASS；10～12 成对发布、正常租户 CPU 创建/Running/删除：PASS。** 按用户明确要求废弃开发期容器配置版本选择、旧格式/摘要兼容与 V2 写入开关，保留工作目录、环境变量、PVC 和网络等现有配置功能。Proto 保留旧字段号/name；单一配置进入 Resolve、冻结摘要、命令验签、持久化和查询。独立维护门禁及其它域真实协议不属于配置版本，保持原义。以原 VM 详情分支 `612b2abd8f77c3dce928520c65caba2bc1d0d690` 为基线，保留现有 VM 字段。

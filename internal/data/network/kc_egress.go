@@ -622,8 +622,10 @@ func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, cr
 			if exists {
 				o = raw.(*unstructured.Unstructured)
 			}
-			// Cache absence is never a lifecycle deletion/ownership conclusion.
-			if o == nil {
+			// Ordinary cache absence is never a lifecycle deletion conclusion.
+			// An explicitly completed tombstone may reuse complete audit absence;
+			// identity, relationship coverage and proof fences below still apply.
+			if o == nil && !sharedTombstone(r.target) {
 				return result, errEgressAuditInvalid
 			}
 		}
@@ -797,12 +799,21 @@ func inspectEgressSet(r egressResolved, set egressReadSet) (biz.ProviderObservat
 		} else if ref, ok := r.refs["snat"]; ok {
 			expectedSnat = ref.binding.ProviderName
 		}
-		conflict := eipBindingConflictAllowed(set, r.binding.Namespace, crName(eip), expectedSnat, set.lbServiceUID)
+		eipName := crName(eip)
+		completedEIPAbsence := false
+		if r.target.Kind == "snat" && eip == nil && sharedTombstone(r.target) {
+			// A previously completed SNAT can outlive its deleted EIP. Retain
+			// the original EIP reference when inspecting the complete relation
+			// set: an absent EIP must not hide orphan NATs or Services.
+			eipName = r.refs["eip"].binding.ProviderName
+			completedEIPAbsence = eipName != ""
+		}
+		conflict := eipBindingConflictAllowed(set, r.binding.Namespace, eipName, expectedSnat, set.lbServiceUID)
 		if r.target.Kind == "eip" {
 			value.HasDependencies = len(bound) > 0 || conflict || expectedSnat != "" || r.lbID != ""
 			value.Ready = ready && verifiedEgressExit(r, set) && !conflict && ((len(bound) == 0 && crString(eip, "status", "phase") == "Available") || bindingApplied(eip, snat, set.objects["vpc"], r.snat.DesiredEnabled) || set.lbBound)
 		} else {
-			value.HasDependencies = conflict || (o == nil && (len(bound) > 0 || !goodConditions(eip, "Valid", "Initialized") || crString(eip, "status", "phase") != "Available"))
+			value.HasDependencies = conflict || (o == nil && !completedEIPAbsence && (len(bound) > 0 || !goodConditions(eip, "Valid", "Initialized") || crString(eip, "status", "phase") != "Available"))
 			if o != nil {
 				value.NeedsUpdate = crBool(o, "spec", "disable") == r.snat.DesiredEnabled
 				value.Egress.TargetGeneration = o.GetGeneration()

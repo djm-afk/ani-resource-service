@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"strings"
 	"time"
@@ -171,31 +172,61 @@ func VMNADConfigDigest(raw string) (string, error) {
 // Prepare repeats these checks under its existing parent locks before saving.
 func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareAttachment, freshness time.Duration) (biz.VMPrimaryPlan, error) {
 	if r.WorkloadMode != "vm_managed" || !biz.ValidVMNetworkExpectation(r.VMExpectation) || p.vmNetworks == nil {
-		return biz.VMPrimaryPlan{}, biz.Fail(biz.NetworkNotReady, "managed VM network is unavailable")
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_preparation", biz.Fail(biz.NetworkNotReady, "managed VM network is unavailable"))
 	}
 	s, err := p.queries.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
 	if err != nil {
-		return biz.VMPrimaryPlan{}, databaseFailure(err)
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
 	}
 	v, err := p.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: r.TenantID, VpcID: s.VpcID})
 	if err != nil {
-		return biz.VMPrimaryPlan{}, databaseFailure(err)
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
 	}
 	now, err := p.queries.DatabaseTime(ctx)
 	if err != nil {
-		return biz.VMPrimaryPlan{}, databaseFailure(err)
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_freshness", databaseFailure(err))
 	}
-	if freshness <= 0 || v.NetworkVpc.State != "available" || s.State != "available" || v.NetworkVpc.ObservedAt == nil || s.ObservedAt == nil || now.Sub(*v.NetworkVpc.ObservedAt) > freshness || now.Sub(*s.ObservedAt) > freshness || (r.VPCID != "" && r.VPCID != s.VpcID) {
-		return biz.VMPrimaryPlan{}, biz.Fail(biz.NetworkNotReady, "fresh available VM network required")
+	if freshness <= 0 || v.NetworkVpc.State != "available" || s.State != "available" || v.NetworkVpc.ObservedAt == nil || s.ObservedAt == nil || now.Sub(*v.NetworkVpc.ObservedAt) > freshness || now.Sub(*s.ObservedAt) > freshness {
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_freshness", biz.Fail(biz.NetworkNotReady, "fresh available VM network required"),
+			"vpc_state", v.NetworkVpc.State, "subnet_state", s.State,
+			"vpc_observed", v.NetworkVpc.ObservedAt != nil, "subnet_observed", s.ObservedAt != nil,
+			"vpc_observation_age_ms", vmNetworkObservationAge(now, v.NetworkVpc.ObservedAt), "subnet_observation_age_ms", vmNetworkObservationAge(now, s.ObservedAt), "freshness_limit_ms", freshness.Milliseconds())
+	}
+	if r.VPCID != "" && r.VPCID != s.VpcID {
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", biz.Fail(biz.NetworkNotReady, "fresh available VM network required"))
 	}
 	b, err := p.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.SubnetID})
 	if err != nil {
-		return biz.VMPrimaryPlan{}, databaseFailure(err)
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_placement", databaseFailure(err))
 	}
 	if b.ClusterID != r.ClusterID || b.Namespace != r.Namespace || b.ProviderUid == "" {
-		return biz.VMPrimaryPlan{}, biz.Fail(biz.PlacementMismatch, "VM network placement or identity differs")
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_placement", biz.Fail(biz.PlacementMismatch, "VM network placement or identity differs"))
 	}
-	return p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.VpcID, SubnetID: s.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID + ":" + b.ProviderUid, KCNSubnetRef: b.Namespace + "/" + b.ProviderName}, *r.VMExpectation)
+	plan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.VpcID, SubnetID: s.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID + ":" + b.ProviderUid, KCNSubnetRef: b.Namespace + "/" + b.ProviderName}, *r.VMExpectation)
+	if err != nil {
+		return plan, vmNetworkPreflightFailure(ctx, r, "network_identity", err)
+	}
+	return plan, nil
+}
+
+func vmNetworkObservationAge(now time.Time, observed *time.Time) int64 {
+	if observed == nil {
+		return -1
+	}
+	return now.Sub(*observed).Milliseconds()
+}
+
+func vmNetworkPreflightFailure(ctx context.Context, r biz.PrepareAttachment, stage string, err error, details ...any) error {
+	// Network error messages and causes may contain database/provider details.
+	// Even Reason is a string type, so only known product values are logged.
+	reason := biz.DependencyUnavailable
+	switch value := biz.ReasonOf(err); value {
+	case biz.NetworkNotReady, biz.PlacementMismatch, biz.AttachmentConflict, biz.ResourceNotFound, biz.DependencyUnavailable:
+		reason = value
+	}
+	attributes := []any{"tenant_id", r.TenantID, "vpc_id", r.VPCID, "subnet_id", r.SubnetID, "stage", stage, "reason", string(reason)}
+	slog.WarnContext(ctx, "VM network preflight failed", append(attributes, details...)...)
+	return err
 }
 
 func (p *Postgres) vmCurrentAddresses(ctx context.Context, a biz.Attachment, raw []byte) []biz.VMCurrentAddress {

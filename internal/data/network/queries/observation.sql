@@ -22,8 +22,12 @@ FROM network_reconciliations r JOIN network_provider_bindings b
 WHERE b.cluster_id=sqlc.arg(cluster_id) AND NOT r.retired;
 
 -- name: ObservationAttachments :many
-SELECT tenant_id,attachment_id,subnet_id,vpc_id,namespace,pod_name,pod_uid,
- provider_relations,requested_generation FROM network_attachments WHERE cluster_id=sqlc.arg(cluster_id);
+SELECT a.tenant_id,a.attachment_id,a.subnet_id,a.vpc_id,a.namespace,a.pod_name,a.pod_uid,
+ coalesce(a.plan->>'WorkloadMode','single_pod')::text AS workload_mode,a.provider_relations,a.requested_generation,
+ coalesce(c.snapshot,'null'::jsonb) AS consumer_snapshot
+FROM network_attachments a LEFT JOIN network_attachment_consumer_snapshots c
+ ON c.tenant_id=a.tenant_id AND c.attachment_id=a.attachment_id AND coalesce(a.plan->>'WorkloadMode','single_pod')='vm_managed'
+WHERE a.cluster_id=sqlc.arg(cluster_id);
 
 -- Observer-only bulk relationship inventory. No per-tenant/per-resource query
 -- loop on a platform event; all fanout joins preserve tenant and cluster scope.

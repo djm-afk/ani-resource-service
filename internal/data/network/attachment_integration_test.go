@@ -50,7 +50,13 @@ func newAttachmentFixture(t *testing.T) attachmentFixture {
 	t.Helper()
 	p, owner := database(t)
 	n := newNetwork(t, p, time.Minute)
-	api := &testenv.KC{}
+	tenant := uuid.NewString()
+	namespace := "tenant-" + tenant
+	// Tenant Namespace provisioning is an external platform responsibility.
+	// Supply its real contract before admission; Network must not create it.
+	api := &testenv.KC{Objects: map[string]map[string]any{
+		"namespaces//" + namespace: {"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": namespace, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": tenant}}, "status": map[string]any{"phase": "Active"}},
+	}, Creates: map[string]int{}, Deletes: map[string]int{}}
 	host := httptest.NewServer(api)
 	t.Cleanup(host.Close)
 	provider, e := data.NewKCProvider(p, &rest.Config{Host: host.URL, QPS: 1000, Burst: 1000})
@@ -64,7 +70,6 @@ func newAttachmentFixture(t *testing.T) attachmentFixture {
 	if e != nil {
 		t.Fatal(e)
 	}
-	tenant := uuid.NewString()
 	v := availableVPC(t, n, w, tenant, "attachment-parent")
 	s, e := n.CreateSubnet(context.Background(), biz.CreateSubnet{TenantID: tenant, VPCID: v.ID, Name: "attachment-subnet", CIDR: "10.42.1.0/24", IdempotencyKey: "subnet"})
 	if e != nil {
@@ -252,6 +257,9 @@ func TestAttachmentConfirmRecoveryReleaseAndResidualUIDs(t *testing.T) {
 	f.api.Mu.Lock()
 	f.api.Objects["pods/"+a.Namespace+"/"+podName] = attachmentPod(original, podName, podUID)
 	f.api.Mu.Unlock()
+	if e := f.p.NotifyAttachment(ctx, a.TenantID, a.ID); e != nil {
+		t.Fatal(e)
+	}
 	a = f.step(t, a.ID)
 	if a.State != biz.Released || a.Reason != biz.AttachmentProtocol || a.Plan != nil {
 		t.Fatal("late object escaped tombstone", a)
@@ -354,6 +362,9 @@ func TestAttachmentLateAfterSubnetDeletedProtectsCIDRAndVPC(t *testing.T) {
 	f.api.Mu.Lock()
 	f.api.Objects["pods/"+a.Namespace+"/late"] = attachmentPod(original, "late", uuid.NewString())
 	f.api.Mu.Unlock()
+	if e := f.p.NotifyAttachment(ctx, a.TenantID, a.ID); e != nil {
+		t.Fatal(e)
+	}
 	a = f.step(t, a.ID)
 	if a.State != biz.Released || a.Reason != biz.AttachmentProtocol {
 		t.Fatal("late tombstone protocol not detected", a)

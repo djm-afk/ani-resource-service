@@ -264,6 +264,9 @@ func (w *AttachmentWorker) stepManaged(ctx context.Context, work AttachmentWork,
 	if p.ProtocolBlocked {
 		p.Reason = AttachmentProtocol
 	}
+	if p.State == Released && p.Observed && p.Reason == "" && !p.ProtocolBlocked && !p.Backoff {
+		p.NextDelay = max(w.policy.ObserveEvery, w.policy.StaleAfter)
+	}
 	err := w.repository.FinishAttachment(ctx, work, p)
 	if w.observer != nil {
 		w.observer(ctx, work, p, err)

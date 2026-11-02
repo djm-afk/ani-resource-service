@@ -94,9 +94,18 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 	}
 	a := work.Attachment
 	p := AttachmentProgress{State: a.State, Reason: a.Reason, PodName: a.PodName, PodUID: a.PodUID, FinalizationID: a.FinalizationID, Relations: work.Relations, ProtocolBlocked: work.ProtocolBlocked, NextDelay: w.policy.ObserveEvery}
-	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
-	consumer, consumerErr := w.consumer.GetSubmission(call, a)
-	cancel()
+	var consumer ConsumerSubmission
+	var consumerErr error
+	// A successfully released managed attachment already holds an immutable,
+	// validated owner closure. Keep checking provider relations without turning
+	// every retained tombstone into another owner RPC.
+	if releasedManagedClosure(work) {
+		consumer = *a.ConsumerSnapshot
+	} else {
+		call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
+		consumer, consumerErr = w.consumer.GetSubmission(call, a)
+		cancel()
+	}
 	if a.WorkloadMode == "controller_managed" || a.WorkloadMode == "vm_managed" {
 		return w.stepManaged(ctx, work, consumer, consumerErr)
 	}
@@ -104,7 +113,7 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 		work.ConsumerPodUIDs = consumer.PodUIDs
 		work.RequireFreshRelations = consumer.State == "closed" && a.State != Released
 	}
-	call, cancel = context.WithTimeout(ctx, w.policy.RequestTimeout)
+	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 	o, observeErr := w.provider.ObserveAttachment(call, work)
 	cancel()
 	if observeErr != nil {
@@ -172,6 +181,9 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 		p.Reason = AttachmentProtocol
 	}
 	p.Backoff = observeErr != nil || consumerErr != nil
+	if p.State == Released && p.Observed && p.Reason == "" && !p.ProtocolBlocked && !p.Backoff {
+		p.NextDelay = max(w.policy.ObserveEvery, w.policy.StaleAfter)
+	}
 	err = w.repository.FinishAttachment(ctx, work, p)
 	if w.observer != nil {
 		w.observer(ctx, work, p, err)
@@ -180,6 +192,18 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 		err = nil
 	}
 	return true, err
+}
+
+func releasedManagedClosure(work AttachmentWork) bool {
+	a := work.Attachment
+	if a.State != Released || work.ProtocolBlocked || a.Reason != "" || a.ConsumerSnapshot == nil || a.SnapshotHash == "" {
+		return false
+	}
+	if a.WorkloadMode != "controller_managed" && a.WorkloadMode != "vm_managed" {
+		return false
+	}
+	c := *a.ConsumerSnapshot
+	return c.State == "closed" && c.FinalizationID == a.FinalizationID && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == a.SnapshotHash && CompareConsumerSnapshot(a, c) == SnapshotAccepted
 }
 func validConsumer(a Attachment, c ConsumerSubmission) bool {
 	if a.WorkloadMode == "controller_managed" || a.WorkloadMode == "vm_managed" {

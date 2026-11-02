@@ -54,6 +54,8 @@ func newEgressKCFixture(t *testing.T, intercept func(http.ResponseWriter, *http.
 		t.Fatal(err)
 	}
 	f := &egressFixture{p: db.Repository, owner: db.Owner, e: e, n: newNetwork(t, db.Repository, time.Minute), w: w, tenant: uuid.NewString()}
+	// Namespace creation belongs to the external platform, before admission.
+	api.Change("namespaces", map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + f.tenant, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": f.tenant}}, "status": map[string]any{"phase": "Active"}}, false)
 	f.ctx = biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: f.tenant, PlatformAdministrator: true, Attribution: biz.Attribution{Actor: "controlled-adapter-test", DirectCaller: "fixture"}})
 	gateway := f.platform(t, biz.PlatformIntent{Kind: "create_egress_gateway", Name: "gateway", IdempotencyKey: "gateway"})
 	f.pool = f.platform(t, biz.PlatformIntent{Kind: "create_public_pool", Name: "pool", IdempotencyKey: "pool", Pool: &biz.PublicPoolConfig{Mode: "overlay", GatewayID: gateway.ID, CIDR: "192.0.2.0/24", OVNGatewayIP: "192.0.2.1"}})

@@ -1,0 +1,306 @@
+{
+  "task": "network-observation-budget-20261102",
+  "source": {
+    "resource_base": "14dcdb5589f2839e5d9566ebc7c417041b8b76f3",
+    "governance_inspected_base": "e70b109a9b98baa847b09a1f272a7fcdd7f331e3",
+    "branch": "codex/network-observation-budget-20261102",
+    "worktree": "/home/chabking/workspace/.worktrees/resource-network-observation-budget",
+    "files": 1015,
+    "manifest_sha256": "f3efd26bf71adc6a1f521351130badc147619be75f79c2ccd23782be37a994a5",
+    "archive_sha256": "ce2fcaa5041200eb2f5127e34dce413142c6dbffc4b309011b3488f1280f1f9d",
+    "manifest": "final-source-manifest.json",
+    "implementation_stage_was_unpublished": true
+  },
+  "execution": {
+    "host": "fedora",
+    "go": "go1.26.10",
+    "sqlc": "v1.31.1",
+    "run_root": "/home/chabking/workspace/ani-resource-service-runs/network-observation-budget-20261102.IbOHIZ15",
+    "lock": "/home/chabking/workspace/ani-network-service-runs/net05a-heavy.lock",
+    "limits": {
+      "GOMAXPROCS": 2,
+      "GOFLAGS": "-p=1",
+      "GOMEMLIMIT": "1200MiB"
+    },
+    "database": "task-owned PostgreSQL container; no shared business database writes",
+    "external_boundaries": "Kubernetes/KCN and owner RPC fixtures; real production business code and isolated PostgreSQL"
+  },
+  "behavior_verified": [
+    "Clean Deleted uses complete shared absence without renewing source time or forcing a full audit on every row.",
+    "Clean Deleted/Released retains persistent recovery deadlines, event wake-up, original identity and late dependency fences.",
+    "Closed managed attachment reuses hash/revision-validated persisted owner closure.",
+    "VM shares Pod/VNic/VNicIP lists and still verifies VM/VMI/launcher, Namespace/NAD, address identity and final system Nic cleanup.",
+    "VM controller hints wake unlabelled candidates; candidates do not establish ownership.",
+    "Absent SNAT and EIP keep known original EIP name for orphan NAT/Service checks.",
+    "Stale network preflight refuses without refreshing time; a real worker collection restores the same preflight.",
+    "Start/Restart safe stage diagnostics and fixed-cardinality REST resource request metrics."
+  ],
+  "red_green": [
+    {
+      "red": "red-tombstone",
+      "red_exit": 1,
+      "green": "green-tombstone",
+      "green_exit": 0
+    },
+    {
+      "red": "red-vm-sharing-clean-exit",
+      "red_exit": 1,
+      "green": "green-vm-and-tombstone-safety",
+      "green_exit": 0
+    },
+    {
+      "red": "red-preflight",
+      "red_exit": 1,
+      "green": "green-preflight",
+      "green_exit": 0
+    },
+    {
+      "red": "red-metrics",
+      "red_exit": 1,
+      "green": "affected-packages",
+      "green_exit": 0
+    },
+    {
+      "red": "red-network-preflight",
+      "red_exit": 1,
+      "green": "green-snat-and-preflight-recovery",
+      "green_exit": 0
+    },
+    {
+      "red": "red-snat-missing-eip",
+      "red_exit": 1,
+      "green": "green-snat-and-preflight-recovery",
+      "green_exit": 0
+    }
+  ],
+  "static_and_package_checks": [
+    {
+      "name": "affected-vet",
+      "command": [
+        "go",
+        "vet",
+        "./internal/biz/network",
+        "./internal/data/network",
+        "./internal/service/vm",
+        "./cmd/ani-resource-service"
+      ],
+      "exit_code": 0,
+      "seconds": 6.426
+    },
+    {
+      "name": "service-build",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        "/home/chabking/workspace/ani-resource-service-runs/network-observation-budget-20261102.IbOHIZ15/bin/ani-resource-service",
+        "./cmd/ani-resource-service"
+      ],
+      "exit_code": 0,
+      "seconds": 29.677
+    },
+    {
+      "name": "ownership-boundaries",
+      "command": [
+        "./scripts/verify-boundaries"
+      ],
+      "exit_code": 0,
+      "seconds": 9.314
+    },
+    {
+      "name": "sqlc-reproducibility",
+      "command": [
+        "/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/sqlc",
+        "generate"
+      ],
+      "exit_code": 0,
+      "changed": []
+    }
+  ],
+  "affected_default_packages": {
+    "exit_code": 0,
+    "packages": [
+      "internal/biz/network",
+      "internal/data/network",
+      "internal/service/vm",
+      "cmd/ani-resource-service"
+    ],
+    "log": "affected-packages.log",
+    "integration_database": "unset for this check; database tests skipped here and run explicitly below"
+  },
+  "existing_pg_regressions": {
+    "original_changed_source": {
+      "pass": 23,
+      "fail": 17,
+      "skip": 1,
+      "log": "affected-pg-regressions.log"
+    },
+    "baseline": {
+      "name": "baseline-affected-pg-regressions",
+      "command": [
+        "go",
+        "test",
+        "./internal/data/network",
+        "-run",
+        "^(TestAttachment.*|TestManagedAttachmentPG.*|TestVMAttachmentPG.*|TestVMBlockedAttachmentPG.*|TestNET05A.*|TestEgress(PostgresLifecycleIsolationAndPermanentReplay|UnknownCreateRecoveryAndFencing|UnderlayPlatformOccupancyAndRetirement|UnknownUpdateKeepsOccupancyAndRecoversExactDesiredState|FinishesFreshAuditAfterConsecutiveWatchBoundaries|RefreshesInvalidAuditWithoutLosingAppliedFacts)|TestLBRefreshesInvalidAuditAndStillRejectsReusedBackendIdentity)$",
+        "-count=1",
+        "-json",
+        "-timeout",
+        "3m"
+      ],
+      "exit_code": 1,
+      "seconds": 49.806,
+      "top_level_tests": {
+        "pass": 23,
+        "fail": 17,
+        "skip": 1
+      }
+    },
+    "external_fixture_correction": "Pre-existing standard Active tenant Namespace and fixed original UID supplied only at external provider boundary; no production checks or original assertions relaxed.",
+    "corrected_passes": 37,
+    "corrected_remaining_passes": 4,
+    "capacity_test": "TestNET05ACapacity explicitly skipped; fixed remote capacity run not requested",
+    "runs": [
+      {
+        "name": "affected-pg-regressions-fixtures-corrected",
+        "command": [
+          "go",
+          "test",
+          "./internal/data/network",
+          "-run",
+          "^(TestAttachment.*|TestManagedAttachmentPG.*|TestVMAttachmentPG.*|TestVMBlockedAttachmentPG.*|TestNET05A.*|TestEgress(PostgresLifecycleIsolationAndPermanentReplay|UnknownCreateRecoveryAndFencing|UnderlayPlatformOccupancyAndRetirement|UnknownUpdateKeepsOccupancyAndRecoversExactDesiredState|FinishesFreshAuditAfterConsecutiveWatchBoundaries|RefreshesInvalidAuditWithoutLosingAppliedFacts)|TestKCAdapterExecutesTheVPCContractThroughHTTP|TestLBRefreshesInvalidAuditAndStillRejectsReusedBackendIdentity)$",
+          "-count=1",
+          "-json",
+          "-timeout",
+          "3m"
+        ],
+        "exit_code": 1,
+        "seconds": 85.783,
+        "top_level_tests": {
+          "pass": 37,
+          "skip": 1,
+          "fail": 4
+        }
+      },
+      {
+        "name": "observation-pg-fixtures-corrected",
+        "command": [
+          "go",
+          "test",
+          "./internal/data/network",
+          "-run",
+          "^TestNET05A(NotificationsDuringLeasePreservePendingAndPublicVersion|StormCannotBypassBackoffOrCrossTenant|OldCacheAfterNewClaimCannotRegressOrCompleteNotification|FairDueClaimsAcrossKindsTenantsAndParents)$",
+          "-count=1",
+          "-json",
+          "-timeout",
+          "90s"
+        ],
+        "exit_code": 0,
+        "seconds": 21.903,
+        "top_level_tests": {
+          "pass": 4
+        }
+      }
+    ]
+  },
+  "preserved_setup_failures": [
+    "red-vm-sharing: obsolete missing standard Namespace fixture, not a valid RED.",
+    "red-vm-sharing-fixture-corrected: observed repeated LIST failure, followed by cleanup-order timeout; clean-exit RED retained separately.",
+    "green-new-network: two fake list reactors lacked resourceVersion; corrected only external list metadata, subsequent same assertions passed."
+  ],
+  "artifacts": {
+    "local_directory": "/home/chabking/.codex/artifacts/resource-network-503-20261102/implementation",
+    "logs_directory": "/home/chabking/.codex/artifacts/resource-network-503-20261102/implementation/checks",
+    "raw_log_index": "checks/evidence-index.json"
+  },
+  "not_verified": [
+    "New image build, push or deployment.",
+    "Live request-rate improvement and VM business acceptance using this new fix.",
+    "Exact cause of the historical generic 503 responses.",
+    "Capacity load test and real network traffic."
+  ],
+  "source_check_note": "Static production inputs stayed unchanged during later test-only Namespace fixture repairs. Final source file hashes are recorded in the accompanying manifest.",
+  "database_cleanup": {
+    "container_id": "0fa277e05f8c52b71775be367a3b3d714fa7f6a957c8e39de2b2f3aa1b3a803f",
+    "verified_task_label": "network-observation-budget-20261102",
+    "removal_exit": 0,
+    "timestamp": "2026-11-02T04:23:44.883050+00:00"
+  },
+  "final_source_verification": {
+    "verified_files": 1015,
+    "delta": [],
+    "changes_after_static_checks": [
+      "docs/execution/status.md",
+      "internal/data/network/attachment_vm_recovery_integration_test.go",
+      "internal/data/network/egress_integration_test.go",
+      "internal/data/network/egress_kc_integration_test.go",
+      "internal/data/network/kc_integration_test.go",
+      "internal/data/network/kc_observation_integration_test.go",
+      "internal/data/network/observation_integration_test.go"
+    ],
+    "production_inputs_unchanged": true,
+    "gofmt_exit": 0,
+    "unformatted_files": []
+  },
+  "publication_validation": {
+    "target_base": "e9cdb164e35945d4c199ad4e4bc7ab5ce4a91346",
+    "make_verify": {
+      "name": "pr-make-verify-final",
+      "command": [
+        "make",
+        "verify",
+        "TOOLS_DIR=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin"
+      ],
+      "exit_code": 0,
+      "seconds": 124.68,
+      "started_at_utc": "2026-11-02T06:29:30.194223+00:00",
+      "finished_at_utc": "2026-11-02T06:31:34.874011+00:00",
+      "source": {
+        "files": 1068,
+        "manifest_sha256": "de5d5907c436b7636780d8726c6415e23b20697c934aea98462609497995b398",
+        "archive_sha256": "dd1992b3a8596374793e3aec28c4b4c59c76bbbd7464bd3431f41ae7f801370d",
+        "base": "e9cdb164e35945d4c199ad4e4bc7ab5ce4a91346"
+      },
+      "tmpdir": "/home/chabking/nb70b",
+      "gotmpdir": "/home/chabking/nb70b",
+      "changed_input_files": [],
+      "log_sha256": "500d39392afde44e72916b95b1456788a96a9e86ff11e3beacbbe652b41ecb7d"
+    },
+    "preserved_failure": {
+      "name": "pr-make-verify",
+      "command": [
+        "make",
+        "verify",
+        "TOOLS_DIR=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin"
+      ],
+      "exit_code": 2,
+      "seconds": 208.465,
+      "started_at_utc": "2026-11-02T06:20:36.938076+00:00",
+      "finished_at_utc": "2026-11-02T06:24:05.403555+00:00",
+      "source": {
+        "files": 1068,
+        "manifest_sha256": "de5d5907c436b7636780d8726c6415e23b20697c934aea98462609497995b398",
+        "archive_sha256": "dd1992b3a8596374793e3aec28c4b4c59c76bbbd7464bd3431f41ae7f801370d",
+        "base": "e9cdb164e35945d4c199ad4e4bc7ab5ce4a91346"
+      },
+      "changed_input_files": [],
+      "tmpdir": "/tmp/nbp-6pl9rph4",
+      "database_env": "unset; explicit PG verification retained from implementation stage",
+      "log_sha256": "b4da1cfb969b2bf1264e7db2021ef2706f456447d6443ab4dda2ba86591ef0c0"
+    },
+    "environment_failure": "Go test used the long GOTMPDIR rather than the intended short TMPDIR; error-only diagnostic overlay exposed Unix socket bind invalid argument. Unmodified original test passed after setting both GOTMPDIR and TMPDIR to the same short task-owned disk directory.",
+    "diagnostic_was_not_source_change": true,
+    "temporary_cleanup": {
+      "removed_owned_paths": [
+        "/tmp/nbp-6pl9rph4",
+        "/tmp/na65f",
+        "/home/chabking/nb70b",
+        "/home/chabking/workspace/ani-resource-service-runs/network-observation-budget-20261102.IbOHIZ15/socket-main-diagnostic.go",
+        "/home/chabking/workspace/ani-resource-service-runs/network-observation-budget-20261102.IbOHIZ15/socket-diagnostic-overlay.json"
+      ]
+    },
+    "existing_pg_evidence": "Retained from implementation stage; new main does not change modified Network code.",
+    "source_change_after_gate": "Only this execution record and its status paragraph are updated after the verified snapshot."
+  }
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"testing"
 	"time"
 )
@@ -17,6 +18,13 @@ func TestNET05ANotificationsDuringLeasePreservePendingAndPublicVersion(t *testin
 			ctx := context.Background()
 			n := newNetwork(t, p, time.Minute)
 			tenant := uuid.NewString()
+			identity := tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: uuid.NewString()}
+			p.ConfigureTenantNamespaceResolver(func(_ context.Context, requested string) (tenantnamespace.Identity, error) {
+				if requested != identity.TenantID {
+					return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
+				}
+				return identity, nil
+			})
 			v, e := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "notify", CIDR: "10.42.0.0/16", IdempotencyKey: "notify"})
 			if e != nil {
 				t.Fatal(e)
@@ -65,6 +73,13 @@ func TestNET05AStormCannotBypassBackoffOrCrossTenant(t *testing.T) {
 	ctx := context.Background()
 	n := newNetwork(t, p, time.Minute)
 	tenant := uuid.NewString()
+	identity := tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: uuid.NewString()}
+	p.ConfigureTenantNamespaceResolver(func(_ context.Context, requested string) (tenantnamespace.Identity, error) {
+		if requested != identity.TenantID {
+			return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
+		}
+		return identity, nil
+	})
 	v, e := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "backoff", CIDR: "10.42.0.0/16", IdempotencyKey: "backoff"})
 	if e != nil {
 		t.Fatal(e)
@@ -96,6 +111,13 @@ func TestNET05AOldCacheAfterNewClaimCannotRegressOrCompleteNotification(t *testi
 	ctx := context.Background()
 	n := newNetwork(t, p, time.Minute)
 	tenant := uuid.NewString()
+	identity := tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: uuid.NewString()}
+	p.ConfigureTenantNamespaceResolver(func(_ context.Context, requested string) (tenantnamespace.Identity, error) {
+		if requested != identity.TenantID {
+			return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
+		}
+		return identity, nil
+	})
 	v, e := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "proof", CIDR: "10.42.0.0/16", IdempotencyKey: "proof"})
 	if e != nil {
 		t.Fatal(e)
@@ -156,6 +178,16 @@ func TestNET05AFairDueClaimsAcrossKindsTenantsAndParents(t *testing.T) {
 	p, _ := database(t)
 	ctx := context.Background()
 	n := newNetwork(t, p, time.Minute)
+	// Only explicitly prepared tenants have an external Namespace identity;
+	// their original UID is stable across both parents and every later claim.
+	identities := map[string]tenantnamespace.Identity{}
+	p.ConfigureTenantNamespaceResolver(func(_ context.Context, requested string) (tenantnamespace.Identity, error) {
+		identity, ok := identities[requested]
+		if !ok {
+			return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
+		}
+		return identity, nil
+	})
 	worker := subnetWorker(t, p)
 	as := biz.NewAttachments(p, time.Minute)
 	resources := map[string]string{}
@@ -163,6 +195,7 @@ func TestNET05AFairDueClaimsAcrossKindsTenantsAndParents(t *testing.T) {
 	parents := []biz.VPC{}
 	for i := 0; i < 3; i++ {
 		tenant := uuid.NewString()
+		identities[tenant] = tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: uuid.NewString()}
 		for j := 0; j < 2; j++ {
 			v := availableVPC(t, n, worker, tenant, fmt.Sprintf("fair-%d", j))
 			parents = append(parents, v)
