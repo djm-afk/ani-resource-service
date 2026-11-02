@@ -177,6 +177,42 @@ func TestEnsureTenantPullSecretRejectsInactiveCredential(t *testing.T) {
 	}
 }
 
+func TestInferencePullSecretUsesStandardTenantNamespace(t *testing.T) {
+	caller := Caller{Kind: RuntimeCaller, Subject: "ani-inference-service", TenantID: pullSecretTestTenant}
+	base := EnsurePullSecret{PullSecretScope: PullSecretScope{TenantID: pullSecretTestTenant, ClusterID: "cluster-a", Namespace: "tenant-11111111-1111-4111-8111-111111111111", RegistryAuthority: "registry.example.test:443"}, NamespaceUID: "ns-uid"}
+	f := &pullSecretFakes{}
+	r := newPullSecretRuntime(t, f)
+	if _, err := r.EnsureTenantPullSecret(WithCaller(context.Background(), caller), base); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.names) != 1 || !f.names[0].StandardTenantNamespace || len(f.writes) != 1 || !f.writes[0].StandardTenantNamespace {
+		t.Fatalf("standard namespace identity was not fenced through write: %+v %+v", f.names, f.writes)
+	}
+	for _, mutate := range []func(*EnsurePullSecret){
+		func(in *EnsurePullSecret) { in.Namespace = "tenant-22222222-2222-4222-8222-222222222222" },
+		func(in *EnsurePullSecret) { in.Namespace = "tenant-11111111-1111-4111-8111-111111111111-inference" },
+		func(in *EnsurePullSecret) { in.NamespaceUID = "" },
+		func(in *EnsurePullSecret) { in.ClusterID = "cluster-b" },
+	} {
+		bad := base
+		mutate(&bad)
+		if _, err := r.EnsureTenantPullSecret(WithCaller(context.Background(), caller), bad); ReasonOf(err) != PermissionDenied {
+			t.Fatalf("invalid scope accepted: %+v %v", bad.PullSecretScope, err)
+		}
+	}
+	if len(f.writes) != 1 {
+		t.Fatal("invalid scope reached the writer")
+	}
+	legacy := base
+	legacy.Namespace = "ani-inference"
+	if _, err := r.EnsureTenantPullSecret(WithCaller(context.Background(), caller), legacy); err != nil {
+		t.Fatalf("legacy namespace rejected: %v", err)
+	}
+	if f.writes[1].StandardTenantNamespace {
+		t.Fatal("legacy namespace treated as tenant namespace")
+	}
+}
+
 func TestEnsureTenantPullSecretGenerationRegressionIsRejected(t *testing.T) {
 	f := &pullSecretFakes{}
 	runtime := newPullSecretRuntime(t, f)

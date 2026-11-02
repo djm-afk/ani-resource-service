@@ -48,4 +48,9 @@ credential source; missing space or wrong authority fails without initializing
 Harbor. Resource writes only the deterministic Secret; it never writes an SA.
 Namespace network ownership labels are separate from Secret labels:
 `ani.io/managed-by=ani-resource-service`, image tenant, space and generation.
-Inference retains its existing static caller branch and configuration.
+Inference's authenticated `ani-inference-service` caller can also target its
+own standard tenant namespace: Resource verifies the exact name, original UID,
+cluster allowlist and platform ownership labels, including immediately before
+the Secret write. Its configured static namespace allowlist remains available
+for existing shared-namespace services; it cannot authorize a different
+tenant's standard namespace.

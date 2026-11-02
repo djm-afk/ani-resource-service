@@ -1,5 +1,17 @@
 # Network 执行状态
 
+## Inference 租户镜像授权：合入最新主线复核（2026-11-02）
+
+合并 Resource `origin/main` 基线 `36da38ac889ebd035c145a29226c8ad6f4fbe191` 后，本任务 6 个业务/合同文件相对主线 diff SHA-256 为 `6a1e09a338a7009c9fac3bab619730b6444db3a9175d49eabed54523bb53d8b7`（本执行记录不计入）。`ssh ubuntu` 仍因主机密钥校验失败，按照本仓回退规则在 `ubuntu` 本机使用 Go 1.26.10 执行 `GOWORK=off GOMAXPROCS=2 GOFLAGS=-p=2 GOMEMLIMIT=1600MiB make verify`，使用固定 buf 1.60.0 和 sqlc 1.31.1：PASS；`go test -count=1 ./internal/biz/image ./internal/data/image`：PASS。
+
+真实集群已使用先前候选 `8c93e23` 的独立 image-only 实例，配合实际 Inference、tenant-a 登录会话经 Governance BFF 创建服务，再用该租户 AK 经 Higress 请求 `/v1/completions` 返回 200；该次先前候选的结果不能作为合并后 Resource 主服务镜像部署证明。Inference 当前仍临时连接该 image-only 实例，Resource 主服务尚未更新；新合并版本的 Resource 主服务真实部署：NOT_RUN。
+
+## Inference 标准租户 namespace 镜像授权（2026-11-02）
+
+Resource 基线 `14dcdb5589f2839e5d9566ebc7c417041b8b76f3`；业务与合同变更 diff SHA-256 `2ed065f91b4e9277ffb9442793329d2d8338a5fc6d50bfa6229e12ce587dfaae`。Inference 使用标准租户 namespace 时复用统一名称、租户标签和原 UID 校验；原共享空间 allowlist 保留。
+
+远程构建主机不可用：`ssh -F /home/chabking/.ssh/config ... ubuntu` 报配置文件不存在；默认 SSH 报 host key verification failed。按本仓允许的回退在本机 `ubuntu`、Go 1.26.10 执行 `go test ./internal/biz/image ./internal/data/image -run 'Test(InferencePullSecretUsesStandardTenantNamespace|EnsureTenantPullSecret|PullSecret|VerifyNamespace)' -count=1`：PASS。当时的隔离验证尚未覆盖完整用户链路，后续真实 BFF/AK 测试与正式部署状态见上方复核记录。
+
 ## 2026-11-02：删除终态与 VM 共享观测的请求预算修复
 
 **源码、Fedora 定向回归/真实 PG、静态检查及服务构建：PASS；新修复的发布与现场请求预算验收：NOT_RUN。** 实现基于 Resource `14dcdb5589f2839e5d9566ebc7c417041b8b76f3`，提交前同步最新 main `e9cdb164e35945d4c199ad4e4bc7ab5ce4a91346`，并核对 Governance main `e70b109a9b98baa847b09a1f272a7fcdd7f331e3`。修复集中在 Resource 内部，不改变公开 API 或数据库结构。无未决写入、活动操作或失败原因的已删除资源复用完整共享审计，干净终态的恢复周期默认 60 秒；事件唤醒、原 UID、迟到关系及未知写入围栏保留。VM 关系复用共享 Pod/VNic/VNicIP 集合，证明同时覆盖实际 VM/VMI 关系及 owner snapshot，保留精确身份、系统 Nic 清理和封闭后采集边界。已释放的受管连接复用持久封闭事实；SNAT 与 EIP 均不存在时仍按原 EIP 名称检查孤立 NAT/Service。
@@ -1517,6 +1529,12 @@ Final Fedora isolated PG race/backfill group and required `make verify` are
 [operational parameters](../runbooks/tenant-namespace-uid-window.md).
 Live constraints/migration/backfill/deployment/release remain **NOT_RUN**; current
 writer identities and a live Plan.SHA256 are not yet established.
+
+## 2026-11-02: Inference tenant pull Secret isolated cluster verification
+
+Resource `origin/main` base `14dcdb5589f2839e5d9566ebc7c417041b8b76f3` plus the six implementation/contract files in this change (tracked diff SHA-256 `2ed065f91b4e9277ffb9442793329d2d8338a5fc6d50bfa6229e12ce587dfaae`; this status entry excluded) authorizes the Inference service for an existing standard tenant namespace and rechecks namespace ownership and UID at the Secret writer. The requested `/home/chabking/.ssh/config` was absent and default SSH to `ubuntu` failed host-key verification, so targeted `go test ./internal/biz/image ./internal/data/image -run 'Test(InferencePullSecretUsesStandardTenantNamespace|EnsureTenantPullSecret|PullSecret|VerifyNamespace)' -count=1` ran locally on host `ubuntu`, Go 1.26.10: PASS.
+
+On the real cluster an isolated image-only Resource harness, using actual image configuration and mTLS, successfully ensured the existing tenant's shared pull Secret for an isolated Inference control plane. The service's model download Job, PVC and KServe predictor were created in the tenant namespace; the predictor served a real completion via a direct port-forward. The cross-namespace Higress route was Accepted and ResolvedRefs. A real tenant AK call through the production Higress gateway returned 403 because the production authorization service resolves model ownership from the production Inference database, while this test service existed only in the isolated database; this is not an end-to-end gateway PASS. Governance login and management GETs returned 200. The shared KServe domain template was changed temporarily and restored after the test services were deleted. The isolated Helm releases, database and Resource harness were removed. The temporary AK was revoked; its policy remains because the API returned 409 while the retained revoked AK references it. Production Resource and Inference images were not replaced; a pre-existing shared tenant pull Secret was retained. This does not constitute production deployment or tenant provisioning automation acceptance.
 
 
 ## 2026-11-02：Sandbox 更新主线与统一租户 Namespace

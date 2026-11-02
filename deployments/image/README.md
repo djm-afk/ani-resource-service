@@ -60,7 +60,7 @@ ModelDev 访问 runtime 端口还需要 NetworkPolicy 放行和客户端证书�
 | 调用方 | 目标 namespace | Resource 侧校验 |
 |---|---|---|
 | Resource 实例 | `prefix + tenantUUID`（或请求显式合法 DNS 名） | 仅 cluster 归属；实例在本进程内推导并冻结名称 |
-| Inference | 部署期 `ANI_INFERENCE_NAMESPACE` 共享 namespace | mTLS 身份 + namespace 与 cluster 在部署 allowlist 内 + `namespace_uid` 一致 |
+| Inference | 平台标准租户 namespace；已有共享 namespace 继续按部署 allowlist | mTLS 身份 + cluster allowlist + 标准名称、原 UID 与平台租户归属标签；共享 namespace 保留原 allowlist 校验 |
 | ModelDev 训练 | `admissionfacts` 的 `EnvironmentBinding`（一租户一 namespace） | 名称、UID、`ani.io/resource-tenant-id`=<tenant>、`ani.io/managed-by` 在 binding 的 `owner_label` 允许清单内 |
 
 allowlist 与 owner_label 只来自 Resource 部署配置（`image.pull_secret_callers`），

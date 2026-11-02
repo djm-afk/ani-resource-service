@@ -90,7 +90,8 @@ func (r *Runtime) EnsureTenantPullSecret(ctx context.Context, in EnsurePullSecre
 	if r.writer == nil || r.namespaces == nil {
 		return EnsuredPullSecret{}, Fail(DependencyUnavailable, "pull secret writer not configured")
 	}
-	if err = r.guardNamespace(ctx, caller, in); err != nil {
+	standardNamespace, err := r.guardNamespace(ctx, caller, in)
+	if err != nil {
 		return EnsuredPullSecret{}, err
 	}
 	space, err := r.spaces.FindTenantSpace(ctx, in.TenantID)
@@ -132,7 +133,7 @@ func (r *Runtime) EnsureTenantPullSecret(ctx context.Context, in EnsurePullSecre
 	}
 	defer clear(plain)
 	generation, err := r.writer.EnsurePullSecret(ctx, PullSecretTarget{
-		ClusterID: in.ClusterID, Namespace: in.Namespace, NamespaceUID: in.NamespaceUID, StandardTenantNamespace: caller.Subject == "ani-modeldev-service",
+		ClusterID: in.ClusterID, Namespace: in.Namespace, NamespaceUID: in.NamespaceUID, StandardTenantNamespace: standardNamespace,
 		SecretName: name, TenantID: in.TenantID, SpaceID: space.ID,
 		RegistryAuthority: space.RegistryAuthority, Generation: info.Generation, Username: info.Username,
 	}, plain)
