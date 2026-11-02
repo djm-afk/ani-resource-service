@@ -38,6 +38,7 @@ type Service struct {
 	securityGroups biz.SecurityGroupPort
 	environment    biz.EnvironmentPort
 	native         biz.NativePort
+	runtime        biz.RuntimePort
 	config         Config
 	media          map[string]*pb.MediaReference
 	addresses      AddressReader

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -356,8 +357,9 @@ func (n *Native) observe(ctx context.Context, v biz.VM, includeStorage bool) (bi
 		ref := objectRef(vmi)
 		x.VMI = &ref
 		phase, _, _ := unstructured.NestedString(vmi.Object, "status", "phase")
-		x.State = phase
+		x.State = nativePowerState(phase)
 		x.Running = phase == "Running"
+		x.Terminal = phase == "Succeeded" || phase == "Failed"
 	}
 	if x.VMI != nil {
 		pods, z := n.client.Resource(podResource).Namespace(v.Spec.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "kubevirt.io/created-by=" + x.VMI.UID})
@@ -410,6 +412,7 @@ func (n *Native) observe(ctx context.Context, v biz.VM, includeStorage bool) (bi
 	if x.Deleted {
 		x.State = "Deleted"
 	}
+	x.ObservedAt = time.Now().UTC()
 	if !includeStorage {
 		return x, nil
 	}

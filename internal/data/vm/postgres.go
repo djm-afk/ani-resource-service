@@ -54,6 +54,16 @@ func OpenPostgres(ctx context.Context, dsn string) (*Postgres, error) {
 		p.Close()
 		return nil, fmt.Errorf("VM guest initialization schema unavailable or checksum differs")
 	}
+	body, e = migrations.Files.ReadFile("003_observation.sql")
+	if e == nil {
+		h := sha256.Sum256(body)
+		want = hex.EncodeToString(h[:])
+		e = p.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=3").Scan(&got)
+	}
+	if e != nil || got != want {
+		p.Close()
+		return nil, fmt.Errorf("VM observation schema unavailable or checksum differs")
+	}
 	return &Postgres{pool: p}, nil
 }
 func (p *Postgres) Close() { p.pool.Close() }
@@ -134,10 +144,31 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	if e != nil {
 		return e
 	}
+	body, e = migrations.Files.ReadFile("003_observation.sql")
+	if e != nil {
+		return e
+	}
+	h = sha256.Sum256(body)
+	checksum = hex.EncodeToString(h[:])
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=3").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if _, e = tx.Exec(ctx, string(body)); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(3,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM observation migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
 	if _, e = tx.Exec(ctx, "GRANT SELECT ON vm.schema_version TO "+pgx.Identifier{role}.Sanitize()); e != nil {
 		return e
 	}
 	if _, e = tx.Exec(ctx, "GRANT SELECT,INSERT,UPDATE,DELETE ON vm.virtual_machines,vm.disks,vm.operations,vm.snapshots,vm.guest_initializations TO "+pgx.Identifier{role}.Sanitize()); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(ctx, "GRANT SELECT,INSERT,UPDATE,DELETE ON vm.observation_work TO "+pgx.Identifier{role}.Sanitize()); e != nil {
 		return e
 	}
 	return tx.Commit(ctx)
@@ -350,7 +381,14 @@ const vmDisplayState = `CASE
  WHEN lower(coalesce(current_configuration->>'Observed',''))='running'
       AND lower(coalesce(current_configuration->>'Desired',''))='running' THEN 'running'
  WHEN lower(coalesce(current_configuration->>'Observed','')) IN ('stopped','succeeded')
-      AND lower(coalesce(current_configuration->>'Desired',''))='stopped' THEN 'stopped'
+      AND EXISTS (SELECT 1 FROM vm.operations power_operation
+        WHERE power_operation.tenant_id=virtual_machines.tenant_id
+          AND power_operation.vm_id=virtual_machines.id
+          AND power_operation.state IN ('accepted','running','unknown')
+          AND (power_operation.action IN ('start','restart')
+            OR (power_operation.action='/vm.v1.VMService/AcceptCreate'
+              AND lower(coalesce(current_configuration->>'Desired',''))='running'))) THEN 'starting'
+ WHEN lower(coalesce(current_configuration->>'Observed','')) IN ('stopped','succeeded') THEN 'stopped'
  WHEN lower(coalesce(current_configuration->>'Observed',''))='running'
       AND lower(coalesce(current_configuration->>'Desired',''))='stopped' THEN 'stopping'
  WHEN lower(coalesce(current_configuration->>'Desired',''))='running' THEN 'starting'
@@ -475,6 +513,13 @@ func (p *Postgres) save(ctx context.Context, o biz.Operation, v biz.VM, release 
 	if current.Network.SnapshotRevision > v.Network.SnapshotRevision {
 		v.Network.Consumer = current.Network.Consumer
 		v.Network.SnapshotRevision = current.Network.SnapshotRevision
+	}
+	// Independent observation may have completed after this operation claimed
+	// its VM snapshot. A failure preserves the last evidence time, so an equal
+	// timestamp also cannot authorize an old checkpoint to replace current facts.
+	if current.Native == v.Native && !current.ObservedAt.Before(v.ObservedAt) {
+		v.Observed, v.Reason, v.ObservedAt = current.Observed, current.Reason, current.ObservedAt
+		v.Addresses = current.Addresses
 	}
 	o.ObservedAt = time.Now().UTC()
 	tag, e := tx.Exec(ctx, `UPDATE vm.operations SET state=$4,record=$5,lease_token=CASE WHEN $7 THEN NULL ELSE lease_token END,lease_until=CASE WHEN $7 THEN NULL ELSE lease_until END,next_attempt_at=now()+interval '1 second',updated_at=now() WHERE tenant_id=$1 AND id=$2 AND vm_id=$3 AND lease_token=$6 AND lease_until>now()`, o.TenantID, o.ID, o.VMID, o.State, encode(o), o.Lease, release)

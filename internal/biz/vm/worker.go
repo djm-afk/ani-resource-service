@@ -248,7 +248,13 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 		return w.native.Start(ctx, *v)
 	case "stop", "force-stop":
 		v.Desired = "Stopped"
-		if x.Stopped && x.VMI == nil && x.Launcher == nil && len(v.Addresses) == 0 {
+		if e != nil {
+			// Address withdrawal must be confirmed by Network, rather than
+			// manufacturing an empty address set from a dependency failure.
+			return e
+		}
+		ended := x.Terminal && x.VMI != nil && x.VMI.UID != "" && x.VM.UID == v.Native.UID && v.Native.UID != ""
+		if ((x.Stopped && x.VMI == nil) || ended) && x.Launcher == nil && len(x.StateChangeRequests) == 0 && len(v.Addresses) == 0 {
 			o.State = "succeeded"
 			o.Pending = nil
 			return nil

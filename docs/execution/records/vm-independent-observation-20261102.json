@@ -1,0 +1,213 @@
+{
+  "scope": "Independent VM power-state observation after operations, Manual terminal VMI semantics, bounded reads and visible-page status following",
+  "resource_base": "36da38ac889ebd035c145a29226c8ad6f4fbe191",
+  "console_base": "3daab52aaa6f656b1ee9edc4f0f374a7ba672301",
+  "implementation_snapshot_files_sha256": "75b30e4a6c956fd05b330c92b7467da4075944275a2107f6eb25d925798299ea",
+  "resource_worktree": "/home/chabking/workspace/.worktrees/resource-vm-observation",
+  "console_worktree": "/home/chabking/workspace/.worktrees/console-vm-status-follow",
+  "execution_host": "fedora",
+  "go_toolchain": "go1.26.10",
+  "resource_checks": {
+    "targeted-final": {
+      "exit_code": 0,
+      "seconds": 22.63643169403076,
+      "phase": "targeted-final",
+      "base": "36da38ac889ebd035c145a29226c8ad6f4fbe191",
+      "files_sha256": "bc4fc045e642aefc75aca52f804536e6af06cdf0dbb56e554fbdb7c604391358",
+      "command": [
+        "go",
+        "test",
+        "-tags=instanceintegration",
+        "./internal/biz/vm",
+        "./internal/data/vm",
+        "./internal/server",
+        "-run",
+        "TestVMObservation|TestVMIndependentObservation|TestVMBlockedObservation|TestVMSharedState|TestNativeManual|TestNativeExplicit|TestStopConverges|TestTerminalStop|TestUnknownStartWithRetained|TestRuntimeReader|TestVMCurrentAddresses",
+        "-count=1",
+        "-timeout=5m"
+      ],
+      "host": "fedora"
+    },
+    "filter": {
+      "exit_code": 0,
+      "seconds": 10.497586488723755,
+      "phase": "filter",
+      "base": "36da38ac889ebd035c145a29226c8ad6f4fbe191",
+      "files_sha256": "75b30e4a6c956fd05b330c92b7467da4075944275a2107f6eb25d925798299ea",
+      "command": [
+        "go",
+        "test",
+        "-tags=instanceintegration",
+        "./internal/data/vm",
+        "-run",
+        "^(TestVMListFilter|TestVMIndependentObservationAfterSuccessfulStart)",
+        "-count=1",
+        "-timeout=3m"
+      ],
+      "host": "fedora"
+    },
+    "verify": {
+      "exit_code": 0,
+      "seconds": 151.52722120285034,
+      "phase": "verify",
+      "base": "36da38ac889ebd035c145a29226c8ad6f4fbe191",
+      "files_sha256": "75b30e4a6c956fd05b330c92b7467da4075944275a2107f6eb25d925798299ea",
+      "command": [
+        "make",
+        "verify",
+        "TOOLS_DIR=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin"
+      ],
+      "host": "fedora"
+    },
+    "race": {
+      "exit_code": 0,
+      "seconds": 101.0137939453125,
+      "phase": "race",
+      "base": "36da38ac889ebd035c145a29226c8ad6f4fbe191",
+      "files_sha256": "75b30e4a6c956fd05b330c92b7467da4075944275a2107f6eb25d925798299ea",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./internal/data/vm",
+        "./internal/server",
+        "-run",
+        "TestVMSharedState|TestRuntimeRead|TestVMObservationDependency",
+        "-count=1",
+        "-timeout=5m"
+      ],
+      "host": "fedora"
+    }
+  },
+  "console_checks": {
+    "refresh-green": 0,
+    "oxlint-targeted": 0,
+    "lint": 0,
+    "fmt": 0,
+    "fmt-check": 0,
+    "typecheck": 0,
+    "diff-check": 0,
+    "gitnexus-detect": 0,
+    "unknown-actions-green": 0,
+    "actions-oxlint-targeted": 0,
+    "actions-lint": 0,
+    "actions-fmt": 0,
+    "actions-fmt-check": 0,
+    "actions-typecheck": 0,
+    "actions-diff-check": 0,
+    "actions-gitnexus-detect": 0
+  },
+  "console_refresh_scope": "Real TanStack QueryObserver; actual page refresh configuration extracted; query transport is a counting external boundary double, not deployed API or browser.",
+  "console_unknown_actions": {
+    "behavior": "Unknown retains explicit confirmed start, adds explicit normal shutdown through existing modal, allows confirmed restart and console fresh validation. Existing closed, pending, open-modal and destructive version confirmation guards retained. Known Stopped and Failed restrictions retained.",
+    "red_exit": 1,
+    "green_exit": 0,
+    "passing_cases": 9,
+    "harness_scope": "Real useVMActions, VmShutdownModal, useVMMutation production modules; React/Query runtime adapters and API boundary replaced; no deployed API or browser acceptance."
+  },
+  "external_boundaries": "VM business worker, PostgreSQL persistence and tenant checks are real; Kubernetes and frontend transports use controlled external-boundary fixtures. No deployed-API or guest acceptance is claimed.",
+  "behavior_evidence": [
+    "Create/Start succeeds, then independent guest-stop observation updates Stopped without changing Desired, version or last operation",
+    "Observed Stopped remains visible in stopped filter after completed Start; pending power operations remain starting",
+    "Blocked observation does not block AcceptCommand or the operation worker",
+    "100 shared-state reads add zero Kubernetes requests; old LIST cannot overwrite Watch; expired evidence and watch/RBAC failures remain Unknown",
+    "Runtime/QGA reads leave command request tokens available; concurrent runtime reads are bounded",
+    "Unknown UI state retains explicit power and console actions with original confirmation and identity checks"
+  ],
+  "failures_retained": [
+    "native-red",
+    "worker-red",
+    "filter-red",
+    "targeted-first: JSONB whitespace assertion corrected without weakening contents",
+    "targeted: client-go WatchList capability adapter fixed",
+    "verify-canceled: inherited database environment unintentionally expanded default tests; task-owned process stopped",
+    "verify-socket-path-failure: real GOTMPDIR/TMPDIR reduced from 26 to 20 characters; original socket regression and full make verify then passed with no source change"
+  ],
+  "raw_resource_receipts": "/home/chabking/.codex/artifacts/resource-vm-observation-20261102/receipts",
+  "raw_console_receipt": "/home/chabking/.codex/artifacts/vm-state-follow-20261102/console/receipt.json",
+  "cleanup": {
+    "task_postgres_removed": true,
+    "private_dsn_and_password_files_removed": true,
+    "temporary_directories_removed": [
+      "/home/chabking/v1793",
+      "/home/chabking/vmox47_hpo8"
+    ],
+    "protected_vm_mutations": 0
+  },
+  "deployment_order": [
+    "Apply deployments/vm/observation-rbac.yaml",
+    "Run the existing -vm-migrate entrypoint to apply additive migrations/vm/003_observation.sql with the owner DSN and runtime role",
+    "Roll Resource and Console; verify guest shutdown and explicit power commands against the deployed APIs"
+  ],
+  "not_run": [
+    "production deployment",
+    "live guest shutdown, VM power commands and browser acceptance on the target VM",
+    "large-scale capacity benchmark"
+  ],
+  "delivery": "Resource changes prepared for commit and push to codex/vm-observation-20261102 at user request; Console is not part of this branch and remains unpublished.",
+  "documentation_added_after_validation": [
+    "docs/execution/status.md",
+    "docs/execution/records/vm-independent-observation-20261102.json"
+  ],
+  "deployment_attempt": {
+    "resource_image_built": true,
+    "source_snapshot": "sha256:437b1535610b650ecbdc31751b8451d03781e2a8013c332f69483f77a8688f30",
+    "build_recipe_fix": "Explicitly include existing internal/data/sandbox/filehelper/workspace.py in the Resource build snapshot; no Sandbox business code changed",
+    "build_recipe_tests": {
+      "red_exit_code": 1,
+      "green_exit_code": 0,
+      "green_tests": 10
+    },
+    "migration": "NOT_RUN",
+    "rbac_apply": "NOT_RUN",
+    "resource_rollout": "NOT_RUN",
+    "console_rollout": "NOT_RUN_USER_EXCLUDED",
+    "stopped_by_user": true,
+    "image_receipt": "/home/chabking/.codex/artifacts/resource-vm-observation-20261102/resource-image/build-result-fixed.json"
+  },
+  "migration_rbac_follow_up": {
+    "authorization": "User publishes the image; agent executes VM migration and adds read-only observation RBAC only.",
+    "source_commit": "2571860c1a76305518888c712c54d3b665a60d7a",
+    "finished_at": "2026-11-02T08:39:50.633388+00:00",
+    "migration": {
+      "status": "PASS",
+      "entrypoint": "server -vm-migrate",
+      "exit_code": 0,
+      "version": 3,
+      "checksum": "d506d4ad601cd5319c71b39d29662078b7d6d079500f4444507aea19f914d8b8",
+      "registered_vms": 10,
+      "missing_registrations": 0,
+      "runtime_crud": true,
+      "runtime_schema_usage": true,
+      "intent_identity_unchanged": true,
+      "backup_toc_check_exit_code": 0,
+      "backup_sha256": "2cd31adcf31cc08686c90c0829f03d1b1226ef955def8c444f1fa12b2c0fc5aa",
+      "private_dsn_and_temporary_binary_removed": true
+    },
+    "rbac": {
+      "status": "PASS",
+      "service_account": "ani-system/ani-resource-service",
+      "clusterrole": "ani-resource-vm-observation",
+      "clusterrolebinding": "ani-resource-vm-observation-ani-system",
+      "effective_list_watch_permissions": "6/6 yes",
+      "actual_lists": "VM, VMI and Pod: PASS"
+    },
+    "image_deployment_changes": 0,
+    "vm_operations": 0,
+    "resource_rollout": "NOT_RUN_AGENT_SCOPE",
+    "live_guest_and_browser_acceptance": "NOT_RUN",
+    "merge_base_refresh": "Merged main c9ae830; production build script is identical to main; overlapping helper tests consolidated while preserving private-file exclusion coverage.",
+    "merge_validation": {
+      "host": "fedora",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/image -v",
+      "exit_code": 0,
+      "passing_tests": 9,
+      "files": {
+        "scripts/build-image.py": "92a0753a8bc2257bda9d4044ec46b9a8b9ca1b185e18ca06584639dea6516609",
+        "tests/image/test_build_image.py": "95d3e0b39dd68d8cbfd8d37ca8aebf2355aa37649d3b04c72e6572389daa5077"
+      },
+      "go_vm_source": "Unchanged from the previously verified candidate; original make verify, PostgreSQL and race results reused; full make verify not repeated after main merge.",
+      "raw_log": "/home/chabking/.codex/artifacts/resource-vm-observation-20261102/pr-merge-image-test.log"
+    }
+  }
+}

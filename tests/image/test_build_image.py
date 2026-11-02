@@ -70,6 +70,7 @@ class ImageBuildTests(unittest.TestCase):
 
     def test_build_uses_isolated_context_and_records_local_not_registry_digest(self):
         for name in ("configs/config.yaml", "internal/server/private.key",
+                     "internal/data/sandbox/filehelper/private.key",
                      "internal/server/server_test.go", ".private/token", ".git/config"):
             self.write(name, "do not send\n")
         result = self.build()
@@ -83,6 +84,7 @@ class ImageBuildTests(unittest.TestCase):
         self.assertTrue((self.context / "api/ani/network/v1/network.pb.go").is_file())
         self.assertTrue((self.context / "internal/server/server.go").is_file())
         for name in ("configs", "internal/server/private.key", "internal/server/server_test.go",
+                     "internal/data/sandbox/filehelper/private.key",
                      ".private", ".git"):
             self.assertFalse((self.context / name).exists(), name)
         self.assertTrue((self.context / "migrations/0001_initial.sql").is_file())

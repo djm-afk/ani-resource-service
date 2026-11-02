@@ -1,5 +1,13 @@
 # Network 执行状态
 
+## 2026-11-02：VM 操作结束后的独立电源观测
+
+**源码、Fedora 真实 PostgreSQL 纵向回归、Resource 完整 `make verify`、新增并发路径 race 与 Console 定向交互/lint/typecheck：PASS；部署与现场 VM/浏览器验收：NOT_RUN。** 基于 Resource main `36da38a`、Console main `3daab52`。真实业务 worker 与 PG 已跑通 Create/Start 成功→操作结束→客机关机边界事实→独立观测更新 Stopped→已停止筛选命中；Kubernetes、React/Query 与 API transport 仅在外部边界使用受控替身，不冒充现场验收。
+
+VM/VMI/Pod 使用共享 Watch 和每 30 秒完整性校验；观测只改事实，保留 Desired、业务 version、原生身份与操作。独立租约、执行循环及请求预算避免观察故障取消命令 worker；真实 PG 证明观察卡住期间命令与操作仍能完成。Manual 的 Succeeded 映射为 Stopped，显式 Start/Stop 支持保留的终态 VMI，未知写入、launcher/地址撤销与 Restore 的严格无 VMI 证明保留。详情 QGA 读取另有预算与并发上限。Console 仅可见时每 15 秒刷新，Unknown 保留显式电源/控制台入口，由后端现场校验。
+
+本轮仅交付 Resource 分支；Console 修改未提交、未发布。Resource 镜像已在 Fedora 构建，镜像测试 10 项及实际构建通过。后续基于最新 main `c9ae830` 合并，复用主线已合入的同一打包修复，不修改 Sandbox 业务代码；冲突测试合并为 9 项并在 Fedora 定向通过，VM Go 源码未变，复用原有完整/PG/race 结果。按用户后续授权，2026-11-02 16:39 CST 已用提交 `2571860` 的原生 `-vm-migrate` 入口完成增量 003，校验和一致、10/10 既有 VM 回填、运行角色权限及原 intent/native identity 保持检查通过；VM schema 备份及 TOC 校验完成。只读 Watch RBAC 已应用，VM/VMI/Pod 六项 List/Watch 授权及三种实际 List 通过。镜像由用户发布，本任务未滚动更新服务，现场关机/电源操作与浏览器验收仍为 NOT_RUN。测试独占 PG、密码文件和临时迁移程序已清理，现场受保护 VM 本轮无操作。实际命令、固定源码、原始失败及验收边界见[本次回执](records/vm-independent-observation-20261102.json)。
+
 ## 2026-11-02：Sandbox 镜像打包与历史验收记录整理
 
 以 Resource main `36da38ac889ebd035c145a29226c8ad6f4fbe191` 为基线，保留主线统一租户 Namespace 和 Sandbox 实现，补入旧工作区遗漏的 2026-10-30 现场请求/响应记录。生产镜像的隔离构建上下文补入 Go `embed` 所需的 `internal/data/sandbox/filehelper/workspace.py`，避免最新 Sandbox 源码镜像编译失败。构建脚本与测试的变更和先前成功构建的 dirty 快照一致；该快照基线为 `36da38a`，快照 SHA-256 `2e1b1deef0b871f8248f894259275124da3ea9afadffe6bdc3c66c8cb503ab02`，本机镜像 ID `sha256:ff55765ffe1fd12189cabbe43e561020bdca1443df74e1ffa71975336ea93df1`，未推送、未部署。

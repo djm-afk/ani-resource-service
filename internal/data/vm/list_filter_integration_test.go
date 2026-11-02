@@ -117,3 +117,65 @@ func TestVMListFilterIntegration(t *testing.T) {
 		t.Fatalf("oversized page must be rejected: %v", e)
 	}
 }
+
+func TestVMListFilterSeparatesGuestShutdownFromPendingStart(t *testing.T) {
+	ctx := context.Background()
+	db := testenv.NewDatabase(t)
+	if err := Migrate(ctx, db.Owner.Config().ConnString(), db.RuntimeRole); err != nil {
+		t.Fatal(err)
+	}
+	p, err := OpenPostgres(ctx, db.RuntimeDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	tenant := uuid.NewString()
+	cases := []struct {
+		name, desired, observed, action, operation, display string
+	}{
+		{"GuestShutdownSucceeded", "Running", "Stopped", "start", "succeeded", "stopped"},
+		{"GuestShutdownFailed", "Running", "Stopped", "start", "failed", "stopped"},
+		{"ListStartingAccepted", "Stopped", "Stopped", "start", "accepted", "starting"},
+		{"ListStartingRunning", "Running", "Stopped", "start", "running", "starting"},
+		{"ListStartingCreate", "Running", "Stopped", biz.CreateAction, "running", "starting"},
+		{"ListStartingRestart", "Running", "Stopped", "restart", "unknown", "starting"},
+		{"NativeUnknown", "Running", "Unknown", "start", "succeeded", "starting"},
+		{"CreateWithoutAutostart", "Stopped", "Stopped", biz.CreateAction, "running", "stopped"},
+	}
+	for _, tc := range cases {
+		id, op := uuid.NewString(), uuid.NewString()
+		v := biz.VM{TenantID: tenant, ID: id, Name: tc.name, Version: 1, CreateOperationID: uuid.NewString(), LastOperationID: op, Desired: tc.desired, Observed: tc.observed}
+		tx, err := p.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO vm.virtual_machines(tenant_id,id,create_operation_id,request_digest,spec_digest,initial_spec,current_configuration,version) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,1)`, tenant, id, v.CreateOperationID, strings.Repeat("a", 64), strings.Repeat("b", 64), encode(v)); err != nil {
+			tx.Rollback(ctx)
+			t.Fatal(err)
+		}
+		if err = insertOp(ctx, tx, biz.Operation{TenantID: tenant, VMID: id, ID: op, Action: tc.action, Key: op, RequestDigest: strings.Repeat("c", 64), Intent: []byte(`{}`), IntentVersion: 1, State: tc.operation}); err != nil {
+			tx.Rollback(ctx)
+			t.Fatal(err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items, total, err := p.List(ctx, tenant, biz.ListFilter{State: tc.display, Keyword: tc.name})
+			if err != nil || total != 1 || len(items) != 1 || items[0].Desired != tc.desired || items[0].Observed != tc.observed {
+				t.Fatalf("%s/%s incorrectly classified: total=%d items=%+v err=%v", tc.observed, tc.operation, total, items, err)
+			}
+			if tc.display != "stopped" {
+				items, total, err = p.List(ctx, tenant, biz.ListFilter{State: "stopped", Keyword: tc.name})
+				if err != nil || total != 0 || len(items) != 0 {
+					t.Fatalf("unknown or pending start was reported stopped: total=%d items=%+v err=%v", total, items, err)
+				}
+			}
+		})
+	}
+	if items, total, err := p.List(ctx, uuid.NewString(), biz.ListFilter{State: "stopped"}); err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("stopped filter crossed tenant scope: total=%d items=%+v err=%v", total, items, err)
+	}
+}

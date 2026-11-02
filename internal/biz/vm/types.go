@@ -211,10 +211,14 @@ type Observation struct {
 	VM                        ObjectRef
 	VMI, Launcher             *ObjectRef
 	Running, Stopped, Deleted bool
-	State, Reason             string
-	Volumes                   []Disk
-	BackendStates             []BackendState
-	StateChangeRequests       []string
+	// Terminal is an owned VMI whose runtime has exited. Manual VMs can
+	// retain this object; it is not the stronger Stopped cleanup proof.
+	Terminal            bool
+	ObservedAt          time.Time
+	State, Reason       string
+	Volumes             []Disk
+	BackendStates       []BackendState
+	StateChangeRequests []string
 }
 type NativePort interface {
 	ValidateSource(context.Context, Source) error

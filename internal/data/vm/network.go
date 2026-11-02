@@ -53,6 +53,9 @@ func (n *Network) attachment(ctx context.Context, v biz.VM) (network.Attachment,
 	return a, nil
 }
 func (n *Network) CurrentAddresses(ctx context.Context, v biz.VM) ([]biz.Address, error) {
+	if v.Closing || v.Observed != "Running" {
+		return nil, nil
+	}
 	a, e := n.attachment(ctx, v)
 	if e != nil {
 		return nil, e
@@ -85,6 +88,9 @@ func (n *Network) Observe(ctx context.Context, v biz.VM, x biz.Observation) ([]b
 		}
 	}
 	if !x.Running {
+		if (x.Stopped || x.Terminal) && len(a.VMCurrentAddresses) != 0 {
+			return nil, biz.ErrDependency
+		}
 		return nil, nil
 	}
 	return n.CurrentAddresses(ctx, v)
@@ -121,7 +127,14 @@ func (n *Network) GetVMNetworkSubmission(ctx context.Context, a network.Attachme
 	if v.Network.AttachmentID != a.ID || v.Network.SubmissionID != a.SubmissionID || v.Network.Generation != a.Generation {
 		return network.ConsumerSubmission{}, biz.ErrDependency
 	}
-	x, e := n.native.Observe(ctx, v)
+	var x biz.Observation
+	// Ordinary ownership snapshots need runtime identity only. Final closure
+	// retains the full direct lifecycle observation and storage cleanup checks.
+	if runtime, ok := n.native.(biz.ConsoleNativePort); ok && !v.Closing {
+		x, e = runtime.ObserveConsole(ctx, v)
+	} else {
+		x, e = n.native.Observe(ctx, v)
+	}
 	if e != nil {
 		return network.ConsumerSubmission{}, e
 	}

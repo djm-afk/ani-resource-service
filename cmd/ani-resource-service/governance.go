@@ -222,6 +222,9 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if vms != nil && vms.console != nil {
 		servers = append(servers, vms.console)
 	}
+	if vms != nil {
+		servers = append(servers, vms.observation, vms.observationWorker)
+	}
 	if instances != nil {
 		servers = append(servers, instances.execution, instances.terminal)
 	}

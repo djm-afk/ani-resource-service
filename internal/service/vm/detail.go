@@ -9,6 +9,7 @@ import (
 )
 
 func (s *Service) SetRelationsReader(r biz.RelationsPort) { s.relations = r }
+func (s *Service) SetRuntimeReader(r biz.RuntimePort)     { s.runtime = r }
 func referenceWire(r biz.ResourceReference) *pb.ResourceReference {
 	return &pb.ResourceReference{Id: r.ID, Name: r.Name, State: r.State}
 }
@@ -25,9 +26,13 @@ func (s *Service) projectDetail(ctx context.Context, v biz.VM) (*pb.VirtualMachi
 		}
 	}
 	value := biz.Runtime{State: "UNAVAILABLE", AgentState: "UNKNOWN", FilesystemsState: "NOT_QUERIED"}
+	reader := s.runtime
+	if reader == nil {
+		reader, _ = s.native.(biz.RuntimePort)
+	}
 	if v.Native.UID == "" {
 		value.State = "NOT_RUNNING"
-	} else if reader, ok := s.native.(biz.RuntimePort); ok {
+	} else if reader != nil {
 		value, err = reader.ReadRuntime(ctx, v)
 		if err != nil {
 			// A runtime dependency must not hide the persisted VM detail. Drop

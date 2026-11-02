@@ -39,7 +39,7 @@ func withConsoleTablet(inputs []any) ([]any, bool, error) {
 }
 
 // Existing templates gain an absolute pointer only through a normal Start after
-// fresh observation proves no VMI, launcher, or outstanding native request.
+// fresh observation proves no live VMI, launcher, or outstanding native request.
 func (n *Native) ensureConsoleTablet(ctx context.Context, v biz.VM) error {
 	if v.Closing {
 		return biz.ErrBusy
@@ -79,7 +79,7 @@ func (n *Native) ensureConsoleTablet(ctx context.Context, v biz.VM) error {
 	if observation.VM.UID != v.Native.UID {
 		return biz.ErrOwnership
 	}
-	if !observation.Stopped || observation.VMI != nil || observation.Launcher != nil || len(observation.StateChangeRequests) != 0 {
+	if (!observation.Stopped && !observation.Terminal) || observation.Launcher != nil || len(observation.StateChangeRequests) != 0 {
 		return biz.ErrBusy
 	}
 	if !changed {

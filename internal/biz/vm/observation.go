@@ -1,0 +1,75 @@
+package vm
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// ObservationWork owns a read-only observation lease, independently from the
+// lease of any user operation. Generation fences notifications arriving while
+// an observation is in flight; Version and Native fence newer VM intent.
+type ObservationWork struct {
+	TenantID, VMID, Lease string
+	LeaseUntil, StartedAt time.Time
+	Generation, Version   int64
+	Native                ObjectRef
+	Closing               bool
+}
+
+type ObservationRepository interface {
+	ClaimObservation(context.Context, string, time.Duration) (ObservationWork, VM, error)
+	SaveObservation(context.Context, ObservationWork, Observation, error) error
+}
+
+// ObservationSource exposes only state reads. It cannot mutate native objects,
+// prepare networking, or advance a user operation.
+type ObservationSource interface {
+	ObserveState(context.Context, VM) (Observation, error)
+}
+
+// ObservationNotifier wakes only previously registered VMs. Notifications do
+// not create resources and cannot bypass the durable failure backoff.
+type ObservationNotifier interface {
+	NotifyObservation(context.Context, ObjectRef) error
+}
+
+// ObservationRescanNotifier is the bounded recovery path after a shared LIST
+// or queue overflow. It wakes durable registrations, never creates VM rows.
+type ObservationRescanNotifier interface {
+	NotifyAllObservations(context.Context) error
+}
+
+type Observer struct {
+	repo   ObservationRepository
+	source ObservationSource
+}
+
+func NewObserver(repo ObservationRepository, source ObservationSource) (*Observer, error) {
+	if repo == nil || source == nil {
+		return nil, ErrInvalid
+	}
+	return &Observer{repo: repo, source: source}, nil
+}
+
+func (o *Observer) Step(ctx context.Context) (bool, error) {
+	work, v, err := o.repo.ClaimObservation(ctx, uuid.NewString(), 15*time.Second)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	observed, readErr := o.source.ObserveState(readCtx, v)
+	cancel()
+	// Dependency failures belong to this durable observation job. They must not
+	// stop the service supervisor or cancel an independent operation worker.
+	err = o.repo.SaveObservation(ctx, work, observed, readErr)
+	if errors.Is(err, ErrVersion) || errors.Is(err, ErrLease) {
+		return true, nil
+	}
+	return true, err
+}

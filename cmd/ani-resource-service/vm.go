@@ -31,10 +31,13 @@ type vmSettings struct {
 	Networks                                                []networkdata.ManagedVMNAD
 }
 type vmComponents struct {
-	repo    *data.Postgres
-	service *service.Service
-	worker  *biz.Worker
-	console *server.InstanceTerminalServer
+	repo              *data.Postgres
+	service           *service.Service
+	worker            *biz.Worker
+	observer          *biz.Observer
+	observationWorker *server.VMObservationServer
+	observation       *data.StateObservation
+	console           *server.InstanceTerminalServer
 }
 
 func (c *vmComponents) Close() {
@@ -152,6 +155,11 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 		return nil, nil, e
 	}
 	handler.SetAddressReader(networkPort)
+	runtimeReader, e := data.NewRuntimeReader(clientConfig)
+	if e != nil {
+		return nil, nil, e
+	}
+	handler.SetRuntimeReader(runtimeReader)
 	handler.SetRelationsReader(data.NewDetailRelations(repository))
 	if instances != nil && instances.service != nil {
 		instances.service.SetVMMetricScope(func(ctx context.Context, tenant, id string) (string, string, bool, error) {
@@ -170,6 +178,15 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 		return nil, nil, e
 	}
 	component := &vmComponents{repo: repo, service: handler, worker: worker}
+	component.observation, e = data.NewStateObservation(clientConfig, repo)
+	if e != nil {
+		return nil, nil, e
+	}
+	component.observer, e = biz.NewObserver(repo, component.observation)
+	if e != nil {
+		return nil, nil, e
+	}
+	component.observationWorker = server.NewVMObservationServer(component.observer, slog.Default(), time.Second)
 	if instances != nil {
 		instances.terminal.RegisterVMConsole(handler)
 	} else {

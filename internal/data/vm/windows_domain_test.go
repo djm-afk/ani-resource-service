@@ -181,7 +181,7 @@ func TestNativeWindowsDomainStartRejectsExplicitConflicts(t *testing.T) {
 }
 
 func TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity(t *testing.T) {
-	for _, condition := range []string{"running-vmi", "failed-vmi", "old-launcher", "pending", "missing-rv", "namespace-uid", "vm-uid", "tenant-label", "closing"} {
+	for _, condition := range []string{"running-vmi", "old-launcher", "pending", "missing-rv", "namespace-uid", "vm-uid", "tenant-label", "closing"} {
 		t.Run(condition, func(t *testing.T) {
 			n, v, client, calls := windowsStoppedFixture(t)
 			root, _ := client.Resource(vmResource).Namespace(v.Spec.Namespace).Get(context.Background(), v.Native.Name, metav1.GetOptions{})
