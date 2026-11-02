@@ -31,6 +31,7 @@ class ImageBuildTests(unittest.TestCase):
         self.write("migrations/0001_initial.sql", 'CREATE TABLE example (id int);\n')
         self.write("migrations/compute/recovery/0001_restore.sql", "SELECT 1;\n")
         self.write("pkg/common/runtime.go", "package common\n")
+        self.write("internal/data/sandbox/filehelper/workspace.py", "print('workspace helper')\n")
         self.args = image.arguments(["--image", "registry.example/ani/resource:test",
                                      "--version", "test", "--source-revision", "a" * 40])
         self.image_id = "sha256:" + "1" * 64
@@ -87,6 +88,10 @@ class ImageBuildTests(unittest.TestCase):
         self.assertTrue((self.context / "migrations/0001_initial.sql").is_file())
         self.assertTrue((self.context / "migrations/compute/recovery/0001_restore.sql").is_file())
         self.assertTrue((self.context / "pkg/common/runtime.go").is_file())
+        self.assertEqual((self.context / "internal/data/sandbox/filehelper/workspace.py").read_text(),
+                         "print('workspace helper')\n")
+        manifest = json.loads(Path(result["source_manifest"]).read_text())
+        self.assertIn("internal/data/sandbox/filehelper/workspace.py", {row["path"] for row in manifest})
         self.assertIn("--load", self.commands[0])
         self.assertNotIn("--push", self.commands[0])
         self.assertEqual(len(list((self.root / ".work/images").glob("*/result.json"))), 1)

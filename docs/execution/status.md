@@ -1,5 +1,13 @@
 # Network 执行状态
 
+## 2026-11-02：Sandbox 镜像打包与历史验收记录整理
+
+以 Resource main `36da38ac889ebd035c145a29226c8ad6f4fbe191` 为基线，保留主线统一租户 Namespace 和 Sandbox 实现，补入旧工作区遗漏的 2026-10-30 现场请求/响应记录。生产镜像的隔离构建上下文补入 Go `embed` 所需的 `internal/data/sandbox/filehelper/workspace.py`，避免最新 Sandbox 源码镜像编译失败。构建脚本与测试的变更和先前成功构建的 dirty 快照一致；该快照基线为 `36da38a`，快照 SHA-256 `2e1b1deef0b871f8248f894259275124da3ea9afadffe6bdc3c66c8cb503ab02`，本机镜像 ID `sha256:ff55765ffe1fd12189cabbe43e561020bdca1443df74e1ffa71975336ea93df1`，未推送、未部署。
+
+指定的 `/home/chabking/.ssh/config` 不存在，默认 `ssh ubuntu` 主机密钥未登记，本轮按允许规则回退本机 Ubuntu、Go 1.26.10：`PYTHONDONTWRITEBYTECODE=1 make test-image` **pass**（9 项）；`GOWORK=off GOMAXPROCS=2 GOMEMLIMIT=1600MiB GOFLAGS=-p=2 TMPDIR=/tmp/rsv make verify` **pass**。验收摘要和本条状态在门禁后整理；未重跑真实集群生命周期。`docs/execution/records/SANDBOX-LIVE-20261030/README.md` 保存的是 2026-10-30 的实际请求与结果，不作为本次源码的现场验收。
+
+合入最新 Resource main `695bd4c195f06b3136cadcda34eabb20dca4d9d4` 并解决本文件记录冲突后，待提交源码树 `48c31d5e9aa26fe2dc1204b2567262022085735b` 在本机 Ubuntu、Go 1.26.10 执行 `PYTHONDONTWRITEBYTECODE=1 make test-image`（9 项）和 `GOWORK=off GOMAXPROCS=2 GOMEMLIMIT=1600MiB GOFLAGS=-p=2 TMPDIR=/tmp/rsv make verify` 均 **pass**；指定远端 SSH 配置不存在，按本仓规则回退本机。此条为门禁完成后追加的记录，未改业务代码。
+
 ## Inference 租户镜像授权：合入最新主线复核（2026-11-02）
 
 合并 Resource `origin/main` 基线 `36da38ac889ebd035c145a29226c8ad6f4fbe191` 后，本任务 6 个业务/合同文件相对主线 diff SHA-256 为 `6a1e09a338a7009c9fac3bab619730b6444db3a9175d49eabed54523bb53d8b7`（本执行记录不计入）。`ssh ubuntu` 仍因主机密钥校验失败，按照本仓回退规则在 `ubuntu` 本机使用 Go 1.26.10 执行 `GOWORK=off GOMAXPROCS=2 GOFLAGS=-p=2 GOMEMLIMIT=1600MiB make verify`，使用固定 buf 1.60.0 和 sqlc 1.31.1：PASS；`go test -count=1 ./internal/biz/image ./internal/data/image`：PASS。
@@ -1506,6 +1514,10 @@ A05 受限调用者已真实通过：任务 user41/role34 仅有 backend/list/re
 
 指定 `/home/chabking/.ssh/config` 不存在，默认 `ssh ubuntu` 因主机密钥校验失败，按仓库允许的本地回退在当前主机使用 Go 1.26.10、固定 Buf 1.60.0 / sqlc 1.31.1 执行：`GOMAXPROCS=1 GOMEMLIMIT=1200MiB GOFLAGS=-p=1 GOWORK=off make verify` **pass**；使用本任务独占临时 PostgreSQL 17.11，Sandbox `sandboxintegration` 75 个顶层测试 **pass**，实例重启/PVC 定向回归 12 个顶层测试 **pass**，Image 引用定向回归 1 个顶层测试 **pass**。共享入口两项测试首次未配置 `NETWORK_TEST_ADMIN_DSN` 被 **skip**；补充独占数据库环境后单独执行，两项 **pass**。测试使用模拟 Kubernetes，不能代表真实 Sandbox 创建、暂停、恢复、删除已验收。临时数据库与凭据已清理；日志和输入清单位于仓外 `../verification-artifacts/resource-integration-review-20261029/`。GitHub PR 既有失败和新提交的 CI 状态需分别检查。
 
+
+## 2026-10-30：Sandbox 新租户自动开通与 66 真实生命周期
+
+66 使用 Resource `a778c1f25da0923272c6df9e7fbfb5ddce3abcf1` 和 Gov `6a8f766baf22f79a774797a0bee393b2fc6bd4ee` 时，新租户共享 Namespace 和 Sandbox 权限自动 READY；使用 `image_reference` 的创建、幂等重放、暂停、恢复和删除通过，未依赖父 Instance，Pod/PVC/PV 已回收。租户空间最终 OFF/CLOSED；租户删除因历史保护返回 409，共享 Namespace 和历史保留。原始请求、响应、镜像、状态、清理和未验范围见[当时的验收记录](records/SANDBOX-LIVE-20261030/README.md)。这是历史版本的现场结果，不推定后续 main 版本已在现场验收。
 
 ## 2026-10-31：Sandbox 合入最新主线候选
 

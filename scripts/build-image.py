@@ -57,7 +57,8 @@ def source_revision(root, supplied):
 def snapshot(root, destination):
     # Do not send the checkout, configs, credentials, tests, caches or Git to Docker.
     files = [Path(name) for name in ("Dockerfile", ".dockerignore", "go.mod", "go.sum",
-                                    "THIRD_PARTY_NOTICES.go-kratos-layout.txt")]
+                                    "THIRD_PARTY_NOTICES.go-kratos-layout.txt",
+                                    "internal/data/sandbox/filehelper/workspace.py")]
     for directory in ("api", "cmd", "internal", "pkg", "migrations"):
         files.extend(path.relative_to(root) for path in (root / directory).rglob("*.go")
                      if not path.name.endswith("_test.go"))
