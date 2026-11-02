@@ -14,11 +14,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 var (
 	dnsSubdomain = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
-	dnsLabel     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 	bucketID     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 )
 
@@ -51,13 +51,13 @@ func GBFromBytes(bytes int64) int64 {
 	return bytes / BytesPerGB
 }
 
-// NamespaceName 按 NamespacePrefix + TenantID 推导，不接受任意 namespace 输入。
+// NamespaceName uses the shared standard tenant namespace identity.
 func NamespaceName(prefix, tenant string) (string, error) {
-	if prefix != "tenant-" || !CanonicalUUID(tenant) {
+	if prefix != tenantnamespace.Prefix {
 		return "", ErrInvalid
 	}
-	name := prefix + tenant
-	if len(name) > 63 || len(dnsLabel.FindString(name)) != len(name) {
+	name, err := tenantnamespace.Name(tenant)
+	if err != nil {
 		return "", ErrInvalid
 	}
 	return name, nil

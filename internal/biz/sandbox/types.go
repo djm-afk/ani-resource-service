@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 var (
@@ -66,14 +67,13 @@ func UUID(v string) bool {
 var digestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 var namespaceRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-// TenantNamespace follows Resource's tenant namespace convention. The prefix
-// comes from trusted platform configuration, never from a Sandbox request.
+// TenantNamespace uses the shared standard tenant namespace identity.
 func TenantNamespace(tenant, prefix string) (string, error) {
-	if !UUID(tenant) || prefix != "tenant-" {
+	if prefix != tenantnamespace.Prefix {
 		return "", ErrInvalid
 	}
-	namespace := "tenant-" + tenant
-	if len(namespace) > 63 || !namespaceRE.MatchString(namespace) {
+	namespace, err := tenantnamespace.Name(tenant)
+	if err != nil {
 		return "", ErrInvalid
 	}
 	return namespace, nil
@@ -93,6 +93,7 @@ type WorkspaceSpec struct{ MountPath, Size, StorageClass, ReclaimPolicy string }
 // runtime reference. It also accepts a frozen reference for reauthorization.
 type ImageResolver interface {
 	ResolveSandboxImage(ctx context.Context, tenantID, requestedReference string) (string, error)
+	ResolveSandboxImageID(ctx context.Context, tenantID, imageID, imageScope string) (string, error)
 }
 
 // StorageClassResolver selects the platform's currently permitted default
@@ -109,12 +110,16 @@ type RuntimeClassResolver interface {
 
 type CreateSpec struct {
 	Name, ImageReference, ImageDigest, PresetID, PresetCode, PresetName, ComputeType string
+	ImageID                                                                          string `json:"ImageID,omitempty"`
+	ImageScope                                                                       string `json:"ImageScope,omitempty"`
 	CPUMillis, MemoryMiB                                                             int64
 	SelectionDigest, SpecDigest, ClusterID, Namespace, NamespaceUID, RuntimeClass    string
 	Workspace                                                                        WorkspaceSpec
 }
 type Snapshot struct {
 	Name, ImageReference, PresetID, PresetCode, PresetName, ImageDigest, ComputeType, ClusterID, Namespace, NamespaceUID, RuntimeClass, SelectionDigest, SpecDigest string
+	ImageID                                                                                                                                                         string `json:"ImageID,omitempty"`
+	ImageScope                                                                                                                                                      string `json:"ImageScope,omitempty"`
 	CPUMillis, MemoryMiB                                                                                                                                            int64
 	Workspace                                                                                                                                                       WorkspaceSpec
 }
@@ -215,8 +220,7 @@ type SelectionResolver interface {
 	Resolve(context.Context, string, string, compute.Usage) (compute.Selection, error)
 }
 
-// NamespaceResolver prepares a namespace only for initial resolution. Accepted
-// commands must use the read-only method to check their frozen UID.
+// NamespaceResolver checks the shared tenant namespace without creating it.
 type NamespaceResolver interface {
 	ResolveSandboxNamespaceUID(context.Context, string) (string, error)
 }

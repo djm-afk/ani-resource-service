@@ -12,21 +12,20 @@ import (
 type NetworkSelectionValidator func(context.Context, string, string, string, biz.NetworkSelection) (biz.NetworkSelection, error)
 type Environment struct {
 	native  *Native
-	prefix  string
 	network NetworkSelectionValidator
 }
 
 func NewEnvironment(n *Native, prefix string, network NetworkSelectionValidator) (*Environment, error) {
-	if n == nil || prefix != "tenant-" || network == nil {
+	if n == nil || prefix != tenantnamespace.Prefix || network == nil {
 		return nil, biz.ErrInvalid
 	}
-	return &Environment{n, prefix, network}, nil
+	return &Environment{native: n, network: network}, nil
 }
 func (e *Environment) ResolveNamespace(ctx context.Context, tenant, requested string) (biz.ObjectRef, error) {
-	if !biz.UUID(tenant) {
+	name, err := tenantnamespace.Name(tenant)
+	if err != nil {
 		return biz.ObjectRef{}, biz.ErrInvalid
 	}
-	name := e.prefix + tenant
 	if requested != "" && requested != name {
 		return biz.ObjectRef{}, biz.ErrOwnership
 	}

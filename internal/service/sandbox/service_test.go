@@ -5,11 +5,13 @@ import (
 	"errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"testing"
 
 	pb "github.com/zhangzhe-ctrl/ani-resource-service/api/sandbox/v1"
 	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	storage "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/storage"
 	sandboxdata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/sandbox"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -83,6 +85,13 @@ func (r *testImageResolver) ResolveSandboxImage(_ context.Context, tenant, reque
 		return ref, nil
 	}
 	return "", biz.ErrDenied
+}
+
+func (r *testImageResolver) ResolveSandboxImageID(ctx context.Context, tenant, id, scope string) (string, error) {
+	if scope != "tenant" && scope != "platform" {
+		return "", biz.ErrInvalid
+	}
+	return r.ResolveSandboxImage(ctx, tenant, id)
 }
 
 type testStorageResolver struct {
@@ -218,7 +227,7 @@ func TestCreateBindsNamespaceUIDAndRejectsReplacement(t *testing.T) {
 		t.Fatalf("resolution=%+v err=%v", spec, err)
 	}
 	if namespaces.ensureCalls != 0 || namespaces.readCalls != 1 {
-		t.Fatalf("resolution must read once: %+v", namespaces)
+		t.Fatalf("resolution must only read the namespace: %+v", namespaces)
 	}
 	accept := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: testTenant, ResourceId: testSandbox, OperationId: testOp}, Spec: spec}
 	accept.Context.RequestDigest, err = commandDigest(accept.Context, "", spec)
@@ -249,14 +258,20 @@ func TestCreateBindsNamespaceUIDAndRejectsReplacement(t *testing.T) {
 	}
 }
 
-func TestCreateRequiresExistingNamespaceAndAcceptNeverRecreates(t *testing.T) {
-	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + testTenant, "uid": "original-uid", "labels": map[string]any{"network.ani.io/tenant-id": testTenant, "network.ani.io/managed-by": "ani-network-service"}}, "status": map[string]any{"phase": "Active"}}}
-	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), ns)
+func TestCreateDoesNotInitializeOrRecreateNamespace(t *testing.T) {
+	client := fake.NewSimpleDynamicClient(runtime.NewScheme())
 	s := newTestService(t, validSelection())
 	s.config.NamespacePrefix = "tenant-"
 	s.config.NamespaceResolver = sandboxdata.TenantNamespace{Client: client, NamespacePrefix: "tenant-"}
+	if _, err := s.ResolveCreateSpec(serviceContext(), validResolveRequest()); status.Code(err) != codes.Unavailable {
+		t.Fatalf("missing namespace accepted: %v", err)
+	}
+	obj := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + testTenant, "uid": "created-uid", "labels": map[string]any{storage.NamespaceManagedBy: storage.NamespaceOwner, storage.NamespaceTenantID: testTenant}}, "status": map[string]any{"phase": "Active"}}}
+	if err := client.Tracker().Create(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}, obj, ""); err != nil {
+		t.Fatal(err)
+	}
 	spec, err := s.ResolveCreateSpec(serviceContext(), validResolveRequest())
-	if err != nil || spec.NamespaceUid != "original-uid" {
+	if err != nil || spec.NamespaceUid != "created-uid" {
 		t.Fatalf("resolve: %v", err)
 	}
 	accept := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: testTenant, ResourceId: testSandbox, OperationId: testOp}, Spec: spec}
@@ -422,6 +437,51 @@ func TestResolvedDependenciesAreFrozenAndReauthorizedOnAccept(t *testing.T) {
 	storage.err = errors.New("storage resolver unavailable")
 	if _, err = s.AcceptCreate(serviceContext(), accept); status.Code(err) != codes.Unavailable {
 		t.Fatalf("unavailable storage resolver accepted: %v", err)
+	}
+}
+
+func TestSandboxImageIDIsFrozenAndReauthorized(t *testing.T) {
+	s := newTestService(t, validSelection())
+	ref := "registry/tenant/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	images := &testImageResolver{refs: map[string]string{"img_registered": ref}}
+	s.config.ImageResolver = images
+	req := validResolveRequest()
+	req.Data.ImageReference = ""
+	req.Data.ImageId = "img_registered"
+	req.Data.ImageScope = "platform"
+	spec, err := s.ResolveCreateSpec(serviceContext(), req)
+	if err != nil || spec.ImageId != req.Data.ImageId || spec.ImageScope != "platform" || spec.ImageReference != ref {
+		t.Fatalf("resolve registered image: spec=%v err=%v", spec, err)
+	}
+	accept := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: testTenant, ResourceId: testSandbox, OperationId: testOp}, Spec: spec}
+	accept.Context.RequestDigest, err = commandDigest(accept.Context, "", spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AcceptCreate(serviceContext(), accept); err != nil || images.calls != 2 {
+		t.Fatalf("accept must reauthorize image ID: calls=%d err=%v", images.calls, err)
+	}
+	tamperedAccept := proto.Clone(accept).(*pb.AcceptCreateRequest)
+	tamperedAccept.Spec.ImageId = "img_other"
+	tamperedAccept.Context.RequestDigest, err = commandDigest(tamperedAccept.Context, "", tamperedAccept.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AcceptCreate(serviceContext(), tamperedAccept); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("image identity not bound to frozen specification: %v", err)
+	}
+	images.refs["img_registered"] = "registry/tenant/other@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, err = s.AcceptCreate(serviceContext(), accept); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("changed digest accepted: %v", err)
+	}
+	req.Data.ImageReference = ref
+	if _, err = s.ResolveCreateSpec(serviceContext(), req); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("mixed ID and reference accepted: %v", err)
+	}
+	req.Data.ImageReference = ""
+	req.Data.ImageScope = ""
+	if _, err = s.ResolveCreateSpec(serviceContext(), req); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("image ID without scope accepted: %v", err)
 	}
 }
 

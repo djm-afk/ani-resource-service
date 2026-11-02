@@ -139,17 +139,6 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 	if images != nil {
 		imageRuntime = images.runtime
 	}
-	handler, err := sandbox.NewService(repo, compute.resolver, sandbox.Config{
-		ClusterID: compute.settings.ClusterID, NamespacePrefix: "tenant-",
-		WorkspaceSize: "5Gi", RuntimeClassResolver: data.RuntimeClass{Client: client},
-		ImageResolver:        data.Image{Runtime: imageRuntime},
-		StorageClassResolver: data.StorageClass{Classes: storageUseCase, Namespaces: classes, Client: client, NamespacePrefix: "tenant-"},
-		NamespaceResolver:    data.TenantNamespace{Client: client, NamespacePrefix: "tenant-"},
-	})
-	if err != nil {
-		repo.Close()
-		return unavailable("sandbox service initialization failed", err)
-	}
 	provider, err := data.NewKubernetesProvider(client, compute.settings.ClusterID)
 	if err != nil {
 		repo.Close()
@@ -167,12 +156,66 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 		repo.Close()
 		return unavailable("sandbox image credentials are unavailable", err)
 	}
+	executor, err := data.NewKubernetesCodeExecutor(rest, compute.settings.ClusterID)
+	if err != nil {
+		repo.Close()
+		return unavailable("sandbox code executor initialization failed", err)
+	}
+	codeRunner, err := biz.NewCodeRunner(repo, provider, executor)
+	if err != nil {
+		repo.Close()
+		return unavailable("sandbox code runner initialization failed", err)
+	}
+	fileService, err := biz.NewFileService(repo, provider, executor)
+	if err != nil {
+		repo.Close()
+		return unavailable("sandbox file service initialization failed", err)
+	}
+	var tokenService *biz.TokenService
+	// Token signing keys are optional and separate from shared database config.
+	// Missing or invalid keys keep token methods unavailable without disabling Sandbox.
+	if path := strings.TrimSpace(os.Getenv("ANI_SANDBOX_TOKEN_KEYS_FILE")); path != "" {
+		raw, keyErr := readImagePrivateFile(path)
+		if keyErr == nil {
+			var signer *data.TokenSigner
+			signer, keyErr = data.NewTokenSigner(raw)
+			clear(raw)
+			if keyErr == nil {
+				tokenService, keyErr = biz.NewTokenService(repo, signer)
+			}
+		}
+		if keyErr != nil {
+			logger.Warn("sandbox token signing unavailable")
+		}
+	}
+	handler, err := sandbox.NewService(repo, compute.resolver, sandbox.Config{
+		ClusterID: compute.settings.ClusterID, NamespacePrefix: "tenant-",
+		WorkspaceSize: "5Gi", RuntimeClassResolver: data.RuntimeClass{Client: client},
+		ImageResolver:        data.Image{Runtime: imageRuntime},
+		StorageClassResolver: data.StorageClass{Classes: storageUseCase, Namespaces: classes, Client: client, NamespacePrefix: "tenant-"},
+		NamespaceResolver:    data.TenantNamespace{Client: client, NamespacePrefix: "tenant-"},
+		CodeRunner:           codeRunner,
+		FileService:          fileService,
+		TokenService:         tokenService,
+	})
+	if err != nil {
+		repo.Close()
+		return unavailable("sandbox service initialization failed", err)
+	}
 	worker, err := biz.NewWorker(repo, provider, uuid.NewString(), 45*time.Second)
 	if err != nil {
 		repo.Close()
 		return unavailable("sandbox worker initialization failed", err)
 	}
-	return &sandboxComponents{repo: repo, service: handler, provider: provider, worker: worker, execution: server.NewSandboxWorkerServer(worker, logger)}, nil
+	spaceWorker, err := biz.NewTenantSpaceWorker(repo, data.TenantSpaceProvisioner{
+		Namespace: data.TenantNamespace{Client: client, NamespacePrefix: "tenant-"},
+		Access:    data.TenantAccess{Client: client, NamespacePrefix: "tenant-"},
+	})
+	if err != nil {
+		repo.Close()
+		return unavailable("tenant space worker initialization failed", err)
+	}
+	return &sandboxComponents{repo: repo, service: handler, provider: provider, worker: worker, execution: server.NewSandboxWorkerServer(worker, logger, spaceWorker)}, nil
 }
 
 type sandboxPullMaterial interface {
@@ -193,6 +236,15 @@ type unavailableSandbox struct {
 
 func sandboxUnavailable() error {
 	return status.Error(codes.Unavailable, "SANDBOX_DEPENDENCY_UNAVAILABLE")
+}
+func (unavailableSandbox) OpenTenantSpace(context.Context, *sandboxpb.OpenTenantSpaceRequest) (*sandboxpb.OpenTenantSpaceResponse, error) {
+	return nil, sandboxUnavailable()
+}
+func (unavailableSandbox) CloseTenantSpace(context.Context, *sandboxpb.CloseTenantSpaceRequest) (*sandboxpb.CloseTenantSpaceResponse, error) {
+	return nil, sandboxUnavailable()
+}
+func (unavailableSandbox) GetTenantSpace(context.Context, *sandboxpb.GetTenantSpaceRequest) (*sandboxpb.GetTenantSpaceResponse, error) {
+	return nil, sandboxUnavailable()
 }
 func (unavailableSandbox) ResolveCreateSpec(context.Context, *sandboxpb.ResolveCreateSpecRequest) (*sandboxpb.ResolveCreateSpecResponse, error) {
 	return nil, sandboxUnavailable()

@@ -1,0 +1,337 @@
+# Candidate only: do not install until provisioning and deletion fencing are
+# implemented and the complete policy and deployment ordering are verified.
+# Admission policies for the tenant- namespace convention and Resource service account.
+# Install and verify all bindings before granting any provisioning RBAC.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ani-sandbox-namespace-identity
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["namespaces"]
+  validations:
+    - expression: >-
+        request.operation != 'UPDATE' || !has(oldObject.metadata.annotations) ||
+        !('sandbox.ani.io/namespace-uid' in oldObject.metadata.annotations) ||
+        (has(object.metadata.annotations) && 'sandbox.ani.io/namespace-uid' in object.metadata.annotations &&
+         object.metadata.annotations['sandbox.ani.io/namespace-uid'] == oldObject.metadata.annotations['sandbox.ani.io/namespace-uid'])
+      message: Namespace identity marker is immutable
+    - expression: >-
+        !has(object.metadata.annotations) || !('sandbox.ani.io/namespace-uid' in object.metadata.annotations) ||
+        (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
+         'sandbox.ani.io/namespace-uid' in oldObject.metadata.annotations &&
+         object.metadata.annotations['sandbox.ani.io/namespace-uid'] == oldObject.metadata.annotations['sandbox.ani.io/namespace-uid']) ||
+        (request.operation == 'UPDATE' && request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service' &&
+         (!has(oldObject.metadata.annotations) || !('sandbox.ani.io/namespace-uid' in oldObject.metadata.annotations)))
+      message: Namespace identity marker may only be initialized by Resource
+    - expression: >-
+        request.operation != 'UPDATE' || request.userInfo.username != 'system:serviceaccount:ani-system:ani-resource-service' ||
+        (has(object.metadata.labels) && 'network.ani.io/managed-by' in object.metadata.labels &&
+         object.metadata.labels['network.ani.io/managed-by'] == 'ani-network-service' &&
+         'network.ani.io/tenant-id' in object.metadata.labels &&
+         object.metadata.name == 'tenant-' + object.metadata.labels['network.ani.io/tenant-id'] &&
+         has(oldObject.metadata.labels) && object.metadata.labels == oldObject.metadata.labels &&
+         object.spec == oldObject.spec &&
+         has(object.metadata.annotations) && 'sandbox.ani.io/namespace-uid' in object.metadata.annotations &&
+         (!has(oldObject.metadata.annotations) || oldObject.metadata.annotations.all(k,
+          k in object.metadata.annotations && object.metadata.annotations[k] == oldObject.metadata.annotations[k])) &&
+         object.metadata.annotations.all(k, k == 'sandbox.ani.io/namespace-uid' ||
+          (has(oldObject.metadata.annotations) && k in oldObject.metadata.annotations &&
+           object.metadata.annotations[k] == oldObject.metadata.annotations[k])) &&
+         ((!has(oldObject.metadata.finalizers) && !has(object.metadata.finalizers)) ||
+          (has(oldObject.metadata.finalizers) && has(object.metadata.finalizers) && oldObject.metadata.finalizers == object.metadata.finalizers)) &&
+         ((!has(oldObject.metadata.ownerReferences) && !has(object.metadata.ownerReferences)) ||
+          (has(oldObject.metadata.ownerReferences) && has(object.metadata.ownerReferences) && oldObject.metadata.ownerReferences == object.metadata.ownerReferences)))
+      message: Resource namespace updates may only add the tenant identity marker
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ani-sandbox-namespace-identity
+spec:
+  policyName: ani-sandbox-namespace-identity
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ani-sandbox-tenant-role
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - rbac.authorization.k8s.io
+      apiVersions:
+      - v1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - roles
+  matchConditions:
+  - name: resource-or-reserved-role
+    expression: >-
+      request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service' || object.metadata.name
+      == 'ani-sandbox-pull-secret'
+  validations:
+  - expression: namespaceObject != null
+    message: Namespace identity must be available
+  - expression: >-
+      (!variables.resourceIdentity && !variables.managedTenant) || (namespaceObject != null && has(namespaceObject.metadata.labels)
+      && 'network.ani.io/managed-by' in namespaceObject.metadata.labels && namespaceObject.metadata.labels['network.ani.io/managed-by']
+      == 'ani-network-service' && 'network.ani.io/tenant-id' in namespaceObject.metadata.labels && namespaceObject.metadata.labels['network.ani.io/tenant-id'].matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      && request.namespace == 'tenant-' + namespaceObject.metadata.labels['network.ani.io/tenant-id'] && has(namespaceObject.metadata.annotations)
+      && 'sandbox.ani.io/namespace-uid' in namespaceObject.metadata.annotations && has(object.metadata.annotations)
+      && 'sandbox.ani.io/namespace-uid' in object.metadata.annotations && object.metadata.annotations['sandbox.ani.io/namespace-uid']
+      == namespaceObject.metadata.annotations['sandbox.ani.io/namespace-uid'] && (!has(object.metadata.ownerReferences)
+      || size(object.metadata.ownerReferences) == 0) && (!has(object.metadata.finalizers) || size(object.metadata.finalizers)
+      == 0))
+    message: Sandbox tenant access requires its owned namespace identity marker
+  - expression: >-
+      (!variables.resourceIdentity && !variables.managedTenant) || ((object.metadata.name == 'ani-sandbox-pull-secret'
+      && size(object.rules) == 1 && object.rules[0].apiGroups == [''] && object.rules[0].resources == ['secrets']
+      && object.rules[0].verbs == ['get', 'update'] && object.rules[0].resourceNames == ['ani-sandbox-pull-' + namespaceObject.metadata.labels['network.ani.io/tenant-id']]
+      && (!has(object.rules[0].nonResourceURLs) || size(object.rules[0].nonResourceURLs) == 0)))
+    message: Sandbox tenant secret role must contain only the named pull secret permissions
+  variables:
+  - name: resourceIdentity
+    expression: request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service'
+  - name: managedTenant
+    expression: >-
+      namespaceObject != null && has(namespaceObject.metadata.labels) && 'network.ani.io/managed-by' in namespaceObject.metadata.labels
+      && namespaceObject.metadata.labels['network.ani.io/managed-by'] == 'ani-network-service'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ani-sandbox-tenant-binding
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - rbac.authorization.k8s.io
+      apiVersions:
+      - v1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - rolebindings
+  matchConditions:
+  - name: resource-identity
+    expression: request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service'
+  validations:
+  - expression: >-
+      namespaceObject != null && has(namespaceObject.metadata.labels) && 'network.ani.io/managed-by' in namespaceObject.metadata.labels
+      && namespaceObject.metadata.labels['network.ani.io/managed-by'] == 'ani-network-service' && 'network.ani.io/tenant-id'
+      in namespaceObject.metadata.labels && namespaceObject.metadata.labels['network.ani.io/tenant-id'].matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      && request.namespace == 'tenant-' + namespaceObject.metadata.labels['network.ani.io/tenant-id'] && has(namespaceObject.metadata.annotations)
+      && 'sandbox.ani.io/namespace-uid' in namespaceObject.metadata.annotations && has(object.metadata.annotations)
+      && 'sandbox.ani.io/namespace-uid' in object.metadata.annotations && object.metadata.annotations['sandbox.ani.io/namespace-uid']
+      == namespaceObject.metadata.annotations['sandbox.ani.io/namespace-uid'] && (!has(object.metadata.ownerReferences)
+      || size(object.metadata.ownerReferences) == 0) && (!has(object.metadata.finalizers) || size(object.metadata.finalizers)
+      == 0)
+    message: Sandbox tenant access requires its owned namespace identity marker
+  - expression: >-
+      (request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service' && size(object.subjects)
+      == 1 && object.subjects[0].kind == 'ServiceAccount' && object.subjects[0].name == 'ani-resource-service' &&
+      object.subjects[0].namespace == 'ani-system' && (!has(object.subjects[0].apiGroup) || object.subjects[0].apiGroup
+      == '') && object.roleRef.apiGroup == 'rbac.authorization.k8s.io' && ((object.metadata.name == 'ani-sandbox-tenant'
+      && object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'ani-sandbox-tenant') || (object.metadata.name
+      == 'ani-sandbox-pull-secret' && object.roleRef.kind == 'Role' && object.roleRef.name == 'ani-sandbox-pull-secret')))
+    message: Sandbox tenant binding must reference the fixed role and Resource service account
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ani-sandbox-tenant-role
+spec:
+  policyName: ani-sandbox-tenant-role
+  validationActions:
+  - Deny
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ani-sandbox-tenant-binding
+spec:
+  policyName: ani-sandbox-tenant-binding
+  validationActions:
+  - Deny
+---
+# Sandbox's namespaced create/exec permissions are shared by Resource's
+# ServiceAccount. Restrict direct Pod creation to the Sandbox renderer's
+# unprivileged shape. Instance and VM Pods are created by their controllers.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ani-sandbox-pod-safety
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - ''
+      apiVersions:
+      - v1
+      operations:
+      - CREATE
+      resources:
+      - pods
+  matchConditions:
+  - name: resource-in-managed-tenant
+    expression: request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service'
+  validations:
+  - expression: namespaceObject != null
+    message: Namespace identity must be available
+  - expression: >-
+      !variables.managedTenant || (has(object.metadata.labels) && 'ani.io/sandbox-owner' in object.metadata.labels
+      && object.metadata.labels['ani.io/sandbox-owner'].matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      && object.metadata.name == 'sandbox-' + object.metadata.labels['ani.io/sandbox-owner'] && 'network.ani.io/tenant-id'
+      in namespaceObject.metadata.labels && 'ani.io/tenant-id' in object.metadata.labels && object.metadata.labels['ani.io/tenant-id']
+      == namespaceObject.metadata.labels['network.ani.io/tenant-id'] && 'ani.io/owner-service' in object.metadata.labels
+      && object.metadata.labels['ani.io/owner-service'] == 'ani-resource-service')
+    message: Resource may create only its tenant Sandbox Pods
+  - expression: >-
+      !variables.managedTenant || (has(object.spec.automountServiceAccountToken) && !object.spec.automountServiceAccountToken
+      && (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default') && (!has(object.spec.hostNetwork)
+      || !object.spec.hostNetwork) && (!has(object.spec.hostPID) || !object.spec.hostPID) && (!has(object.spec.hostIPC)
+      || !object.spec.hostIPC) && has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot)
+      && object.spec.securityContext.runAsNonRoot && has(object.spec.securityContext.runAsUser) && object.spec.securityContext.runAsUser
+      == 10001 && has(object.spec.securityContext.seccompProfile) && object.spec.securityContext.seccompProfile.type
+      == 'RuntimeDefault' && has(object.spec.runtimeClassName) && object.spec.runtimeClassName in ['kata', 'sandbox-kata']
+      && (!has(object.spec.initContainers) || size(object.spec.initContainers) == 0) && (!has(object.spec.ephemeralContainers)
+      || size(object.spec.ephemeralContainers) == 0))
+    message: Sandbox Pods cannot use service account tokens, host namespaces or extra containers
+  - expression: >-
+      !variables.managedTenant || (has(object.spec.volumes) && size(object.spec.volumes) == 1 && object.spec.volumes[0].name
+      == 'workspace' && has(object.spec.volumes[0].persistentVolumeClaim) && object.spec.volumes[0].persistentVolumeClaim.claimName
+      == 'workspace-' + object.metadata.labels['ani.io/sandbox-owner'] && (!has(object.spec.volumes[0].persistentVolumeClaim.readOnly)
+      || !object.spec.volumes[0].persistentVolumeClaim.readOnly) && (!has(object.spec.imagePullSecrets) || (size(object.spec.imagePullSecrets)
+      == 1 && object.spec.imagePullSecrets[0].name == 'ani-sandbox-pull-' + namespaceObject.metadata.labels['network.ani.io/tenant-id'])))
+    message: Sandbox Pods may mount only their own workspace and pull secret
+  - expression: >-
+      !variables.managedTenant || (size(object.spec.containers) == 1 && object.spec.containers[0].name == 'sandbox'
+      && has(object.spec.containers[0].command) && object.spec.containers[0].command == ['/bin/sh', '-c', 'trap
+      : TERM INT; sleep infinity & wait'] && (!has(object.spec.containers[0].args) || size(object.spec.containers[0].args)
+      == 0) && (!has(object.spec.containers[0].envFrom) || size(object.spec.containers[0].envFrom) == 0) && (!has(object.spec.containers[0].volumeDevices)
+      || size(object.spec.containers[0].volumeDevices) == 0) && has(object.spec.containers[0].env) && size(object.spec.containers[0].env)
+      == 1 && object.spec.containers[0].env[0].name == 'ANI_SANDBOX_POD_UID' && has(object.spec.containers[0].env[0].valueFrom)
+      && has(object.spec.containers[0].env[0].valueFrom.fieldRef) && object.spec.containers[0].env[0].valueFrom.fieldRef.fieldPath
+      == 'metadata.uid' && has(object.spec.containers[0].volumeMounts) && size(object.spec.containers[0].volumeMounts)
+      == 1 && object.spec.containers[0].volumeMounts[0].name == 'workspace' && object.spec.containers[0].volumeMounts[0].mountPath
+      == '/workspace' && (!has(object.spec.containers[0].volumeMounts[0].subPath) || object.spec.containers[0].volumeMounts[0].subPath
+      == '') && (!has(object.spec.containers[0].volumeMounts[0].subPathExpr) || object.spec.containers[0].volumeMounts[0].subPathExpr
+      == '') && (!has(object.spec.containers[0].volumeMounts[0].mountPropagation) || object.spec.containers[0].volumeMounts[0].mountPropagation
+      == 'None') && (!has(object.spec.containers[0].volumeMounts[0].readOnly) || !object.spec.containers[0].volumeMounts[0].readOnly))
+    message: Sandbox containers cannot read foreign secrets or mount other paths
+  - expression: >-
+      !variables.managedTenant || (has(object.spec.containers[0].securityContext) && has(object.spec.containers[0].securityContext.privileged)
+      && !object.spec.containers[0].securityContext.privileged && has(object.spec.containers[0].securityContext.allowPrivilegeEscalation)
+      && !object.spec.containers[0].securityContext.allowPrivilegeEscalation && has(object.spec.containers[0].securityContext.readOnlyRootFilesystem)
+      && object.spec.containers[0].securityContext.readOnlyRootFilesystem && has(object.spec.containers[0].securityContext.capabilities)
+      && has(object.spec.containers[0].securityContext.capabilities.drop) && object.spec.containers[0].securityContext.capabilities.drop
+      == ['ALL'] && (!has(object.spec.containers[0].securityContext.capabilities.add) || size(object.spec.containers[0].securityContext.capabilities.add)
+      == 0))
+    message: Sandbox containers must be unprivileged
+  variables:
+  - name: managedTenant
+    expression: >-
+      namespaceObject != null && has(namespaceObject.metadata.labels) && 'network.ani.io/managed-by' in namespaceObject.metadata.labels
+      && namespaceObject.metadata.labels['network.ani.io/managed-by'] == 'ani-network-service'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ani-sandbox-pod-safety
+spec:
+  policyName: ani-sandbox-pod-safety
+  validationActions: [Deny]
+---
+# Sandbox Secret create is name-unrestricted by Kubernetes RBAC. Exclude
+# service account token Secrets while preserving VM Opaque and Image Secrets.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ani-sandbox-secret-safety
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - ''
+      apiVersions:
+      - v1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - secrets
+  matchConditions:
+  - name: resource-in-managed-tenant
+    expression: request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service'
+  validations:
+  - expression: namespaceObject != null
+    message: Namespace identity must be available
+  - expression: '!variables.managedTenant || (!has(object.type) || object.type != ''kubernetes.io/service-account-token'')'
+    message: Resource cannot create or modify service account token Secrets
+  variables:
+  - name: managedTenant
+    expression: >-
+      namespaceObject != null && has(namespaceObject.metadata.labels) && 'network.ani.io/managed-by' in namespaceObject.metadata.labels
+      && namespaceObject.metadata.labels['network.ani.io/managed-by'] == 'ani-network-service'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ani-sandbox-secret-safety
+spec:
+  policyName: ani-sandbox-secret-safety
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ani-sandbox-exec-safety
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - ''
+      apiVersions:
+      - v1
+      operations:
+      - CONNECT
+      resources:
+      - pods/exec
+  matchConditions:
+  - name: resource-in-managed-tenant
+    expression: request.userInfo.username == 'system:serviceaccount:ani-system:ani-resource-service'
+  validations:
+  - expression: namespaceObject != null
+    message: Namespace identity must be available
+  - expression: >-
+      !variables.managedTenant || (request.name.matches('^sandbox-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      && has(object.container) && object.container == 'sandbox')
+    message: Resource may execute only in a Sandbox container
+  variables:
+  - name: managedTenant
+    expression: >-
+      namespaceObject != null && has(namespaceObject.metadata.labels) && 'network.ani.io/managed-by' in namespaceObject.metadata.labels
+      && namespaceObject.metadata.labels['network.ani.io/managed-by'] == 'ani-network-service'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ani-sandbox-exec-safety
+spec:
+  policyName: ani-sandbox-exec-safety
+  validationActions: [Deny]

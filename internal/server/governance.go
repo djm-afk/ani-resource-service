@@ -238,7 +238,7 @@ func (GovernanceResolver) Resolve(ctx context.Context) (governancePrincipal, err
 	} else if !validUUID(tenant) {
 		return governancePrincipal{}, denied
 	}
-	if !validUUID(request) || !validGovernanceActor(actor) {
+	if !validUUID(request) || (!validGovernanceActor(actor) && !validSandboxTokenActor(actor) && actor != sandboxbiz.TenantSpaceActor) {
 		return governancePrincipal{}, denied
 	}
 	// Legacy operator values name the same actor; they cannot replace the
@@ -265,6 +265,20 @@ func validGovernanceActor(actor string) bool {
 	return false
 }
 
+// Sandbox token actors are accepted only on the explicit data-plane methods.
+func validSandboxTokenActor(actor string) bool {
+	const prefix = "governance:sandbox-token:"
+	return strings.HasPrefix(actor, prefix) && sandboxbiz.UUID(strings.TrimPrefix(actor, prefix))
+}
+func sandboxTokenMethodAllowed(method string) bool {
+	switch method {
+	case "/sandbox.v1.SandboxService/ValidateToken", "/sandbox.v1.SandboxService/QueryFiles", "/sandbox.v1.SandboxService/MutateFiles", "/sandbox.v1.SandboxService/GetFileOperation", "/sandbox.v1.SandboxService/RunCode", "/sandbox.v1.SandboxService/GetCodeRun":
+		return true
+	default:
+		return false
+	}
+}
+
 // GovernanceUnary authorizes exact methods and exclusive tenant/platform scopes
 // before business handlers or SQL. Platform authority is delegated only by the
 // verified Governance workload, never by public headers or protobuf fields.
@@ -277,6 +291,12 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 		p, err := (GovernanceResolver{}).Resolve(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if validSandboxTokenActor(p.Actor) && !sandboxTokenMethodAllowed(info.FullMethod) {
+			return nil, status.Error(codes.PermissionDenied, "sandbox token actor not permitted")
+		}
+		if (p.Actor == sandboxbiz.TenantSpaceActor) != tenantSpaceMethod(info.FullMethod) {
+			return nil, status.Error(codes.PermissionDenied, "tenant space actor not permitted")
 		}
 		if readOnly && (info.FullMethod != GetVPCMethod || p.Platform) {
 			return nil, status.Error(codes.PermissionDenied, "read-only composition permits only GetVPC")

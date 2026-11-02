@@ -23,6 +23,15 @@ func (s retryTestService) failure() error {
 	}
 	return status.Error(codes.Aborted, "forwarded")
 }
+func (s retryTestService) OpenTenantSpace(context.Context, *sandboxpb.OpenTenantSpaceRequest) (*sandboxpb.OpenTenantSpaceResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) CloseTenantSpace(context.Context, *sandboxpb.CloseTenantSpaceRequest) (*sandboxpb.CloseTenantSpaceResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) GetTenantSpace(context.Context, *sandboxpb.GetTenantSpaceRequest) (*sandboxpb.GetTenantSpaceResponse, error) {
+	return nil, s.failure()
+}
 func (s retryTestService) ResolveCreateSpec(context.Context, *sandboxpb.ResolveCreateSpecRequest) (*sandboxpb.ResolveCreateSpecResponse, error) {
 	return nil, s.failure()
 }
@@ -48,6 +57,32 @@ func (s retryTestService) Delete(context.Context, *sandboxpb.DeleteRequest) (*sa
 	return nil, s.failure()
 }
 
+func (s retryTestService) RunCode(context.Context, *sandboxpb.RunCodeRequest) (*sandboxpb.RunCodeResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) GetCodeRun(context.Context, *sandboxpb.GetCodeRunRequest) (*sandboxpb.GetCodeRunResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) QueryFiles(context.Context, *sandboxpb.QueryFilesRequest) (*sandboxpb.QueryFilesResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) MutateFiles(context.Context, *sandboxpb.MutateFilesRequest) (*sandboxpb.MutateFilesResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) GetFileOperation(context.Context, *sandboxpb.GetFileOperationRequest) (*sandboxpb.GetFileOperationResponse, error) {
+	return nil, s.failure()
+}
+
+func (s retryTestService) CreateToken(context.Context, *sandboxpb.CreateTokenRequest) (*sandboxpb.CreateTokenResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) ValidateToken(context.Context, *sandboxpb.ValidateTokenRequest) (*sandboxpb.ValidateTokenResponse, error) {
+	return nil, s.failure()
+}
+func (s retryTestService) RevokeToken(context.Context, *sandboxpb.RevokeTokenRequest) (*sandboxpb.RevokeTokenResponse, error) {
+	return nil, s.failure()
+}
+
 type retryTestWorker struct{ started chan struct{} }
 
 func (w retryTestWorker) Start(ctx context.Context) error { close(w.started); <-ctx.Done(); return nil }
@@ -63,7 +98,18 @@ func sandboxRetryStatusChecks(r *sandboxRetry) []error {
 	_, f := r.Pause(ctx, &sandboxpb.PauseRequest{})
 	_, g := r.Resume(ctx, &sandboxpb.ResumeRequest{})
 	_, h := r.Delete(ctx, &sandboxpb.DeleteRequest{})
-	return []error{a, b, c, d, e, f, g, h}
+	_, i := r.RunCode(ctx, &sandboxpb.RunCodeRequest{})
+	_, j := r.GetCodeRun(ctx, &sandboxpb.GetCodeRunRequest{})
+	_, k := r.QueryFiles(ctx, &sandboxpb.QueryFilesRequest{})
+	_, l := r.MutateFiles(ctx, &sandboxpb.MutateFilesRequest{})
+	_, m := r.GetFileOperation(ctx, &sandboxpb.GetFileOperationRequest{})
+	_, n := r.CreateToken(ctx, &sandboxpb.CreateTokenRequest{})
+	_, o := r.ValidateToken(ctx, &sandboxpb.ValidateTokenRequest{})
+	_, p := r.RevokeToken(ctx, &sandboxpb.RevokeTokenRequest{})
+	_, q := r.OpenTenantSpace(ctx, &sandboxpb.OpenTenantSpaceRequest{})
+	_, s := r.CloseTenantSpace(ctx, &sandboxpb.CloseTenantSpaceRequest{})
+	_, u := r.GetTenantSpace(ctx, &sandboxpb.GetTenantSpaceRequest{})
+	return []error{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, s, u}
 }
 
 func TestSandboxRetryRecoversAllMethodsAndStopsWorker(t *testing.T) {
@@ -94,7 +140,7 @@ func TestSandboxRetryRecoversAllMethodsAndStopsWorker(t *testing.T) {
 			t.Fatalf("recovered handler not called: %v", err)
 		}
 	}
-	if calls.Load() != 8 || attempts.Load() != 2 {
+	if calls.Load() != 19 || attempts.Load() != 2 {
 		t.Fatalf("calls=%d attempts=%d", calls.Load(), attempts.Load())
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

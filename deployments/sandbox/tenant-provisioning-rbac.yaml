@@ -1,0 +1,40 @@
+# Candidate only: do not install before the tenant provisioning slice is ready.
+# These permissions must never be installed without all enforced policies in
+# tenant-provisioning-admission.yaml. In particular, Kubernetes authorizes
+# escalate for role creation without a resource name, so admission constrains
+# every role and binding created by this identity to the fixed tenant shape.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ani-sandbox-tenant-provisioner
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "update"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "create"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles"]
+    verbs: ["escalate"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles"]
+    resourceNames: ["ani-sandbox-pull-secret"]
+    verbs: ["bind"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    resourceNames: ["ani-sandbox-tenant"]
+    verbs: ["get", "bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ani-sandbox-tenant-provisioner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ani-sandbox-tenant-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: ani-resource-service
+    namespace: ani-system

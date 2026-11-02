@@ -20,7 +20,7 @@ import (
 
 type Postgres struct{ pool *pgxpool.Pool }
 
-var schemaFiles = []string{"001_sandbox.sql", "002_workspace_bindings.sql", "003_recovery_and_create_intent.sql", "004_tenant_listing.sql"}
+var schemaFiles = []string{"001_sandbox.sql", "002_workspace_bindings.sql", "003_recovery_and_create_intent.sql", "004_tenant_listing.sql", "005_code_runs.sql", "006_file_operations.sql", "007_access_tokens.sql", "008_tenant_space.sql"}
 
 func validDigest(v string) bool {
 	if len(v) != 64 || strings.ToLower(v) != v {
@@ -132,7 +132,7 @@ func Migrate(ctx context.Context, dsn, role string) error {
 		}
 	}
 	quoted := pgx.Identifier{role}.Sanitize()
-	if _, err = tx.Exec(ctx, "GRANT USAGE ON SCHEMA sandbox TO "+quoted+"; GRANT SELECT ON sandbox.schema_version TO "+quoted+"; GRANT SELECT,INSERT,UPDATE ON sandbox.sandboxes,sandbox.operations,sandbox.work,sandbox.workspace_bindings TO "+quoted); err != nil {
+	if _, err = tx.Exec(ctx, "GRANT USAGE ON SCHEMA sandbox TO "+quoted+"; GRANT SELECT ON sandbox.schema_version TO "+quoted+"; GRANT SELECT,INSERT,UPDATE ON sandbox.sandboxes,sandbox.operations,sandbox.work,sandbox.workspace_bindings,sandbox.code_runs,sandbox.file_operations,sandbox.access_tokens,sandbox.tenant_spaces,sandbox.tenant_space_mutations TO "+quoted); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -151,6 +151,11 @@ func (p *Postgres) AcceptCreate(ctx context.Context, c biz.Create) (biz.ACK, err
 		return biz.ACK{}, err
 	}
 	defer tx.Rollback(ctx)
+	// Serialize acceptance with close, including the legacy absent-row case.
+	// Once a space is tracked, new commands require its exact ready namespace.
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1::text,84015011))", c.TenantID); err != nil {
+		return biz.ACK{}, err
+	}
 	// Both the resource and operation IDs are unique acceptance identities. Lock
 	// them before inspecting rows so concurrent first deliveries have a replay
 	// path rather than racing an INSERT into a uniqueness violation.
@@ -184,6 +189,13 @@ func (p *Postgres) AcceptCreate(ctx context.Context, c biz.Create) (biz.ACK, err
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return biz.ACK{}, err
+	}
+	space, spaceErr := readTenantSpace(ctx, tx, c.TenantID, true)
+	if spaceErr != nil && !errors.Is(spaceErr, biz.ErrNotFound) {
+		return biz.ACK{}, spaceErr
+	}
+	if spaceErr == nil && (space.Phase != "ready" || space.NamespaceUID != c.Spec.NamespaceUID) {
+		return biz.ACK{}, biz.ErrConflict
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO sandbox.sandboxes(tenant_id,sandbox_id,instance_id,version,desired,observed,create_operation_id,last_operation_id,snapshot,create_intent_digest) VALUES($1,$2,$3,1,'running','provisioning',$4,$4,$5,$6)`, c.TenantID, c.ID, c.InstanceID, c.OperationID, raw, c.IntentDigest)
 	if err != nil {

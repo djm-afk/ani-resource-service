@@ -122,8 +122,8 @@ P0～P2 的 Resource 纵切包含：`api/sandbox/v1` 自有 RPC、Gov 精确方�
 
 创建的具体来源：
 
-- **算力和租户命名空间：** 通过本进程 Compute 目录解析 `SANDBOX` 用途。首次解析创建规格时，按 Resource 共享前缀和受信租户 ID 推导命名空间；不存在时按 Network 的既有名称和归属标签初始化，不依赖创建 VPC。并发创建或写入结果不确定时只重新读取并检查名称、UID、标签和删除状态，不接管不匹配对象。规格冻结 UID；受理、重放及 worker 的既有边界不因命名空间消失而重新创建它。
-- **镜像：** 通过本进程 Image 目录按租户授权解析 tag 或 digest，冻结不可变 digest 引用并在受理新命令前再次校验。当前只接受已在租户或平台镜像空间登记、可授权且可解析的镜像引用；任意未登记镜像不能直接创建。这是当前实现限制，并非声称旧前端镜像流程已全部兼容。
+- **算力和租户命名空间：** 通过本进程 Compute 目录解析 `SANDBOX` 用途。租户空间开通流程按 Resource 共享前缀和受信租户 ID 准备命名空间，不依赖创建 VPC。Sandbox 解析规格时只读取并核验其名称、UID、标签和删除状态，不创建或接管命名空间；规格冻结 UID，受理和 worker 不因命名空间消失而重新创建它。开通链路及上线状态见[执行状态](../execution/status.md)。
+- **镜像：** 创建时可以使用 `image_id` 和 `image_scope`（`tenant` 或 `platform`），也可以填写已登记的租户或平台镜像 `image_reference`；两种输入不能同时提供。本进程 Image 目录按租户授权解析登记镜像，冻结不可变 digest 引用，并在受理新命令前再次校验。使用 ID 时还冻结 ID 和 scope；未登记镜像不能直接创建。
 - **工作盘：** 请求可提供正数 `workspace_size`；省略时当前采用旧 Sandbox 工作盘的 `5Gi` 默认值。StorageClass 由 Storage 目录选择唯一平台默认类，且实时对象必须未删除、明确使用 `Delete` 回收策略；没有唯一、安全的默认类时创建失败，不自行猜测类名。
 - **运行时：** Resource 使用共享 Kubernetes 客户端按 `sandbox-kata`、`kata` 的顺序读取 RuntimeClass，仅在前一项不存在时尝试下一项；选择项必须使用 `kata` 或 `kata-` 开头的 handler，且不得正在删除。不存在、权限不足或对象不符合要求时拒绝新的创建，不回退到普通容器。解析规格时冻结选中的名称，新建受理时独立核对冻结的名称仍在许可名单且有效，不因新出现优先级更高的 RuntimeClass 改写该选择；已受理命令按持久快照重放。当前新创建接口不提供由请求任意选择 RuntimeClass 的能力。目标集群运行时和 StorageClass 的实际可用性仍需真实环境验证。
 
@@ -134,6 +134,14 @@ P0～P2 的 Resource 纵切包含：`api/sandbox/v1` 自有 RPC、Gov 精确方�
 Sandbox schema 由独立的 `-sandbox-migrate` 运维模式创建，使用 `ANI_SANDBOX_OWNER_DSN_FILE` 与 `ANI_SANDBOX_RUNTIME_ROLE`。`-instance-migrate` 不再隐式创建 Sandbox 表；这样 Instance 和 Sandbox 可以分别迁移、启停和回滚，运行时仍只使用受限角色。
 
 二期 P3～P5 的 file、Exec/code-run、端口、token、egress 和 checkpoint/restore/clone RPC 分别随对应切片引入，不预留默认开放的空实现。实现及验收状态仅见[执行状态](../execution/status.md)。
+
+### 2.2.2 共享租户空间开通目标
+
+租户由平台管理员在 Gov 创建，Sandbox 不创建租户、不依赖父 Instance。Gov 在租户创建事务中保存稳定的空间开通任务身份与待处理状态，提交后通过现有受信服务间入口投递；投递失败或进程重启后使用同一任务身份恢复。应能区分开通中、就绪和需要处理的失败，不能以租户行已创建冒充 Kubernetes 空间已就绪。
+
+Resource 在现有进程内按受信租户 UUID 和共享前缀准备命名空间及该命名空间内 Sandbox 必需的 Resource 身份权限。命名空间、角色及绑定须核验归属、身份和内容；同名异主对象不得接管。具备 RBAC 创建能力时必须同时由准入约束限定目标、授权对象和规则，并保护命名空间代际，不能依靠应用代码自行声称最小权限。平台部署须先核验策略与既有对象再开放此能力；业务用户的 Sandbox 动作与套餐仍由 Gov 授权。
+
+开通、租户停用/清理和删除需要持久化的跨服务栅栏：不能因 RPC 超时、单次未查到对象或租约到期就认定 Kubernetes 写入未发生。关闭后应阻止迟到开通重新创建或授权，未确认的写入保持待处理，只有可信的完成或关闭回执才能推进对应状态。此目标不新增独立 Sandbox 部署或前端创建参数；实现、迁移、部署与验收状态只见[执行状态](../execution/status.md)。
 
 ### 2.3 旧 ANI 行为到新版实现的映射
 
@@ -233,7 +241,7 @@ Gov 完成公网认证、产品授权、租户映射和 DTO 校验，再通过 R
 
 | 方法 | 语义 | 幂等/权限 |
 |---|---|---|
-| `ResolveCreateSpec` | 校验 Gov 传入的 tenant，以及 Sandbox 自身的 image digest、preset、工作盘、策略和运行时参数，生成未受理的候选规格 | 认证创建路径可初始化共享租户 Namespace；不创建 Sandbox Pod/PVC、不占额 |
+| `ResolveCreateSpec` | 校验 Gov 传入的 tenant，以及 Sandbox 自身的 image digest、preset、工作盘、策略和运行时参数，生成未受理的候选规格 | 只读核验已开通的共享租户 Namespace；不创建 Sandbox Pod/PVC、不占额 |
 | `AcceptCreate` | 持久化 Sandbox 意图、冻结 snapshot、创建 operation | 原 `idempotency_key`；新请求才解析和冻结 |
 | `GetSandbox`/`ListSandboxes` | 读取 DB 快照和观察状态 | 租户 + Sandbox ID 范围查询 |
 | `GetOperation` | 读取持久 operation | 租户 + Sandbox ID 范围查询 |
@@ -248,8 +256,8 @@ Resource RPC 的身份由本服务的 transport middleware 注入并校验；San
 
 | 对象 | 必填字段 | 规则 |
 |---|---|---|
-| `ResolveCreateSpecRequest` | `tenant_id`、`preset_id`、`image_reference`；`workspace_size` 可选 | tenant 来自 Gov 受信委托；Resource 不查询其他 Instance。镜像须先在租户或平台 Image 目录登记，tag 或 digest 经本地 Image 能力授权并解析为不可变 digest；工作盘大小须为正数，省略时采用当前默认值。不接受原始 Pod YAML、CPU/内存 Quantity 或任意 Namespace；当前不支持通过请求选择 RuntimeClass |
-| `CreateSpec` | tenant、Sandbox、image digest、`ComputeSelection`、workspace、egress、runtime、timeout、spec digest | 未受理候选；解析可初始化共享租户 Namespace，不创建 Sandbox Pod/PVC、不占额、不产生长期 token |
+| `ResolveCreateSpecRequest` | `tenant_id`、`preset_id`、`image_id` 和 `image_scope` 或 `image_reference`；`workspace_size` 可选 | tenant 来自 Gov 受信委托；Resource 不查询其他 Instance。镜像须先在对应租户或平台 Image 目录登记，经本地 Image 能力授权并解析为不可变 digest；`image_reference` 不可与 ID 混用。工作盘大小须为正数，省略时采用当前默认值。不接受原始 Pod YAML、CPU/内存 Quantity 或任意 Namespace；当前不支持通过请求选择 RuntimeClass |
+| `CreateSpec` | tenant、Sandbox、image digest、`ComputeSelection`、workspace、egress、runtime、timeout、spec digest | 未受理候选；解析只读核验共享租户 Namespace，不创建 Sandbox Pod/PVC、不占额、不产生长期 token |
 | `AcceptCreateRequest` | `create_spec`、`spec_digest`、`idempotency_key`、`expected_version`（如适用） | `request_digest` 必须是 `sandbox-create-v1` 对 tenant/resource/operation/空历史 instance 字段/spec 的 SHA-256；校验冻结规格摘要、原始请求摘要与候选一致；新键才冻结和持久化，原键返回原 operation/快照 |
 | `Sandbox` | `sandbox_id`、tenant、generation、desired/observed、snapshot、operation 状态、Provider refs | 历史 `instance_id` 仅为兼容保留，不用于新资源归属；所有读取带显式 tenant 条件；Provider 状态和业务状态分开表达 |
 | Action 请求 | `sandbox_id`、`idempotency_key`、`expected_version` | Resource 按 `sandbox-action-v1` 对空历史 instance 字段/expected_version/action 计算并持久化 request digest；同键不同请求返回冲突。Pause/Resume/Delete 都是异步 action；调用返回 accepted operation，不代表 Runtime 已完成 |
@@ -451,6 +459,16 @@ create -> Kata Pod Ready -> local data-plane target validation
 ### P3：文件、Exec、code-run 和 token
 
 通过安全测试和真实 Pod gate 后，才开放 Sandbox 自己的数据面 adapter。验证路径穿越、symlink/hard-link、输出上限、语言/超时、token scope、过期、版本变化、跨租户和密钥轮换。
+
+文件操作只接受 `/workspace` 内相对路径；列表沿用递归、`limit/cursor`，单文件读写上限 1 MiB。写入和删除采用持久幂等意图及与生命周期相同的行锁顺序，派发后没有可信回执时保留 unknown，不自动重复；文件内容不写入操作表。实际 adapter 要求容器中 Python 3、Linux openat2/renameat2，以及独立挂载的 `/workspace`，缺少时不开放成功结果。路径解析禁止跨挂载和符号链接，覆盖使用原子替换；操作读取和写删分别授权。与旧接口的不同之处是 DELETE 通过 JSON `data` 携带路径和幂等键，并新增文件内容读取接口；上传会话暂不支持。
+
+Token 沿用默认 15 分钟、最长一小时和 `connect`/`exec`/`files`/`ports` 的旧范围命名；当前只开放已落地的 `files` 和 `exec` 数据面，`ports` 暂不签发，默认 `connect` 当前没有可消费入口。Resource 用稳定密钥签发并保存不含明文 Token 的幂等记录；Gov 逐请求向 Resource 验证签名、撤销状态、Sandbox 版本和范围，使用独立 Token 主体而非伪造用户主体，并继续核对租户状态及签发者当前动作授权。签发前须确认签发者拥有整个所选范围的动作权限。Token 管理和生命周期接口不能由 Token 身份调用。密钥、轮换及中断边界见[部署说明](../../deployments/sandbox/README.md#sandbox-token-签名密钥)。
+
+code-run 沿用旧业务的 Python/JavaScript、默认 60 秒和最大 300 秒；代码限 64 KiB、stdin 限 1 MiB，stdout/stderr 各最多保存 64 KiB，并标记截断。代码与 stdin 在 exec 流中分别传输，不拼接到 shell 脚本或 Kubernetes 请求 URL。超时或连接丢失不证明容器内进程已经停止：结果必须保留未知，不得自动重复执行或作为回收凭证。
+
+新建 Pod 使用 downward API 将自身 UID 注入受控环境；准备数据面动作时先核验租户、版本、命名空间、Pod UID、Pod 规格及 Ready，执行命令再在容器内对照目标 UID。已有无该标识的 Pod 继续按旧合同观察及生命周期管理，但不提供此数据面执行能力；恢复创建的新 Pod 才可申请数据面动作。目标检查须与下述持久受理栅栏配套；两次读取或执行流关闭均不能证明与 pause/delete 原子排序。未经目标集群实测和独立 action 鉴权验收前不得发布执行接口。
+
+code-run 受理和生命周期动作以相同数据库行锁确定顺序：暂停或删除先受理时，拒绝新的执行；执行先受理时冻结当时的 Pod UID，若在派发前状态已变化则取消，已派发的请求不得改投恢复后的 Pod。受理只持久化请求摘要，不保存代码或 stdin；进程在派发前退出后，调用方需以相同幂等键和相同内容重新提交。派发意图一经持久化不得自动重发；超过最长等待仍无回执时查询转换为 unknown，不能由此推断进程已经停止。POST 返回运行 ID 和状态，输出只通过单独授权的 GET 获取。
 
 退出条件：文件边界测试覆盖父目录替换和 rename-out；code-run 在 Ready Pod 中成功并能处理暂停、超时、输出超限和缺少语言运行时；token 不接受跨租户、跨 Sandbox、过期或旧 generation。
 

@@ -14,6 +14,7 @@ const pullSecretTestTenant = "11111111-1111-4111-8111-111111111111"
 // Ensure use case: space lookup, credential decryption, namespace authority and
 // the single writer.
 type pullSecretFakes struct {
+	mu        sync.Mutex
 	space     Space
 	stored    StoredCredential
 	names     []NamespaceClaim
@@ -315,6 +316,8 @@ func (pullSecretCipher) Open(context.Context, SecretAAD, EncryptedSecret) (Secre
 type pullSecretNamespaces struct{ f *pullSecretFakes }
 
 func (n pullSecretNamespaces) VerifyNamespace(_ context.Context, claim NamespaceClaim) error {
+	n.f.mu.Lock()
+	defer n.f.mu.Unlock()
 	n.f.names = append(n.f.names, claim)
 	return nil
 }
@@ -322,6 +325,8 @@ func (n pullSecretNamespaces) VerifyNamespace(_ context.Context, claim Namespace
 type pullSecretWriter struct{ f *pullSecretFakes }
 
 func (w pullSecretWriter) EnsurePullSecret(_ context.Context, target PullSecretTarget, secret Secret) (int64, error) {
+	w.f.mu.Lock()
+	defer w.f.mu.Unlock()
 	w.f.writes = append(w.f.writes, target)
 	if string(secret) != "decrypted-pull-secret" {
 		return 0, Fail(InternalError, "writer received unexpected material")

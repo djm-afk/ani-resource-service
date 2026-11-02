@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 var (
@@ -90,11 +91,11 @@ func ValidNamespaceName(name string) bool {
 }
 
 func ResolveNamespace(tenant, trusted, prefix string) (string, error) {
-	if !UUID(tenant) {
+	ns, err := tenantnamespace.Name(tenant)
+	if err != nil {
 		return "", ErrInvalid
 	}
-	ns := "tenant-" + tenant
-	if prefix != "tenant-" || (trusted != "" && trusted != ns) {
+	if prefix != tenantnamespace.Prefix || (trusted != "" && trusted != ns) {
 		return "", fmt.Errorf("%w: invalid tenant namespace", ErrInvalid)
 	}
 

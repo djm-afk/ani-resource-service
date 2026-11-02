@@ -1,7 +1,8 @@
 # Standard tenant Namespace and ModelDev pull Secret
 
-This contract replaces configurable Namespace prefixes and Namespace initialization
-in the Resource owners participating in ModelDev dynamic tenant environments.
+This contract replaces configurable Namespace prefixes in Resource owners.
+Sandbox tenant-space provisioning initializes the shared Namespace when it is
+absent; all other resource owners use that same Namespace.
 
 `resource_tenant_id` is an unchanged, canonical lowercase, nonzero UUID. The
 Namespace name is exactly `tenant-<resource_tenant_id>`. Each owner GETs that
@@ -11,9 +12,13 @@ timestamp, and these two labels:
 - `network.ani.io/tenant-id=<resource_tenant_id>`
 - `network.ani.io/managed-by=ani-network-service`
 
-No owner creates, patches, adopts or deletes the Namespace. Missing or foreign
-objects are errors. Original execution reads and cleanup keep their original
-name/UID and do not require Active; same-name replacement never grants authority.
+Sandbox tenant-space provisioning first reads the standard name, validates and
+reuses an existing owned Namespace, or journals one create if absent. It also
+sets the protected Sandbox access marker for its restricted per-tenant RBAC.
+Other owners do not create, patch, adopt or delete the Namespace. Missing or
+foreign objects are errors for resource creation. Original execution reads and
+cleanup keep their original name/UID and do not require Active; same-name
+replacement never grants authority.
 The pure rules and public positive/negative vectors live in
 `internal/tenantnamespace/`.
 

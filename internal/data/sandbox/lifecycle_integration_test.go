@@ -39,9 +39,11 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 	t.Helper()
 	f := &lifecycleFixture{db: sandboxDatabase(t)}
 	f.ctx, f.create = fixtureCreate()
+	f.create.Spec.Namespace = "tenant-" + f.create.TenantID
 	c := f.create
 	sc := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass", "metadata": map[string]any{"name": c.Spec.Workspace.StorageClass}, "reclaimPolicy": "Delete", "volumeBindingMode": "WaitForFirstConsumer", "provisioner": "test.csi"}}
-	f.client = fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{lifecyclePV: "PersistentVolumeList"}, sc)
+	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": c.Spec.Namespace, "uid": c.Spec.NamespaceUID, "labels": map[string]any{"network.ani.io/tenant-id": c.TenantID, "network.ani.io/managed-by": "ani-network-service"}}, "status": map[string]any{"phase": "Active"}}}
+	f.client = fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{lifecyclePV: "PersistentVolumeList"}, sc, ns)
 	sequence := 0
 	f.client.PrependReactor("create", "*", func(a ktesting.Action) (bool, runtime.Object, error) {
 		if a.GetResource() != lifecyclePVC && a.GetResource() != lifecyclePod {
