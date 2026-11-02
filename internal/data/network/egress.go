@@ -94,6 +94,11 @@ func insertEgressAcceptance(ctx context.Context, q *sqlcgen.Queries, i biz.Egres
 	return databaseFailure(q.InsertHistory(ctx, sqlcgen.InsertHistoryParams{TenantID: i.TenantID, HistoryID: uuid.NewString(), EipID: eip, SnatID: snat, OperationID: &meta.LastOperationID, Event: i.Kind + "_accepted", ResourceState: string(meta.State), OperationState: string(biz.Queued), ActorRef: a.Actor, CallerRef: a.DirectCaller, CorrelationID: a.CorrelationID, CreatedAt: now}))
 }
 func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attribution, freshness time.Duration) (biz.EIP, error) {
+	identity, err := p.ResolveTenantNamespace(ctx, i.TenantID)
+	if err != nil {
+		return biz.EIP{}, err
+	}
+
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return biz.EIP{}, databaseFailure(err)
@@ -132,8 +137,8 @@ func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attr
 	if err = p.poolReady(ctx, q, pool, now, freshness, true); err != nil {
 		return biz.EIP{}, err
 	}
-	if err = q.EnsureTenantNamespace(ctx, sqlcgen.EnsureTenantNamespaceParams{TenantID: i.TenantID, ClusterID: p.placement.ClusterID, Namespace: p.placement.NamespacePrefix + i.TenantID}); err != nil {
-		return biz.EIP{}, databaseFailure(err)
+	if err = p.acceptTenantNamespace(ctx, q, identity); err != nil {
+		return biz.EIP{}, err
 	}
 	namespace, err := q.GetTenantNamespace(ctx, sqlcgen.GetTenantNamespaceParams{TenantID: i.TenantID, ClusterID: p.placement.ClusterID})
 	if err != nil {

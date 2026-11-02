@@ -27,7 +27,7 @@ func TestLoadBalancerRuntimeImageIdentityFormats(t *testing.T) {
 }
 
 func validConfig() *Bootstrap {
-	return &Bootstrap{Network: &Network{DatabaseDsn: "postgres://runtime@127.0.0.1/network", ClusterId: "test", NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(), Worker: &Worker{
+	return &Bootstrap{Network: &Network{DatabaseDsn: "postgres://runtime@127.0.0.1/network", ClusterId: "test", CursorSigningKey: testenv.SigningKey(), Worker: &Worker{
 		Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond),
 	}}, Server: &Server{
 		Grpc:            &Server_GRPC{Network: "tcp", Addr: "127.0.0.1:19090", Timeout: durationpb.New(time.Second)},
@@ -122,7 +122,7 @@ func TestBootstrapValidateRequiresCompleteServerConfig(t *testing.T) {
 
 func TestBootstrapRequiresVPCDependenciesAndBoundedWorkerTiming(t *testing.T) {
 	cfg := validConfig()
-	cfg.Network = &Network{DatabaseDsn: "postgres://runtime@127.0.0.1/network", ClusterId: "test", NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(), Worker: &Worker{
+	cfg.Network = &Network{DatabaseDsn: "postgres://runtime@127.0.0.1/network", ClusterId: "test", CursorSigningKey: testenv.SigningKey(), Worker: &Worker{
 		Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond),
 	}}
 	if err := cfg.Validate(); err != nil {

@@ -69,10 +69,10 @@ var namespaceRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 // TenantNamespace follows Resource's tenant namespace convention. The prefix
 // comes from trusted platform configuration, never from a Sandbox request.
 func TenantNamespace(tenant, prefix string) (string, error) {
-	if !UUID(tenant) {
+	if !UUID(tenant) || prefix != "tenant-" {
 		return "", ErrInvalid
 	}
-	namespace := prefix + tenant
+	namespace := "tenant-" + tenant
 	if len(namespace) > 63 || !namespaceRE.MatchString(namespace) {
 		return "", ErrInvalid
 	}
@@ -218,7 +218,6 @@ type SelectionResolver interface {
 // NamespaceResolver prepares a namespace only for initial resolution. Accepted
 // commands must use the read-only method to check their frozen UID.
 type NamespaceResolver interface {
-	EnsureSandboxNamespaceUID(context.Context, string) (string, error)
 	ResolveSandboxNamespaceUID(context.Context, string) (string, error)
 }
 

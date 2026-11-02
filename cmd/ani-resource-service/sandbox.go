@@ -130,7 +130,7 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 		repo.Close()
 		return unavailable("storage client initialization failed", err)
 	}
-	storageUseCase, err := storagebiz.NewUseCase(classes, nil, storagebiz.Config{NamespacePrefix: network.NamespacePrefix})
+	storageUseCase, err := storagebiz.NewUseCase(classes, nil, storagebiz.Config{NamespacePrefix: "tenant-"})
 	if err != nil {
 		repo.Close()
 		return unavailable("storage configuration is invalid", err)
@@ -140,11 +140,11 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 		imageRuntime = images.runtime
 	}
 	handler, err := sandbox.NewService(repo, compute.resolver, sandbox.Config{
-		ClusterID: compute.settings.ClusterID, NamespacePrefix: network.NamespacePrefix,
+		ClusterID: compute.settings.ClusterID, NamespacePrefix: "tenant-",
 		WorkspaceSize: "5Gi", RuntimeClassResolver: data.RuntimeClass{Client: client},
 		ImageResolver:        data.Image{Runtime: imageRuntime},
-		StorageClassResolver: data.StorageClass{Classes: storageUseCase, Namespaces: classes, Client: client, NamespacePrefix: network.NamespacePrefix},
-		NamespaceResolver:    data.TenantNamespace{Client: client, NamespacePrefix: network.NamespacePrefix},
+		StorageClassResolver: data.StorageClass{Classes: storageUseCase, Namespaces: classes, Client: client, NamespacePrefix: "tenant-"},
+		NamespaceResolver:    data.TenantNamespace{Client: client, NamespacePrefix: "tenant-"},
 	})
 	if err != nil {
 		repo.Close()
@@ -155,7 +155,7 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 		repo.Close()
 		return unavailable("sandbox provider initialization failed", err)
 	}
-	if err = provider.ConfigureTenantNamespacePrefix(network.NamespacePrefix); err != nil {
+	if err = provider.ConfigureTenantNamespacePrefix("tenant-"); err != nil {
 		repo.Close()
 		return unavailable("sandbox tenant namespace configuration is invalid", err)
 	}

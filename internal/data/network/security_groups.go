@@ -173,6 +173,11 @@ func sgNoActiveLease(ctx context.Context, q *db.Queries, tenant, kind, id string
 }
 
 func (p *Postgres) MutateSecurityGroup(ctx context.Context, i biz.SecurityGroupIntent, a biz.Attribution) (biz.SecurityGroupMutation, error) {
+	identity, identityErr := p.ResolveTenantNamespace(ctx, i.TenantID)
+	if identityErr != nil {
+		return biz.SecurityGroupMutation{}, identityErr
+	}
+
 	tx, e := p.pool.Begin(ctx)
 	if e != nil {
 		return biz.SecurityGroupMutation{}, databaseFailure(e)
@@ -195,8 +200,8 @@ func (p *Postgres) MutateSecurityGroup(ctx context.Context, i biz.SecurityGroupI
 	var v biz.SecurityGroup
 	var changedRule biz.SecurityGroupRule
 	if i.Action == "create" {
-		if e = q.EnsureTenantNamespace(ctx, db.EnsureTenantNamespaceParams{TenantID: i.TenantID, ClusterID: p.placement.ClusterID, Namespace: p.placement.NamespacePrefix + i.TenantID}); e != nil {
-			return biz.SecurityGroupMutation{}, databaseFailure(e)
+		if e = p.acceptTenantNamespace(ctx, q, identity); e != nil {
+			return biz.SecurityGroupMutation{}, e
 		}
 		ns, e := q.GetTenantNamespace(ctx, db.GetTenantNamespaceParams{TenantID: i.TenantID, ClusterID: p.placement.ClusterID})
 		if e != nil {

@@ -57,7 +57,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	defer sandboxes.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	repository, err := data.OpenPostgres(ctx, bc.Network.DatabaseDsn, data.Placement{ClusterID: bc.Network.ClusterId, NamespacePrefix: bc.Network.NamespacePrefix})
+	repository, err := data.OpenPostgres(ctx, bc.Network.DatabaseDsn, data.Placement{ClusterID: bc.Network.ClusterId, NamespacePrefix: "tenant-"})
 	cancel()
 	if err != nil {
 		return err
@@ -127,7 +127,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 		return err
 	}
 	defer fallback.Close()
-	consumer, err := wireInstanceNetwork(instances, networkUC, attachments, fallback, bc.Network.ClusterId, bc.Network.NamespacePrefix, policy.StaleAfter)
+	consumer, err := wireInstanceNetwork(instances, networkUC, attachments, fallback, bc.Network.ClusterId, "tenant-", policy.StaleAfter)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"strconv"
 	"strings"
 	"time"
@@ -56,9 +57,7 @@ func (p *KubernetesProvider) ConfigureImages(images pullMaterialSource) error {
 	return nil
 }
 
-// ConfigureTenantNamespacePrefix enables the tenant namespace guard. Production
-// composition must call it; an unconfigured provider exists only for legacy
-// tests and fixtures that predate tenant namespaces.
+// ConfigureTenantNamespacePrefix only accepts the fixed standard namespace rule.
 func (p *KubernetesProvider) ConfigureTenantNamespacePrefix(prefix string) error {
 	if _, err := storagebiz.NamespaceName(prefix, "11111111-1111-4111-8111-111111111111"); err != nil {
 		return biz.ErrInvalid
@@ -71,9 +70,6 @@ func (p *KubernetesProvider) ConfigureTenantNamespacePrefix(prefix string) error
 // checks detect changes seen before/after an operation but cannot make them
 // atomic. Each observation and write must use the UID frozen at acceptance.
 func (p *KubernetesProvider) verifyTenantNamespace(ctx context.Context, s biz.Sandbox, originalUID string) (string, error) {
-	if p.tenantNamespacePrefix == "" {
-		return "", nil
-	}
 	name, err := storagebiz.NamespaceName(p.tenantNamespacePrefix, s.TenantID)
 	if err != nil || name != s.Snapshot.Namespace {
 		return "", biz.ErrOwnership
@@ -83,10 +79,11 @@ func (p *KubernetesProvider) verifyTenantNamespace(ctx context.Context, s biz.Sa
 		return "", err
 	}
 	uid := string(ns.GetUID())
-	l := ns.GetLabels()
-	if ns.GetName() != name || uid == "" || s.Snapshot.NamespaceUID == "" || uid != s.Snapshot.NamespaceUID || ns.GetDeletionTimestamp() != nil || l[storagebiz.NamespaceManagedBy] != storagebiz.NamespaceOwner || l[storagebiz.NamespaceTenantID] != s.TenantID || (originalUID != "" && uid != originalUID) {
+	phase, _, _ := unstructured.NestedString(ns.Object, "status", "phase")
+	if s.Snapshot.NamespaceUID == "" || (originalUID != "" && originalUID != uid) || tenantnamespace.Validate(s.TenantID, tenantnamespace.Object{Name: ns.GetName(), UID: uid, Phase: phase, Labels: ns.GetLabels(), Deleting: ns.GetDeletionTimestamp() != nil}, s.Snapshot.NamespaceUID, false) != nil {
 		return "", biz.ErrOwnership
 	}
+
 	return uid, nil
 }
 
@@ -94,7 +91,7 @@ func NewKubernetesProvider(client dynamic.Interface, clusterID string) (*Kuberne
 	if client == nil || !biz.UUID(clusterID) {
 		return nil, biz.ErrInvalid
 	}
-	return &KubernetesProvider{client: client, clusterID: clusterID}, nil
+	return &KubernetesProvider{client: client, clusterID: clusterID, tenantNamespacePrefix: "tenant-"}, nil
 }
 func (p *KubernetesProvider) requireCluster(s biz.Sandbox) error {
 	if s.Snapshot.ClusterID != p.clusterID {
@@ -776,6 +773,16 @@ func (p *KubernetesProvider) Apply(ctx context.Context, s biz.Sandbox, mutation 
 	namespaceUID, namespaceErr := p.verifyTenantNamespace(ctx, s, "")
 	if namespaceErr != nil {
 		return fail("TENANT_NAMESPACE_UNAVAILABLE", namespaceErr)
+	}
+	if mutation.Kind == biz.MutationCreateWorkspace || mutation.Kind == biz.MutationCreatePod {
+		ns, err := p.client.Resource(namespaceGVR).Get(ctx, s.Snapshot.Namespace, metav1.GetOptions{})
+		if err != nil {
+			return fail("TENANT_NAMESPACE_UNAVAILABLE", err)
+		}
+		phase, _, _ := unstructured.NestedString(ns.Object, "status", "phase")
+		if tenantnamespace.Validate(s.TenantID, tenantnamespace.Object{Name: ns.GetName(), UID: string(ns.GetUID()), Phase: phase, Labels: ns.GetLabels(), Deleting: ns.GetDeletionTimestamp() != nil}, s.Snapshot.NamespaceUID, true) != nil {
+			return fail("TENANT_NAMESPACE_UNAVAILABLE", biz.ErrOwnership)
+		}
 	}
 	pvcName, podName := names(s)
 	ns := s.Snapshot.Namespace

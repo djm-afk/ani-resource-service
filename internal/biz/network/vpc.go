@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 // Reason is a stable product failure, independent of transport or provider.
@@ -51,16 +52,17 @@ func Fail(reason Reason, message string) error {
 // VPCIntent is a normalized create request. Attribution is deliberately absent:
 // the actor/direct caller must not change the identity of an idempotent request.
 type VPCIntent struct {
-	TenantID       string
-	Name           string
-	CIDR           string
-	Description    string
-	IdempotencyKey string
+	NamespaceIdentity tenantnamespace.Identity
+	TenantID          string
+	Name              string
+	CIDR              string
+	Description       string
+	IdempotencyKey    string
 }
 
 func ParseTenant(value string) (string, error) {
 	id, err := uuid.Parse(value)
-	if len(value) != 36 || err != nil || id == uuid.Nil {
+	if len(value) != 36 || err != nil || id == uuid.Nil || id.String() != value {
 		return "", Fail(TenantRequired, "a nonzero UUID tenant_id is required")
 	}
 	return id.String(), nil

@@ -64,7 +64,10 @@ func (c *Image) validatePullSecretWriter() error {
 	}
 	seen := map[string]bool{}
 	for _, caller := range c.PullSecretCallers {
-		if caller == nil || caller.Subject == "" || seen[caller.Subject] || len(caller.ClusterIds) == 0 || len(caller.Namespaces) == 0 {
+		if caller == nil || caller.Subject == "" || seen[caller.Subject] || len(caller.ClusterIds) == 0 || (caller.Subject != "ani-modeldev-service" && len(caller.Namespaces) == 0) {
+			return invalid
+		}
+		if caller.Subject == "ani-modeldev-service" && (len(caller.Namespaces) != 0 || len(caller.OwnerLabels) != 0 || caller.RequireTenantLabel) {
 			return invalid
 		}
 		seen[caller.Subject] = true

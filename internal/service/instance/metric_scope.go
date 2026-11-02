@@ -44,7 +44,7 @@ func (s *Service) ResolveInstanceMetricScope(ctx context.Context, r *pb.GetInsta
 		if !found {
 			return nil, rpcError(err)
 		}
-		if _, namespaceErr := biz.ResolveNamespace(r.TenantId, namespace, ""); !biz.UUID(cluster) || namespace == "" || namespaceErr != nil {
+		if !biz.UUID(cluster) || !biz.ValidNamespaceName(namespace) {
 			return nil, metricScopeUnavailable()
 		}
 		return &pb.InstanceMetricScope{TenantId: r.TenantId, InstanceId: r.InstanceId, ClusterId: cluster, Namespace: namespace, ContainerName: "compute"}, nil
@@ -52,10 +52,9 @@ func (s *Service) ResolveInstanceMetricScope(ctx context.Context, r *pb.GetInsta
 	if i.TenantID != r.TenantId || i.ID != r.InstanceId {
 		return nil, rpcError(biz.ErrDenied)
 	}
-	// ResolveNamespace normally supplies a create-time default. An absent
-	// persisted namespace must never take that fallback on historical reads.
-	_, namespaceErr := biz.ResolveNamespace(i.TenantID, i.Spec.Namespace, "")
-	if !biz.UUID(i.Spec.ClusterID) || i.Spec.Namespace == "" || namespaceErr != nil {
+	// Historical metric reads use the persisted, tenant-scoped original location.
+	// New-create namespace selection is not an authority for historical reads.
+	if !biz.UUID(i.Spec.ClusterID) || !biz.ValidNamespaceName(i.Spec.Namespace) {
 		return nil, metricScopeUnavailable()
 	}
 	return &pb.InstanceMetricScope{TenantId: i.TenantID, InstanceId: i.ID, ClusterId: i.Spec.ClusterID, Namespace: i.Spec.Namespace, ContainerName: biz.Container}, nil

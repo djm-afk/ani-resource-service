@@ -85,6 +85,10 @@ func (n *Network) CreateSubnet(ctx context.Context, request CreateSubnet) (Subne
 	if err := validateAttribution(request.Attribution); err != nil {
 		return Subnet{}, err
 	}
+	intent.NamespaceIdentity, err = n.repository.ResolveTenantNamespace(ctx, intent.TenantID)
+	if err != nil {
+		return Subnet{}, err
+	}
 	return n.repository.AcceptSubnet(ctx, intent, request.Attribution, n.freshness)
 }
 func (n *Network) GetSubnet(ctx context.Context, tenant, id string) (Subnet, error) {

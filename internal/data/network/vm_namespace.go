@@ -66,15 +66,14 @@ func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTa
 	if binding.ResourceKind != "subnet" || binding.ProviderUid == "" {
 		return biz.Fail(biz.NetworkNotReady, "VM Subnet identity unavailable")
 	}
-	// Namespace creation remains part of the existing VPC/Subnet lifecycle.
-	// This ancillary preparation never recreates a deleted Namespace.
+	if err := p.verifyTenantNamespace(ctx, binding); err != nil {
+		return err
+	}
 	ns, err := p.client.Resource(namespaces).Get(ctx, binding.Namespace, metav1.GetOptions{})
 	if err != nil {
 		return readFailure(err)
 	}
-	if ns.GetUID() == "" || ns.GetDeletionTimestamp() != nil || ns.GetLabels()[tenantLabel] != binding.TenantID || ns.GetLabels()[ownerLabel] != "ani-network-service" {
-		return biz.Fail(biz.AttachmentConflict, "managed VM namespace ownership changed")
-	}
+
 	raw := automaticVMNADConfig(*p.vmAutoNetwork)
 	digest, err := VMNADConfigDigest(raw)
 	if err != nil {
@@ -193,6 +192,9 @@ func (p *KCProvider) lookupManagedVMNetwork(ctx context.Context, tenant, vpc, su
 	b, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: tenant, ResourceID: subnet})
 	if err != nil {
 		return ManagedVMNAD{}, databaseFailure(err)
+	}
+	if err := p.verifyTenantNamespace(ctx, b); err != nil {
+		return ManagedVMNAD{}, err
 	}
 	if s.VpcID != vpc || b.ClusterID != cluster || b.Namespace != namespace || b.ProviderUid == "" || b.ResourceKind != "subnet" {
 		return ManagedVMNAD{}, biz.Fail(biz.PlacementMismatch, "VM network placement differs")

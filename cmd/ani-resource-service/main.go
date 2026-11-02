@@ -128,6 +128,15 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	if os.Getenv("ANI_NETWORK_NAMESPACE_PREFIX") != "" || os.Getenv("NETWORK_NAMESPACE_PREFIX") != "" {
+		return fmt.Errorf("namespace prefix configuration has been removed")
+	}
+	if old, err := c.Value("network.namespace_prefix").String(); err == nil && old != "" {
+		return fmt.Errorf("network.namespace_prefix has been removed")
+	}
+	if old, err := c.Value("network.namespacePrefix").String(); err == nil && old != "" {
+		return fmt.Errorf("network.namespacePrefix has been removed")
+	}
 	var bc conf.Bootstrap
 	if err := c.Scan(&bc); err != nil {
 		return fmt.Errorf("scan config: %w", err)

@@ -43,6 +43,7 @@ sql:
       - migrations/0022_default_egress_eip_identity.sql
       - migrations/0023_security_groups.sql
       - migrations/0024_vpc_provider_readiness.sql
+      - migrations/0025_tenant_namespace_uid.sql
     queries: internal/data/network/queries
     gen:
       go:

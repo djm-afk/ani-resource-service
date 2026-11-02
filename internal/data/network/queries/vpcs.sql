@@ -72,11 +72,21 @@ ORDER BY v.created_at DESC, v.vpc_id DESC
 LIMIT sqlc.arg(max_results)::integer OFFSET sqlc.arg(page_offset)::bigint;
 
 -- name: EnsureTenantNamespace :exec
-INSERT INTO network_tenant_namespaces(tenant_id,cluster_id,namespace) VALUES ($1,$2,$3)
+INSERT INTO network_tenant_namespaces(tenant_id,cluster_id,namespace,namespace_uid) VALUES ($1,$2,$3,$4)
 ON CONFLICT (tenant_id,cluster_id) DO NOTHING;
 
 -- name: GetTenantNamespace :one
-SELECT namespace FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2;
+SELECT namespace FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2 AND namespace_uid IS NOT NULL AND btrim(namespace_uid) <> '';
+
+-- name: GetTenantNamespaceIdentity :one
+SELECT tenant_id,cluster_id,namespace,namespace_uid FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2;
+
+-- name: ListTenantNamespaceIdentities :many
+SELECT tenant_id,cluster_id,namespace,namespace_uid FROM network_tenant_namespaces ORDER BY tenant_id,cluster_id;
+
+-- name: BackfillTenantNamespaceUID :execrows
+UPDATE network_tenant_namespaces SET namespace_uid=sqlc.arg(namespace_uid)::text
+WHERE tenant_id=sqlc.arg(tenant_id) AND cluster_id=sqlc.arg(cluster_id) AND namespace=sqlc.arg(namespace) AND namespace_uid IS NULL;
 
 -- name: CountVPCs :one
 SELECT count(*) FROM network_vpcs v

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"strconv"
 	"strings"
 
@@ -75,8 +76,8 @@ func (n *Notebook) ValidateEnvironment(ctx context.Context, tenant, namespace, s
 	if e != nil {
 		return e
 	}
-	// Preserve Network's existing Namespace ownership contract without its DB.
-	if ns.GetDeletionTimestamp() != nil || ns.GetLabels()["network.ani.io/tenant-id"] != tenant || ns.GetLabels()["network.ani.io/managed-by"] != "ani-network-service" {
+	phase, _, _ := unstructured.NestedString(ns.Object, "status", "phase")
+	if tenantnamespace.Validate(tenant, tenantnamespace.Object{Name: ns.GetName(), UID: string(ns.GetUID()), Phase: phase, Labels: ns.GetLabels(), Deleting: ns.GetDeletionTimestamp() != nil}, "", true) != nil {
 		return biz.ErrOwnership
 	}
 	account, e := n.client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}).Namespace(namespace).Get(ctx, sa, metav1.GetOptions{})

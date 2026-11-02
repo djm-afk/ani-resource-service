@@ -21,7 +21,7 @@ VPC/Subnet 的持久操作、后台推进、状态判定、失败恢复、占用
 
 - 使用全新测试环境及空的 Network 数据库，没有遗留 VPC/Subnet；不做旧表兼容、旧资源迁移或双写。
 - PostgreSQL 由 Network 独占业务所有权，sqlc/pgx 数据访问，不启用 RLS。
-- 第一部署目标是单个测试集群；集群及租户到命名空间的映射由部署配置/基础设施适配管理，租户不选择集群、Namespace、CR 或 NAD。
+- 一份部署配置管理一个固定集群；标准租户 Namespace 身份由[统一合同](../contracts/tenant-namespace.md)规定，租户不选择集群、Namespace、CR 或 NAD。
 - 首片是 IPv4 私有 VPC 网络：同子网、同 VPC 跨子网连通；不同 VPC 默认隔离，跨租户隔离。
 - 自定义路由、SG、LB、NAT/EIP、公网访问、Storage 挂载、IPv6、多集群调度不在本片；同 VPC 的系统连接路由由 Provider 实现。
 - 服务间身份验证延期到 IAM 契约就绪；这不阻断本期本地功能及指定测试环境联调，不得将其记为认证/授权验收通过。

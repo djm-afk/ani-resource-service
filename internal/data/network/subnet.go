@@ -59,6 +59,9 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 	if value, found, err := subnetReplay(ctx, q, intent); found || err != nil {
 		return value, err
 	}
+	if err := p.acceptTenantNamespace(ctx, q, intent.NamespaceIdentity); err != nil {
+		return biz.Subnet{}, err
+	}
 	now, err := q.DatabaseTime(ctx)
 	if err != nil {
 		return biz.Subnet{}, databaseFailure(err)

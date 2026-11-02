@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"testing"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
@@ -100,15 +101,17 @@ func TestVMManagedNADRequiresTrustedIdentityAndCanonicalConfig(t *testing.T) {
 	if equivalent, err := VMNADConfigDigest(`{ "mtu":1500,"type":"kc-networking","server_socket":"/run/kcn.sock","name":"vm-main","cniVersion":"0.3.1" }`); err != nil || equivalent != digest {
 		t.Fatal("NAD canonical digest unstable", err)
 	}
-	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant", "uid": "namespace-uid"}}}
-	nad := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition", "metadata": map[string]any{"name": "main", "namespace": "tenant", "uid": "nad-uid"}, "spec": map[string]any{"config": raw}}}
+	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-11111111-1111-4111-8111-111111111111", "uid": "namespace-uid", "labels": map[string]any{tenantLabel: "11111111-1111-4111-8111-111111111111", ownerLabel: "ani-network-service"}}}}
+	nad := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition", "metadata": map[string]any{"name": "main", "namespace": "tenant-11111111-1111-4111-8111-111111111111", "uid": "nad-uid"}, "spec": map[string]any{"config": raw}}}
 	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), ns)
 	// The CRD plural contains hyphens; the generic fake's kind-based guess does not.
-	if err = client.Tracker().Create(vmNADs, nad, "tenant"); err != nil {
+	if err = client.Tracker().Create(vmNADs, nad, "tenant-11111111-1111-4111-8111-111111111111"); err != nil {
 		t.Fatal(err)
 	}
-	p := &KCProvider{repository: &Postgres{placement: Placement{ClusterID: "cluster"}}, client: client}
-	policy := ManagedVMNAD{TenantID: "tenant-id", VPCID: "vpc", SubnetID: "subnet", ClusterID: "cluster", Namespace: "tenant", NamespaceUID: "namespace-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: "tenant/kcn-subnet"}
+	p := &KCProvider{repository: &Postgres{placement: Placement{ClusterID: "cluster"}}, client: client, namespaceIdentityReader: func(context.Context, string) (tenantnamespace.Identity, error) {
+		return tenantnamespace.Identity{TenantID: "11111111-1111-4111-8111-111111111111", ClusterID: "cluster", Name: "tenant-11111111-1111-4111-8111-111111111111", UID: string(ns.GetUID())}, nil
+	}}
+	policy := ManagedVMNAD{TenantID: "11111111-1111-4111-8111-111111111111", VPCID: "vpc", SubnetID: "subnet", ClusterID: "cluster", Namespace: "tenant-11111111-1111-4111-8111-111111111111", NamespaceUID: "namespace-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: "tenant-11111111-1111-4111-8111-111111111111/kcn-subnet"}
 	s := biz.VMNetworkSelection{TenantID: policy.TenantID, VPCID: policy.VPCID, SubnetID: policy.SubnetID, ClusterID: policy.ClusterID, Namespace: policy.Namespace, KCNSubnetRef: policy.KCNSubnetRef}
 	e := biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: digest}
 	if _, err = p.ResolveVMNetwork(context.Background(), s, e); err == nil {
@@ -121,7 +124,7 @@ func TestVMManagedNADRequiresTrustedIdentityAndCanonicalConfig(t *testing.T) {
 		t.Fatal("trusted NAD plan", plan, err)
 	}
 	nad.SetUID("replacement")
-	if _, err = p.client.Resource(vmNADs).Namespace("tenant").Update(context.Background(), nad, metav1.UpdateOptions{}); err != nil {
+	if _, err = p.client.Resource(vmNADs).Namespace("tenant-11111111-1111-4111-8111-111111111111").Update(context.Background(), nad, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = p.ResolveVMNetwork(context.Background(), s, e); err == nil {
@@ -151,14 +154,16 @@ func TestVMManagedNADRequiresKCNControllerCompatibleSinglePlugin(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant", "uid": "ns-uid"}}}
-			nad := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition", "metadata": map[string]any{"name": "main", "namespace": "tenant", "uid": "nad-uid"}, "spec": map[string]any{"config": test.raw}}}
+			ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-11111111-1111-4111-8111-111111111111", "uid": "ns-uid", "labels": map[string]any{tenantLabel: "11111111-1111-4111-8111-111111111111", ownerLabel: "ani-network-service"}}}}
+			nad := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition", "metadata": map[string]any{"name": "main", "namespace": "tenant-11111111-1111-4111-8111-111111111111", "uid": "nad-uid"}, "spec": map[string]any{"config": test.raw}}}
 			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), ns)
-			if err := client.Tracker().Create(vmNADs, nad, "tenant"); err != nil {
+			if err := client.Tracker().Create(vmNADs, nad, "tenant-11111111-1111-4111-8111-111111111111"); err != nil {
 				t.Fatal(err)
 			}
-			provider := &KCProvider{repository: &Postgres{placement: Placement{ClusterID: "cluster"}}, client: client}
-			policy := ManagedVMNAD{TenantID: "tenant-id", VPCID: "vpc", SubnetID: "subnet", ClusterID: "cluster", Namespace: "tenant", NamespaceUID: "ns-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: "tenant/subnet"}
+			provider := &KCProvider{repository: &Postgres{placement: Placement{ClusterID: "cluster"}}, client: client, namespaceIdentityReader: func(context.Context, string) (tenantnamespace.Identity, error) {
+				return tenantnamespace.Identity{TenantID: "11111111-1111-4111-8111-111111111111", ClusterID: "cluster", Name: "tenant-11111111-1111-4111-8111-111111111111", UID: string(ns.GetUID())}, nil
+			}}
+			policy := ManagedVMNAD{TenantID: "11111111-1111-4111-8111-111111111111", VPCID: "vpc", SubnetID: "subnet", ClusterID: "cluster", Namespace: "tenant-11111111-1111-4111-8111-111111111111", NamespaceUID: "ns-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: "tenant-11111111-1111-4111-8111-111111111111/subnet"}
 			if err := provider.ConfigureVMNetworks([]ManagedVMNAD{policy}); err != nil {
 				t.Fatal(err)
 			}

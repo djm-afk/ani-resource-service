@@ -29,7 +29,7 @@ rules:
     verbs: [patch]
   - apiGroups: [""]
     resources: [namespaces]
-    verbs: [get, create]
+    verbs: [get]
   - apiGroups: [networking.k8s.io]
     resources: [servicecidrs]
     verbs: [get, list, watch]

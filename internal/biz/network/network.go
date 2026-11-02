@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 type ResourceState string
@@ -82,6 +83,7 @@ type CreateVPC struct {
 }
 
 type NetworkRepository interface {
+	ResolveTenantNamespace(context.Context, string) (tenantnamespace.Identity, error)
 	AcceptSubnet(context.Context, SubnetIntent, Attribution, time.Duration) (Subnet, error)
 	GetSubnet(context.Context, string, string) (Subnet, error)
 	ListSubnets(context.Context, string, SubnetFilter) ([]Subnet, int64, error)
@@ -115,6 +117,10 @@ func (n *Network) CreateVPC(ctx context.Context, request CreateVPC) (VPC, error)
 		return VPC{}, err
 	}
 	if err := validateAttribution(request.Attribution); err != nil {
+		return VPC{}, err
+	}
+	intent.NamespaceIdentity, err = n.repository.ResolveTenantNamespace(ctx, intent.TenantID)
+	if err != nil {
 		return VPC{}, err
 	}
 	return n.repository.AcceptVPC(ctx, intent, request.Attribution)

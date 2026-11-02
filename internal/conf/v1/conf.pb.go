@@ -551,9 +551,8 @@ type Network struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	DatabaseDsn string                 `protobuf:"bytes,1,opt,name=database_dsn,json=databaseDsn,proto3" json:"database_dsn,omitempty"`
 	// Empty uses Kubernetes in-cluster service account credentials.
-	Kubeconfig      string `protobuf:"bytes,2,opt,name=kubeconfig,proto3" json:"kubeconfig,omitempty"`
-	ClusterId       string `protobuf:"bytes,3,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
-	NamespacePrefix string `protobuf:"bytes,4,opt,name=namespace_prefix,json=namespacePrefix,proto3" json:"namespace_prefix,omitempty"`
+	Kubeconfig string `protobuf:"bytes,2,opt,name=kubeconfig,proto3" json:"kubeconfig,omitempty"`
+	ClusterId  string `protobuf:"bytes,3,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
 	// Base64 encoded secret, at least 32 bytes, shared by service replicas.
 	CursorSigningKey string  `protobuf:"bytes,5,opt,name=cursor_signing_key,json=cursorSigningKey,proto3" json:"cursor_signing_key,omitempty"`
 	Worker           *Worker `protobuf:"bytes,6,opt,name=worker,proto3" json:"worker,omitempty"`
@@ -619,13 +618,6 @@ func (x *Network) GetKubeconfig() string {
 func (x *Network) GetClusterId() string {
 	if x != nil {
 		return x.ClusterId
-	}
-	return ""
-}
-
-func (x *Network) GetNamespacePrefix() string {
-	if x != nil {
-		return x.NamespacePrefix
 	}
 	return ""
 }
@@ -1262,15 +1254,14 @@ const file_conf_v1_conf_proto_rawDesc = "" +
 	"namespaces\x18\x03 \x03(\tR\n" +
 	"namespaces\x12!\n" +
 	"\fowner_labels\x18\x04 \x03(\tR\vownerLabels\x120\n" +
-	"\x14require_tenant_label\x18\x05 \x01(\bR\x12requireTenantLabel\"\xab\x04\n" +
+	"\x14require_tenant_label\x18\x05 \x01(\bR\x12requireTenantLabel\"\x98\x04\n" +
 	"\aNetwork\x12!\n" +
 	"\fdatabase_dsn\x18\x01 \x01(\tR\vdatabaseDsn\x12\x1e\n" +
 	"\n" +
 	"kubeconfig\x18\x02 \x01(\tR\n" +
 	"kubeconfig\x12\x1d\n" +
 	"\n" +
-	"cluster_id\x18\x03 \x01(\tR\tclusterId\x12)\n" +
-	"\x10namespace_prefix\x18\x04 \x01(\tR\x0fnamespacePrefix\x12,\n" +
+	"cluster_id\x18\x03 \x01(\tR\tclusterId\x12,\n" +
 	"\x12cursor_signing_key\x18\x05 \x01(\tR\x10cursorSigningKey\x12'\n" +
 	"\x06worker\x18\x06 \x01(\v2\x0f.conf.v1.WorkerR\x06worker\x12<\n" +
 	"\x1ainstance_consumer_endpoint\x18\a \x01(\tR\x18instanceConsumerEndpoint\x126\n" +
@@ -1278,7 +1269,7 @@ const file_conf_v1_conf_proto_rawDesc = "" +
 	"\rload_balancer\x18\t \x01(\v2\x15.conf.v1.LoadBalancerR\floadBalancer\x12(\n" +
 	"\x10vpc_cidr_presets\x18\n" +
 	" \x03(\tR\x0evpcCidrPresets\x12`\n" +
-	"\x1bplatform_default_vpc_egress\x18\v \x01(\v2!.conf.v1.PlatformDefaultVPCEgressR\x18platformDefaultVpcEgress\"\x7f\n" +
+	"\x1bplatform_default_vpc_egress\x18\v \x01(\v2!.conf.v1.PlatformDefaultVPCEgressR\x18platformDefaultVpcEgressJ\x04\b\x04\x10\x05R\x10namespace_prefix\"\x7f\n" +
 	"\x18PlatformDefaultVPCEgress\x12\x1f\n" +
 	"\vcluster_uid\x18\x01 \x01(\tR\n" +
 	"clusterUid\x12\x1c\n" +

@@ -98,6 +98,9 @@ func (p *KCProvider) observeAttachment(ctx context.Context, w biz.AttachmentWork
 	if e != nil {
 		return biz.AttachmentObservation{}, readFailure(e)
 	}
+	if err := p.verifyTenantNamespace(ctx, b); err != nil {
+		return biz.AttachmentObservation{}, err
+	}
 	if b.ClusterID != a.ClusterID || b.ClusterID != p.repository.placement.ClusterID || b.Namespace != a.Namespace || b.BindingID+":"+b.ProviderUid != a.BindingRevision || plan.PrimaryNetworkRef != b.Namespace+"/"+b.ProviderName {
 		return conflict()
 	}

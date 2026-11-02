@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"strings"
 )
 
@@ -23,6 +24,7 @@ type NamespaceClaim struct {
 	OwnerLabels                                  []string
 	RequireTenantLabel                           bool
 	Verify                                       bool
+	StandardTenantNamespace                      bool
 }
 
 // NamespaceAuthority reads the real namespace to confirm name, UID and labels.
@@ -39,8 +41,11 @@ func (r *Runtime) UsePullSecretWriter(writer PullSecretWriter, namespaces Namesp
 	}
 	table := make(map[string]PullSecretCaller, len(callers))
 	for _, caller := range callers {
-		if caller.Subject == "" || len(caller.ClusterIDs) == 0 || len(caller.Namespaces) == 0 {
+		if caller.Subject == "" || len(caller.ClusterIDs) == 0 || (caller.Subject != "ani-modeldev-service" && len(caller.Namespaces) == 0) {
 			return Fail(InvalidArgument, "pull secret caller requires subject, cluster and namespace allowlist")
+		}
+		if caller.Subject == "ani-modeldev-service" && (len(caller.Namespaces) != 0 || len(caller.OwnerLabels) != 0 || caller.RequireTenantLabel) {
+			return Fail(InvalidArgument, "ModelDev namespace and owner-label legacy configuration is forbidden")
 		}
 		if _, exists := table[caller.Subject]; exists {
 			return Fail(InvalidArgument, "duplicate pull secret caller")
@@ -65,8 +70,15 @@ func (r *Runtime) guardNamespace(ctx context.Context, caller Caller, in EnsurePu
 		if !ok {
 			return Fail(PermissionDenied, "runtime identity is not authorized to ensure pull secrets")
 		}
-		if !contains(allow.ClusterIDs, in.ClusterID) || !contains(allow.Namespaces, in.Namespace) {
+		if (caller.Subject == "ani-modeldev-service" && !containsExact(allow.ClusterIDs, in.ClusterID)) || !contains(allow.ClusterIDs, in.ClusterID) || (caller.Subject != "ani-modeldev-service" && !contains(allow.Namespaces, in.Namespace)) {
 			return Fail(PermissionDenied, "pull secret target outside the caller allowlist")
+		}
+		if caller.Subject == "ani-modeldev-service" {
+			name, err := tenantnamespace.Name(in.TenantID)
+			if err != nil || name != in.Namespace || in.NamespaceUID == "" {
+				return Fail(PermissionDenied, "ModelDev standard tenant namespace and original UID required")
+			}
+			claim.StandardTenantNamespace = true
 		}
 		claim.Verify = true
 		claim.OwnerLabels = allow.OwnerLabels
@@ -83,6 +95,15 @@ func contains(values []string, want string) bool {
 	want = strings.ToLower(want)
 	for _, value := range values {
 		if strings.ToLower(value) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsExact(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
 			return true
 		}
 	}

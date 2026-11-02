@@ -122,7 +122,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	if e != nil {
 		return nil, nil, e
 	}
-	environment, e := data.NewEnvironment(native, c.NamespacePrefix, func(ctx context.Context, tenant, cluster, namespace string, s biz.NetworkSelection) (biz.NetworkSelection, error) {
+	environment, e := data.NewEnvironment(native, "tenant-", func(ctx context.Context, tenant, cluster, namespace string, s biz.NetworkSelection) (biz.NetworkSelection, error) {
 		policy, e := provider.LookupManagedVMNetwork(ctx, tenant, s.VPCID, s.SubnetID, cluster, namespace)
 		if e != nil {
 			return biz.NetworkSelection{}, e

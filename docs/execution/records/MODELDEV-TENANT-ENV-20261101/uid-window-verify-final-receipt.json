@@ -1,0 +1,30 @@
+{
+  "cwd": "/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source",
+  "expected_local_base": "71b3ad7a2a88ae531e5e7b80abde2f494ff28d9d",
+  "remote_git_head": "unborn snapshot index; no HEAD",
+  "command": [
+    "make",
+    "verify"
+  ],
+  "environment": {
+    "GOTOOLCHAIN": "auto",
+    "GOMAXPROCS": "2",
+    "GOFLAGS": "-p=2",
+    "GOWORK": "off"
+  },
+  "source_sha256": {
+    "docs/runbooks/tenant-namespace-uid-window.md": "bc95a0f0d36bb0cd861b21ed05eb56c512c2092d47d7daf3d4f7bf387b030275",
+    "internal/data/network/namespace_uid_window.go": "bf0ae636bb8d7c3ff7d3b431d4a4de405b9c9be7e7385a163923585539af0729",
+    "internal/data/network/namespace_uid_window_integration_test.go": "8c5de25f1bf414e1c9097583e773c48e3e1cb54c1d5f14313d7db9e66ce58c23",
+    "scripts/tenant-namespace-window/cluster_read.go": "cb330dcdf333f221575b8e9a6022c51961467e09469f059b97aa527f1203cb58",
+    "scripts/tenant-namespace-window/main.go": "c0d45eda63fefdba09f1d35294e764cd2e1ce80d50af4b5679699e891c3dba45",
+    "scripts/tenant-namespace-window/main_test.go": "63b75f02b4aed70d906c3e08456c6e383c5f30ed014e0dfc1edac54ae9647753",
+    "docs/contracts/tenant-namespace.md": "959f90ffdef2ca852da40ff3643df431454d029003ec19a22f145f88d2ed7f80",
+    "internal/data/network/namespace_backfill.go": "cb40dd3a8d84be88d2c1f08160a7fffe6f5c647c9853e7c21697f0874c78d13a",
+    "scripts/tenant-namespace-backfill/main.go": "3a4d937c6ccf6cb09badf6754f5780d504646be7195171fb5fb44f882e1e258f"
+  },
+  "started_utc": "2026-10-31T22:38:06.717633+00:00",
+  "exit_code": 0,
+  "ended_utc": "2026-10-31T22:41:40.721999+00:00",
+  "source_unchanged": true
+}

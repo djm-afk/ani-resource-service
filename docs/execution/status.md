@@ -1327,3 +1327,18 @@ A05 受限调用者已真实通过：任务 user41/role34 仅有 backend/list/re
 以当前 Resource 分支 `018807c` 和原有未提交 Sandbox 工作区修改为输入，在独立临时 worktree 中合入 `3309c9fabd5fa670fed07ca197e157fd80f60a46`，保留该分支包含的实例重启、PVC 生命周期和 ModelDev 租户镜像凭据代码。隔离验证的合并树为 `221a15071df4e93d959f7041cf856effd2b9621d`；其中原工作区跟踪文件补丁 SHA-256 为 `6ba0448638def8fdc59e64475b65a89a63320a5022b6372a544a012bf747e519`，未跟踪文件逐项 SHA-256 见仓外快照清单。本条文档是在测试后追加，不计入上述树。
 
 指定 `/home/chabking/.ssh/config` 不存在，默认 `ssh ubuntu` 因主机密钥校验失败，按仓库允许的本地回退在当前主机使用 Go 1.26.10、固定 Buf 1.60.0 / sqlc 1.31.1 执行：`GOMAXPROCS=1 GOMEMLIMIT=1200MiB GOFLAGS=-p=1 GOWORK=off make verify` **pass**；使用本任务独占临时 PostgreSQL 17.11，Sandbox `sandboxintegration` 75 个顶层测试 **pass**，实例重启/PVC 定向回归 12 个顶层测试 **pass**，Image 引用定向回归 1 个顶层测试 **pass**。共享入口两项测试首次未配置 `NETWORK_TEST_ADMIN_DSN` 被 **skip**；补充独占数据库环境后单独执行，两项 **pass**。测试使用模拟 Kubernetes，不能代表真实 Sandbox 创建、暂停、恢复、删除已验收。临时数据库与凭据已清理；日志和输入清单位于仓外 `../verification-artifacts/resource-integration-review-20261029/`。GitHub PR 既有失败和新提交的 CI 状态需分别检查。
+
+## ModelDev dynamic tenant environment prerequisites (2026-11-01)
+
+Resource component implementation and required Fedora verification: PASS. Standard existing Namespace identity/UID, exact NULL-only Network maintenance backfill, and dynamic ModelDev pull Secret authorization are implemented. Inference static caller remains unchanged. Component/isolated PG evidence and exact scope are in [the implementation record](records/MODELDEV-TENANT-ENV-20261101/README.md). Live migration/backfill/deployment/A-B business acceptance: NOT_RUN, owned by coordinated task 09/10; no cluster writes performed here.
+
+
+Task09 temporary Network UID write barrier is now implemented: exact-manifest
+read-only plan / reviewed-SHA apply, schema24 freeze → official25 → atomic
+require-UID → guarded NULL-only backfill → original-writer-proven release.
+Final Fedora isolated PG race/backfill group and required `make verify` are
+**PASS** with unchanged runtime/test bytes; only execution documents followed.
+[Actual terminal logs/receipts and limits](records/MODELDEV-TENANT-ENV-20261101/README.md#temporary-uid-write-barrier-2026-11-01),
+[operational parameters](../runbooks/tenant-namespace-uid-window.md).
+Live constraints/migration/backfill/deployment/release remain **NOT_RUN**; current
+writer identities and a live Plan.SHA256 are not yet established.

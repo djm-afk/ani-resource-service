@@ -53,7 +53,7 @@ func TestBuildAppRunsProductionComposition(t *testing.T) {
 	for adminAddress == grpcAddress {
 		adminAddress = reserveAddress(t)
 	}
-	bc := &conf.Bootstrap{Network: &conf.Network{DatabaseDsn: fixture.RuntimeDSN, Kubeconfig: kubeconfig, ClusterId: "test-cluster", NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{
+	bc := &conf.Bootstrap{Network: &conf.Network{DatabaseDsn: fixture.RuntimeDSN, Kubeconfig: kubeconfig, ClusterId: "test-cluster", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{
 		Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond),
 	}}, Server: &conf.Server{
 		Grpc:            &conf.Server_GRPC{Network: "tcp", Addr: grpcAddress, Timeout: durationpb.New(time.Second)},

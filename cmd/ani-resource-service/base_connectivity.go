@@ -35,16 +35,16 @@ func init() {
 func runBaseConnectivityCommand() error {
 	dsn := os.Getenv("ANI_NETWORK_DATABASE_DSN")
 	cluster := os.Getenv("ANI_NETWORK_CLUSTER_ID")
-	prefix := os.Getenv("ANI_NETWORK_NAMESPACE_PREFIX")
-	if prefix == "" {
-		prefix = "tenant-"
+	if os.Getenv("ANI_NETWORK_NAMESPACE_PREFIX") != "" || os.Getenv("NETWORK_NAMESPACE_PREFIX") != "" {
+		return fmt.Errorf("namespace prefix configuration has been removed")
 	}
+
 	if dsn == "" || cluster == "" {
 		return fmt.Errorf("base-connectivity requires ANI_NETWORK_DATABASE_DSN and ANI_NETWORK_CLUSTER_ID")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	repository, err := data.OpenPostgres(ctx, dsn, data.Placement{ClusterID: cluster, NamespacePrefix: prefix})
+	repository, err := data.OpenPostgres(ctx, dsn, data.Placement{ClusterID: cluster, NamespacePrefix: "tenant-"})
 	if err != nil {
 		return err
 	}

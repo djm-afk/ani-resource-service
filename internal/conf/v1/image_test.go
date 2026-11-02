@@ -59,7 +59,7 @@ func TestImagePullSecretWriterConfiguration(t *testing.T) {
 	}
 	c = validImageConfig()
 	c.PullSecretClusterId = "cluster-a"
-	c.PullSecretCallers = []*PullSecretCaller{{Subject: "ani-modeldev-service", ClusterIds: []string{"cluster-a"}, Namespaces: []string{"tenant-training"}, OwnerLabels: []string{"ani-modeldev-service"}, RequireTenantLabel: true}}
+	c.PullSecretCallers = []*PullSecretCaller{{Subject: "ani-modeldev-service", ClusterIds: []string{"cluster-a"}}}
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +68,9 @@ func TestImagePullSecretWriterConfiguration(t *testing.T) {
 		"duplicate caller": func(c *Image) {
 			c.PullSecretCallers = append(c.PullSecretCallers, &PullSecretCaller{Subject: "ani-modeldev-service", ClusterIds: []string{"cluster-a"}, Namespaces: []string{"other"}})
 		},
-		"empty namespace":        func(c *Image) { c.PullSecretCallers[0].Namespaces = []string{""} },
-		"tenant label unlabeled": func(c *Image) { c.PullSecretCallers[0].OwnerLabels = nil },
-		"relative kubeconfig":    func(c *Image) { c.PullSecretKubeconfig = "kubeconfig" },
+		"empty namespace":     func(c *Image) { c.PullSecretCallers[0].Namespaces = []string{""} },
+		"legacy owner labels": func(c *Image) { c.PullSecretCallers[0].OwnerLabels = []string{"ani-modeldev-service"} },
+		"relative kubeconfig": func(c *Image) { c.PullSecretKubeconfig = "kubeconfig" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			v := proto.Clone(c).(*Image)

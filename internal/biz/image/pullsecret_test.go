@@ -43,7 +43,7 @@ func newPullSecretRuntime(t *testing.T, f *pullSecretFakes) *Runtime {
 		t.Fatal(err)
 	}
 	if err = runtime.UsePullSecretWriter(pullSecretWriter{f: f}, pullSecretNamespaces{f: f}, []PullSecretCaller{
-		{Subject: "ani-modeldev-service", ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"tenant-training"}, OwnerLabels: []string{"ani-modeldev-service"}, RequireTenantLabel: true},
+		{Subject: "ani-modeldev-service", ClusterIDs: []string{"cluster-a"}},
 		{Subject: "ani-inference-service", ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"ani-inference"}},
 	}); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestEnsureTenantPullSecretWritesOnceAndIsIdempotent(t *testing.T) {
 	f := &pullSecretFakes{}
 	runtime := newPullSecretRuntime(t, f)
 	ctx := WithCaller(context.Background(), Caller{Kind: RuntimeCaller, Subject: "ani-modeldev-service", TenantID: pullSecretTestTenant})
-	in := EnsurePullSecret{PullSecretScope: PullSecretScope{TenantID: pullSecretTestTenant, ClusterID: "cluster-a", Namespace: "tenant-training", RegistryAuthority: "registry.example.test:443"}, NamespaceUID: "ns-uid"}
+	in := EnsurePullSecret{PullSecretScope: PullSecretScope{TenantID: pullSecretTestTenant, ClusterID: "cluster-a", Namespace: "tenant-" + pullSecretTestTenant, RegistryAuthority: "registry.example.test:443"}, NamespaceUID: "ns-uid"}
 
 	first, err := runtime.EnsureTenantPullSecret(ctx, in)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestEnsureTenantPullSecretWritesOnceAndIsIdempotent(t *testing.T) {
 	if first.RegistryAuthority != "Registry.Example.Test:443" || first.SpaceID != "space-a" {
 		t.Fatalf("receipt lost authoritative facts: %+v", first)
 	}
-	if len(f.names) != 2 || !f.names[0].Verify || !f.names[0].RequireTenantLabel || f.names[0].NamespaceUID != "ns-uid" {
+	if len(f.names) != 2 || !f.names[0].Verify || !f.names[0].StandardTenantNamespace || f.names[0].NamespaceUID != "ns-uid" {
 		t.Fatalf("namespace authority not consulted correctly: %+v", f.names)
 	}
 }
@@ -150,7 +150,7 @@ func TestEnsureTenantPullSecretRejections(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &pullSecretFakes{}
 			runtime := newPullSecretRuntime(t, f)
-			in := EnsurePullSecret{PullSecretScope: PullSecretScope{TenantID: pullSecretTestTenant, ClusterID: "cluster-a", Namespace: "tenant-training", RegistryAuthority: "registry.example.test:443"}, NamespaceUID: "ns-uid"}
+			in := EnsurePullSecret{PullSecretScope: PullSecretScope{TenantID: pullSecretTestTenant, ClusterID: "cluster-a", Namespace: "tenant-" + pullSecretTestTenant, RegistryAuthority: "registry.example.test:443"}, NamespaceUID: "ns-uid"}
 			tc.mutate(&in)
 			_, err := runtime.EnsureTenantPullSecret(WithCaller(context.Background(), tc.caller), in)
 			if ReasonOf(err) != tc.want {

@@ -66,7 +66,7 @@ func openStorage(_ context.Context, bc *conf.Bootstrap, instances *instanceCompo
 	useCase, err := bizstorage.NewUseCase(volumes, objects, bizstorage.Config{
 		ClusterID: bc.GetNetwork().GetClusterId(), DeleteExecutor: uuid.NewString(), BorrowedPVCGuard: guard,
 		ObserveDeleteWrite:  observeDeleteWrite,
-		NamespacePrefix:     bc.GetNetwork().GetNamespacePrefix(),
+		NamespacePrefix:     "tenant-",
 		Buckets:             bc.GetObjectStorage().Buckets(),
 		Region:              bc.GetObjectStorage().GetRegion(),
 		DownloadTTL:         storageDownloadTTL,

@@ -36,7 +36,7 @@ type fakeVolumes struct {
 
 func newFake() *fakeVolumes {
 	return &fakeVolumes{
-		namespace: Namespace{Name: testNS, ManagedBy: NamespaceOwner, TenantID: testTenant},
+		namespace: Namespace{UID: "namespace-uid", Phase: "Active", Name: testNS, ManagedBy: NamespaceOwner, TenantID: testTenant},
 		records:   map[string]*VolumeRecord{},
 		classes:   map[string]Class{"fast": {Name: "fast", AllowVolumeExpansion: true, ReclaimPolicy: "Delete"}},
 	}
@@ -564,5 +564,21 @@ func TestObjectLimitAndBucketIsolation(t *testing.T) {
 	objects.available = false
 	if _, _, err := uc.DownloadURL(ctx, testTenant, "files", "a"); !errors.Is(err, ErrDownloadUnavailable) {
 		t.Fatal("missing browser endpoint must report DOWNLOAD_ENDPOINT_UNAVAILABLE")
+	}
+}
+
+func TestCreateVolumeReplayStillValidatesNamespaceIdentity(t *testing.T) {
+	volumes := newFake()
+	u := newUseCase(t, volumes, nil)
+	req := createRequest(uuid.NewString())
+	if _, err := u.CreateVolume(context.Background(), testTenant, req); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*Namespace){func(n *Namespace) { n.UID = "" }, func(n *Namespace) { n.Phase = "Terminating" }, func(n *Namespace) { n.Name = "foreign" }, func(n *Namespace) { n.TenantID = "other" }} {
+		volumes.namespace = Namespace{Name: testNS, UID: "original-uid", Phase: "Active", ManagedBy: NamespaceOwner, TenantID: testTenant}
+		mutate(&volumes.namespace)
+		if _, err := u.CreateVolume(context.Background(), testTenant, req); err == nil {
+			t.Fatal("replay bypassed Namespace identity validation")
+		}
 	}
 }

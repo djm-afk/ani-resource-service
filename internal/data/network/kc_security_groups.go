@@ -122,6 +122,9 @@ func (p *KCProvider) applySecurityGroupResource(ctx context.Context, g biz.Secur
 	if err := biz.ValidateSecurityGroupRules(g.Rules); err != nil {
 		return r, &biz.ProviderError{Kind: biz.ProviderReject, Cause: err}
 	}
+	if err := p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: g.TenantID, ClusterID: g.ClusterID, Namespace: g.Namespace}); err != nil {
+		return r, err
+	}
 	endpoint := p.client.Resource(kcSecurityGroups).Namespace(g.Namespace)
 	o, err := endpoint.Get(ctx, g.ProviderName, metav1.GetOptions{})
 	deleting := g.State == biz.Deleting || g.State == biz.Deleted
@@ -133,7 +136,7 @@ func (p *KCProvider) applySecurityGroupResource(ctx context.Context, g biz.Secur
 		if g.ProviderUID != "" {
 			return r, sgProviderConflict("persisted security group provider object disappeared")
 		}
-		if err = p.ensureNamespace(ctx, db.NetworkProviderBinding{TenantID: g.TenantID, Namespace: g.Namespace}); err != nil {
+		if err = p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: g.TenantID, Namespace: g.Namespace}); err != nil {
 			return r, err
 		}
 		o, err = endpoint.Create(ctx, renderSecurityGroup(g), metav1.CreateOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
@@ -216,6 +219,9 @@ func (p *KCProvider) readMappedSecurityGroup(ctx context.Context, tenant, namesp
 	if g.Namespace != namespace || g.ProviderUID == "" {
 		return g, nil, sgProviderConflict("security group mapping differs from target namespace")
 	}
+	if err := p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: tenant, ClusterID: g.ClusterID, Namespace: namespace}); err != nil {
+		return g, nil, err
+	}
 	o, err := p.client.Resource(kcSecurityGroups).Namespace(namespace).Get(ctx, g.ProviderName, metav1.GetOptions{})
 	if err != nil {
 		return g, nil, readFailure(err)
@@ -233,6 +239,10 @@ func (p *KCProvider) applyEIPSecurityGroups(ctx context.Context, binding biz.Sec
 	if err != nil {
 		return r, readFailure(err)
 	}
+	if err := p.verifyTenantNamespace(ctx, b); err != nil {
+		return r, err
+	}
+
 	if b.ResourceKind != "eip" || b.TenantID != binding.TenantID || b.ClusterID != p.repository.placement.ClusterID || b.Namespace != binding.Namespace ||
 		b.Namespace != eip.Namespace || b.BindingID == "" || b.ProviderName == "" || eip.Scope != "public" || eip.ManagedBy != "tenant" {
 		return r, sgProviderConflict("EIP binding differs from persisted security group target")

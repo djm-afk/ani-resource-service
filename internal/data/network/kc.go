@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"net/http"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ const bindingLabel = "network.ani.io/binding-id"
 // KCProvider implements only the fixed networking.kubercloud.com/v1 VPC
 // contract. It does not import the kc repository or operate on OVN.
 type KCProvider struct {
+	namespaceIdentityReader  func(context.Context, string) (tenantnamespace.Identity, error)
 	vmAutoNetwork            *VMAutoNetworkConfig
 	vmNetworks               map[string]ManagedVMNAD
 	loadBalancerInstallation *LoadBalancerInstallation
@@ -93,7 +95,9 @@ func NewKCProvider(repository *Postgres, config *rest.Config) (*KCProvider, erro
 	if err != nil {
 		return nil, fmt.Errorf("Kubernetes watch configuration invalid")
 	}
-	return &KCProvider{repository: repository, client: client, watchClient: watchClient, io: stats}, nil
+	provider := &KCProvider{repository: repository, client: client, watchClient: watchClient, io: stats, namespaceIdentityReader: repository.tenantNamespaceIdentity}
+	repository.ConfigureTenantNamespaceResolver(provider.resolveTenantNamespace)
+	return provider, nil
 }
 
 func (p *KCProvider) binding(ctx context.Context, target biz.ProviderTarget) (sqlcgen.NetworkProviderBinding, error) {
@@ -104,6 +108,9 @@ func (p *KCProvider) binding(ctx context.Context, target biz.ProviderTarget) (sq
 	if (target.Kind != "" && target.Kind != value.ResourceKind) || value.BindingID != target.BindingID || value.ClusterID != p.repository.placement.ClusterID ||
 		(value.ProviderUid != "" && target.KnownIdentity != "" && value.ProviderUid != target.KnownIdentity) {
 		return value, &biz.ProviderError{Kind: biz.ProviderConflict}
+	}
+	if err := p.verifyTenantNamespace(ctx, value); err != nil {
+		return value, err
 	}
 	return value, nil
 }
@@ -217,7 +224,7 @@ func (p *KCProvider) ensure(ctx context.Context, target biz.ProviderTarget) (biz
 	if err != nil {
 		return biz.ProviderObservation{}, err
 	}
-	if err := p.ensureNamespace(ctx, binding); err != nil {
+	if err := p.verifyTenantNamespace(ctx, binding, true); err != nil {
 		return biz.ProviderObservation{}, err
 	}
 	resource := p.client.Resource(kcResource(binding)).Namespace(binding.Namespace)
@@ -278,26 +285,6 @@ func (p *KCProvider) ensure(ctx context.Context, target biz.ProviderTarget) (biz
 		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderUncertain, Cause: err}
 	}
 	return value, nil
-}
-
-func (p *KCProvider) ensureNamespace(ctx context.Context, binding sqlcgen.NetworkProviderBinding) error {
-	resource := p.client.Resource(namespaces)
-	value, err := resource.Get(ctx, binding.Namespace, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		value, err = resource.Create(ctx, &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace",
-			"metadata": map[string]any{"name": binding.Namespace, "labels": map[string]any{ownerLabel: "ani-network-service", tenantLabel: binding.TenantID}}}}, metav1.CreateOptions{FieldManager: "ani-network-service"})
-		if apierrors.IsAlreadyExists(err) {
-			value, err = resource.Get(ctx, binding.Namespace, metav1.GetOptions{})
-		}
-	}
-	// No VPC POST was sent yet; namespace creation can be re-observed safely.
-	if err != nil {
-		return readFailure(err)
-	}
-	if value.GetName() != binding.Namespace || value.GetDeletionTimestamp() != nil || value.GetLabels()[tenantLabel] != binding.TenantID || value.GetLabels()[ownerLabel] != "ani-network-service" {
-		return &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	return nil
 }
 
 func (p *KCProvider) Delete(ctx context.Context, target biz.ProviderTarget) error {

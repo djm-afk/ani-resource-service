@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"strconv"
 	"time"
 
@@ -21,8 +22,8 @@ import (
 var secretGVR = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}
 var namespaceGVR = schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
 
-// The tenant label is the one ModelDev's webhook policy writes and checks. The
-// managed-by label comes from each deployment binding's owner_label allowlist.
+// Secret writer labels are independent of the Network Namespace ownership
+// labels. The static Inference branch retains its existing label expectations.
 const (
 	pullSecretTenantLabel    = "ani.io/resource-tenant-id"
 	pullSecretManagedByLabel = "ani.io/managed-by"
@@ -72,6 +73,11 @@ func NewPullSecrets(clusterID, kubeconfig string) (*PullSecrets, error) {
 func (p *PullSecrets) EnsurePullSecret(ctx context.Context, target imagebiz.PullSecretTarget, secret imagebiz.Secret) (int64, error) {
 	if len(secret) == 0 || target.Generation <= 0 || target.SecretName == "" || target.Namespace == "" || target.ClusterID != p.clusterID {
 		return 0, imagebiz.Fail(imagebiz.InvalidArgument, "pull secret write target rejected")
+	}
+	if target.StandardTenantNamespace {
+		if err := p.VerifyNamespace(ctx, imagebiz.NamespaceClaim{ClusterID: target.ClusterID, Namespace: target.Namespace, NamespaceUID: target.NamespaceUID, TenantID: target.TenantID, Verify: true, StandardTenantNamespace: true}); err != nil {
+			return 0, err
+		}
 	}
 	config, err := json.Marshal(map[string]any{"auths": map[string]any{target.RegistryAuthority: map[string]string{"username": target.Username, "password": string(secret)}}})
 	if err != nil {
@@ -161,6 +167,13 @@ func (p *PullSecrets) VerifyNamespace(ctx context.Context, claim imagebiz.Namesp
 	}
 	if err != nil {
 		return imagebiz.Fail(imagebiz.DependencyUnavailable, "namespace read failed")
+	}
+	if claim.StandardTenantNamespace {
+		phase, _, _ := unstructured.NestedString(object.Object, "status", "phase")
+		if err := tenantnamespace.Validate(claim.TenantID, tenantnamespace.Object{Name: object.GetName(), UID: string(object.GetUID()), Phase: phase, Deleting: object.GetDeletionTimestamp() != nil, Labels: object.GetLabels()}, claim.NamespaceUID, true); err != nil {
+			return imagebiz.Fail(imagebiz.PermissionDenied, err.Error())
+		}
+		return nil
 	}
 	if object.GetDeletionTimestamp() != nil || string(object.GetUID()) != claim.NamespaceUID {
 		return imagebiz.Fail(imagebiz.PermissionDenied, "target namespace identity mismatch")

@@ -1,0 +1,231 @@
+{
+  "schema": "ani.tenant-namespace.contract.v1",
+  "rule": "namespace_name = tenant- + canonical lowercase nonzero resource_tenant_id UUID",
+  "ownership_labels": {
+    "network.ani.io/tenant-id": "<resource_tenant_id>",
+    "network.ani.io/managed-by": "ani-network-service"
+  },
+  "input_cases": [
+    {
+      "id": "canonical_a",
+      "input": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "valid": true,
+      "expected_namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+    },
+    {
+      "id": "canonical_b",
+      "input": "207328fc-f08d-4dc4-b403-16ec86396ce2",
+      "valid": true,
+      "expected_namespace": "tenant-207328fc-f08d-4dc4-b403-16ec86396ce2"
+    },
+    {
+      "id": "uppercase",
+      "input": "64C5C35A-F554-432C-B4BC-7B4F36F08420",
+      "valid": false
+    },
+    {
+      "id": "mixed_case",
+      "input": "64C5c35a-f554-432c-b4bc-7b4f36f08420",
+      "valid": false
+    },
+    {
+      "id": "numeric_gov_id",
+      "input": "2",
+      "valid": false
+    },
+    {
+      "id": "tenant_code",
+      "input": "tenant-a",
+      "valid": false
+    },
+    {
+      "id": "zero_uuid",
+      "input": "00000000-0000-0000-0000-000000000000",
+      "valid": false
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "valid": false
+    },
+    {
+      "id": "leading_space",
+      "input": " 64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "valid": false
+    },
+    {
+      "id": "trailing_space",
+      "input": "64c5c35a-f554-432c-b4bc-7b4f36f08420 ",
+      "valid": false
+    },
+    {
+      "id": "newline",
+      "input": "64c5c35a-f554-432c-b4bc-7b4f36f08420\n",
+      "valid": false
+    },
+    {
+      "id": "compact_uuid",
+      "input": "64c5c35af554432cb4bc7b4f36f08420",
+      "valid": false
+    },
+    {
+      "id": "truncated",
+      "input": "64c5c35a-f554-432c-b4bc-7b4f36f0842",
+      "valid": false
+    },
+    {
+      "id": "prefixed",
+      "input": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "valid": false
+    },
+    {
+      "id": "urn_uuid",
+      "input": "urn:uuid:64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "valid": false
+    },
+    {
+      "id": "braced",
+      "input": "{64c5c35a-f554-432c-b4bc-7b4f36f08420}",
+      "valid": false
+    },
+    {
+      "id": "nonhex",
+      "input": "g4c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "valid": false
+    }
+  ],
+  "live_baseline": {
+    "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+    "cluster_id": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+    "name": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+    "uid": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+    "phase": "Active",
+    "deletion_timestamp": null,
+    "labels": {
+      "network.ani.io/tenant-id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "network.ani.io/managed-by": "ani-network-service"
+    }
+  },
+  "live_cases": [
+    {
+      "id": "valid",
+      "overrides": {},
+      "valid": true
+    },
+    {
+      "id": "not_found",
+      "api_status": 404,
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_NOT_FOUND",
+      "forbidden_actions": [
+        "create_namespace",
+        "patch_namespace"
+      ]
+    },
+    {
+      "id": "forbidden",
+      "api_status": 403,
+      "valid": false,
+      "expected_class": "dependency_permission",
+      "forbidden_actions": [
+        "create_namespace",
+        "patch_namespace"
+      ]
+    },
+    {
+      "id": "unavailable",
+      "api_status": 503,
+      "valid": false,
+      "expected_class": "dependency_unavailable",
+      "forbidden_actions": [
+        "create_namespace",
+        "patch_namespace"
+      ]
+    },
+    {
+      "id": "wrong_name",
+      "overrides": {
+        "name": "ani-modeldev-tenant-a-v21"
+      },
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_OWNERSHIP_MISMATCH"
+    },
+    {
+      "id": "tenant_label_mismatch",
+      "overrides": {
+        "labels": {
+          "network.ani.io/tenant-id": "207328fc-f08d-4dc4-b403-16ec86396ce2",
+          "network.ani.io/managed-by": "ani-network-service"
+        }
+      },
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_OWNERSHIP_MISMATCH"
+    },
+    {
+      "id": "wrong_owner_label",
+      "overrides": {
+        "labels": {
+          "network.ani.io/tenant-id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "network.ani.io/managed-by": "ani-resource-service"
+        }
+      },
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_OWNERSHIP_MISMATCH"
+    },
+    {
+      "id": "old_labels_only",
+      "overrides": {
+        "labels": {
+          "ani.io/tenant-id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "ani.io/managed-by": "ani-modeldev-service"
+        }
+      },
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_OWNERSHIP_MISMATCH"
+    },
+    {
+      "id": "empty_uid",
+      "overrides": {
+        "uid": ""
+      },
+      "valid": false
+    },
+    {
+      "id": "terminating",
+      "overrides": {
+        "phase": "Terminating"
+      },
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_NOT_ACTIVE"
+    },
+    {
+      "id": "deleting",
+      "overrides": {
+        "deletion_timestamp": "2026-11-01T00:00:00Z"
+      },
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_NOT_ACTIVE"
+    },
+    {
+      "id": "recreated",
+      "overrides": {
+        "uid": "92c59768-de0f-43ec-9fba-4a359c6fd3ba"
+      },
+      "frozen_uid": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+      "valid": false,
+      "expected_reason": "TENANT_NAMESPACE_UID_CHANGED"
+    },
+    {
+      "id": "extra_unrelated_labels",
+      "overrides": {
+        "labels": {
+          "network.ani.io/tenant-id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "network.ani.io/managed-by": "ani-network-service",
+          "app.kubernetes.io/part-of": "platform"
+        }
+      },
+      "valid": true
+    }
+  ],
+  "note": "valid=false时禁止Create/Patch/收养Namespace；不同owner可映射自身错误协议，核心原因与动作一致。关闭/原证据读取不以新环境READY为前提。"
+}

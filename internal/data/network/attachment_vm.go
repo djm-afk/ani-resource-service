@@ -73,6 +73,9 @@ func (p *KCProvider) resolveVMNetwork(ctx context.Context, s biz.VMNetworkSelect
 	if !biz.ValidVMNetworkExpectation(&e) || s.ClusterID != v.ClusterID || s.VPCID != v.VPCID || s.KCNSubnetRef != v.KCNSubnetRef || e.NADName != v.NADName || e.NADUID != v.NADUID || e.NADConfigDigest != v.NADConfigDigest {
 		return biz.VMPrimaryPlan{}, biz.Fail(biz.AttachmentConflict, "managed VM NAD differs from frozen network selection")
 	}
+	if err := p.verifyTenantNamespace(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace}); err != nil {
+		return biz.VMPrimaryPlan{}, err
+	}
 	ns, err := p.client.Resource(namespaces).Get(ctx, s.Namespace, metav1.GetOptions{})
 	if err != nil {
 		return biz.VMPrimaryPlan{}, readFailure(err)

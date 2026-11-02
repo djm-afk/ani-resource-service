@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"testing"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
@@ -17,7 +18,7 @@ import (
 )
 
 func sgProviderFixture() (biz.SecurityGroup, *unstructured.Unstructured) {
-	g := biz.SecurityGroup{EgressMetadata: biz.EgressMetadata{ID: "sg_example", Version: 1, State: biz.Provisioning}, TenantID: "tenant-a", Namespace: "tenant-a", ProviderName: "ani-sg-example", ProviderUID: "uid-sg", BindingID: "durable-create-token", Rules: []biz.SecurityGroupRule{
+	g := biz.SecurityGroup{EgressMetadata: biz.EgressMetadata{ID: "sg_example", Version: 1, State: biz.Provisioning}, TenantID: "11111111-1111-4111-8111-111111111111", Namespace: "tenant-11111111-1111-4111-8111-111111111111", ProviderName: "ani-sg-example", ProviderUID: "uid-sg", BindingID: "durable-create-token", Rules: []biz.SecurityGroupRule{
 		{ID: "rule-http", Direction: "ingress", Protocol: "tcp", Action: "allow", Priority: 3000, RemoteAddresses: []string{"192.0.2.0/24"}, PortRanges: []biz.SecurityGroupPortRange{{Min: 80, Max: 80}}},
 		biz.DefaultSecurityGroupRule(),
 	}}
@@ -34,7 +35,12 @@ func sgProviderFixture() (biz.SecurityGroup, *unstructured.Unstructured) {
 
 func sgFakeProvider(objects ...runtime.Object) (*KCProvider, *fake.FakeDynamicClient) {
 	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{kcSecurityGroups: "SecurityGroupList", kcSecurityGroupVNics: "VNicList", pods: "PodList"}, objects...)
-	return &KCProvider{client: c}, c
+	const tenant = "11111111-1111-4111-8111-111111111111"
+	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": "namespace-uid", "labels": map[string]any{tenantLabel: tenant, ownerLabel: "ani-network-service"}}, "status": map[string]any{"phase": "Active"}}}
+	_ = c.Tracker().Add(ns)
+	return &KCProvider{client: c, namespaceIdentityReader: func(context.Context, string) (tenantnamespace.Identity, error) {
+		return tenantnamespace.Identity{TenantID: tenant, Name: "tenant-" + tenant, UID: "namespace-uid"}, nil
+	}}, c
 }
 
 func TestSecurityGroupKCNDefaultsAndGeneration(t *testing.T) {
@@ -92,7 +98,7 @@ func TestSecurityGroupKCNRecoversOnlyItsDurableCreateToken(t *testing.T) {
 		p, c = sgFakeProvider(copy)
 		_, err = p.applySecurityGroupResource(context.Background(), g)
 		var provider *biz.ProviderError
-		if !errors.As(err, &provider) || provider.Kind != biz.ProviderConflict || len(c.Actions()) != 1 {
+		if !errors.As(err, &provider) || provider.Kind != biz.ProviderConflict || len(c.Actions()) != 2 {
 			t.Fatal("foreign create token was adopted or mutated", field, err, c.Actions())
 		}
 	}
@@ -102,7 +108,7 @@ func TestSecurityGroupKCNRecoversOnlyItsDurableCreateToken(t *testing.T) {
 		t.Fatal("replacement object with copied labels was adopted")
 	}
 	p, c = sgFakeProvider()
-	if _, err = p.applySecurityGroupResource(context.Background(), g); err == nil || len(c.Actions()) != 1 {
+	if _, err = p.applySecurityGroupResource(context.Background(), g); err == nil || len(c.Actions()) != 2 {
 		t.Fatal("missing known-UID object was recreated", err, c.Actions())
 	}
 }
@@ -141,7 +147,7 @@ func TestSecurityGroupKCNDeleteHonorsMembershipUIDAndFinalizers(t *testing.T) {
 	p, c := sgFakeProvider(o)
 	r, err := p.applySecurityGroupResource(context.Background(), g)
 	var provider *biz.ProviderError
-	if !errors.As(err, &provider) || provider.Kind != biz.ProviderInUse || r.Complete || len(c.Actions()) != 1 {
+	if !errors.As(err, &provider) || provider.Kind != biz.ProviderInUse || r.Complete || len(c.Actions()) != 2 {
 		t.Fatal("SG with applied members was deleted", r, err, c.Actions())
 	}
 	unstructured.RemoveNestedField(o.Object, "status", "appliedVNics")
@@ -174,7 +180,7 @@ func TestSecurityGroupKCNDeleteHonorsMembershipUIDAndFinalizers(t *testing.T) {
 }
 
 func TestEIPSecurityGroupApplicationRequiresActualBoundGateway(t *testing.T) {
-	eip := crFixture("EIP", "tenant-a", "eip-a")
+	eip := crFixture("EIP", "tenant-11111111-1111-4111-8111-111111111111", "eip-a")
 	eip.Object["status"] = map[string]any{
 		"phase": "Available", "appliedSecurityGroups": []any{"sg-a"},
 		"conditions": []any{map[string]any{"type": "Valid", "status": "True"}, map[string]any{"type": "Ready", "status": "True"}},
@@ -195,7 +201,7 @@ func TestEIPSecurityGroupApplicationRequiresActualBoundGateway(t *testing.T) {
 }
 
 func sgConsumerFixtures() (biz.SecurityGroupBinding, *unstructured.Unstructured, *unstructured.Unstructured) {
-	b := biz.SecurityGroupBinding{TenantID: "tenant-a", TargetType: "container", TargetID: "instance-a", Namespace: "tenant-a", SecurityGroupIDs: []string{}}
+	b := biz.SecurityGroupBinding{TenantID: "11111111-1111-4111-8111-111111111111", TargetType: "container", TargetID: "instance-a", Namespace: "tenant-11111111-1111-4111-8111-111111111111", SecurityGroupIDs: []string{}}
 	pod := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "instance-a-0", "namespace": b.Namespace, "uid": "pod-current", "resourceVersion": "10",
 			"labels":      map[string]any{tenantLabel: b.TenantID, instanceLabel: b.TargetID},
@@ -303,13 +309,13 @@ func TestEIPSecurityGroupDeletionWaitsForAllOwnedMemberships(t *testing.T) {
 	_, group := sgProviderFixture()
 	_ = unstructured.SetNestedStringMap(group.Object, map[string]string{"old-eip": "uplink.tenant-a.vpc-a"}, "status", "appliedEIPs")
 	p, _ := sgFakeProvider(group)
-	clean, err := p.eipSecurityGroupMembershipsRemoved(context.Background(), "tenant-a", "tenant-a", "old-eip")
+	clean, err := p.eipSecurityGroupMembershipsRemoved(context.Background(), "11111111-1111-4111-8111-111111111111", "tenant-11111111-1111-4111-8111-111111111111", "old-eip")
 	if err != nil || clean {
 		t.Fatal("deleted EIP was released while SG ACL membership remained", clean, err)
 	}
 	_ = unstructured.SetNestedStringMap(group.Object, map[string]string{}, "status", "appliedEIPs")
 	p, _ = sgFakeProvider(group)
-	clean, err = p.eipSecurityGroupMembershipsRemoved(context.Background(), "tenant-a", "tenant-a", "old-eip")
+	clean, err = p.eipSecurityGroupMembershipsRemoved(context.Background(), "11111111-1111-4111-8111-111111111111", "tenant-11111111-1111-4111-8111-111111111111", "old-eip")
 	if err != nil || !clean {
 		t.Fatal("cleared deleted-EIP membership did not release", clean, err)
 	}

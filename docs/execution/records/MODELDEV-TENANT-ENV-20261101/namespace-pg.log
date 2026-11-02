@@ -1,0 +1,4 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=86495c5f95ae5b22ca506d55c51dcfa0093b2451c73ced01f6781ed1168cd196
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network	1.180s
+removed task container=86495c5f95ae5b22ca506d55c51dcfa0093b2451c73ced01f6781ed1168cd196

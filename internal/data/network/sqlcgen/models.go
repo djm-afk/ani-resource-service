@@ -789,9 +789,10 @@ type NetworkSubnet struct {
 }
 
 type NetworkTenantNamespace struct {
-	TenantID  string
-	ClusterID string
-	Namespace string
+	TenantID     string
+	ClusterID    string
+	Namespace    string
+	NamespaceUid *string
 }
 
 type NetworkVirtualSwitch struct {

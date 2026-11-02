@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -16,7 +17,7 @@ type Environment struct {
 }
 
 func NewEnvironment(n *Native, prefix string, network NetworkSelectionValidator) (*Environment, error) {
-	if n == nil || prefix == "" || network == nil {
+	if n == nil || prefix != "tenant-" || network == nil {
 		return nil, biz.ErrInvalid
 	}
 	return &Environment{n, prefix, network}, nil
@@ -33,9 +34,11 @@ func (e *Environment) ResolveNamespace(ctx context.Context, tenant, requested st
 	if x != nil {
 		return biz.ObjectRef{}, x
 	}
-	if o.GetDeletionTimestamp() != nil || o.GetLabels()["network.ani.io/tenant-id"] != tenant || o.GetLabels()["network.ani.io/managed-by"] != "ani-network-service" {
+	phase, _, _ := unstructured.NestedString(o.Object, "status", "phase")
+	if tenantnamespace.Validate(tenant, tenantnamespace.Object{Name: o.GetName(), UID: string(o.GetUID()), Phase: phase, Labels: o.GetLabels(), Deleting: o.GetDeletionTimestamp() != nil}, "", true) != nil {
 		return biz.ObjectRef{}, biz.ErrOwnership
 	}
+
 	return objectRef(o), nil
 }
 func (e *Environment) ValidateStorage(ctx context.Context, name, uid string) error {

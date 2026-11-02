@@ -49,7 +49,7 @@ func (c *Bootstrap) Validate() error {
 		return err
 	}
 	if c.Network == nil || c.Network.Worker == nil || strings.TrimSpace(c.Network.DatabaseDsn) == "" ||
-		strings.TrimSpace(c.Network.ClusterId) == "" || c.Network.NamespacePrefix == "" {
+		strings.TrimSpace(c.Network.ClusterId) == "" {
 		return fmt.Errorf("Network database, placement and worker config are required")
 	}
 	if _, err := biz.NewVPCCIDRPresets(c.Network.VpcCidrPresets); err != nil {

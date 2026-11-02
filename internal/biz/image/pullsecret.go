@@ -71,6 +71,7 @@ type PullSecretWriter interface {
 
 // PullSecretTarget carries the fully validated destination.
 type PullSecretTarget struct {
+	StandardTenantNamespace                                                              bool
 	ClusterID, Namespace, NamespaceUID, SecretName, TenantID, SpaceID, RegistryAuthority string
 	Generation                                                                           int64
 	Username                                                                             string
@@ -131,7 +132,7 @@ func (r *Runtime) EnsureTenantPullSecret(ctx context.Context, in EnsurePullSecre
 	}
 	defer clear(plain)
 	generation, err := r.writer.EnsurePullSecret(ctx, PullSecretTarget{
-		ClusterID: in.ClusterID, Namespace: in.Namespace, NamespaceUID: in.NamespaceUID,
+		ClusterID: in.ClusterID, Namespace: in.Namespace, NamespaceUID: in.NamespaceUID, StandardTenantNamespace: caller.Subject == "ani-modeldev-service",
 		SecretName: name, TenantID: in.TenantID, SpaceID: space.ID,
 		RegistryAuthority: space.RegistryAuthority, Generation: info.Generation, Username: info.Username,
 	}, plain)

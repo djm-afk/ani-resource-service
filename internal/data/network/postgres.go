@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"io/fs"
-	"regexp"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -28,6 +28,7 @@ type Placement struct {
 }
 
 type Postgres struct {
+	namespaceResolver     func(context.Context, string) (tenantnamespace.Identity, error)
 	securityGroupObserver biz.SecurityGroupConsumerObserver
 	vmNetworks            biz.VMNetworkResolver
 	vmAddressFreshness    time.Duration
@@ -42,8 +43,8 @@ type Postgres struct {
 
 func OpenPostgres(ctx context.Context, dsn string, placement Placement) (*Postgres, error) {
 	if strings.TrimSpace(placement.ClusterID) == "" || len(placement.ClusterID) > 128 ||
-		!regexp.MustCompile(`^[a-z][a-z0-9-]{0,25}-$`).MatchString(placement.NamespacePrefix) {
-		return nil, fmt.Errorf("cluster ID and a DNS namespace prefix ending in '-' are required")
+		placement.NamespacePrefix != "tenant-" {
+		return nil, fmt.Errorf("cluster ID and fixed tenant namespace rule are required")
 	}
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -174,8 +175,8 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 	if err := q.InsertReconciliation(ctx, sqlcgen.InsertReconciliationParams{TenantID: intent.TenantID, VpcID: vpcID, NextRunAt: now}); err != nil {
 		return biz.VPC{}, databaseFailure(err)
 	}
-	if err := q.EnsureTenantNamespace(ctx, sqlcgen.EnsureTenantNamespaceParams{TenantID: intent.TenantID, ClusterID: p.placement.ClusterID, Namespace: p.placement.NamespacePrefix + intent.TenantID}); err != nil {
-		return biz.VPC{}, databaseFailure(err)
+	if err := p.acceptTenantNamespace(ctx, q, intent.NamespaceIdentity); err != nil {
+		return biz.VPC{}, err
 	}
 	namespace, err := q.GetTenantNamespace(ctx, sqlcgen.GetTenantNamespaceParams{TenantID: intent.TenantID, ClusterID: p.placement.ClusterID})
 	if err != nil {

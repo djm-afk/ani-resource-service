@@ -50,10 +50,11 @@ type Class struct {
 
 // Namespace 是只读归属校验后的租户命名空间。
 type Namespace struct {
-	Name      string
-	Deleting  bool
-	ManagedBy string
-	TenantID  string
+	UID, Phase string
+	Name       string
+	Deleting   bool
+	ManagedBy  string
+	TenantID   string
 }
 
 // VolumeRecord 是 Kubernetes PVC 的事实投影。RequestedQuantity 保留原始 Quantity
@@ -83,6 +84,7 @@ type VolumeRecord struct {
 
 // CreateSpec 是 data 层写入 PVC 的完整受管参数。
 type CreateSpec struct {
+	NamespaceUID      string
 	Name              string
 	DisplayName       string
 	RequestedQuantity string

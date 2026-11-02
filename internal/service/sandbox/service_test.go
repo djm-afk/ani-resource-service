@@ -14,9 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic/fake"
-	ktesting "k8s.io/client-go/testing"
 )
 
 const (
@@ -172,7 +170,7 @@ func serviceContext() context.Context {
 func newTestService(t *testing.T, selection compute.Selection) *Service {
 	t.Helper()
 	s, err := NewService(serviceRepo{}, serviceResolver{selection: selection}, Config{
-		ClusterID: testCluster, Namespace: "sandbox", RuntimeClass: "sandbox-kata", StorageClass: "sandbox-rwo", WorkspaceSize: "10Gi", ImagePrefixes: []string{"registry/"}, NamespaceResolver: &testNamespaceResolver{uid: "namespace-uid"},
+		ClusterID: testCluster, NamespacePrefix: "tenant-", RuntimeClass: "sandbox-kata", StorageClass: "sandbox-rwo", WorkspaceSize: "10Gi", ImagePrefixes: []string{"registry/"}, NamespaceResolver: &testNamespaceResolver{uid: "namespace-uid"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -219,8 +217,8 @@ func TestCreateBindsNamespaceUIDAndRejectsReplacement(t *testing.T) {
 	if err != nil || spec.NamespaceUid != "original-uid" {
 		t.Fatalf("resolution=%+v err=%v", spec, err)
 	}
-	if namespaces.ensureCalls != 1 || namespaces.readCalls != 0 {
-		t.Fatalf("resolution must initialize once: %+v", namespaces)
+	if namespaces.ensureCalls != 0 || namespaces.readCalls != 1 {
+		t.Fatalf("resolution must read once: %+v", namespaces)
 	}
 	accept := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: testTenant, ResourceId: testSandbox, OperationId: testOp}, Spec: spec}
 	accept.Context.RequestDigest, err = commandDigest(accept.Context, "", spec)
@@ -241,7 +239,7 @@ func TestCreateBindsNamespaceUIDAndRejectsReplacement(t *testing.T) {
 	if _, err = s.AcceptCreate(serviceContext(), accept); status.Code(err) != codes.Unavailable {
 		t.Fatalf("missing namespace accepted: %v", err)
 	}
-	if namespaces.ensureCalls != 1 {
+	if namespaces.ensureCalls != 0 {
 		t.Fatalf("accept must not recreate the namespace: %+v", namespaces)
 	}
 	namespaces.readErr = nil
@@ -251,38 +249,31 @@ func TestCreateBindsNamespaceUIDAndRejectsReplacement(t *testing.T) {
 	}
 }
 
-func TestCreateInitializesNamespaceButAcceptDoesNotRecreateIt(t *testing.T) {
-	client := fake.NewSimpleDynamicClient(runtime.NewScheme())
-	client.PrependReactor("create", "namespaces", func(action ktesting.Action) (bool, runtime.Object, error) {
-		action.(ktesting.CreateAction).GetObject().(*unstructured.Unstructured).SetUID(types.UID("created-uid"))
-		return false, nil, nil
-	})
+func TestCreateRequiresExistingNamespaceAndAcceptNeverRecreates(t *testing.T) {
+	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + testTenant, "uid": "original-uid", "labels": map[string]any{"network.ani.io/tenant-id": testTenant, "network.ani.io/managed-by": "ani-network-service"}}, "status": map[string]any{"phase": "Active"}}}
+	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), ns)
 	s := newTestService(t, validSelection())
 	s.config.NamespacePrefix = "tenant-"
 	s.config.NamespaceResolver = sandboxdata.TenantNamespace{Client: client, NamespacePrefix: "tenant-"}
 	spec, err := s.ResolveCreateSpec(serviceContext(), validResolveRequest())
-	if err != nil || spec.NamespaceUid != "created-uid" {
-		t.Fatalf("resolve failed: %v", err)
+	if err != nil || spec.NamespaceUid != "original-uid" {
+		t.Fatalf("resolve: %v", err)
 	}
 	accept := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: testTenant, ResourceId: testSandbox, OperationId: testOp}, Spec: spec}
 	accept.Context.RequestDigest, err = commandDigest(accept.Context, "", spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.Tracker().Delete(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}, "", "tenant-"+testTenant); err != nil {
+	if err = client.Tracker().Delete(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}, "", "tenant-"+testTenant); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AcceptCreate(serviceContext(), accept); status.Code(err) != codes.Unavailable {
-		t.Fatalf("accept after namespace disappeared: %v", err)
+	if _, err = s.AcceptCreate(serviceContext(), accept); status.Code(err) != codes.Unavailable {
+		t.Fatalf("accept: %v", err)
 	}
-	creates := 0
-	for _, action := range client.Actions() {
-		if action.GetVerb() == "create" {
-			creates++
+	for _, a := range client.Actions() {
+		if a.GetVerb() == "create" || a.GetVerb() == "patch" {
+			t.Fatalf("forbidden action %s", a.GetVerb())
 		}
-	}
-	if creates != 1 {
-		t.Fatalf("accept recreated the namespace: %d creates", creates)
 	}
 }
 
@@ -323,7 +314,7 @@ func TestResolveRejectsInvalidRequestsBeforeInitializingNamespace(t *testing.T) 
 
 func TestTenantNamespaceAndVariableWorkspaceAreValidatedOnAccept(t *testing.T) {
 	s := newTestService(t, validSelection())
-	// The shared Resource prefix wins over the old fixed-namespace setting.
+	// Every accepted specification uses the fixed standard tenant name.
 	s.config.NamespacePrefix = "tenant-"
 	req := validResolveRequest()
 	req.Data.WorkspaceSize = "25Gi"

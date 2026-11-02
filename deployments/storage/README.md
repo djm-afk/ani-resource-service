@@ -37,7 +37,7 @@
 
 ## 开通清单模板
 
-租户命名空间由网络流程创建（`NamespacePrefix + TenantID`），Storage **不创建、不改标签**。
+租户命名空间必须预先符合[统一合同](../../docs/contracts/tenant-namespace.md)（`tenant-<canonical resource UUID>`），Storage 只精确读取与校验，**不创建、不改标签**。
 每个租户命名空间必须有一条 RoleBinding：
 
 | Gov 租户 ID | Res 租户 UUID | 命名空间 | RoleBinding 已创建 | 核对时间 | 操作人 |

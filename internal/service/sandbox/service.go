@@ -21,12 +21,12 @@ import (
 )
 
 type Config struct {
-	ClusterID, Namespace, NamespacePrefix, RuntimeClass, StorageClass, WorkspaceSize string
-	ImagePrefixes                                                                    []string
-	ImageResolver                                                                    biz.ImageResolver
-	StorageClassResolver                                                             biz.StorageClassResolver
-	RuntimeClassResolver                                                             biz.RuntimeClassResolver
-	NamespaceResolver                                                                biz.NamespaceResolver
+	ClusterID, NamespacePrefix, RuntimeClass, StorageClass, WorkspaceSize string
+	ImagePrefixes                                                         []string
+	ImageResolver                                                         biz.ImageResolver
+	StorageClassResolver                                                  biz.StorageClassResolver
+	RuntimeClassResolver                                                  biz.RuntimeClassResolver
+	NamespaceResolver                                                     biz.NamespaceResolver
 }
 type Service struct {
 	pb.UnimplementedSandboxServiceServer
@@ -37,7 +37,7 @@ type Service struct {
 
 func NewService(repo biz.Repository, resolver biz.SelectionResolver, c Config) (*Service, error) {
 	q, qerr := resource.ParseQuantity(c.WorkspaceSize)
-	if repo == nil || resolver == nil || c.NamespaceResolver == nil || !biz.UUID(c.ClusterID) || (c.NamespacePrefix == "" && c.Namespace == "") || (c.RuntimeClass == "" && c.RuntimeClassResolver == nil) || c.WorkspaceSize == "" || qerr != nil || q.Sign() <= 0 {
+	if repo == nil || resolver == nil || c.NamespaceResolver == nil || !biz.UUID(c.ClusterID) || c.NamespacePrefix != "tenant-" || (c.RuntimeClass == "" && c.RuntimeClassResolver == nil) || c.WorkspaceSize == "" || qerr != nil || q.Sign() <= 0 {
 		return nil, biz.ErrInvalid
 	}
 	if c.NamespacePrefix != "" {
@@ -50,12 +50,7 @@ func NewService(repo biz.Repository, resolver biz.SelectionResolver, c Config) (
 }
 
 func (s *Service) namespace(tenant string) (string, error) {
-	if s.config.NamespacePrefix != "" {
-		return biz.TenantNamespace(tenant, s.config.NamespacePrefix)
-	}
-	// Compatibility for existing deployments until the composition root passes
-	// the shared namespace prefix. Never derive this value from a request.
-	return s.config.Namespace, nil
+	return biz.TenantNamespace(tenant, "tenant-")
 }
 
 func validWorkspaceSize(size string) bool {
@@ -262,8 +257,8 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	// Namespace initialization follows all checks that do not require it.
-	namespaceUID, err := s.config.NamespaceResolver.EnsureSandboxNamespaceUID(ctx, r.TenantId)
+	// Read the existing Namespace only after the other read-only checks.
+	namespaceUID, err := s.config.NamespaceResolver.ResolveSandboxNamespaceUID(ctx, r.TenantId)
 	if err != nil {
 		return nil, rpcError(err)
 	}

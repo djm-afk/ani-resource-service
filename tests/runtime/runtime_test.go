@@ -380,7 +380,7 @@ func newTestLogger(writer io.Writer) *slog.Logger {
 }
 
 func runtimeNetworkConfig() *conf.Network {
-	return &conf.Network{DatabaseDsn: "postgres://runtime@127.0.0.1/network", ClusterId: "test", NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{
+	return &conf.Network{DatabaseDsn: "postgres://runtime@127.0.0.1/network", ClusterId: "test", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{
 		Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond),
 	}}
 }

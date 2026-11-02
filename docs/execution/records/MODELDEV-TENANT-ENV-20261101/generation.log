@@ -1,0 +1,11 @@
+test "$(/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf --version)" = "1.60.0"
+test "$(go version -m /home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf | awk '$1 == "mod" {print $2 "@" $3; exit}')" = "github.com/bufbuild/buf@v1.60.0"
+/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf lint
+/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf build
+/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf generate --template buf.gen.yaml
+BUF=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf TMPDIR=${TMPDIR:-/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.work} ./scripts/generate-instance-api
+BUF=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf TMPDIR=${TMPDIR:-/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.work} ./scripts/generate-vm-console-api
+BUF=/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/buf TMPDIR=${TMPDIR:-/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.work} bash ./scripts/generate-vm-api
+test "$(/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/sqlc version)" = "v1.31.1"
+test "$(go version -m /home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/sqlc | awk '$1 == "mod" {print $2 "@" $3; exit}')" = "github.com/sqlc-dev/sqlc@v1.31.1"
+/home/chabking/workspace/ani-resource-service-runs/modeldev-tenant-env-20261101/source/.tools/bin/sqlc generate

@@ -53,7 +53,7 @@ func GBFromBytes(bytes int64) int64 {
 
 // NamespaceName 按 NamespacePrefix + TenantID 推导，不接受任意 namespace 输入。
 func NamespaceName(prefix, tenant string) (string, error) {
-	if prefix == "" || !CanonicalUUID(tenant) {
+	if prefix != "tenant-" || !CanonicalUUID(tenant) {
 		return "", ErrInvalid
 	}
 	name := prefix + tenant

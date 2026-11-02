@@ -28,7 +28,7 @@ func TestTenantNamespaceResolveRequiresOwnedActiveUID(t *testing.T) {
 		{"deleting", "uid-1", storage.NamespaceOwner, tenant, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "tenant-" + tenant, "uid": tc.uid, "labels": map[string]any{storage.NamespaceManagedBy: tc.owner, storage.NamespaceTenantID: tc.tenant}}}}
+			ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "status": map[string]any{"phase": "Active"}, "metadata": map[string]any{"name": "tenant-" + tenant, "uid": tc.uid, "labels": map[string]any{storage.NamespaceManagedBy: tc.owner, storage.NamespaceTenantID: tc.tenant}}}}
 			if tc.deleting {
 				now := metav1.Now()
 				ns.SetDeletionTimestamp(&now)

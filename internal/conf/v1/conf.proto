@@ -77,7 +77,8 @@ message Network {
   // Empty uses Kubernetes in-cluster service account credentials.
   string kubeconfig = 2;
   string cluster_id = 3;
-  string namespace_prefix = 4;
+  reserved 4;
+  reserved "namespace_prefix";
   // Base64 encoded secret, at least 32 bytes, shared by service replicas.
   string cursor_signing_key = 5;
   Worker worker = 6;

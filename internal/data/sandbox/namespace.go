@@ -7,29 +7,24 @@ import (
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
 	storage "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/storage"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 )
 
 // TenantNamespace uses the shared Network namespace ownership convention.
-// Only initial specification resolution may initialize a missing namespace;
-// acceptance and worker operations check the previously frozen UID.
+// It only reads existing objects; acceptance and workers freeze the original UID.
 type TenantNamespace struct {
 	Client          dynamic.Interface
 	NamespacePrefix string
 }
 
 func (n TenantNamespace) ResolveSandboxNamespaceUID(ctx context.Context, tenant string) (string, error) {
-	return n.namespaceUID(ctx, tenant, false)
+	return n.namespaceUID(ctx, tenant)
 }
 
-func (n TenantNamespace) EnsureSandboxNamespaceUID(ctx context.Context, tenant string) (string, error) {
-	return n.namespaceUID(ctx, tenant, true)
-}
-
-func (n TenantNamespace) namespaceUID(ctx context.Context, tenant string, ensure bool) (string, error) {
+func (n TenantNamespace) namespaceUID(ctx context.Context, tenant string) (string, error) {
 	if n.Client == nil || !biz.UUID(tenant) {
 		return "", biz.ErrDependencyUnavailable
 	}
@@ -39,19 +34,7 @@ func (n TenantNamespace) namespaceUID(ctx context.Context, tenant string, ensure
 	}
 	resource := n.Client.Resource(namespaceGVR)
 	namespace, err := resource.Get(ctx, name, metav1.GetOptions{})
-	if ensure && apierrors.IsNotFound(err) {
-		namespace, err = resource.Create(ctx, &unstructured.Unstructured{Object: map[string]any{
-			"apiVersion": "v1", "kind": "Namespace",
-			"metadata": map[string]any{"name": name, "labels": map[string]any{
-				storage.NamespaceManagedBy: storage.NamespaceOwner, storage.NamespaceTenantID: tenant,
-			}},
-		}}, metav1.CreateOptions{FieldManager: "ani-network-service"})
-		if err != nil {
-			// A concurrent create or an uncertain response is resolved only by
-			// observing the fixed name again; never issue a second create here.
-			namespace, err = resource.Get(ctx, name, metav1.GetOptions{})
-		}
-	}
+
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
@@ -67,11 +50,12 @@ func (n TenantNamespace) namespaceUID(ctx context.Context, tenant string, ensure
 	if namespace == nil {
 		return "", biz.ErrDependencyUnavailable
 	}
-	labels := namespace.GetLabels()
+	phase, _, _ := unstructured.NestedString(namespace.Object, "status", "phase")
 	uid := string(namespace.GetUID())
-	if namespace.GetName() != name || uid == "" || namespace.GetDeletionTimestamp() != nil || labels[storage.NamespaceManagedBy] != storage.NamespaceOwner || labels[storage.NamespaceTenantID] != tenant {
-		return "", fmt.Errorf("%w: sandbox tenant namespace is not usable", biz.ErrOwnership)
+	if err := tenantnamespace.Validate(tenant, tenantnamespace.Object{Name: namespace.GetName(), UID: uid, Phase: phase, Labels: namespace.GetLabels(), Deleting: namespace.GetDeletionTimestamp() != nil}, "", true); err != nil {
+		return "", fmt.Errorf("%w: %v", biz.ErrOwnership, err)
 	}
+
 	return uid, nil
 }
 

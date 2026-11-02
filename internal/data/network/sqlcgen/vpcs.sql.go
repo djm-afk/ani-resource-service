@@ -10,6 +10,31 @@ import (
 	"time"
 )
 
+const backfillTenantNamespaceUID = `-- name: BackfillTenantNamespaceUID :execrows
+UPDATE network_tenant_namespaces SET namespace_uid=$1::text
+WHERE tenant_id=$2 AND cluster_id=$3 AND namespace=$4 AND namespace_uid IS NULL
+`
+
+type BackfillTenantNamespaceUIDParams struct {
+	NamespaceUid string
+	TenantID     string
+	ClusterID    string
+	Namespace    string
+}
+
+func (q *Queries) BackfillTenantNamespaceUID(ctx context.Context, arg BackfillTenantNamespaceUIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, backfillTenantNamespaceUID,
+		arg.NamespaceUid,
+		arg.TenantID,
+		arg.ClusterID,
+		arg.Namespace,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countVPCs = `-- name: CountVPCs :one
 SELECT count(*) FROM network_vpcs v
 WHERE v.tenant_id = $1
@@ -42,18 +67,24 @@ func (q *Queries) DatabaseTime(ctx context.Context) (time.Time, error) {
 }
 
 const ensureTenantNamespace = `-- name: EnsureTenantNamespace :exec
-INSERT INTO network_tenant_namespaces(tenant_id,cluster_id,namespace) VALUES ($1,$2,$3)
+INSERT INTO network_tenant_namespaces(tenant_id,cluster_id,namespace,namespace_uid) VALUES ($1,$2,$3,$4)
 ON CONFLICT (tenant_id,cluster_id) DO NOTHING
 `
 
 type EnsureTenantNamespaceParams struct {
-	TenantID  string
-	ClusterID string
-	Namespace string
+	TenantID     string
+	ClusterID    string
+	Namespace    string
+	NamespaceUid *string
 }
 
 func (q *Queries) EnsureTenantNamespace(ctx context.Context, arg EnsureTenantNamespaceParams) error {
-	_, err := q.db.Exec(ctx, ensureTenantNamespace, arg.TenantID, arg.ClusterID, arg.Namespace)
+	_, err := q.db.Exec(ctx, ensureTenantNamespace,
+		arg.TenantID,
+		arg.ClusterID,
+		arg.Namespace,
+		arg.NamespaceUid,
+	)
 	return err
 }
 
@@ -122,7 +153,7 @@ func (q *Queries) GetOperation(ctx context.Context, arg GetOperationParams) (Net
 }
 
 const getTenantNamespace = `-- name: GetTenantNamespace :one
-SELECT namespace FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2
+SELECT namespace FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2 AND namespace_uid IS NOT NULL AND btrim(namespace_uid) <> ''
 `
 
 type GetTenantNamespaceParams struct {
@@ -135,6 +166,27 @@ func (q *Queries) GetTenantNamespace(ctx context.Context, arg GetTenantNamespace
 	var namespace string
 	err := row.Scan(&namespace)
 	return namespace, err
+}
+
+const getTenantNamespaceIdentity = `-- name: GetTenantNamespaceIdentity :one
+SELECT tenant_id,cluster_id,namespace,namespace_uid FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2
+`
+
+type GetTenantNamespaceIdentityParams struct {
+	TenantID  string
+	ClusterID string
+}
+
+func (q *Queries) GetTenantNamespaceIdentity(ctx context.Context, arg GetTenantNamespaceIdentityParams) (NetworkTenantNamespace, error) {
+	row := q.db.QueryRow(ctx, getTenantNamespaceIdentity, arg.TenantID, arg.ClusterID)
+	var i NetworkTenantNamespace
+	err := row.Scan(
+		&i.TenantID,
+		&i.ClusterID,
+		&i.Namespace,
+		&i.NamespaceUid,
+	)
+	return i, err
 }
 
 const getVPC = `-- name: GetVPC :one
@@ -404,6 +456,35 @@ func (q *Queries) InsertVPC(ctx context.Context, arg InsertVPCParams) (NetworkVp
 		&i.BaseConnectivityRequired,
 	)
 	return i, err
+}
+
+const listTenantNamespaceIdentities = `-- name: ListTenantNamespaceIdentities :many
+SELECT tenant_id,cluster_id,namespace,namespace_uid FROM network_tenant_namespaces ORDER BY tenant_id,cluster_id
+`
+
+func (q *Queries) ListTenantNamespaceIdentities(ctx context.Context) ([]NetworkTenantNamespace, error) {
+	rows, err := q.db.Query(ctx, listTenantNamespaceIdentities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NetworkTenantNamespace{}
+	for rows.Next() {
+		var i NetworkTenantNamespace
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ClusterID,
+			&i.Namespace,
+			&i.NamespaceUid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listVPCs = `-- name: ListVPCs :many

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,7 +44,7 @@ type UseCase struct {
 }
 
 func NewUseCase(volumes VolumePort, objects ObjectPort, cfg Config) (*UseCase, error) {
-	if volumes == nil || cfg.NamespacePrefix == "" {
+	if volumes == nil || cfg.NamespacePrefix != "tenant-" {
 		return nil, ErrInvalid
 	}
 	if err := ValidateBuckets(cfg.Buckets); err != nil {
@@ -87,22 +88,33 @@ func (u *UseCase) namespace(tenant string) (string, error) {
 
 // ensureNamespace 校验租户命名空间归属与状态，并返回命名空间名。
 // 现有卷的列表、详情、扩容、删除都经过这里，避免命名空间标签失效或进入删除中后继续操作。
-func (u *UseCase) ensureNamespace(ctx context.Context, tenant string) (string, error) {
-	if !CanonicalUUID(tenant) {
-		return "", ErrInvalid
-	}
+func (u *UseCase) namespaceIdentity(ctx context.Context, tenant string) (Namespace, error) {
 	name, err := u.namespace(tenant)
 	if err != nil {
-		return "", err
+		return Namespace{}, err
 	}
 	ns, err := u.volumes.GetNamespace(ctx, name)
 	if err != nil {
-		return "", err
+		return Namespace{}, err
 	}
-	if ns.Deleting || ns.ManagedBy != NamespaceOwner || ns.TenantID != tenant {
-		return "", ErrNotFound
+	if tenantnamespace.Validate(tenant, tenantnamespace.Object{Name: ns.Name, UID: ns.UID, Phase: ns.Phase, Deleting: ns.Deleting, Labels: map[string]string{tenantnamespace.TenantLabel: ns.TenantID, tenantnamespace.ManagedByLabel: ns.ManagedBy}}, "", true) != nil {
+		return Namespace{}, ErrNotFound
 	}
-	return name, nil
+	return ns, nil
+}
+func (u *UseCase) ensureNamespace(ctx context.Context, tenant string) (string, error) {
+	ns, err := u.namespaceIdentity(ctx, tenant)
+	return ns.Name, err
+}
+func (u *UseCase) verifyNamespaceUID(ctx context.Context, tenant, uid string) error {
+	ns, err := u.namespaceIdentity(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	if ns.UID != uid {
+		return ErrIdentityChanged
+	}
+	return nil
 }
 
 func owned(record *VolumeRecord, tenant string) bool {
@@ -131,16 +143,18 @@ func (u *UseCase) CreateVolume(ctx context.Context, tenant string, req CreateReq
 	if err != nil {
 		return Volume{}, err
 	}
-	namespace, err := u.namespace(tenant)
+	ns, err := u.namespaceIdentity(ctx, tenant)
 	if err != nil {
 		return Volume{}, err
 	}
+	namespace := ns.Name
+	spec.NamespaceUID = ns.UID
 	if existing, err := u.volumes.GetVolume(ctx, namespace, spec.Name); err == nil {
 		return u.replayCreate(tenant, existing, spec)
 	} else if !errors.Is(err, ErrNotFound) {
 		return Volume{}, err
 	}
-	if _, err := u.ensureNamespace(ctx, tenant); err != nil {
+	if err := u.verifyNamespaceUID(ctx, tenant, ns.UID); err != nil {
 		return Volume{}, err
 	}
 	if _, err := u.volumes.GetStorageClass(ctx, spec.StorageClassName); err != nil {
@@ -269,10 +283,11 @@ func (u *UseCase) UpdateVolume(ctx context.Context, tenant, name, expectedUID st
 	if err != nil {
 		return Volume{}, err
 	}
-	namespace, err := u.ensureNamespace(ctx, tenant)
+	ns, err := u.namespaceIdentity(ctx, tenant)
 	if err != nil {
 		return Volume{}, err
 	}
+	namespace := ns.Name
 	record, err := u.volumes.GetVolume(ctx, namespace, name)
 	if err != nil {
 		return Volume{}, err
@@ -301,6 +316,9 @@ func (u *UseCase) UpdateVolume(ctx context.Context, tenant, name, expectedUID st
 	}
 	if !class.AllowVolumeExpansion {
 		return Volume{}, ErrExpansionDenied
+	}
+	if err := u.verifyNamespaceUID(ctx, tenant, ns.UID); err != nil {
+		return Volume{}, err
 	}
 	updated, err := u.volumes.ResizeVolume(ctx, namespace, name, expectedUID, record.ResourceVersion, strconv.FormatInt(capacityGB, 10)+"G", bytes)
 	if err != nil {

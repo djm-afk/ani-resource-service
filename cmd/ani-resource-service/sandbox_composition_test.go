@@ -93,7 +93,7 @@ func TestBuildAppRegistersSandboxFromSharedConfiguration(t *testing.T) {
 	}
 	bc := &conf.Bootstrap{Network: &conf.Network{
 		DatabaseDsn: fixture.RuntimeDSN, Kubeconfig: testenv.Kubeconfig(t, provider.URL),
-		ClusterId: clusterID, NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(),
+		ClusterId: clusterID, CursorSigningKey: testenv.SigningKey(),
 		Worker: &conf.Worker{Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond)},
 	}, Server: &conf.Server{
 		Grpc:            &conf.Server_GRPC{Network: "tcp", Addr: grpcAddress, Timeout: durationpb.New(time.Second)},
@@ -192,7 +192,7 @@ func TestBuildAppRecoversSandboxAfterMigration(t *testing.T) {
 	}
 	bc := &conf.Bootstrap{Network: &conf.Network{
 		DatabaseDsn: fixture.RuntimeDSN, Kubeconfig: testenv.Kubeconfig(t, provider.URL),
-		ClusterId: clusterID, NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(),
+		ClusterId: clusterID, CursorSigningKey: testenv.SigningKey(),
 		Worker: &conf.Worker{Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond)},
 	}, Server: &conf.Server{
 		Grpc:            &conf.Server_GRPC{Network: "tcp", Addr: grpcAddress, Timeout: durationpb.New(time.Second)},

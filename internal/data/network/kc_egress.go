@@ -936,7 +936,7 @@ func (p *KCProvider) EnsureEgress(ctx context.Context, t biz.ProviderTarget) (bi
 		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
 	if t.TenantID != "" {
-		if err = p.ensureNamespace(ctx, r.binding); err != nil {
+		if err = p.verifyTenantNamespace(ctx, r.binding, true); err != nil {
 			return biz.ProviderObservation{}, err
 		}
 	}

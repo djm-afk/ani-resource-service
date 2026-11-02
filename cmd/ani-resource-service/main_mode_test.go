@@ -18,7 +18,7 @@ import (
 
 func runtimeModeConfig(t *testing.T, dsn string) string {
 	t.Helper()
-	c := &conf.Bootstrap{Network: &conf.Network{DatabaseDsn: dsn, ClusterId: "11111111-1111-4111-8111-111111111111", NamespacePrefix: "tenant-", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond)}}, Server: &conf.Server{Grpc: &conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:19090", Timeout: durationpb.New(time.Second)}, Admin: &conf.Server_Admin{Network: "tcp", Addr: "127.0.0.1:19091", Timeout: durationpb.New(time.Second)}, ShutdownTimeout: durationpb.New(time.Second)}}
+	c := &conf.Bootstrap{Network: &conf.Network{DatabaseDsn: dsn, ClusterId: "11111111-1111-4111-8111-111111111111", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond)}}, Server: &conf.Server{Grpc: &conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:19090", Timeout: durationpb.New(time.Second)}, Admin: &conf.Server_Admin{Network: "tcp", Addr: "127.0.0.1:19091", Timeout: durationpb.New(time.Second)}, ShutdownTimeout: durationpb.New(time.Second)}}
 	raw, err := protojson.Marshal(c)
 	if err != nil {
 		t.Fatal(err)

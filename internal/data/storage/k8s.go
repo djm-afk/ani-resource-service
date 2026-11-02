@@ -5,6 +5,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"sort"
 	"time"
 
@@ -62,7 +63,9 @@ func (k *Kubernetes) GetNamespace(ctx context.Context, name string) (biz.Namespa
 		}
 		return biz.Namespace{}, backendError(err)
 	}
+	phase, _, _ := unstructured.NestedString(ns.Object, "status", "phase")
 	return biz.Namespace{
+		UID: string(ns.GetUID()), Phase: phase,
 		Name:      ns.GetName(),
 		Deleting:  ns.GetDeletionTimestamp() != nil,
 		ManagedBy: ns.GetLabels()[biz.NamespaceManagedBy],
@@ -85,6 +88,14 @@ func (k *Kubernetes) GetVolume(ctx context.Context, namespace, name string) (*bi
 }
 
 func (k *Kubernetes) CreateVolume(ctx context.Context, namespace string, spec biz.CreateSpec) (*biz.VolumeRecord, error) {
+	ns, err := k.GetNamespace(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+	if tenantnamespace.Validate(spec.Labels[biz.LabelTenantID], tenantnamespace.Object{Name: ns.Name, UID: ns.UID, Phase: ns.Phase, Deleting: ns.Deleting, Labels: map[string]string{tenantnamespace.TenantLabel: ns.TenantID, tenantnamespace.ManagedByLabel: ns.ManagedBy}}, spec.NamespaceUID, true) != nil || spec.NamespaceUID == "" {
+		return nil, biz.ErrIdentityChanged
+	}
+
 	object := map[string]any{
 		"apiVersion": "v1",
 		"kind":       "PersistentVolumeClaim",

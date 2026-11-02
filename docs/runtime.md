@@ -28,13 +28,13 @@
 | `ANI_NETWORK_KUBECONFIG` | 管理员提供的 kc 集群 kubeconfig 路径；空值使用 Kubernetes in-cluster 凭据 |
 | `ANI_NETWORK_CLUSTER_ID` | 固定的内部集群标识，默认 `primary`；须与已保存映射一致 |
 | `ANI_NETWORK_INSTANCE_CONSUMER_ENDPOINT` | ANI 实例 owner 的 InstanceNetworkConsumer gRPC 地址；未配置/不可用时保留 Attachment 占用，不猜测封闭 |
-| `ANI_NETWORK_NAMESPACE_PREFIX` | 默认 `tenant-`；DNS 前缀，长度受限，末尾为 `-` |
+| 原 Namespace prefix 配置 | 已移除；非空旧字段或环境变量启动失败，名称固定为 `tenant-<canonical resource UUID>` |
 
 ```bash
 ./bin/ani-resource-service -conf ./configs
 ```
 
-不要把默认前缀/集群标识变更当作已有资源迁移。产品 ID 与 Provider 位置、对象名、UID 的映射在受理时持久化。kc 凭据需允许管理专用租户 namespace、GET/CREATE/DELETE VPC 与 Subnet、跨 namespace LIST/WATCH VPC/Subnet/Pod/VNic/VNicIP/EIP；Network 不写 Pod/VNic/VNicIP、不删除 namespace，不移除 kc finalizer。namespace 首次由 Network 创建并验证管理者/租户标签，同租户多个 VPC 共享该 namespace。NET-05A 的真实验收由 fixture 预先建立并标记租户 namespace，Network runtime 仅能 GET namespace；不会以管理员身份运行服务。真实权限与数据面结果见 [NET-05A 记录](execution/records/NET-05A-implementation.md)。
+Namespace 统一合同与维护窗口回填流程见[正式合同](contracts/tenant-namespace.md)。标准 Namespace 必须预先存在；Resource 各 owner 只精确 GET 并核对 network 两项归属标签与原 UID，不创建、补标签或收养。产品 ID 与 Provider 位置、对象名、UID 的映射在受理时持久化；正常删除继续保留 provider UID/resourceVersion 护栏，不移除 kc finalizer。kc 权限仅需 Namespace GET，以及原 VPC/Subnet/Pod/VNic/VNicIP/EIP 所需的精确操作和观察权限。
 
 ## 类型化配置
 

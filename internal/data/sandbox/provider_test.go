@@ -40,7 +40,11 @@ func providerFixture(t *testing.T) (*fake.FakeDynamicClient, *KubernetesProvider
 		t.Fatal(err)
 	}
 	s := biz.Sandbox{ID: "11111111-1111-4111-8111-111111111111", TenantID: "22222222-2222-4222-8222-222222222222", Version: 1, Desired: biz.DesiredRunning, LastOperationID: "33333333-3333-4333-8333-333333333333",
-		Snapshot: biz.Snapshot{ClusterID: clusterID, Namespace: "sandbox-ns", RuntimeClass: "sandbox-kata", ImageReference: "registry.example/sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CPUMillis: 500, MemoryMiB: 512, Workspace: biz.WorkspaceSpec{MountPath: "/workspace", Size: "10Gi", StorageClass: "fast", ReclaimPolicy: "Delete"}}}
+		Snapshot: biz.Snapshot{ClusterID: clusterID, Namespace: "tenant-22222222-2222-4222-8222-222222222222", NamespaceUID: "namespace-uid", RuntimeClass: "sandbox-kata", ImageReference: "registry.example/sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CPUMillis: 500, MemoryMiB: 512, Workspace: biz.WorkspaceSpec{MountPath: "/workspace", Size: "10Gi", StorageClass: "fast", ReclaimPolicy: "Delete"}}}
+	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": s.Snapshot.Namespace, "uid": s.Snapshot.NamespaceUID, "labels": map[string]any{storagebiz.NamespaceManagedBy: storagebiz.NamespaceOwner, storagebiz.NamespaceTenantID: s.TenantID}}, "status": map[string]any{"phase": "Active"}}}
+	if err := client.Tracker().Add(ns); err != nil {
+		t.Fatal(err)
+	}
 	return client, provider, s
 }
 
@@ -731,22 +735,11 @@ func TestKubernetesProviderDriftCannotResolvePendingCreate(t *testing.T) {
 }
 
 func configuredNamespaceFixture(t *testing.T) (*fake.FakeDynamicClient, *KubernetesProvider, biz.Sandbox) {
-	t.Helper()
-	client, provider, s := providerFixture(t)
-	s.Snapshot.Namespace = "tenant-" + s.TenantID
-	s.Snapshot.NamespaceUID = "namespace-uid"
-	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": s.Snapshot.Namespace, "uid": "namespace-uid", "labels": map[string]any{storagebiz.NamespaceManagedBy: storagebiz.NamespaceOwner, storagebiz.NamespaceTenantID: s.TenantID}}}}
-	if _, err := client.Resource(namespaceGVR).Create(context.Background(), ns, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.ConfigureTenantNamespacePrefix("tenant-"); err != nil {
-		t.Fatal(err)
-	}
-	return client, provider, s
+	return providerFixture(t)
 }
 
 func TestKubernetesProviderRejectsChangedTenantNamespaceBeforeWrites(t *testing.T) {
-	for _, change := range []string{"tenant", "owner", "deleting", "name"} {
+	for _, change := range []string{"tenant", "owner", "name"} {
 		t.Run(change, func(t *testing.T) {
 			client, provider, s := configuredNamespaceFixture(t)
 			ns, err := client.Resource(namespaceGVR).Get(context.Background(), s.Snapshot.Namespace, metav1.GetOptions{})

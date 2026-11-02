@@ -105,8 +105,11 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 	if e = requireInstanceCompute(compute, cfg); e != nil {
 		return nil, e
 	}
+	if cfg.Service.NamespacePrefix != "" {
+		return nil, fmt.Errorf("instance namespace prefix configuration has been removed")
+	}
 	// Namespace configuration is shared by value only, never Network tables.
-	cfg.Service.NamespacePrefix = network.NamespacePrefix
+	cfg.Service.NamespacePrefix = "tenant-"
 	cfg.Service.NewIntentsEnabled = os.Getenv("ANI_INSTANCE_NEW_INTENTS_ENABLED") == "true"
 	cfg.Service.RestartEnabled = os.Getenv("ANI_INSTANCE_RESTART_ENABLED") == "true"
 	cfg.Service.PVCMutationsEnabled = os.Getenv("ANI_INSTANCE_PVC_MUTATIONS_ENABLED") == "true"
