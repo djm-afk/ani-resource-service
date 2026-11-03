@@ -156,11 +156,14 @@ func (l *Lifecycle) EnsureImageSpace(ctx context.Context, in EnableSpace) (Space
 		}
 		pull, e := l.repo.GetTenantPull(ctx, s.TenantID, s.ID)
 		if e == nil && pull.Info.Generation > 0 {
-			if !l.credentialActive(pull.Info) {
-				return Fail(SpaceNotReady, "pull credential requires controlled repair")
+			if l.credentialActive(pull.Info) {
+				s, c, e = l.repo.CompleteTenantEnable(ctx, s, c)
+				return e
 			}
-			s, c, e = l.repo.CompleteTenantEnable(ctx, s, c)
-			return e
+			// An expired pull credential cannot be repaired by waiting: the
+			// space is reported as blocked on every read until a successor
+			// exists. Fall through so runCandidate mints the next generation
+			// instead of failing the only repair entry point.
 		}
 		if e != nil && ReasonOf(e) != ImageNotFound {
 			return e
@@ -339,7 +342,11 @@ func (l *Lifecycle) candidateAAD(s Space, c Command) SecretAAD {
 	return SecretAAD{InstallationID: s.InstallationID, TenantID: s.TenantID, SpaceID: s.ID, Scope: s.Scope, Purpose: c.Candidate.Purpose, Generation: c.Candidate.Generation, CommandID: c.ID}
 }
 func (l *Lifecycle) prepareCandidate(ctx context.Context, s Space, c Command, previous CredentialInfo) (Command, error) {
-	if previous.Generation > 0 && previous.Purpose == "pull" {
+	// A live pull credential backs running workloads, so replacing it requires
+	// the coordinated path (new material bound first, then retire the old
+	// identity). An expired one backs nothing: no token minted from it can be
+	// honored, so minting its successor in place is the only repair available.
+	if previous.Generation > 0 && previous.Purpose == "pull" && l.credentialActive(previous) {
 		return Command{}, Fail(SpaceNotReady, "running credentials require coordinated replacement")
 	}
 	generation := previous.Generation + 1

@@ -261,12 +261,13 @@ Registry越权拒绝。A/B各自成功读后，才接受A读B的401/403为负例
 不保证已经签出的Registry Token立即失效；实际Token TTL必须在获批Harbor上另测。
 普通GET不会恢复Secret；窗口到期必须显式重置，不能直接解密数据库或复用旧command。
 
-**当前没有运行pull凭证更换/Namespace Secret同步的已接通产品操作。**
+**当前没有运行pull凭证更换/Namespace Secret同步的已接通产品操作，也没有自动续期。**
 代码读取并校验 `expires_at`，已过期材料会拒绝交付；再次enable同一空间不能越过此检查。
-上线方须把该能力作为接入前门禁，结合真实owner和唯一tenant Namespace完成受控更换：
+因此部署方应使用 `pull_days: -1` 配合 `allow_never_expires: true` 签发永不过期的运行身份；
+若选择有限天数，须把更换能力作为接入前门禁，结合真实owner和唯一tenant Namespace完成受控更换：
 准备并验证新材料、通过owner更新/确认其Secret generation、再停用旧身份。
 这段顺序是待接入约束，不是声称已经存在的CLI；不得直接改Image行、在Harbor单独改密钥，
-或宣称365天有效期等于永久可用。没有该更换链路时，应在到期前阻止新的创建尝试并报告
+或宣称有限天数等于永久可用。没有该更换链路时，应在到期前阻止新的创建尝试并报告
 需要owner修复；不能承诺已有工作负载重建或换节点时仍能拉取。
 
 空间/Robot创建请求超时后，先保留原actor、幂等键和完全相同的输入。查 `inspect-space`

@@ -14,8 +14,11 @@ image:
   cursor_signing_key_file: /run/ani-image/private/cursor-key
   request_timeout: 10s
   publisher_days: 30
-  pull_days: 365
-  allow_never_expires: false
+  # -1 mints a never-expiring tenant pull identity; it is only accepted together
+  # with allow_never_expires. Pull credentials back running workloads and there
+  # is no automatic renewal, so a finite duration strands every space at expiry.
+  pull_days: -1
+  allow_never_expires: true
   # The only cluster Image may write shared pull Secrets into. Empty keeps the
   # unified Ensure unavailable (Resolve and the catalog stay usable).
   pull_secret_cluster_id: "<deployment-cluster-id>"
