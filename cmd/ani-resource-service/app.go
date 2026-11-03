@@ -127,6 +127,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	attachments.UseConsumerDirectory(networkConsumerDirectory(instances, vms))
 	defer func() {
 		if !configured {
 			vms.Close()

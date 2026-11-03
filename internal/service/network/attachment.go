@@ -55,6 +55,27 @@ func (s *NetworkService) ReleaseAttachment(ctx context.Context, r *networkv1.Rel
 	}
 	return &networkv1.ReleaseAttachmentResponse{Attachment: v}, nil
 }
+func (s *NetworkService) ListNetworkInstances(ctx context.Context, r *networkv1.ListNetworkInstancesRequest) (*networkv1.ListNetworkInstancesResponse, error) {
+	if s.attachments == nil {
+		return nil, rpcError(biz.Fail(biz.DependencyUnavailable, "attachment service unavailable"))
+	}
+	if r == nil {
+		return nil, rpcError(biz.Fail(biz.InvalidArgument, "request required"))
+	}
+	page, e := s.attachments.ListInstances(ctx, biz.ListAttachmentConsumers{TenantID: r.GetTenantId(), VPCID: r.GetVpcId(), SubnetID: r.GetSubnetId(), Page: r.Page, PageSize: r.PageSize})
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	result := &networkv1.ListNetworkInstancesResponse{Total: page.Total, Items: make([]*networkv1.AssociatedInstance, 0, len(page.Items))}
+	for _, item := range page.Items {
+		value := &networkv1.AssociatedInstance{TenantId: item.TenantID, ConsumerType: item.ConsumerType, ConsumerId: item.ConsumerID, ConsumerName: item.ConsumerName, ConsumerState: item.ConsumerState, SubnetId: item.SubnetID, SubnetName: item.SubnetName, Slot: item.Slot, AttachmentId: item.AttachmentID, AttachmentState: item.AttachmentState, AttachmentReason: item.AttachmentReason, ObservationStale: item.ObservationStale, ObservedAt: optionalTime(item.ObservedAt), Addresses: make([]*networkv1.NetworkAddress, 0, len(item.Addresses))}
+		for _, address := range item.Addresses {
+			value.Addresses = append(value.Addresses, &networkv1.NetworkAddress{NicName: address.NICName, Address: address.Address})
+		}
+		result.Items = append(result.Items, value)
+	}
+	return result, nil
+}
 func wireAttachment(a biz.Attachment, e error) (*networkv1.Attachment, error) {
 	if e != nil {
 		return nil, rpcError(e)

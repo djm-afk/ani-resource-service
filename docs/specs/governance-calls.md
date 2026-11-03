@@ -32,6 +32,7 @@ Sandbox 条目定义 Resource RPC 合同和精确接收方 allowlist。Governanc
 | `/network.v1.NetworkService/CreateSubnet` | 原键 |
 | `/network.v1.NetworkService/DeleteSubnet` | 资源删除 |
 | `/network.v1.NetworkService/GetOperation` | 查询 |
+| `/network.v1.NetworkService/ListNetworkInstances` | 查询 |
 | `/network.v1.TenantEgressService/CreateEIP` | 原键 |
 | `/network.v1.TenantEgressService/GetEIP` | 查询 |
 | `/network.v1.TenantEgressService/ListEIPs` | 查询 |

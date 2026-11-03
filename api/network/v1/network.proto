@@ -20,6 +20,7 @@ service NetworkService {
   rpc GetAttachment(GetAttachmentRequest) returns (GetAttachmentResponse);
   rpc ConfirmAttachment(ConfirmAttachmentRequest) returns (ConfirmAttachmentResponse);
   rpc ReleaseAttachment(ReleaseAttachmentRequest) returns (ReleaseAttachmentResponse);
+  rpc ListNetworkInstances(ListNetworkInstancesRequest) returns (ListNetworkInstancesResponse);
 }
 
 enum ResourceState {
@@ -351,6 +352,44 @@ message PrepareAttachmentResponse { Attachment attachment = 1; }
 message GetAttachmentResponse { Attachment attachment = 1; }
 message ConfirmAttachmentResponse { Attachment attachment = 1; }
 message ReleaseAttachmentResponse { Attachment attachment = 1; }
+
+// One current address observed by Network for a consumer. Empty always means
+// Network has no eligible observation, never "not attached to the network".
+message NetworkAddress {
+ string nic_name = 1;
+ string address = 2;
+}
+// A compute consumer holding a slot in one VPC or subnet. consumer_type and
+// attachment_state are independent facts: a running instance can still be
+// reserved, and a released attachment can still be listed when blocked.
+message AssociatedInstance {
+ string consumer_type = 1;
+ string consumer_id = 2;
+ string consumer_name = 3;
+ string consumer_state = 4;
+ string subnet_id = 5;
+ string subnet_name = 6;
+ string slot = 7;
+ string attachment_id = 8;
+ string attachment_state = 9;
+ string attachment_reason = 10;
+ bool observation_stale = 11;
+ google.protobuf.Timestamp observed_at = 12;
+ repeated NetworkAddress addresses = 13;
+ // Every row replays the trusted tenant so the caller can assert scope.
+ string tenant_id = 14;
+}
+// Exactly one of vpc_id or subnet_id scopes the page; supplying both asserts
+// that the subnet belongs to that VPC. Unknown networks are not found, while a
+// known network with no consumer returns an empty page.
+message ListNetworkInstancesRequest {
+ string tenant_id = 1;
+ string vpc_id = 2;
+ string subnet_id = 3;
+ optional uint32 page = 4;
+ optional uint32 page_size = 5 [json_name = "pageSize"];
+}
+message ListNetworkInstancesResponse { repeated AssociatedInstance items = 1; int64 total = 2; }
 
 // Required outbound consumer contract. ANI instance owner implements this
 // read-only service from this pinned descriptor; Network never writes workloads.

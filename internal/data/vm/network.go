@@ -27,7 +27,7 @@ func NewNetwork(a *network.Attachments, r biz.Repository, n biz.NativePort) (*Ne
 }
 func (n *Network) Prepare(ctx context.Context, v biz.VM) (biz.NetworkPlan, error) {
 	submission := uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-network/"+v.ID)).String()
-	r := network.PrepareAttachment{WorkloadMode: "vm_managed", TenantID: v.TenantID, InstanceID: v.ID, VPCID: v.Spec.Network.VPCID, SubnetID: v.Spec.Network.SubnetID, Slot: "primary", RequestKey: "vm-" + v.ID, SubmissionID: submission, Generation: 1, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, VMExpectation: &network.VMNetworkExpectation{NADName: v.Spec.Network.NADName, NADUID: v.Spec.Network.NADUID, NADConfigDigest: v.Spec.Network.NADDigest}}
+	r := network.PrepareAttachment{WorkloadMode: "vm_managed", ConsumerType: network.ConsumerVirtualMachine, TenantID: v.TenantID, InstanceID: v.ID, VPCID: v.Spec.Network.VPCID, SubnetID: v.Spec.Network.SubnetID, Slot: "primary", RequestKey: "vm-" + v.ID, SubmissionID: submission, Generation: 1, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, VMExpectation: &network.VMNetworkExpectation{NADName: v.Spec.Network.NADName, NADUID: v.Spec.Network.NADUID, NADConfigDigest: v.Spec.Network.NADDigest}}
 	a, e := n.attachments.Prepare(ctx, r)
 	if e != nil {
 		return biz.NetworkPlan{}, e

@@ -39,6 +39,7 @@ type Attachment struct {
 	VMPrimary                                                     *VMPrimaryPlan
 	VMCurrentAddresses                                            []VMCurrentAddress
 	WorkloadMode                                                  string
+	ConsumerType                                                  string
 	SnapshotRevision                                              int64
 	SnapshotHash                                                  string
 	ConfirmedSnapshotRevision                                     int64
@@ -63,6 +64,9 @@ type PrepareAttachment struct {
 	Generation                                              int64
 	ClusterID, Namespace                                    string
 	VMExpectation                                           *VMNetworkExpectation `json:",omitempty"`
+	// ConsumerType is derived by the caller's domain, never part of the intent
+	// digest: excluding it keeps replay of a stored attachment idempotent.
+	ConsumerType string `json:"-"`
 }
 
 func (r PrepareAttachment) Fingerprint() string {
@@ -89,18 +93,46 @@ type AttachmentRepository interface {
 	GetAttachment(context.Context, string, string) (Attachment, error)
 	ConfirmAttachment(context.Context, ConfirmAttachment) (Attachment, error)
 	ReleaseAttachment(context.Context, ReleaseAttachment) (Attachment, error)
+	ListAttachmentConsumers(context.Context, string, AttachmentConsumerFilter, time.Duration) ([]AttachmentConsumerRow, int64, error)
 }
 type Attachments struct {
 	repository AttachmentRepository
+	consumers  ConsumerDirectory
 	freshness  time.Duration
 }
 
 func NewAttachments(r AttachmentRepository, freshness time.Duration) *Attachments {
-	return &Attachments{r, freshness}
+	return &Attachments{repository: r, freshness: freshness}
 }
 
 var attachmentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$`)
 var namespaceName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
+// validConsumerIntent binds a product identity to the attachment protocol that
+// carries it. The legacy external single_pod intent predates this column and
+// owns no ANI resource record, so it stays untyped rather than borrowing a type
+// inferred from whichever table happens to hold a matching key.
+func validConsumerIntent(mode, consumerType string) error {
+	switch mode {
+	case "":
+		if consumerType != "" {
+			return Fail(InvalidArgument, "external single_pod attachment carries no consumer type")
+		}
+	case "controller_managed":
+		if consumerType != ConsumerContainerInstance {
+			return Fail(InvalidArgument, "controller managed attachment requires a container instance consumer")
+		}
+	case "vm_managed":
+		if consumerType != ConsumerVirtualMachine {
+			return Fail(InvalidArgument, "managed VM attachment requires a virtual machine consumer")
+		}
+	}
+	switch consumerType {
+	case "", ConsumerContainerInstance, ConsumerVirtualMachine:
+		return nil
+	}
+	return Fail(InvalidArgument, "invalid consumer type")
+}
 
 func (a *Attachments) Prepare(ctx context.Context, r PrepareAttachment) (Attachment, error) {
 	tenant, err := ParseTenant(r.TenantID)
@@ -114,6 +146,9 @@ func (a *Attachments) Prepare(ctx context.Context, r PrepareAttachment) (Attachm
 	// Empty is the immutable v1 spelling and remains omitted from its digest.
 	if r.WorkloadMode == "single_pod" {
 		r.WorkloadMode = ""
+	}
+	if e := validConsumerIntent(r.WorkloadMode, r.ConsumerType); e != nil {
+		return Attachment{}, e
 	}
 	if (r.WorkloadMode == "vm_managed" && !ValidVMNetworkExpectation(r.VMExpectation)) || (r.WorkloadMode != "vm_managed" && r.VMExpectation != nil) {
 		return Attachment{}, Fail(InvalidArgument, "VM network expectation differs from workload mode")

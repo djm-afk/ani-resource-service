@@ -48,6 +48,7 @@ type NetworkAttachment struct {
 	RetryNotBefore      time.Time
 	EvidenceHash        string
 	EvidenceAppliedAt   time.Time
+	ConsumerType        string
 }
 
 type NetworkAttachmentConsumerSnapshot struct {

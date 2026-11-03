@@ -88,7 +88,7 @@ func (n *InstanceNetwork) Prepare(ctx context.Context, i biz.Instance) (biz.Netw
 	}
 	// Permanent replay must precede dynamic availability checks. Prepare owns
 	// that decision and verifies the actual provider binding on first accept.
-	a, err := n.attachments.Prepare(ctx, networkbiz.PrepareAttachment{TenantID: i.TenantID, InstanceID: i.ID, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, Slot: "primary", RequestKey: i.Network.RequestKey, SubmissionID: i.Network.SubmissionID, Generation: i.Network.Generation, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, WorkloadMode: "controller_managed"})
+	a, err := n.attachments.Prepare(ctx, networkbiz.PrepareAttachment{TenantID: i.TenantID, InstanceID: i.ID, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, Slot: "primary", RequestKey: i.Network.RequestKey, SubmissionID: i.Network.SubmissionID, Generation: i.Network.Generation, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, WorkloadMode: "controller_managed", ConsumerType: networkbiz.ConsumerContainerInstance})
 	if err != nil {
 		return biz.NetworkBinding{}, instanceNetworkError(err)
 	}

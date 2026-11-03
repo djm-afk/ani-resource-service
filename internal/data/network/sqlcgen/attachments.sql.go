@@ -10,9 +10,25 @@ import (
 	"time"
 )
 
+const attachmentVPCScopeExists = `-- name: AttachmentVPCScopeExists :one
+SELECT EXISTS(SELECT 1 FROM network_vpcs WHERE tenant_id=$1 AND vpc_id=$2)::boolean AS exists
+`
+
+type AttachmentVPCScopeExistsParams struct {
+	TenantID string
+	VpcID    string
+}
+
+func (q *Queries) AttachmentVPCScopeExists(ctx context.Context, arg AttachmentVPCScopeExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, attachmentVPCScopeExists, arg.TenantID, arg.VpcID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const claimAttachment = `-- name: ClaimAttachment :one
 UPDATE network_attachments SET lease_owner=$1::uuid,lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond',epoch=epoch+1
-WHERE tenant_id=$3 AND attachment_id=$4 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+WHERE tenant_id=$3 AND attachment_id=$4 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type
 `
 
 type ClaimAttachmentParams struct {
@@ -68,13 +84,14 @@ func (q *Queries) ClaimAttachment(ctx context.Context, arg ClaimAttachmentParams
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
 
 const confirmAttachment = `-- name: ConfirmAttachment :one
 UPDATE network_attachments SET pod_name=$3,pod_uid=$4,confirm_uid=$4,version=version+1,updated_at=clock_timestamp(),next_check_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL
-WHERE tenant_id=$1 AND attachment_id=$2 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+WHERE tenant_id=$1 AND attachment_id=$2 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type
 `
 
 type ConfirmAttachmentParams struct {
@@ -130,8 +147,29 @@ func (q *Queries) ConfirmAttachment(ctx context.Context, arg ConfirmAttachmentPa
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
+}
+
+const countAttachmentConsumers = `-- name: CountAttachmentConsumers :one
+SELECT count(*)::bigint FROM network_attachments a
+WHERE a.tenant_id=$1
+  AND (a.subnet_id=$2::text OR a.vpc_id=$3::text)
+  AND (a.state<>'released' OR a.protocol_blocked)
+`
+
+type CountAttachmentConsumersParams struct {
+	TenantID string
+	SubnetID string
+	VpcID    string
+}
+
+func (q *Queries) CountAttachmentConsumers(ctx context.Context, arg CountAttachmentConsumersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAttachmentConsumers, arg.TenantID, arg.SubnetID, arg.VpcID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const countAttachments = `-- name: CountAttachments :one
@@ -160,7 +198,7 @@ UPDATE network_attachments SET state=$1,reason=$2,protocol_blocked=$3,pod_name=$
  evidence_applied_at=CASE WHEN $8::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
  retry_not_before=CASE WHEN $12::boolean THEN clock_timestamp()+$13::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
  next_check_at=CASE WHEN requested_generation>$10::bigint AND NOT $12::boolean THEN clock_timestamp() WHEN $14::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$13::bigint*interval '1 microsecond' END,lease_owner=NULL,lease_until=NULL
-WHERE tenant_id=$15 AND attachment_id=$16 AND version=$17 AND epoch=$18 AND lease_owner=$19::uuid AND lease_until>clock_timestamp() RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+WHERE tenant_id=$15 AND attachment_id=$16 AND version=$17 AND epoch=$18 AND lease_owner=$19::uuid AND lease_until>clock_timestamp() RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type
 `
 
 type FinishAttachmentParams struct {
@@ -246,12 +284,13 @@ func (q *Queries) FinishAttachment(ctx context.Context, arg FinishAttachmentPara
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
 
 const getAttachment = `-- name: GetAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2
 `
 
 type GetAttachmentParams struct {
@@ -300,12 +339,13 @@ func (q *Queries) GetAttachment(ctx context.Context, arg GetAttachmentParams) (N
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
 
 const getAttachmentReplay = `-- name: GetAttachmentReplay :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2 AND slot=$3 AND request_key=$4
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2 AND slot=$3 AND request_key=$4
 `
 
 type GetAttachmentReplayParams struct {
@@ -361,6 +401,7 @@ func (q *Queries) GetAttachmentReplay(ctx context.Context, arg GetAttachmentRepl
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
@@ -383,8 +424,8 @@ func (q *Queries) HasAttachmentSlot(ctx context.Context, arg HasAttachmentSlotPa
 }
 
 const insertAttachment = `-- name: InsertAttachment :one
-INSERT INTO network_attachments(tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,state)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'reserved') RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+INSERT INTO network_attachments(tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,consumer_type,state)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'reserved') RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type
 `
 
 type InsertAttachmentParams struct {
@@ -403,6 +444,7 @@ type InsertAttachmentParams struct {
 	Namespace       string
 	BindingRevision string
 	Plan            []byte
+	ConsumerType    string
 }
 
 func (q *Queries) InsertAttachment(ctx context.Context, arg InsertAttachmentParams) (NetworkAttachment, error) {
@@ -422,6 +464,7 @@ func (q *Queries) InsertAttachment(ctx context.Context, arg InsertAttachmentPara
 		arg.Namespace,
 		arg.BindingRevision,
 		arg.Plan,
+		arg.ConsumerType,
 	)
 	var i NetworkAttachment
 	err := row.Scan(
@@ -462,6 +505,7 @@ func (q *Queries) InsertAttachment(ctx context.Context, arg InsertAttachmentPara
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
@@ -498,8 +542,96 @@ func (q *Queries) InsertAttachmentHistory(ctx context.Context, arg InsertAttachm
 	return err
 }
 
+const listAttachmentConsumers = `-- name: ListAttachmentConsumers :many
+SELECT a.tenant_id,a.attachment_id,a.vpc_id,a.subnet_id,a.slot,a.state,a.reason,a.protocol_blocked,
+ a.instance_id,a.consumer_type,a.pod_uid,a.observed_at,a.created_at,a.provider_relations,
+ coalesce(a.plan->>'WorkloadMode','')::text AS workload_mode,
+ coalesce(s.name,'')::text AS subnet_name,
+ cs.snapshot AS consumer_snapshot
+FROM network_attachments a
+LEFT JOIN network_subnets s ON s.tenant_id=a.tenant_id AND s.subnet_id=a.subnet_id
+LEFT JOIN network_attachment_consumer_snapshots cs ON cs.tenant_id=a.tenant_id AND cs.attachment_id=a.attachment_id
+WHERE a.tenant_id=$1
+  AND (a.subnet_id=$2::text OR a.vpc_id=$3::text)
+  AND (a.state<>'released' OR a.protocol_blocked)
+ORDER BY a.created_at DESC,a.attachment_id DESC
+LIMIT $5::integer OFFSET $4::bigint
+`
+
+type ListAttachmentConsumersParams struct {
+	TenantID   string
+	SubnetID   string
+	VpcID      string
+	PageOffset int64
+	MaxResults int32
+}
+
+type ListAttachmentConsumersRow struct {
+	TenantID          string
+	AttachmentID      string
+	VpcID             string
+	SubnetID          string
+	Slot              string
+	State             string
+	Reason            string
+	ProtocolBlocked   bool
+	InstanceID        string
+	ConsumerType      string
+	PodUid            string
+	ObservedAt        *time.Time
+	CreatedAt         time.Time
+	ProviderRelations []byte
+	WorkloadMode      string
+	SubnetName        string
+	ConsumerSnapshot  []byte
+}
+
+func (q *Queries) ListAttachmentConsumers(ctx context.Context, arg ListAttachmentConsumersParams) ([]ListAttachmentConsumersRow, error) {
+	rows, err := q.db.Query(ctx, listAttachmentConsumers,
+		arg.TenantID,
+		arg.SubnetID,
+		arg.VpcID,
+		arg.PageOffset,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAttachmentConsumersRow{}
+	for rows.Next() {
+		var i ListAttachmentConsumersRow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.AttachmentID,
+			&i.VpcID,
+			&i.SubnetID,
+			&i.Slot,
+			&i.State,
+			&i.Reason,
+			&i.ProtocolBlocked,
+			&i.InstanceID,
+			&i.ConsumerType,
+			&i.PodUid,
+			&i.ObservedAt,
+			&i.CreatedAt,
+			&i.ProviderRelations,
+			&i.WorkloadMode,
+			&i.SubnetName,
+			&i.ConsumerSnapshot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockAttachment = `-- name: LockAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2 FOR UPDATE
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2 FOR UPDATE
 `
 
 type LockAttachmentParams struct {
@@ -548,6 +680,7 @@ func (q *Queries) LockAttachment(ctx context.Context, arg LockAttachmentParams) 
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
@@ -568,7 +701,7 @@ func (q *Queries) LockAttachmentSlot(ctx context.Context, arg LockAttachmentSlot
 }
 
 const lockDueAttachment = `-- name: LockDueAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
 ORDER BY next_check_at,attachment_id LIMIT 1 FOR UPDATE SKIP LOCKED
 `
 
@@ -618,6 +751,7 @@ func (q *Queries) LockDueAttachment(ctx context.Context, arg LockDueAttachmentPa
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }
@@ -686,7 +820,7 @@ func (q *Queries) LockDueAttachmentSubnet(ctx context.Context, arg LockDueAttach
 
 const releaseAttachment = `-- name: ReleaseAttachment :one
 UPDATE network_attachments SET finalization_id=$3,state='releasing',version=version+1,updated_at=clock_timestamp(),next_check_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL
-WHERE tenant_id=$1 AND attachment_id=$2 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+WHERE tenant_id=$1 AND attachment_id=$2 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type
 `
 
 type ReleaseAttachmentParams struct {
@@ -736,6 +870,7 @@ func (q *Queries) ReleaseAttachment(ctx context.Context, arg ReleaseAttachmentPa
 		&i.RetryNotBefore,
 		&i.EvidenceHash,
 		&i.EvidenceAppliedAt,
+		&i.ConsumerType,
 	)
 	return i, err
 }

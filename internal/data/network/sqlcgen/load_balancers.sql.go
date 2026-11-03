@@ -1004,7 +1004,7 @@ func (q *Queries) InsertLBRetiredBinding(ctx context.Context, arg InsertLBRetire
 }
 
 const listLBBackendAttachments = `-- name: ListLBBackendAttachments :many
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason IN ('','PROVIDER_UNAVAILABLE') ORDER BY attachment_id
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason IN ('','PROVIDER_UNAVAILABLE') ORDER BY attachment_id
 `
 
 type ListLBBackendAttachmentsParams struct {
@@ -1059,6 +1059,7 @@ func (q *Queries) ListLBBackendAttachments(ctx context.Context, arg ListLBBacken
 			&i.RetryNotBefore,
 			&i.EvidenceHash,
 			&i.EvidenceAppliedAt,
+			&i.ConsumerType,
 		); err != nil {
 			return nil, err
 		}

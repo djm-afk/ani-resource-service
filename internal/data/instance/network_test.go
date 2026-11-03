@@ -50,6 +50,9 @@ func (r *adapterAttachmentRepository) ReleaseAttachment(_ context.Context, v net
 	r.release = v
 	return r.value, r.err
 }
+func (r *adapterAttachmentRepository) ListAttachmentConsumers(context.Context, string, networkbiz.AttachmentConsumerFilter, time.Duration) ([]networkbiz.AttachmentConsumerRow, int64, error) {
+	return nil, 0, r.err
+}
 func instanceNetworkFixture(t *testing.T) (*InstanceNetwork, biz.Instance, *adapterNetworkRepository, *adapterAttachmentRepository) {
 	t.Helper()
 	i := configuredInstance(t)

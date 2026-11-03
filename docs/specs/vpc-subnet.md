@@ -347,6 +347,27 @@ Prepare 的 key/active-slot 数据库互斥位于 VPC、Subnet 行锁之后；Co
 版本/lease owner/epoch/数据库时钟有效期共同栅栏回写。released 的迟到对象只登记协议异常并保护父清理，
 不重新启用接入方案。Provider 的已见 UID/关联持久保存，避免 VNic 消失后遗留 VNicIP 被误当作无关。
 
+### 7.4 关联实例查询与消费者类型
+
+`network_attachments.consumer_type` 记录消费者属于哪个产品（`container_instance`/`virtual_machine`/`sandbox`，空值只表示该列之前写入的历史行），
+与 `plan->>'WorkloadMode'` 的接入协议模式分离：模式不是类型，用模式反推类型会把实现细节当成领域事实。
+类型也不进入 `PrepareAttachment` 的意图指纹（Go 侧 `json:"-"`），否则新增字段会改变哈希，使存量 attachment 的重放全部变成 `IDEMPOTENCY_CONFLICT`。
+Prepare 校验类型与模式一致：`controller_managed`→`container_instance`、`vm_managed`→`virtual_machine`；
+外部 `single_pod` 意图不拥有 ANI 资源记录，继续不带类型，不从它恰好使用的 ID 猜一个类型。
+迁移 0028 只回填 `plan->>'WorkloadMode'` 能确证的两类，其余保持空值并在查询里返回 `unknown`。
+
+`ListNetworkInstances(tenant_id,vpc_id|subnet_id,page,page_size)` 是治理面只读查询，二选一必填，同时提供时校验子网属于该 VPC。
+先按租户确认网络行存在，否则 `RESOURCE_NOT_FOUND`，使“网络不存在”与“存在但没有关联”可区分。
+Count 与 List 在同一 Repeatable Read 只读事务、同一谓词 `state<>'released' OR protocol_blocked`（与占用检查同口径，异常占用记录必须可见）内完成；
+`subnet_name` 由同库 `network_subnets` join 得到且不加 `state<>'deleted'` 过滤，否则已删除子网上残留的未释放关联会从列表消失；
+排序固定 `created_at DESC,attachment_id DESC`，不用 `updated_at`，避免观察刷新让翻页漏行或重复。
+名称与运行状态由 `ConsumerDirectory` 端口跨库批量补齐（Instance/VM 与 Network 是分离的库，不存在可用的 join），
+一次请求每种类型只读一次；查不到资源的行仍然返回，消费者字段为 `unknown`，不删行也不改判类型。
+地址只读 Network 自己持久化的观测：`state=attached`、无原因、`observed_at` 未超过注入的 freshness 才投影；
+容器要求 Pod→VNic→VNicIP 身份链与记录的 `pod_uid` 完整匹配，VM 沿用 launcher Pod 与 VMI owner 围栏，
+不满足即返回空地址而不是旧 IP。`observation_stale` 与“地址为空”分开表达：空地址可能是停止、未观测、过期或身份不匹配，不能一律读成“未接网”。
+本查询不合成“已选网但尚未 Prepare 成功”的行（那没有 attachment 记录），也不聚合子网/LB/EIP，见[治理调用登记](governance-calls.md)。
+
 ## 8. Provider 契约与接线
 
 仅实现本切片需要的 kc adapter，不建通用插件注册中心或多技术开关。

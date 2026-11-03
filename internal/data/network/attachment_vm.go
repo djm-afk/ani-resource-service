@@ -221,23 +221,34 @@ func vmNetworkPreflightFailure(ctx context.Context, r biz.PrepareAttachment, sta
 }
 
 func (p *Postgres) vmCurrentAddresses(ctx context.Context, a biz.Attachment, raw []byte) []biz.VMCurrentAddress {
-	if a.State != biz.Attached || a.Reason != "" || a.ObservedAt == nil || p.vmAddressFreshness <= 0 || a.ConsumerSnapshot == nil || a.ConsumerSnapshot.State != "open" || a.ConsumerSnapshot.DesiredRunState != "running" || len(a.ConsumerSnapshot.CurrentPods) != 1 {
+	if !vmAddressIdentity(a) || p.vmAddressFreshness <= 0 {
 		return nil
 	}
 	now, err := p.queries.DatabaseTime(ctx)
 	if err != nil || now.Sub(*a.ObservedAt) > p.vmAddressFreshness {
 		return nil
 	}
+	return vmCurrentAddressRelations(a, raw)
+}
+
+// vmAddressIdentity is the frozen intent gate: an address is projected only for
+// a live attachment whose consumer is open and desired running, and that has an
+// observation at all. Staleness is a separate decision, made against database
+// time so a replayed request cannot age the row differently.
+func vmAddressIdentity(a biz.Attachment) bool {
+	return a.State == biz.Attached && a.Reason == "" && a.ObservedAt != nil && a.ConsumerSnapshot != nil && a.ConsumerSnapshot.State == "open" && a.ConsumerSnapshot.DesiredRunState == "running" && len(a.ConsumerSnapshot.CurrentPods) == 1
+}
+
+func vmCurrentAddressRelations(a biz.Attachment, raw []byte) []biz.VMCurrentAddress {
+	if !vmAddressIdentity(a) {
+		return nil
+	}
 	pod := a.ConsumerSnapshot.CurrentPods[0]
 	if pod.Reference.UID != a.PodUID || pod.Owner.Kind != "VirtualMachineInstance" {
 		return nil
 	}
-	var relations []attachmentRelation
-	if json.Unmarshal(raw, &relations) != nil {
-		return nil
-	}
 	var out []biz.VMCurrentAddress
-	for _, relation := range relations {
+	for _, relation := range attachmentRelations(raw) {
 		if relation.Kind == "VNicIP" && relation.Current && relation.AddressEligible {
 			if _, err := netip.ParseAddr(relation.Address); err != nil {
 				continue
@@ -246,6 +257,52 @@ func (p *Postgres) vmCurrentAddresses(ctx context.Context, a biz.Attachment, raw
 		}
 	}
 	return out
+}
+
+// containerAddressRelations projects the primary Pod's current VNicIP facts. The
+// identity chain is Pod UID -> VNic owner -> VNicIP owner, so a recycled name or
+// a Pod that was replaced under the same attachment yields no address instead of
+// an old IP.
+func containerAddressRelations(a biz.Attachment, raw []byte) []biz.AttachmentAddress {
+	if a.State != biz.Attached || a.Reason != "" || a.ObservedAt == nil || a.PodUID == "" {
+		return nil
+	}
+	relations := attachmentRelations(raw)
+	podLive := false
+	for _, relation := range relations {
+		if relation.Kind == "Pod" && relation.UID == a.PodUID && relation.Current {
+			podLive = true
+			break
+		}
+	}
+	if !podLive {
+		return nil
+	}
+	nics := map[string]bool{}
+	for _, relation := range relations {
+		if relation.Kind == "VNic" && relation.OwnerUID == a.PodUID && relation.Current && relation.UID != "" {
+			nics[relation.UID] = true
+		}
+	}
+	var out []biz.AttachmentAddress
+	for _, relation := range relations {
+		if relation.Kind != "VNicIP" || !relation.Current || !relation.AddressEligible || !nics[relation.OwnerUID] {
+			continue
+		}
+		if _, err := netip.ParseAddr(relation.Address); err != nil {
+			continue
+		}
+		out = append(out, biz.AttachmentAddress{NICName: "default", Address: relation.Address})
+	}
+	return out
+}
+
+func attachmentRelations(raw []byte) []attachmentRelation {
+	var relations []attachmentRelation
+	if json.Unmarshal(raw, &relations) != nil {
+		return nil
+	}
+	return relations
 }
 
 func networkManagementOpen(state, reason string) bool {

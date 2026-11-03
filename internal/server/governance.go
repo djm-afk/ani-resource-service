@@ -78,16 +78,17 @@ var governancePlatformMethods = map[string]struct{}{
 // docs/specs/governance-calls.md (the registered method table is authoritative).
 var governanceReadMethods = map[string]struct{}{
 	// Network domain: tenant VPC/Subnet read+write and operation lookup.
-	"/network.v1.NetworkService/GetVPC":             {},
-	"/network.v1.NetworkService/ListVPCs":           {},
-	"/network.v1.NetworkService/ListVPCCIDRPresets": {},
-	"/network.v1.NetworkService/CreateVPC":          {},
-	"/network.v1.NetworkService/DeleteVPC":          {},
-	"/network.v1.NetworkService/GetSubnet":          {},
-	"/network.v1.NetworkService/ListSubnets":        {},
-	"/network.v1.NetworkService/CreateSubnet":       {},
-	"/network.v1.NetworkService/DeleteSubnet":       {},
-	"/network.v1.NetworkService/GetOperation":       {},
+	"/network.v1.NetworkService/GetVPC":               {},
+	"/network.v1.NetworkService/ListVPCs":             {},
+	"/network.v1.NetworkService/ListVPCCIDRPresets":   {},
+	"/network.v1.NetworkService/CreateVPC":            {},
+	"/network.v1.NetworkService/DeleteVPC":            {},
+	"/network.v1.NetworkService/GetSubnet":            {},
+	"/network.v1.NetworkService/ListSubnets":          {},
+	"/network.v1.NetworkService/CreateSubnet":         {},
+	"/network.v1.NetworkService/DeleteSubnet":         {},
+	"/network.v1.NetworkService/GetOperation":         {},
+	"/network.v1.NetworkService/ListNetworkInstances": {},
 	// Egress domain: tenant EIP and SNAT binding read+write.
 	"/network.v1.TenantEgressService/CreateEIP":            {},
 	"/network.v1.TenantEgressService/GetEIP":               {},

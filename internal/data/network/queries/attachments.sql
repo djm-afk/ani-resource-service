@@ -11,8 +11,8 @@ SELECT EXISTS(SELECT 1 FROM network_attachments WHERE tenant_id=$1 AND instance_
 -- name: CountAttachments :one
 SELECT count(*)::bigint FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND (state<>'released' OR protocol_blocked);
 -- name: InsertAttachment :one
-INSERT INTO network_attachments(tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,state)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'reserved') RETURNING *;
+INSERT INTO network_attachments(tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,consumer_type,state)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'reserved') RETURNING *;
 -- name: ConfirmAttachment :one
 UPDATE network_attachments SET pod_name=$3,pod_uid=$4,confirm_uid=$4,version=version+1,updated_at=clock_timestamp(),next_check_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL
 WHERE tenant_id=$1 AND attachment_id=$2 RETURNING *;
@@ -45,3 +45,24 @@ UPDATE network_attachments SET state=sqlc.arg(state),reason=sqlc.arg(reason),pro
  retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
  next_check_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END,lease_owner=NULL,lease_until=NULL
 WHERE tenant_id=sqlc.arg(tenant_id) AND attachment_id=sqlc.arg(attachment_id) AND version=sqlc.arg(version) AND epoch=sqlc.arg(epoch) AND lease_owner=sqlc.arg(owner)::uuid AND lease_until>clock_timestamp() RETURNING *;
+-- name: AttachmentVPCScopeExists :one
+SELECT EXISTS(SELECT 1 FROM network_vpcs WHERE tenant_id=$1 AND vpc_id=$2)::boolean AS exists;
+-- name: CountAttachmentConsumers :one
+SELECT count(*)::bigint FROM network_attachments a
+WHERE a.tenant_id=sqlc.arg(tenant_id)
+  AND (a.subnet_id=sqlc.arg(subnet_id)::text OR a.vpc_id=sqlc.arg(vpc_id)::text)
+  AND (a.state<>'released' OR a.protocol_blocked);
+-- name: ListAttachmentConsumers :many
+SELECT a.tenant_id,a.attachment_id,a.vpc_id,a.subnet_id,a.slot,a.state,a.reason,a.protocol_blocked,
+ a.instance_id,a.consumer_type,a.pod_uid,a.observed_at,a.created_at,a.provider_relations,
+ coalesce(a.plan->>'WorkloadMode','')::text AS workload_mode,
+ coalesce(s.name,'')::text AS subnet_name,
+ cs.snapshot AS consumer_snapshot
+FROM network_attachments a
+LEFT JOIN network_subnets s ON s.tenant_id=a.tenant_id AND s.subnet_id=a.subnet_id
+LEFT JOIN network_attachment_consumer_snapshots cs ON cs.tenant_id=a.tenant_id AND cs.attachment_id=a.attachment_id
+WHERE a.tenant_id=sqlc.arg(tenant_id)
+  AND (a.subnet_id=sqlc.arg(subnet_id)::text OR a.vpc_id=sqlc.arg(vpc_id)::text)
+  AND (a.state<>'released' OR a.protocol_blocked)
+ORDER BY a.created_at DESC,a.attachment_id DESC
+LIMIT sqlc.arg(max_results)::integer OFFSET sqlc.arg(page_offset)::bigint;
