@@ -435,34 +435,36 @@ var TenantEgressService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PlatformNetworkService_CreateVirtualSwitch_FullMethodName              = "/network.v1.PlatformNetworkService/CreateVirtualSwitch"
-	PlatformNetworkService_GetVirtualSwitch_FullMethodName                 = "/network.v1.PlatformNetworkService/GetVirtualSwitch"
-	PlatformNetworkService_ListVirtualSwitches_FullMethodName              = "/network.v1.PlatformNetworkService/ListVirtualSwitches"
-	PlatformNetworkService_DeleteVirtualSwitch_FullMethodName              = "/network.v1.PlatformNetworkService/DeleteVirtualSwitch"
-	PlatformNetworkService_CreateVlanNetwork_FullMethodName                = "/network.v1.PlatformNetworkService/CreateVlanNetwork"
-	PlatformNetworkService_GetVlanNetwork_FullMethodName                   = "/network.v1.PlatformNetworkService/GetVlanNetwork"
-	PlatformNetworkService_ListVlanNetworks_FullMethodName                 = "/network.v1.PlatformNetworkService/ListVlanNetworks"
-	PlatformNetworkService_DeleteVlanNetwork_FullMethodName                = "/network.v1.PlatformNetworkService/DeleteVlanNetwork"
-	PlatformNetworkService_CreateEgressGateway_FullMethodName              = "/network.v1.PlatformNetworkService/CreateEgressGateway"
-	PlatformNetworkService_GetEgressGateway_FullMethodName                 = "/network.v1.PlatformNetworkService/GetEgressGateway"
-	PlatformNetworkService_ListEgressGateways_FullMethodName               = "/network.v1.PlatformNetworkService/ListEgressGateways"
-	PlatformNetworkService_DeleteEgressGateway_FullMethodName              = "/network.v1.PlatformNetworkService/DeleteEgressGateway"
-	PlatformNetworkService_CreatePublicAddressPool_FullMethodName          = "/network.v1.PlatformNetworkService/CreatePublicAddressPool"
-	PlatformNetworkService_GetPublicAddressPool_FullMethodName             = "/network.v1.PlatformNetworkService/GetPublicAddressPool"
-	PlatformNetworkService_ListPublicAddressPools_FullMethodName           = "/network.v1.PlatformNetworkService/ListPublicAddressPools"
-	PlatformNetworkService_DeletePublicAddressPool_FullMethodName          = "/network.v1.PlatformNetworkService/DeletePublicAddressPool"
-	PlatformNetworkService_RecordPublicPoolVerification_FullMethodName     = "/network.v1.PlatformNetworkService/RecordPublicPoolVerification"
-	PlatformNetworkService_SetPublicPoolAllocationEnabled_FullMethodName   = "/network.v1.PlatformNetworkService/SetPublicPoolAllocationEnabled"
-	PlatformNetworkService_SetDefaultPublicPool_FullMethodName             = "/network.v1.PlatformNetworkService/SetDefaultPublicPool"
-	PlatformNetworkService_CreateIntranetAddressPool_FullMethodName        = "/network.v1.PlatformNetworkService/CreateIntranetAddressPool"
-	PlatformNetworkService_GetIntranetAddressPool_FullMethodName           = "/network.v1.PlatformNetworkService/GetIntranetAddressPool"
-	PlatformNetworkService_ListIntranetAddressPools_FullMethodName         = "/network.v1.PlatformNetworkService/ListIntranetAddressPools"
-	PlatformNetworkService_DeleteIntranetAddressPool_FullMethodName        = "/network.v1.PlatformNetworkService/DeleteIntranetAddressPool"
-	PlatformNetworkService_RecordIntranetPoolVerification_FullMethodName   = "/network.v1.PlatformNetworkService/RecordIntranetPoolVerification"
-	PlatformNetworkService_SetIntranetPoolAllocationEnabled_FullMethodName = "/network.v1.PlatformNetworkService/SetIntranetPoolAllocationEnabled"
-	PlatformNetworkService_SetDefaultIntranetPool_FullMethodName           = "/network.v1.PlatformNetworkService/SetDefaultIntranetPool"
-	PlatformNetworkService_GetPlatformNetworkCapabilities_FullMethodName   = "/network.v1.PlatformNetworkService/GetPlatformNetworkCapabilities"
-	PlatformNetworkService_GetPlatformOperation_FullMethodName             = "/network.v1.PlatformNetworkService/GetPlatformOperation"
+	PlatformNetworkService_CreateVirtualSwitch_FullMethodName                  = "/network.v1.PlatformNetworkService/CreateVirtualSwitch"
+	PlatformNetworkService_GetVirtualSwitch_FullMethodName                     = "/network.v1.PlatformNetworkService/GetVirtualSwitch"
+	PlatformNetworkService_ListVirtualSwitches_FullMethodName                  = "/network.v1.PlatformNetworkService/ListVirtualSwitches"
+	PlatformNetworkService_DeleteVirtualSwitch_FullMethodName                  = "/network.v1.PlatformNetworkService/DeleteVirtualSwitch"
+	PlatformNetworkService_CreateVlanNetwork_FullMethodName                    = "/network.v1.PlatformNetworkService/CreateVlanNetwork"
+	PlatformNetworkService_GetVlanNetwork_FullMethodName                       = "/network.v1.PlatformNetworkService/GetVlanNetwork"
+	PlatformNetworkService_ListVlanNetworks_FullMethodName                     = "/network.v1.PlatformNetworkService/ListVlanNetworks"
+	PlatformNetworkService_DeleteVlanNetwork_FullMethodName                    = "/network.v1.PlatformNetworkService/DeleteVlanNetwork"
+	PlatformNetworkService_CreateEgressGateway_FullMethodName                  = "/network.v1.PlatformNetworkService/CreateEgressGateway"
+	PlatformNetworkService_GetEgressGateway_FullMethodName                     = "/network.v1.PlatformNetworkService/GetEgressGateway"
+	PlatformNetworkService_ListEgressGateways_FullMethodName                   = "/network.v1.PlatformNetworkService/ListEgressGateways"
+	PlatformNetworkService_DeleteEgressGateway_FullMethodName                  = "/network.v1.PlatformNetworkService/DeleteEgressGateway"
+	PlatformNetworkService_CreatePublicAddressPool_FullMethodName              = "/network.v1.PlatformNetworkService/CreatePublicAddressPool"
+	PlatformNetworkService_GetPublicAddressPool_FullMethodName                 = "/network.v1.PlatformNetworkService/GetPublicAddressPool"
+	PlatformNetworkService_ListPublicAddressPools_FullMethodName               = "/network.v1.PlatformNetworkService/ListPublicAddressPools"
+	PlatformNetworkService_DeletePublicAddressPool_FullMethodName              = "/network.v1.PlatformNetworkService/DeletePublicAddressPool"
+	PlatformNetworkService_RecordPublicPoolVerification_FullMethodName         = "/network.v1.PlatformNetworkService/RecordPublicPoolVerification"
+	PlatformNetworkService_SetPublicPoolAllocationEnabled_FullMethodName       = "/network.v1.PlatformNetworkService/SetPublicPoolAllocationEnabled"
+	PlatformNetworkService_SetDefaultPublicPool_FullMethodName                 = "/network.v1.PlatformNetworkService/SetDefaultPublicPool"
+	PlatformNetworkService_CreateIntranetAddressPool_FullMethodName            = "/network.v1.PlatformNetworkService/CreateIntranetAddressPool"
+	PlatformNetworkService_GetIntranetAddressPool_FullMethodName               = "/network.v1.PlatformNetworkService/GetIntranetAddressPool"
+	PlatformNetworkService_ListIntranetAddressPools_FullMethodName             = "/network.v1.PlatformNetworkService/ListIntranetAddressPools"
+	PlatformNetworkService_DeleteIntranetAddressPool_FullMethodName            = "/network.v1.PlatformNetworkService/DeleteIntranetAddressPool"
+	PlatformNetworkService_RecordIntranetPoolVerification_FullMethodName       = "/network.v1.PlatformNetworkService/RecordIntranetPoolVerification"
+	PlatformNetworkService_SetIntranetPoolAllocationEnabled_FullMethodName     = "/network.v1.PlatformNetworkService/SetIntranetPoolAllocationEnabled"
+	PlatformNetworkService_SetDefaultIntranetPool_FullMethodName               = "/network.v1.PlatformNetworkService/SetDefaultIntranetPool"
+	PlatformNetworkService_SetIntranetPoolAutoAllocationEnabled_FullMethodName = "/network.v1.PlatformNetworkService/SetIntranetPoolAutoAllocationEnabled"
+	PlatformNetworkService_GetIntranetPoolDefaults_FullMethodName              = "/network.v1.PlatformNetworkService/GetIntranetPoolDefaults"
+	PlatformNetworkService_GetPlatformNetworkCapabilities_FullMethodName       = "/network.v1.PlatformNetworkService/GetPlatformNetworkCapabilities"
+	PlatformNetworkService_GetPlatformOperation_FullMethodName                 = "/network.v1.PlatformNetworkService/GetPlatformOperation"
 )
 
 // PlatformNetworkServiceClient is the client API for PlatformNetworkService service.
@@ -498,6 +500,8 @@ type PlatformNetworkServiceClient interface {
 	RecordIntranetPoolVerification(ctx context.Context, in *RecordIntranetPoolVerificationRequest, opts ...grpc.CallOption) (*RecordIntranetPoolVerificationResponse, error)
 	SetIntranetPoolAllocationEnabled(ctx context.Context, in *SetIntranetPoolAllocationEnabledRequest, opts ...grpc.CallOption) (*SetIntranetPoolAllocationEnabledResponse, error)
 	SetDefaultIntranetPool(ctx context.Context, in *SetDefaultIntranetPoolRequest, opts ...grpc.CallOption) (*SetDefaultIntranetPoolResponse, error)
+	SetIntranetPoolAutoAllocationEnabled(ctx context.Context, in *SetIntranetPoolAutoAllocationEnabledRequest, opts ...grpc.CallOption) (*SetIntranetPoolAutoAllocationEnabledResponse, error)
+	GetIntranetPoolDefaults(ctx context.Context, in *GetIntranetPoolDefaultsRequest, opts ...grpc.CallOption) (*GetIntranetPoolDefaultsResponse, error)
 	GetPlatformNetworkCapabilities(ctx context.Context, in *GetPlatformNetworkCapabilitiesRequest, opts ...grpc.CallOption) (*GetPlatformNetworkCapabilitiesResponse, error)
 	GetPlatformOperation(ctx context.Context, in *GetPlatformOperationRequest, opts ...grpc.CallOption) (*GetPlatformOperationResponse, error)
 }
@@ -770,6 +774,26 @@ func (c *platformNetworkServiceClient) SetDefaultIntranetPool(ctx context.Contex
 	return out, nil
 }
 
+func (c *platformNetworkServiceClient) SetIntranetPoolAutoAllocationEnabled(ctx context.Context, in *SetIntranetPoolAutoAllocationEnabledRequest, opts ...grpc.CallOption) (*SetIntranetPoolAutoAllocationEnabledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetIntranetPoolAutoAllocationEnabledResponse)
+	err := c.cc.Invoke(ctx, PlatformNetworkService_SetIntranetPoolAutoAllocationEnabled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformNetworkServiceClient) GetIntranetPoolDefaults(ctx context.Context, in *GetIntranetPoolDefaultsRequest, opts ...grpc.CallOption) (*GetIntranetPoolDefaultsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIntranetPoolDefaultsResponse)
+	err := c.cc.Invoke(ctx, PlatformNetworkService_GetIntranetPoolDefaults_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *platformNetworkServiceClient) GetPlatformNetworkCapabilities(ctx context.Context, in *GetPlatformNetworkCapabilitiesRequest, opts ...grpc.CallOption) (*GetPlatformNetworkCapabilitiesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetPlatformNetworkCapabilitiesResponse)
@@ -823,6 +847,8 @@ type PlatformNetworkServiceServer interface {
 	RecordIntranetPoolVerification(context.Context, *RecordIntranetPoolVerificationRequest) (*RecordIntranetPoolVerificationResponse, error)
 	SetIntranetPoolAllocationEnabled(context.Context, *SetIntranetPoolAllocationEnabledRequest) (*SetIntranetPoolAllocationEnabledResponse, error)
 	SetDefaultIntranetPool(context.Context, *SetDefaultIntranetPoolRequest) (*SetDefaultIntranetPoolResponse, error)
+	SetIntranetPoolAutoAllocationEnabled(context.Context, *SetIntranetPoolAutoAllocationEnabledRequest) (*SetIntranetPoolAutoAllocationEnabledResponse, error)
+	GetIntranetPoolDefaults(context.Context, *GetIntranetPoolDefaultsRequest) (*GetIntranetPoolDefaultsResponse, error)
 	GetPlatformNetworkCapabilities(context.Context, *GetPlatformNetworkCapabilitiesRequest) (*GetPlatformNetworkCapabilitiesResponse, error)
 	GetPlatformOperation(context.Context, *GetPlatformOperationRequest) (*GetPlatformOperationResponse, error)
 	mustEmbedUnimplementedPlatformNetworkServiceServer()
@@ -912,6 +938,12 @@ func (UnimplementedPlatformNetworkServiceServer) SetIntranetPoolAllocationEnable
 }
 func (UnimplementedPlatformNetworkServiceServer) SetDefaultIntranetPool(context.Context, *SetDefaultIntranetPoolRequest) (*SetDefaultIntranetPoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetDefaultIntranetPool not implemented")
+}
+func (UnimplementedPlatformNetworkServiceServer) SetIntranetPoolAutoAllocationEnabled(context.Context, *SetIntranetPoolAutoAllocationEnabledRequest) (*SetIntranetPoolAutoAllocationEnabledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetIntranetPoolAutoAllocationEnabled not implemented")
+}
+func (UnimplementedPlatformNetworkServiceServer) GetIntranetPoolDefaults(context.Context, *GetIntranetPoolDefaultsRequest) (*GetIntranetPoolDefaultsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIntranetPoolDefaults not implemented")
 }
 func (UnimplementedPlatformNetworkServiceServer) GetPlatformNetworkCapabilities(context.Context, *GetPlatformNetworkCapabilitiesRequest) (*GetPlatformNetworkCapabilitiesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetPlatformNetworkCapabilities not implemented")
@@ -1409,6 +1441,42 @@ func _PlatformNetworkService_SetDefaultIntranetPool_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformNetworkService_SetIntranetPoolAutoAllocationEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetIntranetPoolAutoAllocationEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformNetworkServiceServer).SetIntranetPoolAutoAllocationEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformNetworkService_SetIntranetPoolAutoAllocationEnabled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformNetworkServiceServer).SetIntranetPoolAutoAllocationEnabled(ctx, req.(*SetIntranetPoolAutoAllocationEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformNetworkService_GetIntranetPoolDefaults_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIntranetPoolDefaultsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformNetworkServiceServer).GetIntranetPoolDefaults(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformNetworkService_GetIntranetPoolDefaults_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformNetworkServiceServer).GetIntranetPoolDefaults(ctx, req.(*GetIntranetPoolDefaultsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PlatformNetworkService_GetPlatformNetworkCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetPlatformNetworkCapabilitiesRequest)
 	if err := dec(in); err != nil {
@@ -1555,6 +1623,14 @@ var PlatformNetworkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetDefaultIntranetPool",
 			Handler:    _PlatformNetworkService_SetDefaultIntranetPool_Handler,
+		},
+		{
+			MethodName: "SetIntranetPoolAutoAllocationEnabled",
+			Handler:    _PlatformNetworkService_SetIntranetPoolAutoAllocationEnabled_Handler,
+		},
+		{
+			MethodName: "GetIntranetPoolDefaults",
+			Handler:    _PlatformNetworkService_GetIntranetPoolDefaults_Handler,
 		},
 		{
 			MethodName: "GetPlatformNetworkCapabilities",

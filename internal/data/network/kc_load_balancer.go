@@ -40,6 +40,8 @@ const lbController = "gateway.envoyproxy.io/gatewayclass-controller"
 
 func lbGVR(kind string) schema.GroupVersionResource {
 	switch kind {
+	case "envoy_proxy":
+		return lbEnvoyProxies
 	case "gateway":
 		return lbGateways
 	case "route":
@@ -61,6 +63,8 @@ func lbGVR(kind string) schema.GroupVersionResource {
 }
 func lbKind(kind string) string {
 	switch kind {
+	case "envoy_proxy":
+		return "EnvoyProxy"
 	case "gateway":
 		return "Gateway"
 	case "route":
@@ -123,14 +127,14 @@ func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, err
 	if err != nil {
 		return r, readFailure(err)
 	}
-	r.dependencies = p.repository.requireBaseConnectivity(ctx, p.repository.queries, w.Resource.TenantID, w.Resource.VPCID, now, p.repository.baseFreshnessLimit()) == nil
+	r.dependencies = p.repository.requireLBVPCProviderReady(ctx, p.repository.queries, w.Resource.TenantID, w.Resource.VPCID, now, p.repository.baseFreshnessLimit()) == nil
 	cap, capErr := p.repository.queries.GetLBCapability(ctx, sqlcgen.GetLBCapabilityParams{ClusterID: r.binding.ClusterID})
-	r.dependencies = r.dependencies && capErr == nil && cap.Ready && now.Sub(cap.ObservedAt) <= p.repository.baseFreshnessLimit()
+	r.dependencies = r.dependencies && capErr == nil && cap.Ready && freshTime(&cap.ObservedAt, now, p.repository.baseFreshnessLimit())
 	return r, nil
 }
 func lbComponentName(w biz.Work, kind string) string {
 	for _, c := range w.Resource.LoadBalancer.Components {
-		if c.Kind == kind {
+		if c.Kind == kind && !c.Deleted {
 			return c.Name
 		}
 	}
@@ -149,12 +153,23 @@ func lbDesiredObject(r lbResolved, c biz.LoadBalancerComponent, o biz.LoadBalanc
 	spec := map[string]any{}
 	version := l.ProviderTargetVersion
 	switch c.Kind {
-	case "gateway":
+	case "envoy_proxy":
 		flavor, ok := biz.FindLoadBalancerFlavor(l.Flavor)
 		if !ok {
 			return nil
 		}
-		class := flavor.GatewayClass(l.Exposure)
+		serviceType := "LoadBalancer"
+		if l.Exposure == "private" {
+			serviceType = "ClusterIP"
+		}
+		spec = map[string]any{"mergeType": "StrategicMerge", "provider": map[string]any{"type": "Kubernetes", "kubernetes": map[string]any{
+			"envoyDeployment": map[string]any{"replicas": flavor.Replicas, "container": map[string]any{"resources": map[string]any{
+				"requests": map[string]any{"cpu": flavor.RequestCPU, "memory": flavor.RequestMemory},
+				"limits":   map[string]any{"cpu": flavor.LimitCPU, "memory": flavor.LimitMemory},
+			}}},
+			"envoyService": map[string]any{"type": serviceType},
+		}}}
+	case "gateway":
 		vip := l.PrivateIP
 		if vip == "" {
 			vip = "disable"
@@ -167,7 +182,7 @@ func lbDesiredObject(r lbResolved, c biz.LoadBalancerComponent, o biz.LoadBalanc
 		for _, listener := range biz.ProjectLoadBalancerListeners(biz.EffectiveLoadBalancerListeners(l)) {
 			listeners = append(listeners, lbGatewayListener(listener))
 		}
-		spec = map[string]any{"gatewayClassName": class, "infrastructure": map[string]any{"annotations": a}, "listeners": listeners}
+		spec = map[string]any{"gatewayClassName": biz.LoadBalancerGatewayClass, "infrastructure": map[string]any{"annotations": a, "parametersRef": map[string]any{"group": lbEnvoyProxies.Group, "kind": "EnvoyProxy", "name": lbComponentName(r.work, "envoy_proxy")}}, "listeners": listeners}
 	case "backend":
 		version = 1
 		for _, m := range r.work.Resource.LoadBalancer.Members {
@@ -230,6 +245,11 @@ func lbConditions(raw []any, generation int64, kinds ...string) bool {
 func lbObjectReady(obj *unstructured.Unstructured, c biz.LoadBalancerComponent, gateway, namespace string) bool {
 	if obj.GetDeletionTimestamp() != nil {
 		return false
+	}
+	// EnvoyProxy has no Accepted/parents status contract. Its fenced spec is
+	// checked by lbInspect; merged runtime output is checked by lbGenerated.
+	if c.Kind == "envoy_proxy" {
+		return true
 	}
 	if c.Kind == "gateway" || c.Kind == "backend" {
 		conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
@@ -310,9 +330,28 @@ func lbInspect(obj, desired *unstructured.Unstructured, c biz.LoadBalancerCompon
 		}
 	}
 	v.Exists, v.Identity, v.Deleting = true, string(obj.GetUID()), obj.GetDeletionTimestamp() != nil
-	v.Matches = contentHash(obj.Object["spec"]) == contentHash(desired.Object["spec"]) && obj.GetAnnotations()[lbVersionAnnotation] == desired.GetAnnotations()[lbVersionAnnotation]
+	actualSpec, desiredSpec := obj.Object["spec"], desired.Object["spec"]
+	if c.Kind == "envoy_proxy" {
+		actualSpec, desiredSpec = lbProxyComparableSpec(obj), lbProxyComparableSpec(desired)
+	}
+	v.Matches = contentHash(actualSpec) == contentHash(desiredSpec) && obj.GetAnnotations()[lbVersionAnnotation] == desired.GetAnnotations()[lbVersionAnnotation]
 	v.Ready = v.Matches && lbObjectReady(obj, c, r.binding.ProviderName, r.binding.Namespace)
 	return v, nil
+}
+
+// The v1.8.3 CRD materializes these defaults even on dedicated Proxies that
+// intentionally inherit all other fields. Normalize only those exact defaults;
+// extra images, patches, telemetry or other overrides still fail spec matching.
+func lbProxyComparableSpec(obj *unstructured.Unstructured) map[string]any {
+	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
+	logging, found, _ := unstructured.NestedMap(spec, "logging")
+	if found && contentHash(logging) == contentHash(map[string]any{"level": map[string]any{"default": "warn"}}) {
+		delete(spec, "logging")
+	}
+	if policy, _, _ := unstructured.NestedString(spec, "provider", "kubernetes", "envoyService", "externalTrafficPolicy"); policy == "Local" {
+		unstructured.RemoveNestedField(spec, "provider", "kubernetes", "envoyService", "externalTrafficPolicy")
+	}
+	return spec
 }
 
 var errLBAuditInvalid = errors.New("LB audit needs a fresh collection")
@@ -579,7 +618,7 @@ func (p *KCProvider) MutateLoadBalancer(ctx context.Context, w biz.Work, c biz.L
 			v.Deleting = true
 			return v, nil
 		}
-		if action != "update" || (!biz.LoadBalancerIsRoute(c.Kind) && c.Kind != "policy" && c.Kind != "client_policy" && c.Kind != "patch_policy" && c.Kind != "gateway") {
+		if action != "update" || (!biz.LoadBalancerIsRoute(c.Kind) && c.Kind != "policy" && c.Kind != "client_policy" && c.Kind != "patch_policy" && c.Kind != "gateway" && c.Kind != "envoy_proxy") {
 			return v, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 		annotations := obj.GetAnnotations()

@@ -11,6 +11,21 @@ import (
 
 const IntranetVerificationScope = "base_intranet"
 
+type IntranetPoolDefaultsInfrastructure interface {
+	GetIntranetPoolDefaults(context.Context) (PublicPoolConfig, error)
+}
+
+func (e *Egress) GetIntranetPoolDefaults(ctx context.Context) (PublicPoolConfig, error) {
+	if _, err := e.authorization.Platform(ctx); err != nil {
+		return PublicPoolConfig{}, err
+	}
+	infra, ok := e.infrastructure.(IntranetPoolDefaultsInfrastructure)
+	if !ok {
+		return PublicPoolConfig{}, Fail(DependencyUnavailable, "intranet infrastructure facts are unavailable")
+	}
+	return infra.GetIntranetPoolDefaults(ctx)
+}
+
 func NormalizeIntranetPool(p PublicPoolConfig) (PublicPoolConfig, error) {
 	bad := func() (PublicPoolConfig, error) {
 		return p, Fail(InvalidArgument, "invalid intranet pool, default VPC identity or destination networks")

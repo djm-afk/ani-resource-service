@@ -1,12 +1,44 @@
 # Network 执行状态
 
+<a id="base-network-auto-allocation-20261103"></a>
+
+## 2026-11-03：基础网络默认分配与 LB 产品主链
+
+**R2 主链已 PASS：正式 BOSS 创建/开启默认自动分配 → Console 普通新 VPC → 唯一基础 EIP/SNAT → 私网、公网、双模式 LB 真实流量。** 三个新 small 均 available/configured、版本一致、operation succeeded，四入口 HTTP200；固定两副本规格已实证。R1 的 medium 四副本/流量/物理删除、权重/清空/再激活/412 与权限均保留 PASS；large 按用户要求 SKIPPED。默认源双向切换、开启/关闭态请求重放、关闭仅影响后续创建均 PASS，四个专用 VPC 与辅助池正常删除、物理及地址占用清零，主样本与旧实验保留。补充耗尽试验发现 **原 EIP 在释放地址后自动恢复：FAIL**；本地点时 KC 源码无分配失败 requeue/地址池变化 watch，与现场吻合但未冒充部署版本证明。正常产品删除失败 VPC 后普通重建并复用释放地址 PASS，未改 KC 或原生状态，不将新对象恢复替代原对象失败。
+
+Resource 初批业务源码 `1ddb5c6`，R2 修复源码 `3fab1f1`（PR #46），新增真实 defaults 查询与单事务默认源/分配/rollout 开关，复用池版本、幂等和 rollout→platform 锁顺序；0027 移除人工 Intranet verification 前置，仍检查 Provider 身份/Ready/代次/路由覆盖/时效。BOSS 基于 main `9f917a4`，最终 `02dc75b`（PR #7）；Console `c0765b6`（PR #10）只读展示基础连接，VPC 仍仅提交正常创建；Governance `566c3b2`（PR #85），固定正式 Resource SDK，API/catalog/最小权限同步完成。备份后执行 Network27 与遗漏的主干 Atlas 迁移，正式登录/租户查询已恢复，不改账号或 Compute 权限。主链、实际镜像、原始失败和保留数据见[本轮记录](records/base-network-auto-allocation-20261103.md)。不做历史补齐、兼容路径、向导或新探针；旧 backfill fixture 的 namespace reader 失败单独保留，Gov Service vet 既有测试问题未记为通过。
+
+后续诊断纠正 R1 归因：Resource 镜像汇总遇到额外 Pending/Deleting 副本即清空健康角色证据；已有公网池观察又错误套用首次物理准备的全成员在线要求。两项真实调用链回归完成 RED→GREEN，保留四角色有效镜像、完整冻结成员身份/接管反馈与当前出口健康检查，首次物理 POST 仍严格。R2 已通过 Fedora 最终完整 `make verify` 与相关54项 PostgreSQL（52项首轮通过、2项旧测试修正后定向通过），并仅替换 Resource 镜像发布到10集群；原defaults503→200，完整新VPC三模式LB已实测通过；解除这两项误拒绝不要求先恢复 ani-03，详见记录的后续诊断节。
+
+收尾观察存在已保留的状态波动，不能以阶段流量通过宣称持续全绿。R3 `c8072f1` 修复 LB 错误未传入既有Cause日志的缺口，真实Worker→正式日志回归RED→GREEN及Fedora本轮 `make verify` PASS；实际镜像 `sha256:c8782128a464baa018af985fa407cbd637c4c4ec3f1e44dc911c30a001ce17ef` 已仅替换Resource发布，generation/observed65、1/1 Ready，配置/Schema未变。原公网 `PROVIDER_UNAVAILABLE` 在该窄窗口未复现，底层cause仍UNKNOWN；R3仍观察到同operation短暂NOT_READY后恢复，不能把日志补丁宣称为稳定性修复。最终只读GET显示公网与原私网均available/configured/fresh、观测正常续新；没有重复验流或修改业务资源。详见本轮记录的R3节。
+
+最终 PR #46 已合入最新 main `8b31a8e`，仅执行状态文档冲突，保留两边记录，未改上游 VM 源码。合并源码 `d6744ab` 的 Fedora 本轮完整 `make verify` PASS；**当前运行 R4**：`base-network-r4-20261103-d6744ab`，实际 Resource imageID `sha256:4c651e6e91d22bb093d660717638cf020f277b065b2563d11b83f16822a0e852`，Deployment 原UID不变、generation/observed66、1/1 Ready/restart0，配置/Schema未变。最新 PR 已无合并冲突，未自动合并；上游 VM 现场操作不在本任务重复验收。
+
+R4 单次最终烟测 `SMOKE_PASS_WITH_KNOWN_LIMITATIONS`：实际源码/镜像/native版本守卫、主池三开关及基础连接固定身份、三LB原operation/版本1/1/1/available/configured/fresh、四入口各一次HTTP200/marker、原7VPC及`.194/.192`和默认SNAT保留均PASS。未轮询到绿或重测CRUD/规格；耗尽原EIP自动恢复FAIL、原观察causeUNKNOWN及large用户SKIPPED保持。最终保留清单为Fedora `e2e-r4/final-smoke/final-retained-resources.json`，详见本轮记录。
+
+<a id="lb-usage-alignment-20261102"></a>
+
+## 2026-11-02：LB 使用方式对齐
+
+**前后端实现、Fedora 必要测试/静态检查/候选构建、现场真实 UI/API 配置生命周期及 LB 物理回收：PASS；原轮真实私网 VIP 流量：FAIL；补充基础 SNAT 后的私网 KCN 试验：PASS；独立纯公网 KCN 试验：无基础连接 FAIL，同组补基础连接后 PASS。** Resource 使用公共 `lb-common` 和每 LB 专属、同 namespace 的 StrategicMerge EnvoyProxy，专属容量/ServiceType 与原组件账本、未知创建、清空再激活和回收接通；移除基础 Intranet 前置，保留 VPC/Subnet 自身 Provider 证明及成员/地址约束。Console 已接监听器/后端整组 PATCH、版本/幂等、空后端保存/编辑及公网无 VIP 用法；真实旧版本保存暴露的 412 冲突已用单次保存前 GET、配置版本校验和准确冲突刷新修复，无自动重放或新增轮询。Governance 现有正式合同足够，本次未改其源码。
+
+10～12 现场 Network 0026 迁移和候选 Resource 发布已完成；发布途中主线 VM 003 前置缺失及旧镜像拒绝 Network26 导致启动失败，经备份和原生既有迁移恢复后候选 Ready。正常租户通过独立 Console 源码预览完成空后端创建→真实后端激活→保留成员身份的权重修改→清空/实际回收→重新激活→正常删除；最终 15 个关联对象消失、VIP 释放、公共 pair UID 保留。测试后端实例及计算/工作区/网络/配额已正常回收，任务 Image 已注销、唯一镜像 tag 已删除；既有 VM 保留。预览已停止，Console 未生产部署。
+
+原验收 Envoy 停在 PRE_INITIALIZING，租户 VPC 内平台 DNS 查询和 EG Service/Pod 的 TCP18000 均超时。用户随后要求创建基础网络 EIP/SNAT 对照：2026-11-02 22:39 CST，在原 test VPC 创建 KCN Intranet `10.250.250.0/28`、EIP `10.250.250.2` 并绑定 SNAT 后，同一测试 Pod 的 DNS/xDS 连接成功，私网 VIP `10.73.0.100:8080` 和两个 Envoy Pod 直连均 HTTP 200；两个 Envoy 保持原 UID、restart=0，状态转为 LIVE。没有改代码、镜像、kcn-config、默认 VPC 或重启控制器。该结果证明此现场基础内网出口缺失会阻断 LB 初始化，不把取消 API 准入前置当作网络依赖已自动消失。
+
+用户追加纯公网试验使用独立 VPC `10.74.0.0/16`，仅将 Public EIP `172.16.102.194` 绑定 LB Service；明确核对该 VPC 的基础 EIP 与所有 SNAT 都为空。后端 `10.74.0.2:8080` 正常 HTTP 200；Envoy 在排除调度资源不足后 Running，但 uptime=203s 时仍 PRE_INITIALIZING，xDS hosts=0、成功=0，DNS/EG 内网连接失败；从 ani-01 节点直连公网 EIP connection refused。仅绑定公网入口没有解决平台 DNS/xDS 的出站可达性。为本次连通性试验临时降低该专属 Proxy 为单副本、50m/128Mi 申请，不作为标准 small 容量验收。
+
+用户随后要求在同一组公网试验补基础网络：新增 Intranet EIP `10.250.250.3` 并绑定 SNAT 后，DNS/xDS 恢复，原 Envoy 自然进入 LIVE；公网 EIP、VPC、Gateway/Service、后端、Envoy UID/container ID/restart count 都未改变。2026-11-02 23:16 CST，ani-01 和 ani-02 两个 VPC 外节点访问原 `172.16.102.194:8080` 均 HTTP 200，业务标记与原后端一致。原无基础阶段 FAIL 回执保留，不用本阶段 PASS 覆盖；新增 EIP/SNAT 和其余试验数据按用户要求全部保留。
+
+两次补充均为明确命名的手工 KCN 网络试验，未写 Resource 数据库、登记产品池或重新跑 Console→Resource 创建后的真实流量，不能替代产品全链重验。用户明确要求暂不删除本次数据，独立公网 VPC/Subnet/EIP/LB/Envoy/后端及前次私网试验全部保留；Console 独立预览继续运行。公网产品全链、双入口/TLS 真实流量与监控接入仍为 NOT_RUN。固定输入、原始失败、必要检查及现场回执见[唯一记录](records/lb-usage-alignment-20261102.md)。按用户范围未运行全量 `make verify` 或 Console production build。
+
 ## 2026-11-02：VM Unknown 全局失效与恢复退避修复
 
-**源码与 Fedora 统一快照的真实 PostgreSQL 纵向/race 回归、完整 `make verify`：PASS；新修复部署及现场客机关机/电源操作/浏览器验收：NOT_RUN。** 基于最新 main `0bce651`（已含 PR #44）。原缺陷已在该基线确定性复现：无关 namespace 的 Pod metadata Watch 先于旧 LIST 返回，可将刚核验约 1ms 的健康 VM 变为 Unknown；改后该回归通过。
+**源码与 Fedora 统一快照的真实 PostgreSQL 纵向/race 回归、完整 `make verify`：PASS；修复已随本轮 R4 镜像发布到10集群；现场客机关机/电源操作/浏览器验收：NOT_RUN。** 原验证基于 main `0bce651`（已含 PR #44）。原缺陷已在该基线确定性复现：无关 namespace 的 Pod metadata Watch 先于旧 LIST 返回，可将刚核验约 1ms 的健康 VM 变为 Unknown；改后该回归通过。
 
 共享核验改为每台 VM 的实际原生身份、VMI 和关联 launcher 运行字段，忽略无关 Pod/metadata/RV 变化；Informer 仍为唯一有序事实源，旧 LIST/过时回调不回退新事实。临时失败保留未过期事实及原时间，到 60 秒最迟复查并失效；缺失、归属/UID 冲突立即 Unknown。普通通知不越过退避，只有新鲜、更新且匹配精确 Native UID 的共享证明可提前唤醒相应临时失败，并提高观察 generation 拦住旧结果；冷启动恢复不依赖内存登记。现有租户/关闭/操作围栏、独立执行和请求预算均保留，无新增迁移或配置字段。
 
-同一最终源码快照在 Fedora 跑真实 PG + `go test -race -tags=instanceintegration`（相关 VM/data/server 行为），92.138 秒退出 0；完整 `make verify`，282.740 秒退出 0。包括观测阻塞期间后端命令及操作仍完成、精确恢复与拒绝旧/未来/错 UID 证明、普通通知不能绕过退避、过期与身份撤销等行为。Kubernetes 仅在外部边界替身；未发布镜像或操作现场 VM。独占 PG、私有 DSN 和短临时目录已清理。固定输入、完整命令和边界见[验证记录](records/vm-observation-scope-20261102.json)。
+同一最终源码快照在 Fedora 跑真实 PG + `go test -race -tags=instanceintegration`（相关 VM/data/server 行为），92.138 秒退出 0；完整 `make verify`，282.740 秒退出 0。包括观测阻塞期间后端命令及操作仍完成、精确恢复与拒绝旧/未来/错 UID 证明、普通通知不能绕过退避、过期与身份撤销等行为。Kubernetes 仅在外部边界替身；#45原验证阶段未发布镜像或操作现场VM，本轮R4随后发布上述源码，仍未操作现场VM。独占 PG、私有 DSN 和短临时目录已清理。固定输入、完整命令和边界见[验证记录](records/vm-observation-scope-20261102.json)。
 
 ## 2026-11-02：VM 操作结束后的独立电源观测
 

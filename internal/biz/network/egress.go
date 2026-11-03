@@ -147,6 +147,7 @@ type PlatformResource struct {
 	Vlan                         *VlanConfig
 	Pool                         *PublicPoolConfig
 	AllocationEnabled, IsDefault bool
+	NewVPCsEnabled               bool
 	ConfigRevision               int64
 	TopologyFingerprint          string
 	ObservedProviderImages       []string
@@ -559,7 +560,7 @@ func (e *Egress) SetPool(ctx context.Context, i PlatformIntent) (PlatformResourc
 	i.Vlan = nil
 	i.Pool = nil
 	switch i.Kind {
-	case "set_pool_allocation", "set_default_pool", "set_intranet_pool_allocation", "set_default_intranet_pool":
+	case "set_pool_allocation", "set_default_pool", "set_intranet_pool_allocation", "set_default_intranet_pool", "set_intranet_pool_auto_allocation":
 		i.Verification = nil
 	case "verify_public_pool", "verify_intranet_pool":
 		if i.Verification == nil {

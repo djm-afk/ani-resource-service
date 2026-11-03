@@ -94,7 +94,7 @@ GET/List 保持纯读取。等待后端的记录不进入无休止 apply/退避�
 
 保存阶段校验持久资源归属、冻结的 cluster/namespace、父资源未封闭/删除、VIP 格式/子网范围和 EIP 产品归属、占用及有效参数。纯数据库监听器无需因 K8s 平台当前离线、安装观察过期或 TLS Secret 尚未可读而失败；运行前提检查放到激活路径。EIP 本身必须是已经产品分配的合法记录，不能用此流程生成虚构 EIP。
 
-激活时重新核验父基础连接、运行能力与固定 Class/镜像、证书 Secret 权限/租户标签、后端身份和地址实际可用性。失败保留已保存配置、原占用和可查原因；不绕过前提，也不偷偷换 VIP/EIP。
+激活时重新核验 VPC/Subnet 自身 Provider 身份、代次及新鲜度、公共 LB 配置与固定镜像、证书 Secret 权限/租户标签、后端身份和地址实际可用性；不依赖基础 Intranet EIP/SNAT 或 VPC 聚合 available。专属 EnvoyProxy 在首次有运行投影时与 Gateway 一起下发，全空配置不提前创建专属 CR。失败保留已保存配置、原占用和可查原因；不绕过前提，也不偷偷换 VIP/EIP。
 
 入口 Subnet、VIP intent、EIP claim 继续在数据库受理时预留。产品预留不等于 kc IPAM 实际分配或 Service 实际 EIP 绑定；首次激活仍可能因外部地址冲突失败。
 
@@ -108,7 +108,7 @@ GET/List 保持纯读取。等待后端的记录不进入无休止 apply/退避�
 
 ### 5.2 清空最后一个下发监听器
 
-受理空投影 → 撤全部自有转发/策略 → 删除共享 Gateway → 观察控制器生成的 Service/Deployment/Pod/EndpointSlice 释放与 VIP/EIP 实际解绑 → 清理剩余自有 Backend → 完成 operation、推进 applied_version 到该清理目标 → waiting_for_backends。各依赖步骤继续按既有实际释放门禁推进；不得为了形式顺序越过未知请求、finalizer 或地址释放条件。
+受理空投影 → 撤全部自有转发/策略 → 删除本 LB 共享 Gateway → 观察控制器生成的 Service/Deployment/Pod/EndpointSlice 释放与 VIP/EIP 实际解绑 → 清理本 LB 专属 EnvoyProxy 和剩余自有 Backend → 完成 operation、推进 applied_version 到该清理目标 → waiting_for_backends。公共 GatewayClass/EnvoyProxy 保留。各依赖步骤继续按既有实际释放门禁推进；不得为了形式顺序越过未知请求、finalizer 或地址释放条件。
 
 全部空投影时，不要求一条仍存在的 ready Route。需要的是针对退休组件、端口、生成资源和绑定的真实删除/释放证据。
 

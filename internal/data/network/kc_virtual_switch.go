@@ -70,7 +70,7 @@ func virtualSwitchInventory(sw biz.VirtualSwitch, device string, nodes, maps, vl
 	return virtualSwitchInventoryMode(sw, device, nodes, maps, vlans, daemons, config, now, collected, true)
 }
 
-func virtualSwitchInventoryMode(sw biz.VirtualSwitch, device string, nodes, _, vlans, daemons []unstructured.Unstructured, config *unstructured.Unstructured, _, collected time.Time, _ bool) (biz.VirtualSwitchInventory, error) {
+func virtualSwitchInventoryMode(sw biz.VirtualSwitch, device string, nodes, _, vlans, daemons []unstructured.Unstructured, config *unstructured.Unstructured, _, collected time.Time, requireHealthyMembers bool) (biz.VirtualSwitchInventory, error) {
 	result := biz.VirtualSwitchInventory{Inventory: biz.PreparedDeviceInventory{CollectedAt: collected}}
 	if device == "" || config == nil || config.GetUID() == "" || config.GetResourceVersion() == "" || config.GetDeletionTimestamp() != nil || collected.IsZero() {
 		return result, switchUnavailable()
@@ -90,7 +90,10 @@ func virtualSwitchInventoryMode(sw biz.VirtualSwitch, device string, nodes, _, v
 		if n.GetLabels()[allocatedNodeLabel] != "true" {
 			continue
 		}
-		if !nodeReady(&n) || n.GetAnnotations()["networking.kubercloud.com/chassis"] == "" || !switchDaemonReady(n.GetName(), daemons) {
+		if n.GetDeletionTimestamp() != nil {
+			return result, switchConflict()
+		}
+		if requireHealthyMembers && (!nodeReady(&n) || n.GetAnnotations()["networking.kubercloud.com/chassis"] == "" || !switchDaemonReady(n.GetName(), daemons)) {
 			return result, switchUnavailable()
 		}
 		uid := string(n.GetUID())
@@ -123,7 +126,7 @@ func virtualSwitchInventoryMode(sw biz.VirtualSwitch, device string, nodes, _, v
 	return result, nil
 }
 
-func (p *KCProvider) virtualSwitchDeviceState(ctx context.Context, sw biz.VirtualSwitch, device sqlcgen.NetworkDeviceAdoption, view *auditView) (bool, bool, biz.ObservationProof, error) {
+func (p *KCProvider) virtualSwitchDeviceState(ctx context.Context, sw biz.VirtualSwitch, device sqlcgen.NetworkDeviceAdoption, view *auditView, preparePhysical bool, chassisPool *unstructured.Unstructured) (bool, bool, biz.ObservationProof, error) {
 	var proof biz.ObservationProof
 	var nodes, maps, vlans, daemons []unstructured.Unstructured
 	var collected time.Time
@@ -158,7 +161,7 @@ func (p *KCProvider) virtualSwitchDeviceState(ctx context.Context, sw biz.Virtua
 	if err != nil {
 		return false, false, proof, readFailure(err)
 	}
-	current, err := virtualSwitchInventoryMode(sw, device.DeviceName, nodes, maps, vlans, daemons, cm, now, collected, false)
+	current, err := virtualSwitchInventoryMode(sw, device.DeviceName, nodes, maps, vlans, daemons, cm, now, collected, preparePhysical)
 	if err != nil {
 		return false, false, proof, err
 	}
@@ -166,10 +169,48 @@ func (p *KCProvider) virtualSwitchDeviceState(ctx context.Context, sw biz.Virtua
 	if err != nil {
 		return false, false, proof, err
 	}
+	// Existing configuration keeps the complete frozen group and its KCN
+	// acknowledgements. Runtime health belongs to the actual selected exit,
+	// rather than every configured member of a redundant group.
+	if !preparePhysical && chassisPool != nil {
+		wired = wired && publicPoolChassisReady(chassisPool, nodes, daemons)
+	}
 	proof = virtualSwitchObservationProof(sw, current.Inventory, collected)
 	// Include KCN's Node acknowledgement and binding ownership in this proof.
 	proof.Hash = contentHash([]string{proof.Hash, contentHash(nodes)})
 	return configured, wired, proof, nil
+}
+
+func publicPoolChassisReady(pool *unstructured.Unstructured, nodes, daemons []unstructured.Unstructured) bool {
+	selected := strings.Split(crString(pool, "status", "underlayState", "chassisNode"), ",")
+	if len(selected) == 0 || len(selected) > 2 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, raw := range selected {
+		name := strings.TrimSpace(raw)
+		if name == "" || seen[name] {
+			return false
+		}
+		seen[name] = true
+		found := false
+		for i := range nodes {
+			n := &nodes[i]
+			if n.GetName() != name {
+				continue
+			}
+			// validateSwitchMembers and inspectVirtualSwitchDeviceState have
+			// already checked this exact UID, owner, priority and device ack.
+			if n.GetLabels()[allocatedNodeLabel] != "true" || !nodeReady(n) || n.GetAnnotations()["networking.kubercloud.com/chassis"] == "" || !switchDaemonReady(name, daemons) {
+				return false
+			}
+			found = true
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func inspectVirtualSwitchDeviceState(sw biz.VirtualSwitch, current *biz.VirtualSwitchInventory, device sqlcgen.NetworkDeviceAdoption, nodes []unstructured.Unstructured) (bool, bool, error) {

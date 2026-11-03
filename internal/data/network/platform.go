@@ -86,6 +86,13 @@ func platformSnapshot(ctx context.Context, q *sqlcgen.Queries, r sqlcgen.Network
 				return v, databaseFailure(err)
 			}
 			v.IsDefault = def.PoolID == r.ResourceID
+			if v.IsDefault {
+				rollout, err := q.GetConnectivityRollout(ctx, sqlcgen.GetConnectivityRolloutParams{ClusterID: r.ClusterID})
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return v, databaseFailure(err)
+				}
+				v.NewVPCsEnabled = rollout.NewVpcsEnabled
+			}
 			v.Kind = "intranet_pool"
 		} else {
 			def, err := q.GetDefaultPublicPool(ctx, sqlcgen.GetDefaultPublicPoolParams{ClusterID: r.ClusterID})
@@ -221,6 +228,12 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	}
 	if v, found, err := platformReplay(ctx, q, p.placement.ClusterID, i); found || err != nil {
 		return v, err
+	}
+	// Match VPC admission's lock order: rollout, then platform cluster/pool.
+	if strings.Contains(i.Kind, "intranet") {
+		if err = q.LockConnectivityRollout(ctx, sqlcgen.LockConnectivityRolloutParams{ClusterID: p.placement.ClusterID}); err != nil {
+			return biz.PlatformResource{}, databaseFailure(err)
+		}
 	}
 	if err = q.LockPlatformCluster(ctx, sqlcgen.LockPlatformClusterParams{ClusterID: p.placement.ClusterID}); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
@@ -398,8 +411,50 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 			return biz.PlatformResource{}, err
 		}
 	case "set_default_intranet_pool":
+		rollout, err := q.GetConnectivityRollout(ctx, sqlcgen.GetConnectivityRolloutParams{ClusterID: p.placement.ClusterID})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return biz.PlatformResource{}, databaseFailure(err)
+		}
+		if rollout.NewVpcsEnabled {
+			if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
+				return biz.PlatformResource{}, err
+			}
+			if err = affected(q.SetPoolAllocation(ctx, sqlcgen.SetPoolAllocationParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID, AllocationEnabled: true})); err != nil {
+				return biz.PlatformResource{}, err
+			}
+		}
 		if err = q.SetDefaultIntranetPool(ctx, sqlcgen.SetDefaultIntranetPoolParams{ClusterID: p.placement.ClusterID, PoolID: i.ID}); err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
+		}
+	case "set_intranet_pool_auto_allocation":
+		if i.Enabled {
+			if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
+				return biz.PlatformResource{}, err
+			}
+			if err = affected(q.SetPoolAllocation(ctx, sqlcgen.SetPoolAllocationParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID, AllocationEnabled: true})); err != nil {
+				return biz.PlatformResource{}, err
+			}
+			if err = q.SetDefaultIntranetPool(ctx, sqlcgen.SetDefaultIntranetPoolParams{ClusterID: p.placement.ClusterID, PoolID: i.ID}); err != nil {
+				return biz.PlatformResource{}, databaseFailure(err)
+			}
+		} else {
+			def, err := q.GetDefaultIntranetPool(ctx, sqlcgen.GetDefaultIntranetPoolParams{ClusterID: p.placement.ClusterID})
+			if errors.Is(err, pgx.ErrNoRows) || (err == nil && def.PoolID != i.ID) {
+				return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "only the current default pool can disable automatic allocation")
+			}
+			if err != nil {
+				return biz.PlatformResource{}, databaseFailure(err)
+			}
+		}
+		if err = q.EnsureConnectivityRollout(ctx, sqlcgen.EnsureConnectivityRolloutParams{ClusterID: p.placement.ClusterID}); err != nil {
+			return biz.PlatformResource{}, databaseFailure(err)
+		}
+		rows, err := q.SetNewVPCConnectivityEnabled(ctx, sqlcgen.SetNewVPCConnectivityEnabledParams{ClusterID: p.placement.ClusterID, Enabled: i.Enabled})
+		if err != nil {
+			return biz.PlatformResource{}, databaseFailure(err)
+		}
+		if rows != 1 {
+			return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "legacy aggregation prevents disabling automatic allocation")
 		}
 	case "set_default_pool":
 		// The default can be configured while closed; admission remains gated.
@@ -451,22 +506,9 @@ func (p *Postgres) poolReady(ctx context.Context, q *sqlcgen.Queries, pool sqlcg
 		return databaseFailure(err)
 	}
 	// Current provider health remains mandatory. Manual forwarding evidence is
-	// optional for public pools; intranet keeps its independent verification.
+	// diagnostic metadata for both public and intranet pools.
 	if len(topology.ProviderImages) == 0 {
 		return unavailable()
-	}
-	if pool.Scope != "public" {
-		if pool.VerificationExpiresAt == nil || !pool.VerificationExpiresAt.After(now) || len(pool.Verification) == 0 {
-			return unavailable()
-		}
-		var evidence biz.PublicPoolVerification
-		topologyHash, err := addressPoolTopologyFor(ctx, q, pool, topology)
-		if err != nil {
-			return err
-		}
-		if json.Unmarshal(pool.Verification, &evidence) != nil || evidence.TopologyFingerprint != topologyHash || !sameProviderImages(evidence.ProviderImageDigests, topology.ProviderImages) || biz.ValidatePoolVerificationForScope(evidence, pool.Scope, now) != nil {
-			return unavailable()
-		}
 	}
 	refs := [][2]string{{"public_pool", pool.ResourceID}}
 	if pool.Scope != "intranet" {
@@ -610,7 +652,7 @@ func platformOperationResourceKind(kind string) string {
 		return "egress_gateway"
 	case "create_public_pool", "delete_public_pool", "verify_public_pool", "set_pool_allocation", "set_default_pool":
 		return "public_pool"
-	case "create_intranet_pool", "delete_intranet_pool", "verify_intranet_pool", "set_intranet_pool_allocation", "set_default_intranet_pool":
+	case "create_intranet_pool", "delete_intranet_pool", "verify_intranet_pool", "set_intranet_pool_allocation", "set_default_intranet_pool", "set_intranet_pool_auto_allocation":
 		return "intranet_pool"
 	}
 	return ""

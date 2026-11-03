@@ -2609,9 +2609,12 @@ type IntranetAddressPool struct {
 	TopologyFingerprint    string                    `protobuf:"bytes,11,opt,name=topology_fingerprint,json=topologyFingerprint,proto3" json:"topology_fingerprint,omitempty"`
 	ObservedProviderImages []string                  `protobuf:"bytes,12,rep,name=observed_provider_images,json=observedProviderImages,proto3" json:"observed_provider_images,omitempty"`
 	// Output only; always intranet.
-	Scope         string `protobuf:"bytes,13,opt,name=scope,proto3" json:"scope,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Scope string `protobuf:"bytes,13,opt,name=scope,proto3" json:"scope,omitempty"`
+	// Output only. True only for the default pool when automatic base EIP/SNAT
+	// allocation to newly created VPCs is enabled for this cluster.
+	NewVpcsEnabled bool `protobuf:"varint,14,opt,name=new_vpcs_enabled,json=newVpcsEnabled,proto3" json:"new_vpcs_enabled,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *IntranetAddressPool) Reset() {
@@ -2733,6 +2736,13 @@ func (x *IntranetAddressPool) GetScope() string {
 		return x.Scope
 	}
 	return ""
+}
+
+func (x *IntranetAddressPool) GetNewVpcsEnabled() bool {
+	if x != nil {
+		return x.NewVpcsEnabled
+	}
+	return false
 }
 
 // Administrative evidence for the fixed pool/configuration/provider snapshot.
@@ -5513,6 +5523,214 @@ func (x *SetDefaultIntranetPoolResponse) GetResource() *PlatformResource {
 	return nil
 }
 
+type SetIntranetPoolAutoAllocationEnabledRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	PoolId          string                 `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Enabled         bool                   `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ExpectedVersion int64                  `protobuf:"varint,3,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
+	IdempotencyKey  string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) Reset() {
+	*x = SetIntranetPoolAutoAllocationEnabledRequest{}
+	mi := &file_network_v1_egress_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetIntranetPoolAutoAllocationEnabledRequest) ProtoMessage() {}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_egress_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetIntranetPoolAutoAllocationEnabledRequest.ProtoReflect.Descriptor instead.
+func (*SetIntranetPoolAutoAllocationEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) GetPoolId() string {
+	if x != nil {
+		return x.PoolId
+	}
+	return ""
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) GetExpectedVersion() int64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type SetIntranetPoolAutoAllocationEnabledResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      *PlatformResource      `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledResponse) Reset() {
+	*x = SetIntranetPoolAutoAllocationEnabledResponse{}
+	mi := &file_network_v1_egress_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetIntranetPoolAutoAllocationEnabledResponse) ProtoMessage() {}
+
+func (x *SetIntranetPoolAutoAllocationEnabledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_egress_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetIntranetPoolAutoAllocationEnabledResponse.ProtoReflect.Descriptor instead.
+func (*SetIntranetPoolAutoAllocationEnabledResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *SetIntranetPoolAutoAllocationEnabledResponse) GetResource() *PlatformResource {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+type GetIntranetPoolDefaultsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntranetPoolDefaultsRequest) Reset() {
+	*x = GetIntranetPoolDefaultsRequest{}
+	mi := &file_network_v1_egress_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntranetPoolDefaultsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntranetPoolDefaultsRequest) ProtoMessage() {}
+
+func (x *GetIntranetPoolDefaultsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_egress_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntranetPoolDefaultsRequest.ProtoReflect.Descriptor instead.
+func (*GetIntranetPoolDefaultsRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{86}
+}
+
+type GetIntranetPoolDefaultsResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	DefaultVpcName   string                 `protobuf:"bytes,1,opt,name=default_vpc_name,json=defaultVpcName,proto3" json:"default_vpc_name,omitempty"`
+	DefaultVpcUid    string                 `protobuf:"bytes,2,opt,name=default_vpc_uid,json=defaultVpcUid,proto3" json:"default_vpc_uid,omitempty"`
+	IntranetNetworks []string               `protobuf:"bytes,3,rep,name=intranet_networks,json=intranetNetworks,proto3" json:"intranet_networks,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GetIntranetPoolDefaultsResponse) Reset() {
+	*x = GetIntranetPoolDefaultsResponse{}
+	mi := &file_network_v1_egress_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntranetPoolDefaultsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntranetPoolDefaultsResponse) ProtoMessage() {}
+
+func (x *GetIntranetPoolDefaultsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_egress_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntranetPoolDefaultsResponse.ProtoReflect.Descriptor instead.
+func (*GetIntranetPoolDefaultsResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *GetIntranetPoolDefaultsResponse) GetDefaultVpcName() string {
+	if x != nil {
+		return x.DefaultVpcName
+	}
+	return ""
+}
+
+func (x *GetIntranetPoolDefaultsResponse) GetDefaultVpcUid() string {
+	if x != nil {
+		return x.DefaultVpcUid
+	}
+	return ""
+}
+
+func (x *GetIntranetPoolDefaultsResponse) GetIntranetNetworks() []string {
+	if x != nil {
+		return x.IntranetNetworks
+	}
+	return nil
+}
+
 type GetPlatformNetworkCapabilitiesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -5521,7 +5739,7 @@ type GetPlatformNetworkCapabilitiesRequest struct {
 
 func (x *GetPlatformNetworkCapabilitiesRequest) Reset() {
 	*x = GetPlatformNetworkCapabilitiesRequest{}
-	mi := &file_network_v1_egress_proto_msgTypes[84]
+	mi := &file_network_v1_egress_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5533,7 +5751,7 @@ func (x *GetPlatformNetworkCapabilitiesRequest) String() string {
 func (*GetPlatformNetworkCapabilitiesRequest) ProtoMessage() {}
 
 func (x *GetPlatformNetworkCapabilitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_network_v1_egress_proto_msgTypes[84]
+	mi := &file_network_v1_egress_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5546,7 +5764,7 @@ func (x *GetPlatformNetworkCapabilitiesRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use GetPlatformNetworkCapabilitiesRequest.ProtoReflect.Descriptor instead.
 func (*GetPlatformNetworkCapabilitiesRequest) Descriptor() ([]byte, []int) {
-	return file_network_v1_egress_proto_rawDescGZIP(), []int{84}
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{88}
 }
 
 type GetPlatformNetworkCapabilitiesResponse struct {
@@ -5558,7 +5776,7 @@ type GetPlatformNetworkCapabilitiesResponse struct {
 
 func (x *GetPlatformNetworkCapabilitiesResponse) Reset() {
 	*x = GetPlatformNetworkCapabilitiesResponse{}
-	mi := &file_network_v1_egress_proto_msgTypes[85]
+	mi := &file_network_v1_egress_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5570,7 +5788,7 @@ func (x *GetPlatformNetworkCapabilitiesResponse) String() string {
 func (*GetPlatformNetworkCapabilitiesResponse) ProtoMessage() {}
 
 func (x *GetPlatformNetworkCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_network_v1_egress_proto_msgTypes[85]
+	mi := &file_network_v1_egress_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5583,7 +5801,7 @@ func (x *GetPlatformNetworkCapabilitiesResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use GetPlatformNetworkCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*GetPlatformNetworkCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_network_v1_egress_proto_rawDescGZIP(), []int{85}
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *GetPlatformNetworkCapabilitiesResponse) GetCapabilities() *PlatformNetworkCapabilities {
@@ -5602,7 +5820,7 @@ type GetPlatformOperationRequest struct {
 
 func (x *GetPlatformOperationRequest) Reset() {
 	*x = GetPlatformOperationRequest{}
-	mi := &file_network_v1_egress_proto_msgTypes[86]
+	mi := &file_network_v1_egress_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5614,7 +5832,7 @@ func (x *GetPlatformOperationRequest) String() string {
 func (*GetPlatformOperationRequest) ProtoMessage() {}
 
 func (x *GetPlatformOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_network_v1_egress_proto_msgTypes[86]
+	mi := &file_network_v1_egress_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5627,7 +5845,7 @@ func (x *GetPlatformOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlatformOperationRequest.ProtoReflect.Descriptor instead.
 func (*GetPlatformOperationRequest) Descriptor() ([]byte, []int) {
-	return file_network_v1_egress_proto_rawDescGZIP(), []int{86}
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *GetPlatformOperationRequest) GetOperationId() string {
@@ -5646,7 +5864,7 @@ type GetPlatformOperationResponse struct {
 
 func (x *GetPlatformOperationResponse) Reset() {
 	*x = GetPlatformOperationResponse{}
-	mi := &file_network_v1_egress_proto_msgTypes[87]
+	mi := &file_network_v1_egress_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5658,7 +5876,7 @@ func (x *GetPlatformOperationResponse) String() string {
 func (*GetPlatformOperationResponse) ProtoMessage() {}
 
 func (x *GetPlatformOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_network_v1_egress_proto_msgTypes[87]
+	mi := &file_network_v1_egress_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5671,7 +5889,7 @@ func (x *GetPlatformOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlatformOperationResponse.ProtoReflect.Descriptor instead.
 func (*GetPlatformOperationResponse) Descriptor() ([]byte, []int) {
-	return file_network_v1_egress_proto_rawDescGZIP(), []int{87}
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *GetPlatformOperationResponse) GetOperation() *PlatformOperation {
@@ -5699,7 +5917,7 @@ type PlatformOperation struct {
 
 func (x *PlatformOperation) Reset() {
 	*x = PlatformOperation{}
-	mi := &file_network_v1_egress_proto_msgTypes[88]
+	mi := &file_network_v1_egress_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5711,7 +5929,7 @@ func (x *PlatformOperation) String() string {
 func (*PlatformOperation) ProtoMessage() {}
 
 func (x *PlatformOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_network_v1_egress_proto_msgTypes[88]
+	mi := &file_network_v1_egress_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5724,7 +5942,7 @@ func (x *PlatformOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformOperation.ProtoReflect.Descriptor instead.
 func (*PlatformOperation) Descriptor() ([]byte, []int) {
-	return file_network_v1_egress_proto_rawDescGZIP(), []int{88}
+	return file_network_v1_egress_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *PlatformOperation) GetId() string {
@@ -6019,7 +6237,7 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"\fverification\x18\v \x01(\v2\".network.v1.PublicPoolVerificationR\fverification\x121\n" +
 	"\x14topology_fingerprint\x18\f \x01(\tR\x13topologyFingerprint\x128\n" +
 	"\x18observed_provider_images\x18\r \x03(\tR\x16observedProviderImages\x12\x14\n" +
-	"\x05scope\x18\x0e \x01(\tR\x05scope\"\xb5\x04\n" +
+	"\x05scope\x18\x0e \x01(\tR\x05scope\"\xdf\x04\n" +
 	"\x13IntranetAddressPool\x12\x12\n" +
 	"\x04cidr\x18\x01 \x01(\tR\x04cidr\x12$\n" +
 	"\x0eovn_gateway_ip\x18\x02 \x01(\tR\fovnGatewayIp\x12!\n" +
@@ -6035,7 +6253,8 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	" \x01(\v2$.network.v1.IntranetPoolVerificationR\fverification\x121\n" +
 	"\x14topology_fingerprint\x18\v \x01(\tR\x13topologyFingerprint\x128\n" +
 	"\x18observed_provider_images\x18\f \x03(\tR\x16observedProviderImages\x12\x14\n" +
-	"\x05scope\x18\r \x01(\tR\x05scope\"\xfa\x02\n" +
+	"\x05scope\x18\r \x01(\tR\x05scope\x12(\n" +
+	"\x10new_vpcs_enabled\x18\x0e \x01(\bR\x0enewVpcsEnabled\"\xfa\x02\n" +
 	"\x18IntranetPoolVerification\x128\n" +
 	"\x18provider_source_revision\x18\x01 \x01(\tR\x16providerSourceRevision\x124\n" +
 	"\x16provider_image_digests\x18\x02 \x03(\tR\x14providerImageDigests\x121\n" +
@@ -6228,7 +6447,19 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"\x10expected_version\x18\x02 \x01(\x03R\x0fexpectedVersion\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"Z\n" +
 	"\x1eSetDefaultIntranetPoolResponse\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.network.v1.PlatformResourceR\bresource\"'\n" +
+	"\bresource\x18\x01 \x01(\v2\x1c.network.v1.PlatformResourceR\bresource\"\xb4\x01\n" +
+	"+SetIntranetPoolAutoAllocationEnabledRequest\x12\x17\n" +
+	"\apool_id\x18\x01 \x01(\tR\x06poolId\x12\x18\n" +
+	"\aenabled\x18\x02 \x01(\bR\aenabled\x12)\n" +
+	"\x10expected_version\x18\x03 \x01(\x03R\x0fexpectedVersion\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"h\n" +
+	",SetIntranetPoolAutoAllocationEnabledResponse\x128\n" +
+	"\bresource\x18\x01 \x01(\v2\x1c.network.v1.PlatformResourceR\bresource\" \n" +
+	"\x1eGetIntranetPoolDefaultsRequest\"\xa0\x01\n" +
+	"\x1fGetIntranetPoolDefaultsResponse\x12(\n" +
+	"\x10default_vpc_name\x18\x01 \x01(\tR\x0edefaultVpcName\x12&\n" +
+	"\x0fdefault_vpc_uid\x18\x02 \x01(\tR\rdefaultVpcUid\x12+\n" +
+	"\x11intranet_networks\x18\x03 \x03(\tR\x10intranetNetworks\"'\n" +
 	"%GetPlatformNetworkCapabilitiesRequest\"u\n" +
 	"&GetPlatformNetworkCapabilitiesResponse\x12K\n" +
 	"\fcapabilities\x18\x01 \x01(\v2'.network.v1.PlatformNetworkCapabilitiesR\fcapabilities\"@\n" +
@@ -6265,7 +6496,7 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"GetVPCSnat\x12\x1d.network.v1.GetVPCSnatRequest\x1a\x1e.network.v1.GetVPCSnatResponse\x12`\n" +
 	"\x11GetVPCSnatBinding\x12$.network.v1.GetVPCSnatBindingRequest\x1a%.network.v1.GetVPCSnatBindingResponse\x12`\n" +
 	"\x11SetVPCSnatEnabled\x12$.network.v1.SetVPCSnatEnabledRequest\x1a%.network.v1.SetVPCSnatEnabledResponse\x12i\n" +
-	"\x14DeleteVPCSnatBinding\x12'.network.v1.DeleteVPCSnatBindingRequest\x1a(.network.v1.DeleteVPCSnatBindingResponse2\xd8\x18\n" +
+	"\x14DeleteVPCSnatBinding\x12'.network.v1.DeleteVPCSnatBindingRequest\x1a(.network.v1.DeleteVPCSnatBindingResponse2\xe8\x1a\n" +
 	"\x16PlatformNetworkService\x12f\n" +
 	"\x13CreateVirtualSwitch\x12&.network.v1.CreateVirtualSwitchRequest\x1a'.network.v1.CreateVirtualSwitchResponse\x12]\n" +
 	"\x10GetVirtualSwitch\x12#.network.v1.GetVirtualSwitchRequest\x1a$.network.v1.GetVirtualSwitchResponse\x12f\n" +
@@ -6292,7 +6523,9 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"\x19DeleteIntranetAddressPool\x12,.network.v1.DeleteIntranetAddressPoolRequest\x1a-.network.v1.DeleteIntranetAddressPoolResponse\x12\x87\x01\n" +
 	"\x1eRecordIntranetPoolVerification\x121.network.v1.RecordIntranetPoolVerificationRequest\x1a2.network.v1.RecordIntranetPoolVerificationResponse\x12\x8d\x01\n" +
 	" SetIntranetPoolAllocationEnabled\x123.network.v1.SetIntranetPoolAllocationEnabledRequest\x1a4.network.v1.SetIntranetPoolAllocationEnabledResponse\x12o\n" +
-	"\x16SetDefaultIntranetPool\x12).network.v1.SetDefaultIntranetPoolRequest\x1a*.network.v1.SetDefaultIntranetPoolResponse\x12\x87\x01\n" +
+	"\x16SetDefaultIntranetPool\x12).network.v1.SetDefaultIntranetPoolRequest\x1a*.network.v1.SetDefaultIntranetPoolResponse\x12\x99\x01\n" +
+	"$SetIntranetPoolAutoAllocationEnabled\x127.network.v1.SetIntranetPoolAutoAllocationEnabledRequest\x1a8.network.v1.SetIntranetPoolAutoAllocationEnabledResponse\x12r\n" +
+	"\x17GetIntranetPoolDefaults\x12*.network.v1.GetIntranetPoolDefaultsRequest\x1a+.network.v1.GetIntranetPoolDefaultsResponse\x12\x87\x01\n" +
 	"\x1eGetPlatformNetworkCapabilities\x121.network.v1.GetPlatformNetworkCapabilitiesRequest\x1a2.network.v1.GetPlatformNetworkCapabilitiesResponse\x12i\n" +
 	"\x14GetPlatformOperation\x12'.network.v1.GetPlatformOperationRequest\x1a(.network.v1.GetPlatformOperationResponseBHZFgithub.com/zhangzhe-ctrl/ani-resource-service/api/network/v1;networkv1b\x06proto3"
 
@@ -6309,116 +6542,120 @@ func file_network_v1_egress_proto_rawDescGZIP() []byte {
 }
 
 var file_network_v1_egress_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_network_v1_egress_proto_msgTypes = make([]protoimpl.MessageInfo, 89)
+var file_network_v1_egress_proto_msgTypes = make([]protoimpl.MessageInfo, 93)
 var file_network_v1_egress_proto_goTypes = []any{
-	(PublicPoolMode)(0),                              // 0: network.v1.PublicPoolMode
-	(*EIP)(nil),                                      // 1: network.v1.EIP
-	(*EIPBindingTarget)(nil),                         // 2: network.v1.EIPBindingTarget
-	(*VPCSnatBinding)(nil),                           // 3: network.v1.VPCSnatBinding
-	(*CreateEIPRequest)(nil),                         // 4: network.v1.CreateEIPRequest
-	(*CreateEIPResponse)(nil),                        // 5: network.v1.CreateEIPResponse
-	(*GetEIPRequest)(nil),                            // 6: network.v1.GetEIPRequest
-	(*GetEIPResponse)(nil),                           // 7: network.v1.GetEIPResponse
-	(*ListEIPsRequest)(nil),                          // 8: network.v1.ListEIPsRequest
-	(*ListEIPsResponse)(nil),                         // 9: network.v1.ListEIPsResponse
-	(*DeleteEIPRequest)(nil),                         // 10: network.v1.DeleteEIPRequest
-	(*DeleteEIPResponse)(nil),                        // 11: network.v1.DeleteEIPResponse
-	(*BindVPCSnatRequest)(nil),                       // 12: network.v1.BindVPCSnatRequest
-	(*BindVPCSnatResponse)(nil),                      // 13: network.v1.BindVPCSnatResponse
-	(*GetVPCSnatRequest)(nil),                        // 14: network.v1.GetVPCSnatRequest
-	(*GetVPCSnatResponse)(nil),                       // 15: network.v1.GetVPCSnatResponse
-	(*GetVPCSnatBindingRequest)(nil),                 // 16: network.v1.GetVPCSnatBindingRequest
-	(*GetVPCSnatBindingResponse)(nil),                // 17: network.v1.GetVPCSnatBindingResponse
-	(*SetVPCSnatEnabledRequest)(nil),                 // 18: network.v1.SetVPCSnatEnabledRequest
-	(*SetVPCSnatEnabledResponse)(nil),                // 19: network.v1.SetVPCSnatEnabledResponse
-	(*DeleteVPCSnatBindingRequest)(nil),              // 20: network.v1.DeleteVPCSnatBindingRequest
-	(*DeleteVPCSnatBindingResponse)(nil),             // 21: network.v1.DeleteVPCSnatBindingResponse
-	(*PlatformResource)(nil),                         // 22: network.v1.PlatformResource
-	(*VlanNetwork)(nil),                              // 23: network.v1.VlanNetwork
-	(*VirtualSwitch)(nil),                            // 24: network.v1.VirtualSwitch
-	(*VirtualSwitchNode)(nil),                        // 25: network.v1.VirtualSwitchNode
-	(*CreateVirtualSwitchRequest)(nil),               // 26: network.v1.CreateVirtualSwitchRequest
-	(*CreateVirtualSwitchResponse)(nil),              // 27: network.v1.CreateVirtualSwitchResponse
-	(*GetVirtualSwitchRequest)(nil),                  // 28: network.v1.GetVirtualSwitchRequest
-	(*GetVirtualSwitchResponse)(nil),                 // 29: network.v1.GetVirtualSwitchResponse
-	(*ListVirtualSwitchesRequest)(nil),               // 30: network.v1.ListVirtualSwitchesRequest
-	(*ListVirtualSwitchesResponse)(nil),              // 31: network.v1.ListVirtualSwitchesResponse
-	(*DeleteVirtualSwitchRequest)(nil),               // 32: network.v1.DeleteVirtualSwitchRequest
-	(*DeleteVirtualSwitchResponse)(nil),              // 33: network.v1.DeleteVirtualSwitchResponse
-	(*EgressGateway)(nil),                            // 34: network.v1.EgressGateway
-	(*PublicAddressPool)(nil),                        // 35: network.v1.PublicAddressPool
-	(*IntranetAddressPool)(nil),                      // 36: network.v1.IntranetAddressPool
-	(*IntranetPoolVerification)(nil),                 // 37: network.v1.IntranetPoolVerification
-	(*CapabilityObservation)(nil),                    // 38: network.v1.CapabilityObservation
-	(*PlatformNetworkCapabilities)(nil),              // 39: network.v1.PlatformNetworkCapabilities
-	(*PublicPoolVerification)(nil),                   // 40: network.v1.PublicPoolVerification
-	(*CreateVlanNetworkRequest)(nil),                 // 41: network.v1.CreateVlanNetworkRequest
-	(*CreateVlanNetworkResponse)(nil),                // 42: network.v1.CreateVlanNetworkResponse
-	(*GetVlanNetworkRequest)(nil),                    // 43: network.v1.GetVlanNetworkRequest
-	(*GetVlanNetworkResponse)(nil),                   // 44: network.v1.GetVlanNetworkResponse
-	(*ListVlanNetworksRequest)(nil),                  // 45: network.v1.ListVlanNetworksRequest
-	(*ListVlanNetworksResponse)(nil),                 // 46: network.v1.ListVlanNetworksResponse
-	(*DeleteVlanNetworkRequest)(nil),                 // 47: network.v1.DeleteVlanNetworkRequest
-	(*DeleteVlanNetworkResponse)(nil),                // 48: network.v1.DeleteVlanNetworkResponse
-	(*CreateEgressGatewayRequest)(nil),               // 49: network.v1.CreateEgressGatewayRequest
-	(*CreateEgressGatewayResponse)(nil),              // 50: network.v1.CreateEgressGatewayResponse
-	(*GetEgressGatewayRequest)(nil),                  // 51: network.v1.GetEgressGatewayRequest
-	(*GetEgressGatewayResponse)(nil),                 // 52: network.v1.GetEgressGatewayResponse
-	(*ListEgressGatewaysRequest)(nil),                // 53: network.v1.ListEgressGatewaysRequest
-	(*ListEgressGatewaysResponse)(nil),               // 54: network.v1.ListEgressGatewaysResponse
-	(*DeleteEgressGatewayRequest)(nil),               // 55: network.v1.DeleteEgressGatewayRequest
-	(*DeleteEgressGatewayResponse)(nil),              // 56: network.v1.DeleteEgressGatewayResponse
-	(*CreatePublicAddressPoolRequest)(nil),           // 57: network.v1.CreatePublicAddressPoolRequest
-	(*CreatePublicAddressPoolResponse)(nil),          // 58: network.v1.CreatePublicAddressPoolResponse
-	(*GetPublicAddressPoolRequest)(nil),              // 59: network.v1.GetPublicAddressPoolRequest
-	(*GetPublicAddressPoolResponse)(nil),             // 60: network.v1.GetPublicAddressPoolResponse
-	(*ListPublicAddressPoolsRequest)(nil),            // 61: network.v1.ListPublicAddressPoolsRequest
-	(*ListPublicAddressPoolsResponse)(nil),           // 62: network.v1.ListPublicAddressPoolsResponse
-	(*DeletePublicAddressPoolRequest)(nil),           // 63: network.v1.DeletePublicAddressPoolRequest
-	(*DeletePublicAddressPoolResponse)(nil),          // 64: network.v1.DeletePublicAddressPoolResponse
-	(*RecordPublicPoolVerificationRequest)(nil),      // 65: network.v1.RecordPublicPoolVerificationRequest
-	(*RecordPublicPoolVerificationResponse)(nil),     // 66: network.v1.RecordPublicPoolVerificationResponse
-	(*SetPublicPoolAllocationEnabledRequest)(nil),    // 67: network.v1.SetPublicPoolAllocationEnabledRequest
-	(*SetPublicPoolAllocationEnabledResponse)(nil),   // 68: network.v1.SetPublicPoolAllocationEnabledResponse
-	(*SetDefaultPublicPoolRequest)(nil),              // 69: network.v1.SetDefaultPublicPoolRequest
-	(*SetDefaultPublicPoolResponse)(nil),             // 70: network.v1.SetDefaultPublicPoolResponse
-	(*CreateIntranetAddressPoolRequest)(nil),         // 71: network.v1.CreateIntranetAddressPoolRequest
-	(*CreateIntranetAddressPoolResponse)(nil),        // 72: network.v1.CreateIntranetAddressPoolResponse
-	(*GetIntranetAddressPoolRequest)(nil),            // 73: network.v1.GetIntranetAddressPoolRequest
-	(*GetIntranetAddressPoolResponse)(nil),           // 74: network.v1.GetIntranetAddressPoolResponse
-	(*ListIntranetAddressPoolsRequest)(nil),          // 75: network.v1.ListIntranetAddressPoolsRequest
-	(*ListIntranetAddressPoolsResponse)(nil),         // 76: network.v1.ListIntranetAddressPoolsResponse
-	(*DeleteIntranetAddressPoolRequest)(nil),         // 77: network.v1.DeleteIntranetAddressPoolRequest
-	(*DeleteIntranetAddressPoolResponse)(nil),        // 78: network.v1.DeleteIntranetAddressPoolResponse
-	(*RecordIntranetPoolVerificationRequest)(nil),    // 79: network.v1.RecordIntranetPoolVerificationRequest
-	(*RecordIntranetPoolVerificationResponse)(nil),   // 80: network.v1.RecordIntranetPoolVerificationResponse
-	(*SetIntranetPoolAllocationEnabledRequest)(nil),  // 81: network.v1.SetIntranetPoolAllocationEnabledRequest
-	(*SetIntranetPoolAllocationEnabledResponse)(nil), // 82: network.v1.SetIntranetPoolAllocationEnabledResponse
-	(*SetDefaultIntranetPoolRequest)(nil),            // 83: network.v1.SetDefaultIntranetPoolRequest
-	(*SetDefaultIntranetPoolResponse)(nil),           // 84: network.v1.SetDefaultIntranetPoolResponse
-	(*GetPlatformNetworkCapabilitiesRequest)(nil),    // 85: network.v1.GetPlatformNetworkCapabilitiesRequest
-	(*GetPlatformNetworkCapabilitiesResponse)(nil),   // 86: network.v1.GetPlatformNetworkCapabilitiesResponse
-	(*GetPlatformOperationRequest)(nil),              // 87: network.v1.GetPlatformOperationRequest
-	(*GetPlatformOperationResponse)(nil),             // 88: network.v1.GetPlatformOperationResponse
-	(*PlatformOperation)(nil),                        // 89: network.v1.PlatformOperation
-	(ResourceState)(0),                               // 90: network.v1.ResourceState
-	(*timestamppb.Timestamp)(nil),                    // 91: google.protobuf.Timestamp
-	(OperationKind)(0),                               // 92: network.v1.OperationKind
-	(OperationState)(0),                              // 93: network.v1.OperationState
+	(PublicPoolMode)(0),                                  // 0: network.v1.PublicPoolMode
+	(*EIP)(nil),                                          // 1: network.v1.EIP
+	(*EIPBindingTarget)(nil),                             // 2: network.v1.EIPBindingTarget
+	(*VPCSnatBinding)(nil),                               // 3: network.v1.VPCSnatBinding
+	(*CreateEIPRequest)(nil),                             // 4: network.v1.CreateEIPRequest
+	(*CreateEIPResponse)(nil),                            // 5: network.v1.CreateEIPResponse
+	(*GetEIPRequest)(nil),                                // 6: network.v1.GetEIPRequest
+	(*GetEIPResponse)(nil),                               // 7: network.v1.GetEIPResponse
+	(*ListEIPsRequest)(nil),                              // 8: network.v1.ListEIPsRequest
+	(*ListEIPsResponse)(nil),                             // 9: network.v1.ListEIPsResponse
+	(*DeleteEIPRequest)(nil),                             // 10: network.v1.DeleteEIPRequest
+	(*DeleteEIPResponse)(nil),                            // 11: network.v1.DeleteEIPResponse
+	(*BindVPCSnatRequest)(nil),                           // 12: network.v1.BindVPCSnatRequest
+	(*BindVPCSnatResponse)(nil),                          // 13: network.v1.BindVPCSnatResponse
+	(*GetVPCSnatRequest)(nil),                            // 14: network.v1.GetVPCSnatRequest
+	(*GetVPCSnatResponse)(nil),                           // 15: network.v1.GetVPCSnatResponse
+	(*GetVPCSnatBindingRequest)(nil),                     // 16: network.v1.GetVPCSnatBindingRequest
+	(*GetVPCSnatBindingResponse)(nil),                    // 17: network.v1.GetVPCSnatBindingResponse
+	(*SetVPCSnatEnabledRequest)(nil),                     // 18: network.v1.SetVPCSnatEnabledRequest
+	(*SetVPCSnatEnabledResponse)(nil),                    // 19: network.v1.SetVPCSnatEnabledResponse
+	(*DeleteVPCSnatBindingRequest)(nil),                  // 20: network.v1.DeleteVPCSnatBindingRequest
+	(*DeleteVPCSnatBindingResponse)(nil),                 // 21: network.v1.DeleteVPCSnatBindingResponse
+	(*PlatformResource)(nil),                             // 22: network.v1.PlatformResource
+	(*VlanNetwork)(nil),                                  // 23: network.v1.VlanNetwork
+	(*VirtualSwitch)(nil),                                // 24: network.v1.VirtualSwitch
+	(*VirtualSwitchNode)(nil),                            // 25: network.v1.VirtualSwitchNode
+	(*CreateVirtualSwitchRequest)(nil),                   // 26: network.v1.CreateVirtualSwitchRequest
+	(*CreateVirtualSwitchResponse)(nil),                  // 27: network.v1.CreateVirtualSwitchResponse
+	(*GetVirtualSwitchRequest)(nil),                      // 28: network.v1.GetVirtualSwitchRequest
+	(*GetVirtualSwitchResponse)(nil),                     // 29: network.v1.GetVirtualSwitchResponse
+	(*ListVirtualSwitchesRequest)(nil),                   // 30: network.v1.ListVirtualSwitchesRequest
+	(*ListVirtualSwitchesResponse)(nil),                  // 31: network.v1.ListVirtualSwitchesResponse
+	(*DeleteVirtualSwitchRequest)(nil),                   // 32: network.v1.DeleteVirtualSwitchRequest
+	(*DeleteVirtualSwitchResponse)(nil),                  // 33: network.v1.DeleteVirtualSwitchResponse
+	(*EgressGateway)(nil),                                // 34: network.v1.EgressGateway
+	(*PublicAddressPool)(nil),                            // 35: network.v1.PublicAddressPool
+	(*IntranetAddressPool)(nil),                          // 36: network.v1.IntranetAddressPool
+	(*IntranetPoolVerification)(nil),                     // 37: network.v1.IntranetPoolVerification
+	(*CapabilityObservation)(nil),                        // 38: network.v1.CapabilityObservation
+	(*PlatformNetworkCapabilities)(nil),                  // 39: network.v1.PlatformNetworkCapabilities
+	(*PublicPoolVerification)(nil),                       // 40: network.v1.PublicPoolVerification
+	(*CreateVlanNetworkRequest)(nil),                     // 41: network.v1.CreateVlanNetworkRequest
+	(*CreateVlanNetworkResponse)(nil),                    // 42: network.v1.CreateVlanNetworkResponse
+	(*GetVlanNetworkRequest)(nil),                        // 43: network.v1.GetVlanNetworkRequest
+	(*GetVlanNetworkResponse)(nil),                       // 44: network.v1.GetVlanNetworkResponse
+	(*ListVlanNetworksRequest)(nil),                      // 45: network.v1.ListVlanNetworksRequest
+	(*ListVlanNetworksResponse)(nil),                     // 46: network.v1.ListVlanNetworksResponse
+	(*DeleteVlanNetworkRequest)(nil),                     // 47: network.v1.DeleteVlanNetworkRequest
+	(*DeleteVlanNetworkResponse)(nil),                    // 48: network.v1.DeleteVlanNetworkResponse
+	(*CreateEgressGatewayRequest)(nil),                   // 49: network.v1.CreateEgressGatewayRequest
+	(*CreateEgressGatewayResponse)(nil),                  // 50: network.v1.CreateEgressGatewayResponse
+	(*GetEgressGatewayRequest)(nil),                      // 51: network.v1.GetEgressGatewayRequest
+	(*GetEgressGatewayResponse)(nil),                     // 52: network.v1.GetEgressGatewayResponse
+	(*ListEgressGatewaysRequest)(nil),                    // 53: network.v1.ListEgressGatewaysRequest
+	(*ListEgressGatewaysResponse)(nil),                   // 54: network.v1.ListEgressGatewaysResponse
+	(*DeleteEgressGatewayRequest)(nil),                   // 55: network.v1.DeleteEgressGatewayRequest
+	(*DeleteEgressGatewayResponse)(nil),                  // 56: network.v1.DeleteEgressGatewayResponse
+	(*CreatePublicAddressPoolRequest)(nil),               // 57: network.v1.CreatePublicAddressPoolRequest
+	(*CreatePublicAddressPoolResponse)(nil),              // 58: network.v1.CreatePublicAddressPoolResponse
+	(*GetPublicAddressPoolRequest)(nil),                  // 59: network.v1.GetPublicAddressPoolRequest
+	(*GetPublicAddressPoolResponse)(nil),                 // 60: network.v1.GetPublicAddressPoolResponse
+	(*ListPublicAddressPoolsRequest)(nil),                // 61: network.v1.ListPublicAddressPoolsRequest
+	(*ListPublicAddressPoolsResponse)(nil),               // 62: network.v1.ListPublicAddressPoolsResponse
+	(*DeletePublicAddressPoolRequest)(nil),               // 63: network.v1.DeletePublicAddressPoolRequest
+	(*DeletePublicAddressPoolResponse)(nil),              // 64: network.v1.DeletePublicAddressPoolResponse
+	(*RecordPublicPoolVerificationRequest)(nil),          // 65: network.v1.RecordPublicPoolVerificationRequest
+	(*RecordPublicPoolVerificationResponse)(nil),         // 66: network.v1.RecordPublicPoolVerificationResponse
+	(*SetPublicPoolAllocationEnabledRequest)(nil),        // 67: network.v1.SetPublicPoolAllocationEnabledRequest
+	(*SetPublicPoolAllocationEnabledResponse)(nil),       // 68: network.v1.SetPublicPoolAllocationEnabledResponse
+	(*SetDefaultPublicPoolRequest)(nil),                  // 69: network.v1.SetDefaultPublicPoolRequest
+	(*SetDefaultPublicPoolResponse)(nil),                 // 70: network.v1.SetDefaultPublicPoolResponse
+	(*CreateIntranetAddressPoolRequest)(nil),             // 71: network.v1.CreateIntranetAddressPoolRequest
+	(*CreateIntranetAddressPoolResponse)(nil),            // 72: network.v1.CreateIntranetAddressPoolResponse
+	(*GetIntranetAddressPoolRequest)(nil),                // 73: network.v1.GetIntranetAddressPoolRequest
+	(*GetIntranetAddressPoolResponse)(nil),               // 74: network.v1.GetIntranetAddressPoolResponse
+	(*ListIntranetAddressPoolsRequest)(nil),              // 75: network.v1.ListIntranetAddressPoolsRequest
+	(*ListIntranetAddressPoolsResponse)(nil),             // 76: network.v1.ListIntranetAddressPoolsResponse
+	(*DeleteIntranetAddressPoolRequest)(nil),             // 77: network.v1.DeleteIntranetAddressPoolRequest
+	(*DeleteIntranetAddressPoolResponse)(nil),            // 78: network.v1.DeleteIntranetAddressPoolResponse
+	(*RecordIntranetPoolVerificationRequest)(nil),        // 79: network.v1.RecordIntranetPoolVerificationRequest
+	(*RecordIntranetPoolVerificationResponse)(nil),       // 80: network.v1.RecordIntranetPoolVerificationResponse
+	(*SetIntranetPoolAllocationEnabledRequest)(nil),      // 81: network.v1.SetIntranetPoolAllocationEnabledRequest
+	(*SetIntranetPoolAllocationEnabledResponse)(nil),     // 82: network.v1.SetIntranetPoolAllocationEnabledResponse
+	(*SetDefaultIntranetPoolRequest)(nil),                // 83: network.v1.SetDefaultIntranetPoolRequest
+	(*SetDefaultIntranetPoolResponse)(nil),               // 84: network.v1.SetDefaultIntranetPoolResponse
+	(*SetIntranetPoolAutoAllocationEnabledRequest)(nil),  // 85: network.v1.SetIntranetPoolAutoAllocationEnabledRequest
+	(*SetIntranetPoolAutoAllocationEnabledResponse)(nil), // 86: network.v1.SetIntranetPoolAutoAllocationEnabledResponse
+	(*GetIntranetPoolDefaultsRequest)(nil),               // 87: network.v1.GetIntranetPoolDefaultsRequest
+	(*GetIntranetPoolDefaultsResponse)(nil),              // 88: network.v1.GetIntranetPoolDefaultsResponse
+	(*GetPlatformNetworkCapabilitiesRequest)(nil),        // 89: network.v1.GetPlatformNetworkCapabilitiesRequest
+	(*GetPlatformNetworkCapabilitiesResponse)(nil),       // 90: network.v1.GetPlatformNetworkCapabilitiesResponse
+	(*GetPlatformOperationRequest)(nil),                  // 91: network.v1.GetPlatformOperationRequest
+	(*GetPlatformOperationResponse)(nil),                 // 92: network.v1.GetPlatformOperationResponse
+	(*PlatformOperation)(nil),                            // 93: network.v1.PlatformOperation
+	(ResourceState)(0),                                   // 94: network.v1.ResourceState
+	(*timestamppb.Timestamp)(nil),                        // 95: google.protobuf.Timestamp
+	(OperationKind)(0),                                   // 96: network.v1.OperationKind
+	(OperationState)(0),                                  // 97: network.v1.OperationState
 }
 var file_network_v1_egress_proto_depIdxs = []int32{
-	90,  // 0: network.v1.EIP.state:type_name -> network.v1.ResourceState
-	91,  // 1: network.v1.EIP.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 2: network.v1.EIP.updated_at:type_name -> google.protobuf.Timestamp
-	91,  // 3: network.v1.EIP.observed_at:type_name -> google.protobuf.Timestamp
+	94,  // 0: network.v1.EIP.state:type_name -> network.v1.ResourceState
+	95,  // 1: network.v1.EIP.created_at:type_name -> google.protobuf.Timestamp
+	95,  // 2: network.v1.EIP.updated_at:type_name -> google.protobuf.Timestamp
+	95,  // 3: network.v1.EIP.observed_at:type_name -> google.protobuf.Timestamp
 	2,   // 4: network.v1.EIP.binding_target:type_name -> network.v1.EIPBindingTarget
-	90,  // 5: network.v1.VPCSnatBinding.state:type_name -> network.v1.ResourceState
-	91,  // 6: network.v1.VPCSnatBinding.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 7: network.v1.VPCSnatBinding.updated_at:type_name -> google.protobuf.Timestamp
-	91,  // 8: network.v1.VPCSnatBinding.observed_at:type_name -> google.protobuf.Timestamp
+	94,  // 5: network.v1.VPCSnatBinding.state:type_name -> network.v1.ResourceState
+	95,  // 6: network.v1.VPCSnatBinding.created_at:type_name -> google.protobuf.Timestamp
+	95,  // 7: network.v1.VPCSnatBinding.updated_at:type_name -> google.protobuf.Timestamp
+	95,  // 8: network.v1.VPCSnatBinding.observed_at:type_name -> google.protobuf.Timestamp
 	1,   // 9: network.v1.CreateEIPResponse.eip:type_name -> network.v1.EIP
 	1,   // 10: network.v1.GetEIPResponse.eip:type_name -> network.v1.EIP
-	90,  // 11: network.v1.ListEIPsRequest.state:type_name -> network.v1.ResourceState
+	94,  // 11: network.v1.ListEIPsRequest.state:type_name -> network.v1.ResourceState
 	1,   // 12: network.v1.ListEIPsResponse.items:type_name -> network.v1.EIP
 	1,   // 13: network.v1.DeleteEIPResponse.eip:type_name -> network.v1.EIP
 	3,   // 14: network.v1.BindVPCSnatResponse.binding:type_name -> network.v1.VPCSnatBinding
@@ -6426,49 +6663,49 @@ var file_network_v1_egress_proto_depIdxs = []int32{
 	3,   // 16: network.v1.GetVPCSnatBindingResponse.binding:type_name -> network.v1.VPCSnatBinding
 	3,   // 17: network.v1.SetVPCSnatEnabledResponse.binding:type_name -> network.v1.VPCSnatBinding
 	3,   // 18: network.v1.DeleteVPCSnatBindingResponse.binding:type_name -> network.v1.VPCSnatBinding
-	90,  // 19: network.v1.PlatformResource.state:type_name -> network.v1.ResourceState
-	91,  // 20: network.v1.PlatformResource.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 21: network.v1.PlatformResource.updated_at:type_name -> google.protobuf.Timestamp
-	91,  // 22: network.v1.PlatformResource.observed_at:type_name -> google.protobuf.Timestamp
+	94,  // 19: network.v1.PlatformResource.state:type_name -> network.v1.ResourceState
+	95,  // 20: network.v1.PlatformResource.created_at:type_name -> google.protobuf.Timestamp
+	95,  // 21: network.v1.PlatformResource.updated_at:type_name -> google.protobuf.Timestamp
+	95,  // 22: network.v1.PlatformResource.observed_at:type_name -> google.protobuf.Timestamp
 	23,  // 23: network.v1.PlatformResource.vlan:type_name -> network.v1.VlanNetwork
 	34,  // 24: network.v1.PlatformResource.gateway:type_name -> network.v1.EgressGateway
 	35,  // 25: network.v1.PlatformResource.pool:type_name -> network.v1.PublicAddressPool
 	36,  // 26: network.v1.PlatformResource.intranet_pool:type_name -> network.v1.IntranetAddressPool
 	25,  // 27: network.v1.VlanNetwork.nodes:type_name -> network.v1.VirtualSwitchNode
-	90,  // 28: network.v1.VirtualSwitch.state:type_name -> network.v1.ResourceState
-	91,  // 29: network.v1.VirtualSwitch.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 30: network.v1.VirtualSwitch.updated_at:type_name -> google.protobuf.Timestamp
+	94,  // 28: network.v1.VirtualSwitch.state:type_name -> network.v1.ResourceState
+	95,  // 29: network.v1.VirtualSwitch.created_at:type_name -> google.protobuf.Timestamp
+	95,  // 30: network.v1.VirtualSwitch.updated_at:type_name -> google.protobuf.Timestamp
 	25,  // 31: network.v1.VirtualSwitch.nodes:type_name -> network.v1.VirtualSwitchNode
 	24,  // 32: network.v1.CreateVirtualSwitchResponse.resource:type_name -> network.v1.VirtualSwitch
 	24,  // 33: network.v1.GetVirtualSwitchResponse.resource:type_name -> network.v1.VirtualSwitch
-	90,  // 34: network.v1.ListVirtualSwitchesRequest.state:type_name -> network.v1.ResourceState
+	94,  // 34: network.v1.ListVirtualSwitchesRequest.state:type_name -> network.v1.ResourceState
 	24,  // 35: network.v1.ListVirtualSwitchesResponse.items:type_name -> network.v1.VirtualSwitch
 	24,  // 36: network.v1.DeleteVirtualSwitchResponse.resource:type_name -> network.v1.VirtualSwitch
 	0,   // 37: network.v1.PublicAddressPool.mode:type_name -> network.v1.PublicPoolMode
 	40,  // 38: network.v1.PublicAddressPool.verification:type_name -> network.v1.PublicPoolVerification
 	37,  // 39: network.v1.IntranetAddressPool.verification:type_name -> network.v1.IntranetPoolVerification
-	91,  // 40: network.v1.IntranetPoolVerification.verified_at:type_name -> google.protobuf.Timestamp
-	91,  // 41: network.v1.IntranetPoolVerification.expires_at:type_name -> google.protobuf.Timestamp
-	91,  // 42: network.v1.CapabilityObservation.observed_at:type_name -> google.protobuf.Timestamp
+	95,  // 40: network.v1.IntranetPoolVerification.verified_at:type_name -> google.protobuf.Timestamp
+	95,  // 41: network.v1.IntranetPoolVerification.expires_at:type_name -> google.protobuf.Timestamp
+	95,  // 42: network.v1.CapabilityObservation.observed_at:type_name -> google.protobuf.Timestamp
 	38,  // 43: network.v1.PlatformNetworkCapabilities.base_connectivity:type_name -> network.v1.CapabilityObservation
 	38,  // 44: network.v1.PlatformNetworkCapabilities.public_address:type_name -> network.v1.CapabilityObservation
 	38,  // 45: network.v1.PlatformNetworkCapabilities.load_balancer:type_name -> network.v1.CapabilityObservation
-	91,  // 46: network.v1.PublicPoolVerification.verified_at:type_name -> google.protobuf.Timestamp
-	91,  // 47: network.v1.PublicPoolVerification.expires_at:type_name -> google.protobuf.Timestamp
+	95,  // 46: network.v1.PublicPoolVerification.verified_at:type_name -> google.protobuf.Timestamp
+	95,  // 47: network.v1.PublicPoolVerification.expires_at:type_name -> google.protobuf.Timestamp
 	22,  // 48: network.v1.CreateVlanNetworkResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 49: network.v1.GetVlanNetworkResponse.resource:type_name -> network.v1.PlatformResource
-	90,  // 50: network.v1.ListVlanNetworksRequest.state:type_name -> network.v1.ResourceState
+	94,  // 50: network.v1.ListVlanNetworksRequest.state:type_name -> network.v1.ResourceState
 	22,  // 51: network.v1.ListVlanNetworksResponse.items:type_name -> network.v1.PlatformResource
 	22,  // 52: network.v1.DeleteVlanNetworkResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 53: network.v1.CreateEgressGatewayResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 54: network.v1.GetEgressGatewayResponse.resource:type_name -> network.v1.PlatformResource
-	90,  // 55: network.v1.ListEgressGatewaysRequest.state:type_name -> network.v1.ResourceState
+	94,  // 55: network.v1.ListEgressGatewaysRequest.state:type_name -> network.v1.ResourceState
 	22,  // 56: network.v1.ListEgressGatewaysResponse.items:type_name -> network.v1.PlatformResource
 	22,  // 57: network.v1.DeleteEgressGatewayResponse.resource:type_name -> network.v1.PlatformResource
 	0,   // 58: network.v1.CreatePublicAddressPoolRequest.mode:type_name -> network.v1.PublicPoolMode
 	22,  // 59: network.v1.CreatePublicAddressPoolResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 60: network.v1.GetPublicAddressPoolResponse.resource:type_name -> network.v1.PlatformResource
-	90,  // 61: network.v1.ListPublicAddressPoolsRequest.state:type_name -> network.v1.ResourceState
+	94,  // 61: network.v1.ListPublicAddressPoolsRequest.state:type_name -> network.v1.ResourceState
 	22,  // 62: network.v1.ListPublicAddressPoolsResponse.items:type_name -> network.v1.PlatformResource
 	22,  // 63: network.v1.DeletePublicAddressPoolResponse.resource:type_name -> network.v1.PlatformResource
 	40,  // 64: network.v1.RecordPublicPoolVerificationRequest.verification:type_name -> network.v1.PublicPoolVerification
@@ -6477,100 +6714,105 @@ var file_network_v1_egress_proto_depIdxs = []int32{
 	22,  // 67: network.v1.SetDefaultPublicPoolResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 68: network.v1.CreateIntranetAddressPoolResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 69: network.v1.GetIntranetAddressPoolResponse.resource:type_name -> network.v1.PlatformResource
-	90,  // 70: network.v1.ListIntranetAddressPoolsRequest.state:type_name -> network.v1.ResourceState
+	94,  // 70: network.v1.ListIntranetAddressPoolsRequest.state:type_name -> network.v1.ResourceState
 	22,  // 71: network.v1.ListIntranetAddressPoolsResponse.items:type_name -> network.v1.PlatformResource
 	22,  // 72: network.v1.DeleteIntranetAddressPoolResponse.resource:type_name -> network.v1.PlatformResource
 	37,  // 73: network.v1.RecordIntranetPoolVerificationRequest.verification:type_name -> network.v1.IntranetPoolVerification
 	22,  // 74: network.v1.RecordIntranetPoolVerificationResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 75: network.v1.SetIntranetPoolAllocationEnabledResponse.resource:type_name -> network.v1.PlatformResource
 	22,  // 76: network.v1.SetDefaultIntranetPoolResponse.resource:type_name -> network.v1.PlatformResource
-	39,  // 77: network.v1.GetPlatformNetworkCapabilitiesResponse.capabilities:type_name -> network.v1.PlatformNetworkCapabilities
-	89,  // 78: network.v1.GetPlatformOperationResponse.operation:type_name -> network.v1.PlatformOperation
-	92,  // 79: network.v1.PlatformOperation.kind:type_name -> network.v1.OperationKind
-	93,  // 80: network.v1.PlatformOperation.state:type_name -> network.v1.OperationState
-	91,  // 81: network.v1.PlatformOperation.created_at:type_name -> google.protobuf.Timestamp
-	91,  // 82: network.v1.PlatformOperation.updated_at:type_name -> google.protobuf.Timestamp
-	91,  // 83: network.v1.PlatformOperation.completed_at:type_name -> google.protobuf.Timestamp
-	91,  // 84: network.v1.PlatformOperation.next_attempt_at:type_name -> google.protobuf.Timestamp
-	4,   // 85: network.v1.TenantEgressService.CreateEIP:input_type -> network.v1.CreateEIPRequest
-	6,   // 86: network.v1.TenantEgressService.GetEIP:input_type -> network.v1.GetEIPRequest
-	8,   // 87: network.v1.TenantEgressService.ListEIPs:input_type -> network.v1.ListEIPsRequest
-	10,  // 88: network.v1.TenantEgressService.DeleteEIP:input_type -> network.v1.DeleteEIPRequest
-	12,  // 89: network.v1.TenantEgressService.BindVPCSnat:input_type -> network.v1.BindVPCSnatRequest
-	14,  // 90: network.v1.TenantEgressService.GetVPCSnat:input_type -> network.v1.GetVPCSnatRequest
-	16,  // 91: network.v1.TenantEgressService.GetVPCSnatBinding:input_type -> network.v1.GetVPCSnatBindingRequest
-	18,  // 92: network.v1.TenantEgressService.SetVPCSnatEnabled:input_type -> network.v1.SetVPCSnatEnabledRequest
-	20,  // 93: network.v1.TenantEgressService.DeleteVPCSnatBinding:input_type -> network.v1.DeleteVPCSnatBindingRequest
-	26,  // 94: network.v1.PlatformNetworkService.CreateVirtualSwitch:input_type -> network.v1.CreateVirtualSwitchRequest
-	28,  // 95: network.v1.PlatformNetworkService.GetVirtualSwitch:input_type -> network.v1.GetVirtualSwitchRequest
-	30,  // 96: network.v1.PlatformNetworkService.ListVirtualSwitches:input_type -> network.v1.ListVirtualSwitchesRequest
-	32,  // 97: network.v1.PlatformNetworkService.DeleteVirtualSwitch:input_type -> network.v1.DeleteVirtualSwitchRequest
-	41,  // 98: network.v1.PlatformNetworkService.CreateVlanNetwork:input_type -> network.v1.CreateVlanNetworkRequest
-	43,  // 99: network.v1.PlatformNetworkService.GetVlanNetwork:input_type -> network.v1.GetVlanNetworkRequest
-	45,  // 100: network.v1.PlatformNetworkService.ListVlanNetworks:input_type -> network.v1.ListVlanNetworksRequest
-	47,  // 101: network.v1.PlatformNetworkService.DeleteVlanNetwork:input_type -> network.v1.DeleteVlanNetworkRequest
-	49,  // 102: network.v1.PlatformNetworkService.CreateEgressGateway:input_type -> network.v1.CreateEgressGatewayRequest
-	51,  // 103: network.v1.PlatformNetworkService.GetEgressGateway:input_type -> network.v1.GetEgressGatewayRequest
-	53,  // 104: network.v1.PlatformNetworkService.ListEgressGateways:input_type -> network.v1.ListEgressGatewaysRequest
-	55,  // 105: network.v1.PlatformNetworkService.DeleteEgressGateway:input_type -> network.v1.DeleteEgressGatewayRequest
-	57,  // 106: network.v1.PlatformNetworkService.CreatePublicAddressPool:input_type -> network.v1.CreatePublicAddressPoolRequest
-	59,  // 107: network.v1.PlatformNetworkService.GetPublicAddressPool:input_type -> network.v1.GetPublicAddressPoolRequest
-	61,  // 108: network.v1.PlatformNetworkService.ListPublicAddressPools:input_type -> network.v1.ListPublicAddressPoolsRequest
-	63,  // 109: network.v1.PlatformNetworkService.DeletePublicAddressPool:input_type -> network.v1.DeletePublicAddressPoolRequest
-	65,  // 110: network.v1.PlatformNetworkService.RecordPublicPoolVerification:input_type -> network.v1.RecordPublicPoolVerificationRequest
-	67,  // 111: network.v1.PlatformNetworkService.SetPublicPoolAllocationEnabled:input_type -> network.v1.SetPublicPoolAllocationEnabledRequest
-	69,  // 112: network.v1.PlatformNetworkService.SetDefaultPublicPool:input_type -> network.v1.SetDefaultPublicPoolRequest
-	71,  // 113: network.v1.PlatformNetworkService.CreateIntranetAddressPool:input_type -> network.v1.CreateIntranetAddressPoolRequest
-	73,  // 114: network.v1.PlatformNetworkService.GetIntranetAddressPool:input_type -> network.v1.GetIntranetAddressPoolRequest
-	75,  // 115: network.v1.PlatformNetworkService.ListIntranetAddressPools:input_type -> network.v1.ListIntranetAddressPoolsRequest
-	77,  // 116: network.v1.PlatformNetworkService.DeleteIntranetAddressPool:input_type -> network.v1.DeleteIntranetAddressPoolRequest
-	79,  // 117: network.v1.PlatformNetworkService.RecordIntranetPoolVerification:input_type -> network.v1.RecordIntranetPoolVerificationRequest
-	81,  // 118: network.v1.PlatformNetworkService.SetIntranetPoolAllocationEnabled:input_type -> network.v1.SetIntranetPoolAllocationEnabledRequest
-	83,  // 119: network.v1.PlatformNetworkService.SetDefaultIntranetPool:input_type -> network.v1.SetDefaultIntranetPoolRequest
-	85,  // 120: network.v1.PlatformNetworkService.GetPlatformNetworkCapabilities:input_type -> network.v1.GetPlatformNetworkCapabilitiesRequest
-	87,  // 121: network.v1.PlatformNetworkService.GetPlatformOperation:input_type -> network.v1.GetPlatformOperationRequest
-	5,   // 122: network.v1.TenantEgressService.CreateEIP:output_type -> network.v1.CreateEIPResponse
-	7,   // 123: network.v1.TenantEgressService.GetEIP:output_type -> network.v1.GetEIPResponse
-	9,   // 124: network.v1.TenantEgressService.ListEIPs:output_type -> network.v1.ListEIPsResponse
-	11,  // 125: network.v1.TenantEgressService.DeleteEIP:output_type -> network.v1.DeleteEIPResponse
-	13,  // 126: network.v1.TenantEgressService.BindVPCSnat:output_type -> network.v1.BindVPCSnatResponse
-	15,  // 127: network.v1.TenantEgressService.GetVPCSnat:output_type -> network.v1.GetVPCSnatResponse
-	17,  // 128: network.v1.TenantEgressService.GetVPCSnatBinding:output_type -> network.v1.GetVPCSnatBindingResponse
-	19,  // 129: network.v1.TenantEgressService.SetVPCSnatEnabled:output_type -> network.v1.SetVPCSnatEnabledResponse
-	21,  // 130: network.v1.TenantEgressService.DeleteVPCSnatBinding:output_type -> network.v1.DeleteVPCSnatBindingResponse
-	27,  // 131: network.v1.PlatformNetworkService.CreateVirtualSwitch:output_type -> network.v1.CreateVirtualSwitchResponse
-	29,  // 132: network.v1.PlatformNetworkService.GetVirtualSwitch:output_type -> network.v1.GetVirtualSwitchResponse
-	31,  // 133: network.v1.PlatformNetworkService.ListVirtualSwitches:output_type -> network.v1.ListVirtualSwitchesResponse
-	33,  // 134: network.v1.PlatformNetworkService.DeleteVirtualSwitch:output_type -> network.v1.DeleteVirtualSwitchResponse
-	42,  // 135: network.v1.PlatformNetworkService.CreateVlanNetwork:output_type -> network.v1.CreateVlanNetworkResponse
-	44,  // 136: network.v1.PlatformNetworkService.GetVlanNetwork:output_type -> network.v1.GetVlanNetworkResponse
-	46,  // 137: network.v1.PlatformNetworkService.ListVlanNetworks:output_type -> network.v1.ListVlanNetworksResponse
-	48,  // 138: network.v1.PlatformNetworkService.DeleteVlanNetwork:output_type -> network.v1.DeleteVlanNetworkResponse
-	50,  // 139: network.v1.PlatformNetworkService.CreateEgressGateway:output_type -> network.v1.CreateEgressGatewayResponse
-	52,  // 140: network.v1.PlatformNetworkService.GetEgressGateway:output_type -> network.v1.GetEgressGatewayResponse
-	54,  // 141: network.v1.PlatformNetworkService.ListEgressGateways:output_type -> network.v1.ListEgressGatewaysResponse
-	56,  // 142: network.v1.PlatformNetworkService.DeleteEgressGateway:output_type -> network.v1.DeleteEgressGatewayResponse
-	58,  // 143: network.v1.PlatformNetworkService.CreatePublicAddressPool:output_type -> network.v1.CreatePublicAddressPoolResponse
-	60,  // 144: network.v1.PlatformNetworkService.GetPublicAddressPool:output_type -> network.v1.GetPublicAddressPoolResponse
-	62,  // 145: network.v1.PlatformNetworkService.ListPublicAddressPools:output_type -> network.v1.ListPublicAddressPoolsResponse
-	64,  // 146: network.v1.PlatformNetworkService.DeletePublicAddressPool:output_type -> network.v1.DeletePublicAddressPoolResponse
-	66,  // 147: network.v1.PlatformNetworkService.RecordPublicPoolVerification:output_type -> network.v1.RecordPublicPoolVerificationResponse
-	68,  // 148: network.v1.PlatformNetworkService.SetPublicPoolAllocationEnabled:output_type -> network.v1.SetPublicPoolAllocationEnabledResponse
-	70,  // 149: network.v1.PlatformNetworkService.SetDefaultPublicPool:output_type -> network.v1.SetDefaultPublicPoolResponse
-	72,  // 150: network.v1.PlatformNetworkService.CreateIntranetAddressPool:output_type -> network.v1.CreateIntranetAddressPoolResponse
-	74,  // 151: network.v1.PlatformNetworkService.GetIntranetAddressPool:output_type -> network.v1.GetIntranetAddressPoolResponse
-	76,  // 152: network.v1.PlatformNetworkService.ListIntranetAddressPools:output_type -> network.v1.ListIntranetAddressPoolsResponse
-	78,  // 153: network.v1.PlatformNetworkService.DeleteIntranetAddressPool:output_type -> network.v1.DeleteIntranetAddressPoolResponse
-	80,  // 154: network.v1.PlatformNetworkService.RecordIntranetPoolVerification:output_type -> network.v1.RecordIntranetPoolVerificationResponse
-	82,  // 155: network.v1.PlatformNetworkService.SetIntranetPoolAllocationEnabled:output_type -> network.v1.SetIntranetPoolAllocationEnabledResponse
-	84,  // 156: network.v1.PlatformNetworkService.SetDefaultIntranetPool:output_type -> network.v1.SetDefaultIntranetPoolResponse
-	86,  // 157: network.v1.PlatformNetworkService.GetPlatformNetworkCapabilities:output_type -> network.v1.GetPlatformNetworkCapabilitiesResponse
-	88,  // 158: network.v1.PlatformNetworkService.GetPlatformOperation:output_type -> network.v1.GetPlatformOperationResponse
-	122, // [122:159] is the sub-list for method output_type
-	85,  // [85:122] is the sub-list for method input_type
-	85,  // [85:85] is the sub-list for extension type_name
-	85,  // [85:85] is the sub-list for extension extendee
-	0,   // [0:85] is the sub-list for field type_name
+	22,  // 77: network.v1.SetIntranetPoolAutoAllocationEnabledResponse.resource:type_name -> network.v1.PlatformResource
+	39,  // 78: network.v1.GetPlatformNetworkCapabilitiesResponse.capabilities:type_name -> network.v1.PlatformNetworkCapabilities
+	93,  // 79: network.v1.GetPlatformOperationResponse.operation:type_name -> network.v1.PlatformOperation
+	96,  // 80: network.v1.PlatformOperation.kind:type_name -> network.v1.OperationKind
+	97,  // 81: network.v1.PlatformOperation.state:type_name -> network.v1.OperationState
+	95,  // 82: network.v1.PlatformOperation.created_at:type_name -> google.protobuf.Timestamp
+	95,  // 83: network.v1.PlatformOperation.updated_at:type_name -> google.protobuf.Timestamp
+	95,  // 84: network.v1.PlatformOperation.completed_at:type_name -> google.protobuf.Timestamp
+	95,  // 85: network.v1.PlatformOperation.next_attempt_at:type_name -> google.protobuf.Timestamp
+	4,   // 86: network.v1.TenantEgressService.CreateEIP:input_type -> network.v1.CreateEIPRequest
+	6,   // 87: network.v1.TenantEgressService.GetEIP:input_type -> network.v1.GetEIPRequest
+	8,   // 88: network.v1.TenantEgressService.ListEIPs:input_type -> network.v1.ListEIPsRequest
+	10,  // 89: network.v1.TenantEgressService.DeleteEIP:input_type -> network.v1.DeleteEIPRequest
+	12,  // 90: network.v1.TenantEgressService.BindVPCSnat:input_type -> network.v1.BindVPCSnatRequest
+	14,  // 91: network.v1.TenantEgressService.GetVPCSnat:input_type -> network.v1.GetVPCSnatRequest
+	16,  // 92: network.v1.TenantEgressService.GetVPCSnatBinding:input_type -> network.v1.GetVPCSnatBindingRequest
+	18,  // 93: network.v1.TenantEgressService.SetVPCSnatEnabled:input_type -> network.v1.SetVPCSnatEnabledRequest
+	20,  // 94: network.v1.TenantEgressService.DeleteVPCSnatBinding:input_type -> network.v1.DeleteVPCSnatBindingRequest
+	26,  // 95: network.v1.PlatformNetworkService.CreateVirtualSwitch:input_type -> network.v1.CreateVirtualSwitchRequest
+	28,  // 96: network.v1.PlatformNetworkService.GetVirtualSwitch:input_type -> network.v1.GetVirtualSwitchRequest
+	30,  // 97: network.v1.PlatformNetworkService.ListVirtualSwitches:input_type -> network.v1.ListVirtualSwitchesRequest
+	32,  // 98: network.v1.PlatformNetworkService.DeleteVirtualSwitch:input_type -> network.v1.DeleteVirtualSwitchRequest
+	41,  // 99: network.v1.PlatformNetworkService.CreateVlanNetwork:input_type -> network.v1.CreateVlanNetworkRequest
+	43,  // 100: network.v1.PlatformNetworkService.GetVlanNetwork:input_type -> network.v1.GetVlanNetworkRequest
+	45,  // 101: network.v1.PlatformNetworkService.ListVlanNetworks:input_type -> network.v1.ListVlanNetworksRequest
+	47,  // 102: network.v1.PlatformNetworkService.DeleteVlanNetwork:input_type -> network.v1.DeleteVlanNetworkRequest
+	49,  // 103: network.v1.PlatformNetworkService.CreateEgressGateway:input_type -> network.v1.CreateEgressGatewayRequest
+	51,  // 104: network.v1.PlatformNetworkService.GetEgressGateway:input_type -> network.v1.GetEgressGatewayRequest
+	53,  // 105: network.v1.PlatformNetworkService.ListEgressGateways:input_type -> network.v1.ListEgressGatewaysRequest
+	55,  // 106: network.v1.PlatformNetworkService.DeleteEgressGateway:input_type -> network.v1.DeleteEgressGatewayRequest
+	57,  // 107: network.v1.PlatformNetworkService.CreatePublicAddressPool:input_type -> network.v1.CreatePublicAddressPoolRequest
+	59,  // 108: network.v1.PlatformNetworkService.GetPublicAddressPool:input_type -> network.v1.GetPublicAddressPoolRequest
+	61,  // 109: network.v1.PlatformNetworkService.ListPublicAddressPools:input_type -> network.v1.ListPublicAddressPoolsRequest
+	63,  // 110: network.v1.PlatformNetworkService.DeletePublicAddressPool:input_type -> network.v1.DeletePublicAddressPoolRequest
+	65,  // 111: network.v1.PlatformNetworkService.RecordPublicPoolVerification:input_type -> network.v1.RecordPublicPoolVerificationRequest
+	67,  // 112: network.v1.PlatformNetworkService.SetPublicPoolAllocationEnabled:input_type -> network.v1.SetPublicPoolAllocationEnabledRequest
+	69,  // 113: network.v1.PlatformNetworkService.SetDefaultPublicPool:input_type -> network.v1.SetDefaultPublicPoolRequest
+	71,  // 114: network.v1.PlatformNetworkService.CreateIntranetAddressPool:input_type -> network.v1.CreateIntranetAddressPoolRequest
+	73,  // 115: network.v1.PlatformNetworkService.GetIntranetAddressPool:input_type -> network.v1.GetIntranetAddressPoolRequest
+	75,  // 116: network.v1.PlatformNetworkService.ListIntranetAddressPools:input_type -> network.v1.ListIntranetAddressPoolsRequest
+	77,  // 117: network.v1.PlatformNetworkService.DeleteIntranetAddressPool:input_type -> network.v1.DeleteIntranetAddressPoolRequest
+	79,  // 118: network.v1.PlatformNetworkService.RecordIntranetPoolVerification:input_type -> network.v1.RecordIntranetPoolVerificationRequest
+	81,  // 119: network.v1.PlatformNetworkService.SetIntranetPoolAllocationEnabled:input_type -> network.v1.SetIntranetPoolAllocationEnabledRequest
+	83,  // 120: network.v1.PlatformNetworkService.SetDefaultIntranetPool:input_type -> network.v1.SetDefaultIntranetPoolRequest
+	85,  // 121: network.v1.PlatformNetworkService.SetIntranetPoolAutoAllocationEnabled:input_type -> network.v1.SetIntranetPoolAutoAllocationEnabledRequest
+	87,  // 122: network.v1.PlatformNetworkService.GetIntranetPoolDefaults:input_type -> network.v1.GetIntranetPoolDefaultsRequest
+	89,  // 123: network.v1.PlatformNetworkService.GetPlatformNetworkCapabilities:input_type -> network.v1.GetPlatformNetworkCapabilitiesRequest
+	91,  // 124: network.v1.PlatformNetworkService.GetPlatformOperation:input_type -> network.v1.GetPlatformOperationRequest
+	5,   // 125: network.v1.TenantEgressService.CreateEIP:output_type -> network.v1.CreateEIPResponse
+	7,   // 126: network.v1.TenantEgressService.GetEIP:output_type -> network.v1.GetEIPResponse
+	9,   // 127: network.v1.TenantEgressService.ListEIPs:output_type -> network.v1.ListEIPsResponse
+	11,  // 128: network.v1.TenantEgressService.DeleteEIP:output_type -> network.v1.DeleteEIPResponse
+	13,  // 129: network.v1.TenantEgressService.BindVPCSnat:output_type -> network.v1.BindVPCSnatResponse
+	15,  // 130: network.v1.TenantEgressService.GetVPCSnat:output_type -> network.v1.GetVPCSnatResponse
+	17,  // 131: network.v1.TenantEgressService.GetVPCSnatBinding:output_type -> network.v1.GetVPCSnatBindingResponse
+	19,  // 132: network.v1.TenantEgressService.SetVPCSnatEnabled:output_type -> network.v1.SetVPCSnatEnabledResponse
+	21,  // 133: network.v1.TenantEgressService.DeleteVPCSnatBinding:output_type -> network.v1.DeleteVPCSnatBindingResponse
+	27,  // 134: network.v1.PlatformNetworkService.CreateVirtualSwitch:output_type -> network.v1.CreateVirtualSwitchResponse
+	29,  // 135: network.v1.PlatformNetworkService.GetVirtualSwitch:output_type -> network.v1.GetVirtualSwitchResponse
+	31,  // 136: network.v1.PlatformNetworkService.ListVirtualSwitches:output_type -> network.v1.ListVirtualSwitchesResponse
+	33,  // 137: network.v1.PlatformNetworkService.DeleteVirtualSwitch:output_type -> network.v1.DeleteVirtualSwitchResponse
+	42,  // 138: network.v1.PlatformNetworkService.CreateVlanNetwork:output_type -> network.v1.CreateVlanNetworkResponse
+	44,  // 139: network.v1.PlatformNetworkService.GetVlanNetwork:output_type -> network.v1.GetVlanNetworkResponse
+	46,  // 140: network.v1.PlatformNetworkService.ListVlanNetworks:output_type -> network.v1.ListVlanNetworksResponse
+	48,  // 141: network.v1.PlatformNetworkService.DeleteVlanNetwork:output_type -> network.v1.DeleteVlanNetworkResponse
+	50,  // 142: network.v1.PlatformNetworkService.CreateEgressGateway:output_type -> network.v1.CreateEgressGatewayResponse
+	52,  // 143: network.v1.PlatformNetworkService.GetEgressGateway:output_type -> network.v1.GetEgressGatewayResponse
+	54,  // 144: network.v1.PlatformNetworkService.ListEgressGateways:output_type -> network.v1.ListEgressGatewaysResponse
+	56,  // 145: network.v1.PlatformNetworkService.DeleteEgressGateway:output_type -> network.v1.DeleteEgressGatewayResponse
+	58,  // 146: network.v1.PlatformNetworkService.CreatePublicAddressPool:output_type -> network.v1.CreatePublicAddressPoolResponse
+	60,  // 147: network.v1.PlatformNetworkService.GetPublicAddressPool:output_type -> network.v1.GetPublicAddressPoolResponse
+	62,  // 148: network.v1.PlatformNetworkService.ListPublicAddressPools:output_type -> network.v1.ListPublicAddressPoolsResponse
+	64,  // 149: network.v1.PlatformNetworkService.DeletePublicAddressPool:output_type -> network.v1.DeletePublicAddressPoolResponse
+	66,  // 150: network.v1.PlatformNetworkService.RecordPublicPoolVerification:output_type -> network.v1.RecordPublicPoolVerificationResponse
+	68,  // 151: network.v1.PlatformNetworkService.SetPublicPoolAllocationEnabled:output_type -> network.v1.SetPublicPoolAllocationEnabledResponse
+	70,  // 152: network.v1.PlatformNetworkService.SetDefaultPublicPool:output_type -> network.v1.SetDefaultPublicPoolResponse
+	72,  // 153: network.v1.PlatformNetworkService.CreateIntranetAddressPool:output_type -> network.v1.CreateIntranetAddressPoolResponse
+	74,  // 154: network.v1.PlatformNetworkService.GetIntranetAddressPool:output_type -> network.v1.GetIntranetAddressPoolResponse
+	76,  // 155: network.v1.PlatformNetworkService.ListIntranetAddressPools:output_type -> network.v1.ListIntranetAddressPoolsResponse
+	78,  // 156: network.v1.PlatformNetworkService.DeleteIntranetAddressPool:output_type -> network.v1.DeleteIntranetAddressPoolResponse
+	80,  // 157: network.v1.PlatformNetworkService.RecordIntranetPoolVerification:output_type -> network.v1.RecordIntranetPoolVerificationResponse
+	82,  // 158: network.v1.PlatformNetworkService.SetIntranetPoolAllocationEnabled:output_type -> network.v1.SetIntranetPoolAllocationEnabledResponse
+	84,  // 159: network.v1.PlatformNetworkService.SetDefaultIntranetPool:output_type -> network.v1.SetDefaultIntranetPoolResponse
+	86,  // 160: network.v1.PlatformNetworkService.SetIntranetPoolAutoAllocationEnabled:output_type -> network.v1.SetIntranetPoolAutoAllocationEnabledResponse
+	88,  // 161: network.v1.PlatformNetworkService.GetIntranetPoolDefaults:output_type -> network.v1.GetIntranetPoolDefaultsResponse
+	90,  // 162: network.v1.PlatformNetworkService.GetPlatformNetworkCapabilities:output_type -> network.v1.GetPlatformNetworkCapabilitiesResponse
+	92,  // 163: network.v1.PlatformNetworkService.GetPlatformOperation:output_type -> network.v1.GetPlatformOperationResponse
+	125, // [125:164] is the sub-list for method output_type
+	86,  // [86:125] is the sub-list for method input_type
+	86,  // [86:86] is the sub-list for extension type_name
+	86,  // [86:86] is the sub-list for extension extendee
+	0,   // [0:86] is the sub-list for field type_name
 }
 
 func init() { file_network_v1_egress_proto_init() }
@@ -6592,7 +6834,7 @@ func file_network_v1_egress_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_network_v1_egress_proto_rawDesc), len(file_network_v1_egress_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   89,
+			NumMessages:   93,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -237,7 +237,7 @@ func TestVirtualSwitchDeviceStateWaitsForEveryNodeAndIgnoresStoredMAC(t *testing
 
 func TestVirtualSwitchDependentReadRejectsInvalidParentViewForBoundedRetry(t *testing.T) {
 	p := &KCProvider{observation: &KCObservation{epoch: 2}}
-	_, _, proof, err := p.virtualSwitchDeviceState(context.Background(), biz.VirtualSwitch{}, sqlcgen.NetworkDeviceAdoption{}, &auditView{epoch: 1})
+	_, _, proof, err := p.virtualSwitchDeviceState(context.Background(), biz.VirtualSwitch{}, sqlcgen.NetworkDeviceAdoption{}, &auditView{epoch: 1}, false, nil)
 	if err != errEgressAuditInvalid || !proof.CollectedAt.IsZero() {
 		t.Fatal("dependent read escaped parent audit fence", proof, err)
 	}

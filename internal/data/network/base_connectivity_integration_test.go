@@ -26,11 +26,8 @@ func newBaseKCFixture(t *testing.T, intercept func(http.ResponseWriter, *http.Re
 	uid := seedIntranetInfrastructure(api)
 	intent := intranetIntent("base-pool", "10.232.254.0/24", "10.232.254.1")
 	intent.Pool.DefaultVPCUID = uid
-	pool := readyIntranetPool(t, f, f.platform(t, intent))
-	setIntranetPool(t, f, biz.PlatformIntent{Kind: "set_default_intranet_pool", ID: pool.ID, IdempotencyKey: "base-default"})
-	if _, err := f.owner.Exec(f.ctx, `INSERT INTO network_connectivity_rollout(cluster_id,new_vpcs_enabled) SELECT cluster_id,true FROM network_public_pools WHERE resource_id=$1`, pool.ID); err != nil {
-		t.Fatal(err)
-	}
+	pool := f.platform(t, intent)
+	setIntranetPool(t, f, biz.PlatformIntent{Kind: "set_intranet_pool_auto_allocation", ID: pool.ID, Enabled: true, IdempotencyKey: "base-auto-enable"})
 	configureVPCPresetFixture(t, f, api, kube)
 	return f, api, db, kube
 }

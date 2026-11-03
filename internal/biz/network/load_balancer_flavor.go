@@ -1,7 +1,7 @@
 package biz
 
-// LoadBalancerFlavor describes the fixed, platform-provisioned deployment.
-// Class mapping and installation/runtime observation use this same contract.
+// LoadBalancerFlavor describes the capacity of one dedicated EnvoyProxy.
+// Installation and runtime observation use the same fixed capacity contract.
 type LoadBalancerFlavor struct {
 	Name                                             string
 	Replicas                                         int64
@@ -28,10 +28,4 @@ func FindLoadBalancerFlavor(name string) (LoadBalancerFlavor, bool) {
 	return LoadBalancerFlavor{}, false
 }
 
-func (f LoadBalancerFlavor) GatewayClass(exposure string) string {
-	name := "lb-" + f.Name
-	if exposure == "private" {
-		name += "-noeip"
-	}
-	return name
-}
+const LoadBalancerGatewayClass = "lb-common"

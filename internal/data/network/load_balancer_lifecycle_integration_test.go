@@ -55,7 +55,7 @@ func (c *lbControllerFixture) http(w http.ResponseWriter, r *http.Request, api *
 	} else if len(parts) > offset+1 {
 		name = parts[offset+1]
 	}
-	kinds := map[string]string{"gateways": "Gateway", "backends": "Backend", "httproutes": "HTTPRoute", "backendtrafficpolicies": "BackendTrafficPolicy", "tcproutes": "TCPRoute", "udproutes": "UDPRoute", "clienttrafficpolicies": "ClientTrafficPolicy", "envoypatchpolicies": "EnvoyPatchPolicy", "secrets": "Secret"}
+	kinds := map[string]string{"envoyproxies": "EnvoyProxy", "gateways": "Gateway", "backends": "Backend", "httproutes": "HTTPRoute", "backendtrafficpolicies": "BackendTrafficPolicy", "tcproutes": "TCPRoute", "udproutes": "UDPRoute", "clienttrafficpolicies": "ClientTrafficPolicy", "envoypatchpolicies": "EnvoyPatchPolicy", "secrets": "Secret"}
 	if _, ok := kinds[kind]; !ok {
 		return false
 	}
@@ -158,12 +158,23 @@ func (c *lbControllerFixture) http(w http.ResponseWriter, r *http.Request, api *
 	g := m["generation"]
 	spec := obj["spec"].(map[string]any)
 	switch kind {
+	case "envoyproxies":
+		// Model only actual CRD defaults, not EnvoyProxy business status.
+		spec["logging"] = map[string]any{"level": map[string]any{"default": "warn"}}
+		spec["provider"].(map[string]any)["kubernetes"].(map[string]any)["envoyService"].(map[string]any)["externalTrafficPolicy"] = "Local"
 	case "backends":
 		obj["status"] = map[string]any{"conditions": lbTestConditions(g, "Accepted")}
 	case "gateways":
 		statusListeners := []any{}
 		for _, raw := range spec["listeners"].([]any) {
 			listener := raw.(map[string]any)
+			// Gateway API defaults an omitted RouteGroup to its own group.
+			for _, rawKind := range listener["allowedRoutes"].(map[string]any)["kinds"].([]any) {
+				kind := rawKind.(map[string]any)
+				if _, explicit := kind["group"]; !explicit {
+					kind["group"] = "gateway.networking.k8s.io"
+				}
+			}
 			statusListeners = append(statusListeners, map[string]any{"name": listener["name"], "conditions": lbTestConditions(g, "Accepted", "Programmed", "ResolvedRefs")})
 		}
 		obj["status"] = map[string]any{"conditions": lbTestConditions(g, "Accepted", "Programmed"), "listeners": statusListeners}
@@ -229,9 +240,21 @@ func (c *lbControllerFixture) generated(api *controlled.Server, gateway map[stri
 	// A Gateway removed before its Service exists has no allocation to release.
 	// In particular its deletion does not manufacture a new Subnet revision.
 	spec := gateway["spec"].(map[string]any)
-	flavor, ok := biz.FindLoadBalancerFlavor(strings.TrimSuffix(strings.TrimPrefix(spec["gatewayClassName"].(string), "lb-"), "-noeip"))
-	if !ok {
-		panic("unsupported fixture flavor")
+	proxyName := spec["infrastructure"].(map[string]any)["parametersRef"].(map[string]any)["name"].(string)
+	proxy := api.Object("envoyproxies", ns, proxyName)
+	if proxy == nil || spec["gatewayClassName"] != biz.LoadBalancerGatewayClass {
+		panic("fixture gateway does not reference a dedicated EnvoyProxy")
+	}
+	proxyKubernetes := proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)
+	proxyDeployment := proxyKubernetes["envoyDeployment"].(map[string]any)
+	var flavor biz.LoadBalancerFlavor
+	for _, candidate := range biz.LoadBalancerFlavors() {
+		if proxyDeployment["replicas"] == float64(candidate.Replicas) {
+			flavor = candidate
+		}
+	}
+	if flavor.Name == "" {
+		panic("unsupported fixture capacity")
 	}
 	a := spec["infrastructure"].(map[string]any)["annotations"].(map[string]any)
 	servicePorts, slicePorts := []any{}, []any{}
@@ -282,10 +305,7 @@ func (c *lbControllerFixture) generated(api *controlled.Server, gateway map[stri
 		api.Change(gvr, obj, false)
 		return obj
 	}
-	typ := "LoadBalancer"
-	if strings.HasSuffix(spec["gatewayClassName"].(string), "-noeip") {
-		typ = "ClusterIP"
-	}
+	typ := proxyKubernetes["envoyService"].(map[string]any)["type"].(string)
 	svc := makeObject("services", "Service", name, owner("Gateway", name, uid), map[string]any{"type": typ, "ports": servicePorts}, map[string]any{"conditions": lbTestConditions(float64(0), "KcnValid", "KcnReady")})
 	if !deleted {
 		svc["metadata"].(map[string]any)["annotations"] = a
@@ -354,7 +374,7 @@ func (c *lbControllerFixture) generated(api *controlled.Server, gateway map[stri
 }
 
 func TestLBActualAdapterDeletePartialCreationWithoutGeneratedService(t *testing.T) {
-	for _, phase := range []string{"backend", "gateway"} {
+	for _, phase := range []string{"backend", "envoy_proxy", "gateway"} {
 		t.Run(phase, func(t *testing.T) {
 			c := &lbControllerFixture{holdGenerated: true}
 			f := newLBAdmissionFixture(t, c.http)
@@ -511,7 +531,7 @@ func TestLBActualAdapterThreeExposuresUpdateAndDelete(t *testing.T) {
 				}
 			}
 			controller.mu.Unlock()
-			if !reflect.DeepEqual(deletes, []string{"httproutes", "backendtrafficpolicies", "gateways", "backends"}) {
+			if !reflect.DeepEqual(deletes, []string{"httproutes", "backendtrafficpolicies", "gateways", "backends", "envoyproxies"}) {
 				t.Fatal("wrong deletion order", deletes)
 			}
 		})

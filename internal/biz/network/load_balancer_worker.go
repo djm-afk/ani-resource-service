@@ -83,6 +83,7 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 	o, err := provider.ObserveLoadBalancer(callCtx, work)
 	cancel()
 	if err != nil {
+		p.ProviderError = err
 		p.Reason = providerReason(err)
 		p.OperationState, p.Backoff = Blocked, true
 		if p.State == Available {
@@ -98,12 +99,12 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 		allEligible := lbRuntimeMembersEligible(runtime, o)
 		// A changed/missing backend must first be removed from the Route.
 		// This safety update also runs during ordinary continuous observation.
-		order := []string{"retired_route", "retired_policy", "backend", "gateway", "policy", "route"}
+		order := []string{"retired_route", "retired_policy", "backend", "envoy_proxy", "gateway", "policy", "route"}
 		if !allEligible {
-			order = []string{"retired_route", "retired_policy", "route", "backend", "gateway", "policy"}
+			order = []string{"retired_route", "retired_policy", "route", "backend", "envoy_proxy", "gateway", "policy"}
 		}
 		if removing {
-			order = []string{"route", "policy", "gateway", "backend"}
+			order = []string{"route", "policy", "gateway", "backend", "envoy_proxy"}
 		}
 		if o.GeneratedConflict {
 			// A foreign generated occupant blocks Gateway/address cleanup, but
@@ -117,7 +118,7 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 		}
 		allReady, acted := !o.GeneratedConflict, false
 		for _, kind := range order {
-			if kind == "backend" && removing && (!o.GeneratedReleased || !o.AddressReleased) {
+			if (kind == "backend" || kind == "envoy_proxy") && removing && (!o.GeneratedReleased || !o.AddressReleased) {
 				allReady, p.Reason = false, CleanupPending
 				break
 			}
@@ -384,7 +385,7 @@ func lbRuntimeComponentsCovered(work Work, listeners []LoadBalancerListener) boo
 		}
 		return false
 	}
-	if !covered("gateway", "", "") {
+	if !covered("gateway", "", "") || !covered("envoy_proxy", "", "") {
 		return false
 	}
 	for _, l := range listeners {

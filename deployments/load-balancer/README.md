@@ -1,20 +1,20 @@
 # 隔离 LB 产品 API 操作
 
-本手册用于 NET-VPC-LB-02 的 ubuntu 独立 run。产品契约以 [统一规格](../../docs/specs/vpc-connectivity-lb.md) 为准，当前完成度见 [执行状态](../../docs/execution/status.md)。下面的操作步骤不是已经取得的流量证据。
+本手册保留 NET-VPC-LB-02 历史 ubuntu 独立 run 的 fixture 命令与请求，不代表本轮已执行。当前任务的重操作仅经 `ssh fedora`，真实 Kubernetes 仅使用用户指定的 172.16.101.10–12 集群，并以本次实际核验的 context、API Server 和 `kube-system` UID 为准。产品契约以 [统一规格](../../docs/specs/vpc-connectivity-lb.md) 为准，当前完成度见 [执行状态](../../docs/execution/status.md)。下面的操作步骤不是已经取得的流量证据。
 
 ## 启动前提
 
-1. 按[用户恢复输入](../../docs/execution/records/NET-VPC-LB-02/resume-20260915.md)，使用 172.16.101.10–12 的 `kubernetes-admin@ani-platform`，API Server `https://api.ani.internal:6443`，`kube-system` UID `be57b911-892c-4e75-aa9d-4a05d819c59e`。运行 [lb-preflight](../../scripts/lb-preflight) 时显式传入该 context 和本 run 的 kubeconfig，保存只读对象、节点、镜像和拓扑快照；脚本默认仍是旧 kind，不能省略目标参数。
+1. 先核验当前 172.16.101.10–12 集群身份。历史[用户恢复输入](../../docs/execution/records/NET-VPC-LB-02/resume-20260915.md)记录的 `kubernetes-admin@ani-platform`、`https://api.ani.internal:6443` 和 UID `be57b911-892c-4e75-aa9d-4a05d819c59e` 仅用于追溯。运行 [lb-preflight](../../scripts/lb-preflight) 时显式传入本次核验的 context 和本 run 的 kubeconfig，保存实际集群 UID、只读对象、节点、镜像和拓扑快照。
 2. 保留原 kind 的 `lb-strict-0911` 和新集群的 `lb-validation`；至少两个 worker 必须有足够 requests 预算安排完整 small 的两副本 Envoy（每副本 Envoy 1 CPU/1 GiB，另计 shutdown-manager、客户端与业务 Pod），不靠改副本、requests 或控制平面污点通过检查。三种 exposure 可串行运行。
-3. 安装须符合原 Provider install：GatewayNamespace、Backend 和 EnvoyPatchPolicy 扩展、两个固定 GatewayClass/EnvoyProxy、跨 namespace 和 TokenReview 权限，以及经过确认的 kc/EG/Envoy/shutdown imageID。完整 imageID 按运行值逐字匹配；裸 sha256 可能是配置摘要，不能冒充可拉取的镜像 manifest。源码到运行 digest 的构建关联另行留证；版本标签不代表合格。
-4. 沿用 [远端执行约定](../../docs/remote-execution.md)，重操作经 `scripts/snat-remote` 的独立源码归档、共享锁和资源限额运行。数据库与 Kubernetes 调度分别核算。运行数据库名使用 `net_vpc_lb_02_<唯一后缀>`，独立 owner/runtime 角色；凭据仅留在 run 的私有文件/环境中，不纳入源码归档。需要导入集群的本 run 产物从 ubuntu 导出、经本机中转；每次传递核对哈希并记录实际导入 imageID。
-5. 按 [Intranet 平台前提](../egress/intranet.md) 和 [Public 操作手册](../../docs/kc-public-egress-manual.md) 建立本 run 的地址池/网关。默认池、实测验证记录、分配开关和新 VPC/legacy 开关只作用于独立数据库。不得复制历史验证记录充当本次实测。
+3. 安装须具备 GatewayNamespace、Backend 和 EnvoyPatchPolicy 扩展、所需跨 namespace 和 TokenReview 权限，以及经过确认的 kc/EG/Envoy/shutdown imageID。平台维护一组公共 `GatewayClass/lb-common` 与 `envoy-gateway-system` 内的 `EnvoyProxy/lb-common`；每个 LB 的 Gateway 引用同租户 namespace 内的专属 EnvoyProxy。专属 Proxy 设置 `mergeType: StrategicMerge`，small/medium/large 三档均按[固定容量合同](../../docs/specs/vpc-connectivity-lb.md#62-provider-映射)显式填写副本、CPU/内存 requests/limits 和 Service 类型；公共 Proxy 提供镜像与调度等公共配置，不设置容量或 Service 类型。完整 imageID 按运行值逐字匹配；裸 sha256 可能是配置摘要，不能冒充可拉取的镜像 manifest。源码到运行 digest 的构建关联另行留证；版本标签不代表合格。
+4. 按本轮 `ssh fedora` 要求和[远端执行约定](../../docs/remote-execution.md)，使用独立源码归档、精确 manifest、共享锁和资源限额；本手册中的 ubuntu 路径及 `scripts/snat-remote` 历史用法仅保留复现用途。数据库与 Kubernetes 调度分别核算。运行数据库名使用 `net_vpc_lb_02_<唯一后缀>`，独立 owner/runtime 角色；凭据仅留在 run 的私有文件/环境中，不纳入源码归档。需要导入集群的本 run 产物从 Fedora 导出、经本机中转；每次传递核对哈希并记录实际导入 imageID。
+5. LB 激活核验 VPC/Subnet 自身 Provider 的新鲜状态、UID 与当前代次；不要求基础 Intranet EIP/SNAT 或等待其就绪。公网入口按 [Public 操作手册](../../docs/kc-public-egress-manual.md)准备本 run 所需地址池/网关和已分配的独立 Public EIP。实测验证记录与分配开关只作用于独立数据库。不得复制历史验证记录充当本次实测。
 
-必要额外权限见 [network-rbac.yaml](network-rbac.yaml)。渲染唯一名称并绑定本 run 的 ServiceAccount；仍需原有 Egress/Attachment 观察权限。Network 写自己的 Backend、Gateway、Route、Policy，生成 Service、Deployment 等仅授权读取。模板不自动修改任何共享绑定。
+必要额外权限见 [network-rbac.yaml](network-rbac.yaml)。渲染唯一名称并绑定本 run 的 ServiceAccount；仍需原有 Egress/Attachment 观察权限。专属 EnvoyProxy 的写权限通过租户 namespace 内的 Role/RoleBinding 授予；公共 `lb-common` Class/Proxy 保持只读。Network 写自己的专属 Proxy、Backend、Gateway、Route、Policy，生成 Service、Deployment 等仅授权读取。模板不自动修改任何共享绑定。
 
 ## 构建与安装输入冻结
 
-下面的命令在 **ubuntu 独立 run/source** 执行；本地仅编辑与回传审查。先显式加载 `/home/ubuntu/.local/share/ani-network-service/env.sh`。路径变量均指本 run 的私有目录。
+下面保留历史 **ubuntu 独立 run/source** 的命令及 `/home/ubuntu/.local/share/ani-network-service/env.sh` 环境来源。本轮在 Fedora 的独立 source 中使用已核验的固定工具链；本地仅编辑与回传审查。路径变量均指本 run 的私有目录。
 
 ```bash
 go build -trimpath -o "$LB_RUN/lb-api" ./scripts/lb-api
@@ -22,7 +22,7 @@ go build -trimpath -o "$LB_RUN/network" ./cmd/ani-resource-service
 "$LB_RUN/lb-api" installation -kubeconfig "$KUBECONFIG" -output "$LB_RUN/installation.json"
 ```
 
-`installation` 只读取九个安装对象和集群 UID，保存完整 spec/data、UID、状态和 canonical SHA-256；不写集群，也不宣布 ready。输出文件不覆盖。审阅该内容与原 install 的差异，再把 `fingerprint` 和只读 Pod 状态中固定的四个 imageID 写入独立实例配置：
+本轮调用 `installation` 时显式传入本次核验的 `-expected-context` 与 `-expected-cluster-uid`。该命令只读取公共 `lb-common` 等安装对象和集群 UID，保存完整 spec/data、UID、状态和 canonical SHA-256；不写集群，也不宣布 ready。输出文件不覆盖。审阅该内容与原 install 的差异，再把 `fingerprint` 和只读 Pod 状态中固定的四个 imageID 写入独立实例配置：
 
 ```yaml
 network:
@@ -62,7 +62,7 @@ mkdir -m 700 "$LB_RUN/sockets"
 "$LB_RUN/lb-api" call -target "unix://$LB_RUN/sockets/tenant-a.sock" -method CreateLoadBalancer < "$LB_RUN/requests/private.json" > "$LB_RUN/responses/private.json"
 ```
 
-先经 NetworkService 创建 VPC、入口 Subnet、后端 Subnet，等待基础连接及父对象的新鲜事实。Intranet EIP/SNAT 应由 VPC worker 自动产生。至少两个实际后端放在两个 worker；经 Prepare/owner 协议接入，再将经过 Attachment/VNicIP UID 核验的地址作为 LB 成员。客户端也通过 Attachment 接入目标 VPC。业务响应包含 run 标识、后端名称和节点。
+先经 NetworkService 创建 VPC、入口 Subnet、后端 Subnet，取得这些父对象自身 Provider 的新鲜事实；LB 不等待基础 Intranet EIP/SNAT。至少两个实际后端放在两个 worker；经 Prepare/owner 协议接入，再将经过 Attachment/VNicIP UID 核验的地址作为 LB 成员。客户端也通过 Attachment 接入目标 VPC。业务响应包含 run 标识、后端名称和节点。
 
 private 请求模板（ID/地址须替换为本 run 实际值）：
 
@@ -115,9 +115,9 @@ U08 复用 [第一批补齐手册](../../docs/execution/records/NET-VPC-BASE-01/
 
 ## 删除与清理
 
-先调用 `DeleteLoadBalancer {"load_balancer_id":"..."}` 并等待持久 delete operation。实际顺序是撤 Route/Policy、删 Gateway、确认生成资源与地址释放、清自有 Backend；部分创建/未知写入仍保留同一占用。finalizer 卡住应保存精确对象 UID/pending 状态和阻塞，不去掉 finalizer。
+先调用 `DeleteLoadBalancer {"load_balancer_id":"..."}` 并等待持久 delete operation。实际顺序是撤 Route/Policy、删 Gateway、确认生成资源与地址释放、清自有 Backend，最后删除专属 EnvoyProxy；公共 `lb-common` GatewayClass/EnvoyProxy 保留。部分创建/未知写入仍保留同一占用。finalizer 卡住应保存精确对象 UID/pending 状态和阻塞，不去掉 finalizer。
 
-确认原 Public EIP 仍存在且可再次绑定、VIP 意图和 LB Subnet 引用释放，基础 Intranet SNAT 和业务后端仍存在。再经 Public SNAT 解绑、EIP 删除、owner 封闭/Attachment 释放、Subnet/VPC 删除清理其余产品资源。核验系统基础资源自动消失和登记记录匹配后，才能停止 run 进程、删除独立 DB 和基础 fixture。不能先删 namespace/DB 掩盖残留。
+确认原 Public EIP 仍存在且可再次绑定、VIP 意图和 LB Subnet 引用释放、业务后端保留；原有基础 Intranet 资源也应保留，未配置基础连接的 LB 无须补建。再经 Public SNAT 解绑、EIP 删除、owner 封闭/Attachment 释放、Subnet/VPC 删除清理其余产品资源。核验本 run 存在的系统基础资源自动消失和登记记录匹配后，才能停止 run 进程、删除独立 DB 和基础 fixture。不能先删 namespace/DB 掩盖残留。
 
 ## 第三批接入门槛
 

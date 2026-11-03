@@ -19,7 +19,7 @@ import (
 
 func seedEgressInfrastructure(api *controlled.Server) {
 	for _, role := range []string{"controller", "cni-ds", "ovs-ds", "ovn-central"} {
-		api.Change("pods", map[string]any{"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": role, "namespace": "kcn-system", "uid": uuid.NewString(), "labels": map[string]any{"networking.kubercloud.com/app": role}}, "spec": map[string]any{"containers": []any{map[string]any{"name": role}}}, "status": map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "fixture@sha256:" + strings.Repeat("a", 64)}}}}, false)
+		api.Change("pods", map[string]any{"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": role, "namespace": "kcn-system", "uid": uuid.NewString(), "labels": map[string]any{"networking.kubercloud.com/app": role}}, "spec": map[string]any{"containers": []any{map[string]any{"name": role}}}, "status": map[string]any{"phase": "Running", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}, "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "fixture@sha256:" + strings.Repeat("a", 64)}}}}, false)
 	}
 	api.Change("servicecidrs", map[string]any{"apiVersion": "networking.k8s.io/v1", "kind": "ServiceCIDR", "metadata": map[string]any{"name": "kubernetes", "uid": uuid.NewString()}, "spec": map[string]any{"cidrs": []any{"10.96.0.0/12"}}}, false)
 }

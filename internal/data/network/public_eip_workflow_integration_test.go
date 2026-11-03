@@ -2,6 +2,7 @@ package data_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 // Only Kubernetes/controller HTTP is a boundary double. Admission, persistence,
@@ -206,7 +208,25 @@ func TestPublicEIPWorkflowCreateSecurityGroupsAtomicAndReplay(t *testing.T) {
 	worker := biz.NewSecurityGroupWorker(e.p, securityGroupProviderBoundary{}, uuid.NewString(), biz.DefaultWorkerPolicy())
 	f := &securityGroupContractFixture{p: e.p, owner: e.owner, groups: groups, worker: worker, ctx: e.ctx, tenant: e.tenant}
 	first, second := f.create(t, "initial-filter"), f.create(t, "replacement-filter")
-	foreignCtx := biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: uuid.NewString(), Attribution: biz.Attribution{Actor: "foreign", DirectCaller: "test"}})
+	// Both tenants have externally provisioned Namespaces. Keep the original
+	// identity so the negative request reaches tenant ownership admission.
+	originalNamespace, err := e.p.ResolveTenantNamespace(e.ctx, e.tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignTenant := uuid.NewString()
+	foreignNamespace := tenantnamespace.Identity{TenantID: foreignTenant, ClusterID: originalNamespace.ClusterID, Name: "tenant-" + foreignTenant, UID: uuid.NewString()}
+	e.p.ConfigureTenantNamespaceResolver(func(_ context.Context, tenant string) (tenantnamespace.Identity, error) {
+		switch tenant {
+		case originalNamespace.TenantID:
+			return originalNamespace, nil
+		case foreignTenant:
+			return foreignNamespace, nil
+		default:
+			return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
+		}
+	})
+	foreignCtx := biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: foreignTenant, Attribution: biz.Attribution{Actor: "foreign", DirectCaller: "test"}})
 	foreign, err := groups.Mutate(foreignCtx, biz.SecurityGroupIntent{Action: "create", Name: "foreign-filter", IdempotencyKey: "foreign-filter"})
 	if err != nil {
 		t.Fatal(err)
@@ -231,6 +251,12 @@ func TestPublicEIPWorkflowCreateSecurityGroupsAtomicAndReplay(t *testing.T) {
 	}
 	input.SecurityGroupIDs = []string{second.ID, first.ID}
 	replay, err := e.e.CreateEIP(e.ctx, input)
+	if !replay.CreatedAt.Equal(address.CreatedAt) || !replay.UpdatedAt.Equal(address.UpdatedAt) {
+		t.Fatal("reordered SG replay changed persisted timestamps", replay, address, err)
+	}
+	// PostgreSQL and the durable JSON reply may use different time locations
+	// for the same instant. Compare every remaining business field exactly.
+	replay.CreatedAt, replay.UpdatedAt = address.CreatedAt, address.UpdatedAt
 	if err != nil || !reflect.DeepEqual(replay, address) {
 		t.Fatal("reordered SG set changed replay", replay, address, err)
 	}

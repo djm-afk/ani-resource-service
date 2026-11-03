@@ -16,7 +16,7 @@ func TestPublicEgressPrerequisitesWithoutManualVerification(t *testing.T) {
 		pod := crFixture("Pod", kcSystemNamespace, role)
 		pod.SetLabels(map[string]string{"networking.kubercloud.com/app": role})
 		pod.Object["spec"] = map[string]any{"containers": []any{map[string]any{"name": role}}}
-		pod.Object["status"] = map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "docker-pullable://provider@sha256:" + strings.Repeat("b", 64)}}}
+		pod.Object["status"] = map[string]any{"phase": "Running", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}, "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "docker-pullable://provider@sha256:" + strings.Repeat("b", 64)}}}
 		set.all[pods] = append(set.all[pods], *pod)
 	}
 	if !egressPrerequisites(r, set) {
@@ -46,6 +46,6 @@ func TestPublicEgressPrerequisitesWithoutManualVerification(t *testing.T) {
 	}
 	r.pool.Scope = "intranet"
 	if verifiedEgressExit(r, set) {
-		t.Fatal("intranet verification requirement was removed")
+		t.Fatal("intranet exit without valid default VPC evidence was accepted")
 	}
 }

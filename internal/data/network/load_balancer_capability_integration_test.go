@@ -29,18 +29,10 @@ func seedLBInstallation(api *controlled.Server) data.LoadBalancerInstallation {
 		api.Change(resource, obj, false)
 		bundle[resource+"/"+ns+"/"+name] = map[string]any{"uid": obj["metadata"].(map[string]any)["uid"], "content": spec}
 	}
-	for _, flavor := range biz.LoadBalancerFlavors() {
-		for _, suffix := range []string{"", "-noeip"} {
-			put("gatewayclasses", "gateway.networking.k8s.io/v1", "GatewayClass", "", "lb-"+flavor.Name+suffix, map[string]any{"controllerName": "gateway.envoyproxy.io/gatewayclass-controller", "parametersRef": map[string]any{"group": "gateway.envoyproxy.io", "kind": "EnvoyProxy", "name": "envoy-proxy-" + flavor.Name + suffix, "namespace": "envoy-gateway-system"}}, map[string]any{"conditions": lbTestConditions(float64(1), "Accepted")})
-			typ := "LoadBalancer"
-			if suffix != "" {
-				typ = "ClusterIP"
-			}
-			put("envoyproxies", "gateway.envoyproxy.io/v1alpha1", "EnvoyProxy", "envoy-gateway-system", "envoy-proxy-"+flavor.Name+suffix, map[string]any{"preserveRouteOrder": true, "provider": map[string]any{"type": "Kubernetes", "kubernetes": map[string]any{"envoyService": map[string]any{"type": typ}, "envoyDeployment": map[string]any{"replicas": float64(flavor.Replicas), "container": map[string]any{"image": expected.EnvoyImageID, "resources": map[string]any{"requests": map[string]any{"cpu": flavor.RequestCPU, "memory": flavor.RequestMemory}, "limits": map[string]any{"cpu": flavor.LimitCPU, "memory": flavor.LimitMemory}}}, "patch": map[string]any{"type": "StrategicMerge", "value": map[string]any{"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "shutdown-manager", "image": expected.ShutdownImageID}}}}}}}}}}}, map[string]any{})
-		}
-	}
+	put("gatewayclasses", "gateway.networking.k8s.io/v1", "GatewayClass", "", "lb-common", map[string]any{"controllerName": "gateway.envoyproxy.io/gatewayclass-controller", "parametersRef": map[string]any{"group": "gateway.envoyproxy.io", "kind": "EnvoyProxy", "name": "lb-common", "namespace": "envoy-gateway-system"}}, map[string]any{"conditions": lbTestConditions(float64(1), "Accepted")})
+	put("envoyproxies", "gateway.envoyproxy.io/v1alpha1", "EnvoyProxy", "envoy-gateway-system", "lb-common", map[string]any{"preserveRouteOrder": true, "mergeGateways": false, "provider": map[string]any{"type": "Kubernetes", "kubernetes": map[string]any{"envoyDeployment": map[string]any{"container": map[string]any{"image": expected.EnvoyImageID}, "patch": map[string]any{"type": "StrategicMerge", "value": map[string]any{"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "shutdown-manager", "image": expected.ShutdownImageID}}}}}}}}}}}, map[string]any{})
 	put("configmaps", "v1", "ConfigMap", "envoy-gateway-system", "envoy-gateway-config", map[string]any{"envoy-gateway.yaml": "apiVersion: gateway.envoyproxy.io/v1alpha1\nkind: EnvoyGateway\nextensionApis:\n  enableBackend: true\n  enableEnvoyPatchPolicy: true\ngateway:\n  controllerName: gateway.envoyproxy.io/gatewayclass-controller\nprovider:\n  type: Kubernetes\n  kubernetes:\n    deploy:\n      type: GatewayNamespace\n"}, map[string]any{})
-	for _, name := range []string{"gateways.gateway.networking.k8s.io", "httproutes.gateway.networking.k8s.io", "backends.gateway.envoyproxy.io", "backendtrafficpolicies.gateway.envoyproxy.io"} {
+	for _, name := range []string{"gateways.gateway.networking.k8s.io", "httproutes.gateway.networking.k8s.io", "backends.gateway.envoyproxy.io", "backendtrafficpolicies.gateway.envoyproxy.io", "envoyproxies.gateway.envoyproxy.io"} {
 		version := "v1"
 		if strings.Contains(name, "envoyproxy") {
 			version = "v1alpha1"
@@ -145,7 +137,7 @@ func TestLBCapabilityUsesSharedAuditAndKeepsVPCIndependent(t *testing.T) {
 	}
 	lbState(t, f, lb.ID, biz.Available)
 	// A configuration drift cannot retain readiness through a prior snapshot.
-	proxy := f.api.Object("envoyproxies", "envoy-gateway-system", "envoy-proxy-small")
+	proxy := f.api.Object("envoyproxies", "envoy-gateway-system", "lb-common")
 	proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)["envoyDeployment"].(map[string]any)["replicas"] = float64(1)
 	f.api.Change("envoyproxies", proxy, false)
 	awaitNET05A(t, 5*time.Second, func() bool {
@@ -173,7 +165,7 @@ func TestLBCapabilityUsesSharedAuditAndKeepsVPCIndependent(t *testing.T) {
 		t.Fatal("LB capability blocked ordinary VPC", err)
 	}
 	baseState(t, f.f, v.ID, biz.Available)
-	proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)["envoyDeployment"].(map[string]any)["replicas"] = float64(2)
+	delete(proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)["envoyDeployment"].(map[string]any), "replicas")
 	f.api.Change("envoyproxies", proxy, false)
 	awaitNET05A(t, 5*time.Second, func() bool {
 		cap, err = f.f.e.GetPlatformCapabilities(f.f.ctx)
@@ -194,7 +186,7 @@ func TestLBCapabilityUsesSharedAuditAndKeepsVPCIndependent(t *testing.T) {
 // Exercise the actual observer against the supplied install's omitted service
 // default and numeric resource quantities, with independent negative controls.
 func TestLBCapabilityImportedRuntimeImagesAndInstallDefaults(t *testing.T) {
-	for _, scenario := range []string{"valid", "wrong-image", "missing-owner-chain", "small-cpu-reduced", "private-service-default"} {
+	for _, scenario := range []string{"valid", "wrong-image", "missing-owner-chain", "common-capacity", "common-service-type"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newLBAdmissionFixture(t, func(w http.ResponseWriter, r *http.Request, _ *controlled.Server) bool {
 				if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/subjectaccessreviews") {
@@ -214,25 +206,20 @@ func TestLBCapabilityImportedRuntimeImagesAndInstallDefaults(t *testing.T) {
 				pod["status"].(map[string]any)["containerStatuses"].([]any)[0].(map[string]any)["imageID"] = role.image
 				f.api.Change("pods", pod, false)
 			}
-			for _, suffix := range []string{"", "-noeip"} {
-				proxy := f.api.Object("envoyproxies", "envoy-gateway-system", "envoy-proxy-small"+suffix)
-				k := proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)
-				if suffix == "" || scenario == "private-service-default" {
-					delete(k, "envoyService")
-				}
-				dep := k["envoyDeployment"].(map[string]any)
-				container := dep["container"].(map[string]any)
-				container["resources"].(map[string]any)["requests"].(map[string]any)["cpu"] = float64(1)
-				container["resources"].(map[string]any)["requests"].(map[string]any)["memory"] = "1024Mi"
-				if scenario == "small-cpu-reduced" {
-					container["resources"].(map[string]any)["requests"].(map[string]any)["cpu"] = "500m"
-				}
-				// Manifest-looking spec strings with the same hex must not bootstrap a
-				// bare config digest without a proven live Gateway owner chain.
-				container["image"] = "registry/envoy@" + expected.EnvoyImageID
-				dep["patch"].(map[string]any)["value"].(map[string]any)["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)["image"] = "registry/shutdown@" + expected.ShutdownImageID
-				f.api.Change("envoyproxies", proxy, false)
+			proxy := f.api.Object("envoyproxies", "envoy-gateway-system", "lb-common")
+			k := proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)
+			if scenario == "common-service-type" {
+				k["envoyService"] = map[string]any{"type": "LoadBalancer"}
 			}
+			dep := k["envoyDeployment"].(map[string]any)
+			if scenario == "common-capacity" {
+				dep["replicas"] = float64(2)
+			}
+			// Manifest-looking strings cannot bootstrap a bare config digest;
+			// the actual running Gateway owner chain below remains necessary.
+			dep["container"].(map[string]any)["image"] = "registry/envoy@" + expected.EnvoyImageID
+			dep["patch"].(map[string]any)["value"].(map[string]any)["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)["image"] = "registry/shutdown@" + expected.ShutdownImageID
+			f.api.Change("envoyproxies", proxy, false)
 			ns, gateway, deployment, rs := "installed-lb", uuid.NewString(), uuid.NewString(), uuid.NewString()
 			put := func(resource, version, kind, name, uid, parentKind, parentName, parentUID string) map[string]any {
 				meta := map[string]any{"namespace": ns, "name": name, "uid": uid}
@@ -247,7 +234,9 @@ func TestLBCapabilityImportedRuntimeImagesAndInstallDefaults(t *testing.T) {
 				f.api.Change(resource, obj, false)
 				return obj
 			}
-			put("gateways", "gateway.networking.k8s.io/v1", "Gateway", "proxy", gateway, "", "", "")
+			gw := put("gateways", "gateway.networking.k8s.io/v1", "Gateway", "proxy", gateway, "", "", "")
+			gw["spec"] = map[string]any{"gatewayClassName": biz.LoadBalancerGatewayClass}
+			f.api.Change("gateways", gw, false)
 			put("deployments", "apps/v1", "Deployment", "proxy", deployment, "Gateway", "proxy", gateway)
 			put("replicasets", "apps/v1", "ReplicaSet", "proxy-rs", rs, "Deployment", "proxy", deployment)
 			pod := put("pods", "v1", "Pod", "proxy-pod", uuid.NewString(), "ReplicaSet", "proxy-rs", rs)
@@ -270,14 +259,10 @@ func TestLBCapabilityImportedRuntimeImagesAndInstallDefaults(t *testing.T) {
 				}
 				bundle[resource+"/"+ns+"/"+name] = map[string]any{"uid": obj["metadata"].(map[string]any)["uid"], "content": content}
 			}
-			for _, flavor := range biz.LoadBalancerFlavors() {
-				for _, suffix := range []string{"", "-noeip"} {
-					add("gatewayclasses", "", "lb-"+flavor.Name+suffix)
-					add("envoyproxies", "envoy-gateway-system", "envoy-proxy-"+flavor.Name+suffix)
-				}
-			}
+			add("gatewayclasses", "", "lb-common")
+			add("envoyproxies", "envoy-gateway-system", "lb-common")
 			add("configmaps", "envoy-gateway-system", "envoy-gateway-config")
-			for _, name := range []string{"gateways.gateway.networking.k8s.io", "httproutes.gateway.networking.k8s.io", "backends.gateway.envoyproxy.io", "backendtrafficpolicies.gateway.envoyproxy.io"} {
+			for _, name := range []string{"gateways.gateway.networking.k8s.io", "httproutes.gateway.networking.k8s.io", "backends.gateway.envoyproxy.io", "backendtrafficpolicies.gateway.envoyproxy.io", "envoyproxies.gateway.envoyproxy.io"} {
 				add("customresourcedefinitions", "", name)
 			}
 			body, _ := json.Marshal(bundle)

@@ -28,7 +28,7 @@ func intranetFixtures() (egressResolved, egressReadSet, *unstructured.Unstructur
 		pod.SetAPIVersion("v1")
 		pod.SetLabels(map[string]string{"networking.kubercloud.com/app": role})
 		pod.Object["spec"] = map[string]any{"containers": []any{map[string]any{"name": role, "command": []any{"/kc-networking/start-" + role + ".sh"}}}}
-		pod.Object["status"] = map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "fixture@sha256:" + strings.Repeat("a", 64)}}}
+		pod.Object["status"] = map[string]any{"phase": "Running", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}, "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "fixture@sha256:" + strings.Repeat("a", 64)}}}
 		providerPods = append(providerPods, *pod)
 	}
 	eip := crFixture("EIP", "tenant-a", "eip")

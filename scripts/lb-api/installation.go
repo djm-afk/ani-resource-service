@@ -63,14 +63,10 @@ func installation(args []string) error {
 	targets := []struct{ group, version, resource, namespace, name string }{
 		{"", "v1", "configmaps", "envoy-gateway-system", "envoy-gateway-config"},
 	}
-	for _, flavor := range biz.LoadBalancerFlavors() {
-		for _, suffix := range []string{"", "-noeip"} {
-			targets = append(targets,
-				struct{ group, version, resource, namespace, name string }{"gateway.networking.k8s.io", "v1", "gatewayclasses", "", "lb-" + flavor.Name + suffix},
-				struct{ group, version, resource, namespace, name string }{"gateway.envoyproxy.io", "v1alpha1", "envoyproxies", "envoy-gateway-system", "envoy-proxy-" + flavor.Name + suffix})
-		}
-	}
-	for _, name := range []string{"gateways.gateway.networking.k8s.io", "httproutes.gateway.networking.k8s.io", "backends.gateway.envoyproxy.io", "backendtrafficpolicies.gateway.envoyproxy.io"} {
+	targets = append(targets,
+		struct{ group, version, resource, namespace, name string }{"gateway.networking.k8s.io", "v1", "gatewayclasses", "", biz.LoadBalancerGatewayClass},
+		struct{ group, version, resource, namespace, name string }{"gateway.envoyproxy.io", "v1alpha1", "envoyproxies", "envoy-gateway-system", biz.LoadBalancerGatewayClass})
+	for _, name := range []string{"gateways.gateway.networking.k8s.io", "httproutes.gateway.networking.k8s.io", "backends.gateway.envoyproxy.io", "backendtrafficpolicies.gateway.envoyproxy.io", "envoyproxies.gateway.envoyproxy.io"} {
 		targets = append(targets, struct{ group, version, resource, namespace, name string }{"apiextensions.k8s.io", "v1", "customresourcedefinitions", "", name})
 	}
 	for _, target := range targets {

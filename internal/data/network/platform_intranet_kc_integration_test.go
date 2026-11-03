@@ -133,3 +133,18 @@ func TestIntranetKCPlatformActualAdapterObservationAndRecovery(t *testing.T) {
 		t.Fatal(api.Backend.Invalid)
 	}
 }
+
+func TestIntranetPoolDefaultsUsesActualGatewayAndRouteFacts(t *testing.T) {
+	f, api, _, _ := newEgressKCFixture(t, intranetProviderInterceptor)
+	uid := seedIntranetInfrastructure(api)
+	got, err := f.e.GetIntranetPoolDefaults(f.ctx)
+	if err != nil || got.DefaultVPCName != "kcn-cluster" || got.DefaultVPCUID != uid || len(got.IntranetNetworks) != 1 || got.IntranetNetworks[0] != "10.0.0.0/8" {
+		t.Fatal("defaults must come from actual provider facts", got, err)
+	}
+	config := api.Object("configmaps", "kcn-system", "kcn-config")
+	config["data"].(map[string]any)["intranetNetworks"] = "- 192.168.0.0/16\n"
+	api.Change("configmaps", config, false)
+	if _, err = f.e.GetIntranetPoolDefaults(f.ctx); err == nil {
+		t.Fatal("defaults accepted missing service network coverage")
+	}
+}

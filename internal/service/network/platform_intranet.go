@@ -14,6 +14,13 @@ func (s *PlatformNetworkService) CreateIntranetAddressPool(ctx context.Context, 
 	}
 	return &networkv1.CreateIntranetAddressPoolResponse{Resource: wirePlatform(v)}, nil
 }
+func (s *PlatformNetworkService) GetIntranetPoolDefaults(ctx context.Context, _ *networkv1.GetIntranetPoolDefaultsRequest) (*networkv1.GetIntranetPoolDefaultsResponse, error) {
+	v, err := s.egress.GetIntranetPoolDefaults(ctx)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return &networkv1.GetIntranetPoolDefaultsResponse{DefaultVpcName: v.DefaultVPCName, DefaultVpcUid: v.DefaultVPCUID, IntranetNetworks: v.IntranetNetworks}, nil
+}
 func (s *PlatformNetworkService) GetIntranetAddressPool(ctx context.Context, r *networkv1.GetIntranetAddressPoolRequest) (*networkv1.GetIntranetAddressPoolResponse, error) {
 	v, err := s.egress.GetPlatform(ctx, "intranet_pool", r.GetPoolId())
 	if err != nil {
@@ -67,6 +74,13 @@ func (s *PlatformNetworkService) RecordIntranetPoolVerification(ctx context.Cont
 		return nil, rpcError(err)
 	}
 	return &networkv1.RecordIntranetPoolVerificationResponse{Resource: wirePlatform(v)}, nil
+}
+func (s *PlatformNetworkService) SetIntranetPoolAutoAllocationEnabled(ctx context.Context, r *networkv1.SetIntranetPoolAutoAllocationEnabledRequest) (*networkv1.SetIntranetPoolAutoAllocationEnabledResponse, error) {
+	v, err := s.egress.SetPool(ctx, biz.PlatformIntent{Kind: "set_intranet_pool_auto_allocation", ID: r.GetPoolId(), Enabled: r.GetEnabled(), ExpectedVersion: r.GetExpectedVersion(), IdempotencyKey: r.GetIdempotencyKey()})
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return &networkv1.SetIntranetPoolAutoAllocationEnabledResponse{Resource: wirePlatform(v)}, nil
 }
 func (s *PlatformNetworkService) GetPlatformNetworkCapabilities(ctx context.Context, _ *networkv1.GetPlatformNetworkCapabilitiesRequest) (*networkv1.GetPlatformNetworkCapabilitiesResponse, error) {
 	v, err := s.egress.GetPlatformCapabilities(ctx)

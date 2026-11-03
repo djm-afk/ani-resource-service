@@ -18,6 +18,11 @@ func (p *KCProvider) lbGenerated(ctx context.Context, r lbResolved, o *biz.LoadB
 	}
 	namespace := r.binding.Namespace
 	gateway := lbFind(r.objects[lbGateways], namespace, r.binding.ProviderName)
+	// Existing six-class installations need an explicit migration. Never patch
+	// their Gateway class or create a new proxy behind the old live data plane.
+	if gateway != nil && crString(gateway, "spec", "gatewayClassName") != biz.LoadBalancerGatewayClass && r.work.Resource.State != biz.Deleting && r.work.Resource.State != biz.Deleted && len(biz.ProjectLoadBalancerListeners(biz.EffectiveLoadBalancerListeners(l))) > 0 {
+		return &biz.ProviderError{Kind: biz.ProviderConflict}
+	}
 	uid := r.binding.ProviderUid
 	if gateway != nil {
 		uid = string(gateway.GetUID())

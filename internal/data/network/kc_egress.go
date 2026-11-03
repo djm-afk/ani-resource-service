@@ -123,6 +123,7 @@ type egressResolved struct {
 	address, vpcCIDR, deviceID string
 	virtualSwitch              *biz.VirtualSwitch
 	switchDevice               sqlcgen.NetworkDeviceAdoption
+	preparePhysical            bool
 }
 
 func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (egressResolved, error) {
@@ -671,7 +672,11 @@ func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, cr
 	if !r.target.Deleting && r.deviceID != "" && !(r.target.Kind == "snat" && !r.snat.DesiredEnabled) {
 		result.deviceRequired = true
 		if r.virtualSwitch != nil {
-			configured, wired, proof, err := p.virtualSwitchDeviceState(ctx, *r.virtualSwitch, r.switchDevice, result.view)
+			var chassisPool *unstructured.Unstructured
+			if r.pool.Mode == "underlay" {
+				chassisPool = result.objects["pool"]
+			}
+			configured, wired, proof, err := p.virtualSwitchDeviceState(ctx, *r.virtualSwitch, r.switchDevice, result.view, r.preparePhysical, chassisPool)
 			if err != nil {
 				return result, err
 			}
@@ -963,6 +968,10 @@ func (p *KCProvider) EnsureEgress(ctx context.Context, t biz.ProviderTarget) (bi
 	if !apierrors.IsNotFound(err) {
 		return biz.ProviderObservation{}, readFailure(err)
 	}
+	// Only a missing new physical object can trigger NIC/group preparation.
+	// Reads of existing objects and EIP/SNAT operations on an owned pool retain
+	// binding identity and active-chassis checks without preparing every member.
+	r.preparePhysical = t.Kind == "vlan" || (t.Kind == "public_pool" && r.pool.Mode == "underlay")
 	set, err := p.readEgressSet(ctx, r, true)
 	if err != nil {
 		return biz.ProviderObservation{}, err
@@ -1120,11 +1129,13 @@ func egressPrerequisites(r egressResolved, set egressReadSet) bool {
 	return true
 }
 
-// Record actual running provider digests. Missing, mixed rollout, or unready
-// provider pods remove admission evidence; tags and declared images are not proof.
+// Each required role needs a current ready instance with actual running image
+// digests. Unavailable replicas neither supply nor erase another instance's
+// evidence; tags and declared images are not proof.
 func providerImages(objects []unstructured.Unstructured) []string {
 	digests := []string{}
 	roles := map[string]bool{}
+nextPod:
 	for _, p := range objects {
 		if p.GetNamespace() != kcSystemNamespace {
 			continue
@@ -1135,30 +1146,32 @@ func providerImages(objects []unstructured.Unstructured) []string {
 		default:
 			continue
 		}
-		if p.GetDeletionTimestamp() != nil || crString(&p, "status", "phase") != "Running" {
-			return nil
+		if !nodeReady(&p) || crString(&p, "status", "phase") != "Running" {
+			continue
 		}
 		statuses, _, _ := unstructured.NestedSlice(p.Object, "status", "containerStatuses")
 		containers, _, _ := unstructured.NestedSlice(p.Object, "spec", "containers")
 		if len(statuses) == 0 || len(statuses) != len(containers) {
-			return nil
+			continue
 		}
+		podDigests := make([]string, 0, len(statuses))
 		for _, raw := range statuses {
 			c, ok := raw.(map[string]any)
 			if !ok || c["ready"] != true {
-				return nil
+				continue nextPod
 			}
 			id, _ := c["imageID"].(string)
 			idx := strings.LastIndex(id, "sha256:")
 			if idx < 0 {
-				return nil
+				continue nextPod
 			}
 			digest := id[idx:]
 			if !regexp.MustCompile(`^sha256:[0-9a-f]{64}$`).MatchString(digest) {
-				return nil
+				continue nextPod
 			}
-			digests = append(digests, digest)
+			podDigests = append(podDigests, digest)
 		}
+		digests = append(digests, podDigests...)
 		roles[role] = true
 	}
 	for _, role := range []string{"controller", "cni-ds", "ovs-ds", "ovn-central"} {
@@ -1182,17 +1195,10 @@ func emptyBoundResource(eip *unstructured.Unstructured) bool {
 	return ok && len(bound) == 0
 }
 
-func verifiedEgressExit(r egressResolved, set egressReadSet) bool {
-	// Public admission uses current component readiness, without requiring an
-	// administrator's manual forwarding evidence. Intranet remains independent.
-	if r.pool.Scope == "public" {
-		return len(providerImages(set.all[pods])) > 0
-	}
-	var evidence biz.PublicPoolVerification
-	if json.Unmarshal(r.pool.Verification, &evidence) != nil {
-		return false
-	}
-	return sameProviderImages(evidence.ProviderImageDigests, providerImages(set.all[pods])) && biz.ValidatePoolVerificationForScope(evidence, r.pool.Scope, time.Now()) == nil
+func verifiedEgressExit(_ egressResolved, set egressReadSet) bool {
+	// Both scopes use current provider facts. Manual forwarding records are
+	// diagnostic metadata, not a runtime gate for EIP/SNAT reconciliation.
+	return len(providerImages(set.all[pods])) > 0
 }
 
 // KCN publishes notReadyNodes as an optional comma-separated string. Older

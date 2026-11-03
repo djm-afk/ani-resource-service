@@ -1,5 +1,7 @@
 # ANI Resource 文档导航
 
+[LB 使用方式对齐（2026-11-02）](specs/vpc-connectivity-lb.md)：公共 `lb-common`、每 LB 专属 Proxy 和独立于基础 Intranet 的运行准入；实际迁移、前后端和业务验证见[执行状态](execution/status.md#lb-usage-alignment-20261102)。
+
 [公网 EIP 独立绑定与关联展示](specs/vpc-connectivity-lb.md#5-public-eip-与-vpc-公网出站调整)：无基础网络准入、VPC/EIP 同快照关系和 EIP 创建选组；实际验证见[执行状态](execution/status.md#public-eip-workflow-20261030)。
 
 [租户安全组](specs/security-groups.md)：容器/VM/EIP 接入、默认仅入方向拒绝、持久当前配置及真实应用判定；实际结果见[执行状态](execution/status.md#security-groups-20261030)。

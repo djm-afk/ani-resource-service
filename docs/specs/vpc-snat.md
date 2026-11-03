@@ -129,6 +129,8 @@ VlanNetwork 接管反馈、池控制面就绪和真实出口流量分别观察�
 
 Underlay 等待 Subnet `Valid/Initialized/Ready=True`，并要求 `underlayState.ready=true`、`notReadyNodes` 为空、`chassisNode` 非空、VlanNetwork 占用指向该 Public 池。Overlay 不应存在 `underlayState`。网卡、OVS、ARP、上游过滤与回程仍须独立核对。
 
+新建 VLAN 或 Underlay 池的物理准备要求全部冻结成员的 Node/CNI 就绪。已有绑定的持续观察及其 EIP/SNAT 操作保留完整冻结成员的 UID、组所有权和接口接管反馈，并检查池当前选中的出口 chassis 的 Node/CNI 就绪；未被选中的离线冗余成员不单独使已有池退化。缺失或替换冻结成员、丢失接管反馈、出口不属于该组或当前出口不就绪仍拒绝，不删除成员或代写 Provider 状态。
+
 一期不提供池的在线 CIDR、模式、网关、排除范围或 VlanNetwork 变更；这些设置按创建快照保留，变更使用新池并按明确迁移流程处理旧 EIP。不能通过修改原池将既有 EIP 隐式切到另一条出口。
 
 ### 4.4 出口验收、开放分配和默认池

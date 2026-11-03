@@ -35,7 +35,7 @@ func assertLBProviderMutationCounts(t *testing.T, f *lbAdmissionFixture, before 
 func TestLBDeferredDatabaseAdmissionReplayOfflineAndDeletion(t *testing.T) {
 	f := newLBAdmissionFixture(t)
 	before, _ := f.api.Counts()
-	if _, err := f.f.owner.Exec(f.f.ctx, `DELETE FROM network_lb_capabilities; UPDATE network_vpcs SET observed_at=clock_timestamp()-interval '2 hour'; UPDATE network_subnets SET observed_at=clock_timestamp()-interval '2 hour'`); err != nil {
+	if _, err := f.f.owner.Exec(f.f.ctx, `DELETE FROM network_lb_capabilities; UPDATE network_provider_bindings SET provider_observed_at=clock_timestamp()-interval '2 hour' WHERE vpc_id IS NOT NULL; UPDATE network_subnets SET observed_at=clock_timestamp()-interval '2 hour'`); err != nil {
 		t.Fatal(err)
 	}
 	request := deferredEmptyLBRequest(f)

@@ -317,6 +317,7 @@ func TestLBDeferredFirstGatewayResponseLossBlocksDeleteUntilOriginalVisible(t *t
 // Gateway matrix, where generated-resource and address cleanup are different.
 func TestLBComponentsRecoverResponseLossWithFreshWorkers(t *testing.T) {
 	for _, tc := range []struct{ name, method, resource, kind string }{
+		{"proxy_POST_response_lost", http.MethodPost, "envoyproxies", "envoy_proxy"},
 		{"backend_POST_response_lost", http.MethodPost, "backends", "backend"},
 		{"policy_POST_response_lost", http.MethodPost, "backendtrafficpolicies", "policy"},
 		{"route_UPDATE_response_lost", http.MethodPatch, "httproutes", "route"},

@@ -317,11 +317,8 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "VPC has closed admission")
 	}
 	if requireRuntimeReady {
-		if err = p.requireBaseConnectivity(ctx, q, i.TenantID, vpcID, now, freshness); err != nil {
+		if err = p.requireLBVPCProviderReady(ctx, q, i.TenantID, vpcID, now, freshness); err != nil {
 			return biz.LoadBalancerResult{}, err
-		}
-		if !freshResource(parent.State, parent.ObservedAt, now, freshness) {
-			return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "VPC is not fresh and ready")
 		}
 	}
 	pb, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: i.TenantID, ResourceID: vpcID})

@@ -213,6 +213,50 @@ func (p *KCProvider) ValidateIntranetPool(ctx context.Context, c biz.PublicPoolC
 	return nil
 }
 
+// Read actual cluster facts for the administrator's creation form. Creation
+// still validates the submitted frozen identity, so replacement between GET and
+// POST cannot silently select a different gateway.
+func (p *KCProvider) GetIntranetPoolDefaults(ctx context.Context) (biz.PublicPoolConfig, error) {
+	missing := func() (biz.PublicPoolConfig, error) {
+		return biz.PublicPoolConfig{}, biz.Fail(biz.BaseConnectivityNotReady, "default VPC identity, route coverage or running provider facts are not ready")
+	}
+	gateways, err := p.listAll(ctx, kcVPCs)
+	if err != nil {
+		return missing()
+	}
+	config, err := p.client.Resource(kcConfigMaps).Namespace(kcSystemNamespace).Get(ctx, "kcn-config", metav1.GetOptions{})
+	if err != nil {
+		return missing()
+	}
+	var networks []string
+	if yaml.UnmarshalStrict([]byte(crString(config, "data", "intranetNetworks")), &networks) != nil {
+		return missing()
+	}
+	services, err := p.listAll(ctx, kcServiceCIDRs)
+	if err != nil {
+		return missing()
+	}
+	providerPods, err := p.listAll(ctx, pods)
+	if err != nil || len(providerImages(providerPods)) == 0 {
+		return missing()
+	}
+	var result biz.PublicPoolConfig
+	for j := range gateways {
+		gateway := &gateways[j]
+		c := sqlcgen.NetworkPublicPool{Scope: "intranet", Mode: "overlay", DefaultVpcName: gateway.GetName(), DefaultVpcUid: string(gateway.GetUID()), IntranetNetworks: networks}
+		if intranetInfrastructureReady(c, gateway, config, services, providerPods) {
+			if result.DefaultVPCUID != "" {
+				return missing()
+			}
+			result = biz.PublicPoolConfig{DefaultVPCName: c.DefaultVpcName, DefaultVPCUID: c.DefaultVpcUid, IntranetNetworks: networks}
+		}
+	}
+	if result.DefaultVPCUID == "" {
+		return missing()
+	}
+	return result, nil
+}
+
 func hasNonNullField(o *unstructured.Unstructured, fields ...string) bool {
 	value, found, err := unstructured.NestedFieldNoCopy(objectMap(o), fields...)
 	return err != nil || (found && value != nil)

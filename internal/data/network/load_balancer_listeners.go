@@ -144,6 +144,11 @@ func saveLBListeners(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.Networ
 		return databaseFailure(err)
 	}
 	projection := biz.ProjectLoadBalancerListeners(listeners)
+	if len(projection) > 0 && !slices.ContainsFunc(components, func(c sqlcgen.NetworkLbComponent) bool { return c.Kind == "envoy_proxy" && c.DeletedAt == nil }) {
+		if err = insertLBListenerComponent(ctx, q, row, "envoy_proxy", nil, nil); err != nil {
+			return err
+		}
+	}
 	for _, l := range listeners {
 		known := slices.ContainsFunc(registry, func(r sqlcgen.NetworkLbListener) bool { return r.Name == l.Name })
 		if !known {
@@ -196,5 +201,5 @@ func saveLBListeners(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.Networ
 
 func insertLBListenerComponent(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.NetworkLoadBalancer, kind string, member, listener *string) error {
 	id := uuid.NewString()
-	return databaseFailure(q.InsertLBComponent(ctx, sqlcgen.InsertLBComponentParams{TenantID: row.TenantID, ClusterID: row.ClusterID, Namespace: row.Namespace, LbID: row.LbID, ComponentID: id, Kind: kind, MemberID: member, ListenerID: listener, ProviderName: "lb-" + kind + "-" + strings.ReplaceAll(id, "-", "")}))
+	return databaseFailure(q.InsertLBComponent(ctx, sqlcgen.InsertLBComponentParams{TenantID: row.TenantID, ClusterID: row.ClusterID, Namespace: row.Namespace, LbID: row.LbID, ComponentID: id, Kind: kind, MemberID: member, ListenerID: listener, ProviderName: "lb-" + strings.ReplaceAll(kind, "_", "-") + "-" + strings.ReplaceAll(id, "-", "")}))
 }

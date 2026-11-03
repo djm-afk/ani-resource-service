@@ -165,7 +165,7 @@ func TestEgressProviderImagesUseRunningDigests(t *testing.T) {
 		o := crFixture("Pod", kcSystemNamespace, role)
 		o.SetLabels(map[string]string{"networking.kubercloud.com/app": role})
 		o.Object["spec"] = map[string]any{"containers": []any{map[string]any{"name": role}}}
-		o.Object["status"] = map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "docker-pullable://provider@" + digest}}}
+		o.Object["status"] = map[string]any{"phase": "Running", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}, "containerStatuses": []any{map[string]any{"name": role, "ready": true, "imageID": "docker-pullable://provider@" + digest}}}
 		objects = append(objects, *o)
 	}
 	if got := providerImages(objects); len(got) != 1 || got[0] != digest {

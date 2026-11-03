@@ -132,7 +132,7 @@ Gov 关闭未审查的 gRPC retry/service config；调用超时不证明操作�
 
 ## 平台网络用户委托
 
-PlatformNetworkService 的完整 27 方法由 [平台允许清单](../../internal/server/governance.go) 逐项登记，平台 Public/Intranet 池和 VLAN 原业务合同仍适用。Gov 的 HTTP DTO、角色授权和分页流程由配套仓库 `docs/contracts/platform-network.md` 维护，本批发布前不生成不存在的远端来源链接；该合同不是本仓运行依赖或部署已完成证据。
+PlatformNetworkService 的完整方法由 [平台允许清单](../../internal/server/governance.go) 逐项登记，包括基础网络创建默认值查询与新 VPC 自动分配开关，平台 Public/Intranet 池和 VLAN 原业务合同仍适用。Gov 的 HTTP DTO、角色授权和分页流程由配套仓库 `docs/contracts/platform-network.md` 维护；该合同不是本仓运行依赖或部署已完成证据。
 
 同一业务 mTLS listener 允许独立平台范围：单值 x-ani-scope=platform、governance:user:<非零规范 uint32> actor、非零规范 UUID request_id，并且 x-ani-tenant-id 必须完全不存在。Gov 先完成平台用户认证、当前动作权限与 Casbin 授权，不发送虚构租户，也不接受 API Key 平台 actor。Resource 验证证书/允许方法/互斥范围后才安装 PlatformAdministrator 和原 actor/caller/request 归因；混合或重复范围拒绝。平台委托不能调用租户/Image 方法，租户委托不能调用平台方法。vpc-read 的 GetVPC 边界保持。
 

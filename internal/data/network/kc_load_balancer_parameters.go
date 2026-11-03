@@ -16,7 +16,7 @@ func lbGatewayListener(l biz.LoadBalancerListener) map[string]any {
 	if protocol == "SSL" {
 		protocol = "TLS"
 	}
-	v := map[string]any{"name": l.Name, "port": int64(l.Port), "protocol": protocol, "allowedRoutes": map[string]any{"namespaces": map[string]any{"from": "Same"}, "kinds": []any{map[string]any{"kind": lbKind(biz.LoadBalancerRouteKind(l.Protocol))}}}}
+	v := map[string]any{"name": l.Name, "port": int64(l.Port), "protocol": protocol, "allowedRoutes": map[string]any{"namespaces": map[string]any{"from": "Same"}, "kinds": []any{map[string]any{"group": lbRoutes.Group, "kind": lbKind(biz.LoadBalancerRouteKind(l.Protocol))}}}}
 	if l.Parameters.Certificate != nil {
 		v["tls"] = map[string]any{"mode": "Terminate", "certificateRefs": []any{map[string]any{"group": "", "kind": "Secret", "name": l.Parameters.Certificate.Name}}}
 	}

@@ -50,6 +50,8 @@ service PlatformNetworkService {
   rpc RecordIntranetPoolVerification(RecordIntranetPoolVerificationRequest) returns (RecordIntranetPoolVerificationResponse);
   rpc SetIntranetPoolAllocationEnabled(SetIntranetPoolAllocationEnabledRequest) returns (SetIntranetPoolAllocationEnabledResponse);
   rpc SetDefaultIntranetPool(SetDefaultIntranetPoolRequest) returns (SetDefaultIntranetPoolResponse);
+  rpc SetIntranetPoolAutoAllocationEnabled(SetIntranetPoolAutoAllocationEnabledRequest) returns (SetIntranetPoolAutoAllocationEnabledResponse);
+  rpc GetIntranetPoolDefaults(GetIntranetPoolDefaultsRequest) returns (GetIntranetPoolDefaultsResponse);
   rpc GetPlatformNetworkCapabilities(GetPlatformNetworkCapabilitiesRequest) returns (GetPlatformNetworkCapabilitiesResponse);
   rpc GetPlatformOperation(GetPlatformOperationRequest) returns (GetPlatformOperationResponse);
 }
@@ -212,6 +214,9 @@ message IntranetAddressPool {
   repeated string observed_provider_images = 12;
   // Output only; always intranet.
   string scope = 13;
+  // Output only. True only for the default pool when automatic base EIP/SNAT
+  // allocation to newly created VPCs is enabled for this cluster.
+  bool new_vpcs_enabled = 14;
 }
 // Administrative evidence for the fixed pool/configuration/provider snapshot.
 // Recording it does not itself make the capability ready or prove real traffic.
@@ -312,6 +317,10 @@ message SetIntranetPoolAllocationEnabledRequest { string pool_id = 1; bool enabl
 message SetIntranetPoolAllocationEnabledResponse { PlatformResource resource = 1; }
 message SetDefaultIntranetPoolRequest { string pool_id = 1; int64 expected_version = 2; string idempotency_key = 3; }
 message SetDefaultIntranetPoolResponse { PlatformResource resource = 1; }
+message SetIntranetPoolAutoAllocationEnabledRequest { string pool_id = 1; bool enabled = 2; int64 expected_version = 3; string idempotency_key = 4; }
+message SetIntranetPoolAutoAllocationEnabledResponse { PlatformResource resource = 1; }
+message GetIntranetPoolDefaultsRequest {}
+message GetIntranetPoolDefaultsResponse { string default_vpc_name = 1; string default_vpc_uid = 2; repeated string intranet_networks = 3; }
 message GetPlatformNetworkCapabilitiesRequest {}
 message GetPlatformNetworkCapabilitiesResponse { PlatformNetworkCapabilities capabilities = 1; }
 message GetPlatformOperationRequest { string operation_id = 1; }
