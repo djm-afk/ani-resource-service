@@ -28,6 +28,7 @@ type Placement struct {
 }
 
 type Postgres struct {
+	vnicConsumerResolver  biz.VNicConsumerResolver
 	sharedObservation     bool
 	networkProvider       *KCProvider
 	namespaceResolver     func(context.Context, string) (tenantnamespace.Identity, error)
@@ -342,6 +343,9 @@ func operation(row sqlcgen.NetworkOperation) biz.Operation {
 	}
 	if row.SnatID != nil {
 		resourceID, kind = *row.SnatID, "snat"
+	}
+	if row.VnicID != nil {
+		resourceID, kind = *row.VnicID, "vnic"
 	}
 	if row.LbID != nil {
 		resourceID, kind = *row.LbID, "load_balancer"

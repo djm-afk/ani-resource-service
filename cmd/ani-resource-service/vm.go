@@ -55,7 +55,7 @@ func runVMMigration() error {
 	defer cancel()
 	return data.Migrate(ctx, strings.TrimSpace(string(raw)), os.Getenv("ANI_VM_RUNTIME_ROLE"))
 }
-func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, repository *networkdata.Postgres, provider *networkdata.KCProvider, attachments *networkbiz.Attachments, instances *instanceComponents, legacy networkbiz.InstanceConsumer, freshness time.Duration) (*vmComponents, networkbiz.InstanceConsumer, error) {
+func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, repository *networkdata.Postgres, provider *networkdata.KCProvider, attachments *networkbiz.Attachments, instances *instanceComponents, legacy networkbiz.InstanceConsumer, freshness time.Duration, manualNetwork *networkbiz.Network) (*vmComponents, networkbiz.InstanceConsumer, error) {
 	path := os.Getenv("ANI_VM_CONFIG_FILE")
 	if path == "" {
 		return nil, networkbiz.NewVMConsumerRouter(legacy, nil), nil
@@ -124,6 +124,9 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	}
 	networkPort, e := data.NewNetwork(attachments, repo, native)
 	if e != nil {
+		return nil, nil, e
+	}
+	if e = networkPort.UseManualVNics(manualNetwork); e != nil {
 		return nil, nil, e
 	}
 	environment, e := data.NewEnvironment(native, "tenant-", func(ctx context.Context, tenant, cluster, namespace string, s biz.NetworkSelection) (biz.NetworkSelection, error) {

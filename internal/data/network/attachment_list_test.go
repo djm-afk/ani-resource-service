@@ -59,6 +59,28 @@ func TestContainerAddressRelationsIgnoreMalformedEvidence(t *testing.T) {
 	}
 }
 
+func TestContainerAddressRelationsManualVNicIdentity(t *testing.T) {
+	a := observedAttachment(biz.Attached, "", "pod-current")
+	a.ConsumerSnapshot = &biz.ConsumerSubmission{ManualVNics: []biz.ManualVNicReference{{ProviderName: "vnic-a", ProviderUID: "nic-current"}}}
+	relations := containerRelations("pod-current", "nic-current", "ip-current")
+	relations[1].OwnerUID = "" // User-owned manual VNICs do not belong to a Pod.
+	if got := containerAddressRelations(a, mustJSON(t, relations)); len(got) != 1 || got[0].Address != "10.42.1.15" {
+		t.Fatalf("manual current address missing: %+v", got)
+	}
+	for _, mutate := range []func([]attachmentRelation){
+		func(r []attachmentRelation) { r[1].UID = "replacement" },
+		func(r []attachmentRelation) { r[1].Name = "other-name" },
+		func(r []attachmentRelation) { r[1].Current = false },
+		func(r []attachmentRelation) { r[0].Current = false },
+	} {
+		changed := append([]attachmentRelation{}, relations...)
+		mutate(changed)
+		if got := containerAddressRelations(a, mustJSON(t, changed)); len(got) != 0 {
+			t.Fatalf("unverified manual identity projected: %+v", got)
+		}
+	}
+}
+
 func TestVMAddressRelationsKeepLauncherIdentityGate(t *testing.T) {
 	observed := time.Date(2026, 11, 3, 7, 20, 11, 0, time.UTC)
 	a := biz.Attachment{

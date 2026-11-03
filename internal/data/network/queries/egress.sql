@@ -112,17 +112,18 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND snat_id=sqlc.arg(snat_id) AND version=sq
 -- Global scheduling inventory is worker-only. Admission and completion always
 -- recover explicit tenant/parent locks and fence the claimed resource version.
 -- name: DueResourceCandidates :many
-SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)::text AS resource_id,b.resource_kind,
- coalesce(r.vpc_id,s.vpc_id,sn.vpc_id,e.system_owner_vpc,lb.vpc_id,'')::text AS parent_vpc_id,coalesce(r.eip_id,sn.eip_id,'')::text AS parent_eip_id,
+SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)::text AS resource_id,b.resource_kind,
+ coalesce(r.vpc_id,s.vpc_id,sn.vpc_id,e.system_owner_vpc,lb.vpc_id,vn.vpc_id,'')::text AS parent_vpc_id,coalesce(r.eip_id,sn.eip_id,'')::text AS parent_eip_id,
  r.next_run_at AS due_at
 FROM network_reconciliations r JOIN network_provider_bindings b ON b.tenant_id=r.tenant_id
- AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)
+ AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id,b.vnic_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)
 LEFT JOIN network_subnets s ON s.tenant_id=r.tenant_id AND s.subnet_id=r.subnet_id
 LEFT JOIN network_snat_bindings sn ON sn.tenant_id=r.tenant_id AND sn.snat_id=r.snat_id
 LEFT JOIN network_eips e ON e.tenant_id=r.tenant_id AND e.eip_id=r.eip_id
 LEFT JOIN network_load_balancers lb ON lb.tenant_id=r.tenant_id AND lb.lb_id=r.lb_id
+LEFT JOIN network_vnics vn ON vn.tenant_id=r.tenant_id AND vn.vnic_id=r.vnic_id
 WHERE NOT r.retired AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
-ORDER BY r.next_run_at,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id) LIMIT 32;
+ORDER BY r.next_run_at,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id) LIMIT 32;
 
 -- name: TryLockWorkVPC :one
 SELECT * FROM network_vpcs WHERE tenant_id=$1 AND vpc_id=$2 FOR UPDATE SKIP LOCKED;

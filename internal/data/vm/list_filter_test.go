@@ -18,11 +18,12 @@ func TestVMListWhereKeepsPlaceholdersAndArgumentsInSync(t *testing.T) {
 		{"default", biz.ListFilter{Page: 1, PageSize: 20}},
 		{"state", biz.ListFilter{Page: 1, PageSize: 20, State: "running"}},
 		{"keyword", biz.ListFilter{Page: 1, PageSize: 20, Keyword: "vm-linux"}},
+		{"candidates", biz.ListFilter{SubnetID: "subnet-a", ClusterID: "cluster-a", Namespace: "tenant-a", BindableOnly: true}},
 		{"both", biz.ListFilter{Page: 1, PageSize: 20, State: "deleted", Keyword: "vm"}},
 	}
 	for _, c := range cases {
 		where, args := vmListWhere(tenant, c.filter)
-		if len(args) != 3 || args[0] != tenant || args[1] != c.filter.State || args[2] != c.filter.Keyword {
+		if len(args) != 7 || args[0] != tenant || args[1] != c.filter.State || args[2] != c.filter.Keyword || args[3] != c.filter.SubnetID || args[4] != c.filter.ClusterID || args[5] != c.filter.Namespace || args[6] != c.filter.BindableOnly {
 			t.Fatalf("%s: arguments drifted: %#v", c.name, args)
 		}
 		for _, want := range []string{"tenant_id=$1", "$2::text", "$3::text", "id::text", "current_configuration->>'Name'", "'deleted'"} {
@@ -30,7 +31,7 @@ func TestVMListWhereKeepsPlaceholdersAndArgumentsInSync(t *testing.T) {
 				t.Fatalf("%s: where is missing %q: %s", c.name, want, where)
 			}
 		}
-		if strings.Contains(where, "$4") {
+		if strings.Contains(where, "$8") {
 			t.Fatalf("%s: where must not use a page placeholder: %s", c.name, where)
 		}
 	}

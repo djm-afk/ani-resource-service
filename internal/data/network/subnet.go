@@ -82,7 +82,7 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 		return biz.Subnet{}, biz.Fail(biz.CIDROverlap, "subnet CIDR overlaps an unreleased subnet")
 	}
 	id, opID := "subnet_"+strings.ReplaceAll(uuid.NewString(), "-", ""), uuid.NewString()
-	row, err := q.InsertSubnet(ctx, sqlcgen.InsertSubnetParams{TenantID: intent.TenantID, SubnetID: id, VpcID: intent.VPCID, Name: intent.Name, Description: intent.Description, Cidr: intent.CIDR, Gateway: intent.Gateway, CreatedAt: now, LastOperationID: opID})
+	row, err := q.InsertSubnet(ctx, sqlcgen.InsertSubnetParams{TenantID: intent.TenantID, SubnetID: id, VpcID: intent.VPCID, Name: intent.Name, Description: intent.Description, Cidr: intent.CIDR, Gateway: intent.Gateway, CreatedAt: now, LastOperationID: opID, ExcludeIps: intent.ExcludeIPs, EnableDhcp: intent.EnableDHCP, DnsServers: intent.DNSServers})
 	if err != nil {
 		return biz.Subnet{}, databaseFailure(err)
 	}
@@ -163,6 +163,13 @@ func (p *Postgres) DeleteSubnet(ctx context.Context, tenant, id string) (biz.Sub
 	if row.State == string(biz.Deleting) || row.State == string(biz.Deleted) {
 		return subnet(row), nil
 	}
+	var manualCount int64
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM network_vnics WHERE tenant_id=$1 AND subnet_id=$2 AND state<>'deleted'`, tenant, id).Scan(&manualCount); err != nil {
+		return biz.Subnet{}, databaseFailure(err)
+	}
+	if manualCount > 0 {
+		return biz.Subnet{}, biz.Fail(biz.ResourceBusy, "Subnet contains retained manual VNICs")
+	}
 	lbCount, err := q.BlockingLBForSubnet(ctx, sqlcgen.BlockingLBForSubnetParams{TenantID: tenant, SubnetID: id})
 	if err != nil {
 		return biz.Subnet{}, databaseFailure(err)
@@ -210,5 +217,6 @@ func (p *Postgres) DeleteSubnet(ctx context.Context, tenant, id string) (biz.Sub
 func subnet(row sqlcgen.NetworkSubnet) biz.Subnet {
 	value := biz.Subnet{ID: row.SubnetID, TenantID: row.TenantID, VPCID: row.VpcID, Name: row.Name, Description: row.Description, CIDR: row.Cidr, Gateway: row.Gateway, State: biz.ResourceState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, LastOperationID: row.LastOperationID}
 	value.AvailableIPRange, value.UsedIPRange = row.AvailableIpRange, row.UsedIpRange
+	value.SubnetOptions = biz.SubnetOptions{ExcludeIPs: row.ExcludeIps, EnableDHCP: row.EnableDhcp, DNSServers: row.DnsServers}
 	return value
 }

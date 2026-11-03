@@ -9,7 +9,8 @@ package instancev1
 import (
 	v11 "github.com/zhangzhe-ctrl/ani-accelerator-service/api/gen/go/accelerator/command/v1"
 	v1 "github.com/zhangzhe-ctrl/ani-accelerator-service/api/gen/go/accelerator/v1"
-	v12 "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/terminal/v1"
+	v13 "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/terminal/v1"
+	v12 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -3764,11 +3765,103 @@ func (x *InstanceMetricScope) GetContainerName() string {
 	return ""
 }
 
+type SetNetworkInterfaceRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TenantId        string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	InstanceId      string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Slot            string                 `protobuf:"bytes,3,opt,name=slot,proto3" json:"slot,omitempty"`
+	Mode            string                 `protobuf:"bytes,4,opt,name=mode,proto3" json:"mode,omitempty"`
+	VnicId          string                 `protobuf:"bytes,5,opt,name=vnic_id,proto3" json:"vnic_id,omitempty"`
+	ExpectedVersion int64                  `protobuf:"varint,6,opt,name=expected_version,proto3" json:"expected_version,omitempty"`
+	IdempotencyKey  string                 `protobuf:"bytes,7,opt,name=idempotency_key,proto3" json:"idempotency_key,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetNetworkInterfaceRequest) Reset() {
+	*x = SetNetworkInterfaceRequest{}
+	mi := &file_instance_v1_instance_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetNetworkInterfaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetNetworkInterfaceRequest) ProtoMessage() {}
+
+func (x *SetNetworkInterfaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_instance_v1_instance_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetNetworkInterfaceRequest.ProtoReflect.Descriptor instead.
+func (*SetNetworkInterfaceRequest) Descriptor() ([]byte, []int) {
+	return file_instance_v1_instance_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *SetNetworkInterfaceRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *SetNetworkInterfaceRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *SetNetworkInterfaceRequest) GetSlot() string {
+	if x != nil {
+		return x.Slot
+	}
+	return ""
+}
+
+func (x *SetNetworkInterfaceRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *SetNetworkInterfaceRequest) GetVnicId() string {
+	if x != nil {
+		return x.VnicId
+	}
+	return ""
+}
+
+func (x *SetNetworkInterfaceRequest) GetExpectedVersion() int64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+func (x *SetNetworkInterfaceRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
 var File_instance_v1_instance_proto protoreflect.FileDescriptor
 
 const file_instance_v1_instance_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainstance/v1/instance.proto\x12\vinstance.v1\x1a accelerator/v1/accelerator.proto\x1a$accelerator/command/v1/command.proto\x1a#instance/terminal/v1/terminal.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb3\x02\n" +
+	"\x1ainstance/v1/instance.proto\x12\vinstance.v1\x1a accelerator/v1/accelerator.proto\x1a\x15network/v1/vnic.proto\x1a$accelerator/command/v1/command.proto\x1a#instance/terminal/v1/terminal.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb3\x02\n" +
 	"\x11SchedulingOptions\x12V\n" +
 	"\rpod_placement\x18\x01 \x01(\x0e2+.instance.v1.SchedulingOptions.PodPlacementH\x00R\rpod_placement\x88\x01\x01\x125\n" +
 	"\x13priority_class_name\x18\x02 \x01(\tH\x01R\x13priority_class_name\x88\x01\x01\"e\n" +
@@ -4168,7 +4261,16 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"\n" +
 	"cluster_id\x18\x03 \x01(\tR\tclusterId\x12\x1c\n" +
 	"\tnamespace\x18\x04 \x01(\tR\tnamespace\x12%\n" +
-	"\x0econtainer_name\x18\x05 \x01(\tR\rcontainerName2\xbb\x0e\n" +
+	"\x0econtainer_name\x18\x05 \x01(\tR\rcontainerName\"\xf2\x01\n" +
+	"\x1aSetNetworkInterfaceRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1f\n" +
+	"\vinstance_id\x18\x02 \x01(\tR\n" +
+	"instanceId\x12\x12\n" +
+	"\x04slot\x18\x03 \x01(\tR\x04slot\x12\x12\n" +
+	"\x04mode\x18\x04 \x01(\tR\x04mode\x12\x18\n" +
+	"\avnic_id\x18\x05 \x01(\tR\avnic_id\x12*\n" +
+	"\x10expected_version\x18\x06 \x01(\x03R\x10expected_version\x12(\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0fidempotency_key2\xf3\x0f\n" +
 	"\x0fInstanceService\x12S\n" +
 	"\x12GetInstanceRuntime\x12\x1f.instance.v1.GetInstanceRequest\x1a\x1c.instance.v1.InstanceRuntime\x12R\n" +
 	"\x12ListInstanceEvents\x12\x1f.instance.v1.GetInstanceRequest\x1a\x1b.instance.v1.InstanceEvents\x12]\n" +
@@ -4180,7 +4282,9 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"\fAcceptDelete\x12 .instance.v1.AcceptDeleteRequest\x1a\x1e.instance.v1.OperationResponse\x12K\n" +
 	"\x05Start\x12\".instance.v1.ChangeInstanceRequest\x1a\x1e.instance.v1.OperationResponse\x12J\n" +
 	"\x04Stop\x12\".instance.v1.ChangeInstanceRequest\x1a\x1e.instance.v1.OperationResponse\x12M\n" +
-	"\aRestart\x12\".instance.v1.ChangeInstanceRequest\x1a\x1e.instance.v1.OperationResponse\x12Z\n" +
+	"\aRestart\x12\".instance.v1.ChangeInstanceRequest\x1a\x1e.instance.v1.OperationResponse\x12V\n" +
+	"\x14GetNetworkInterfaces\x12\x1f.instance.v1.GetInstanceRequest\x1a\x1d.network.v1.NetworkInterfaces\x12^\n" +
+	"\x13SetNetworkInterface\x12'.instance.v1.SetNetworkInterfaceRequest\x1a\x1e.instance.v1.OperationResponse\x12Z\n" +
 	"\x11SetSecurityGroups\x12%.instance.v1.SetSecurityGroupsRequest\x1a\x1e.instance.v1.OperationResponse\x12J\n" +
 	"\tAttachPVC\x12\x1d.instance.v1.AttachPVCRequest\x1a\x1e.instance.v1.OperationResponse\x12J\n" +
 	"\tDetachPVC\x12\x1d.instance.v1.DetachPVCRequest\x1a\x1e.instance.v1.OperationResponse\x12r\n" +
@@ -4205,7 +4309,7 @@ func file_instance_v1_instance_proto_rawDescGZIP() []byte {
 }
 
 var file_instance_v1_instance_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_instance_v1_instance_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_instance_v1_instance_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_instance_v1_instance_proto_goTypes = []any{
 	(SchedulingOptions_PodPlacement)(0),      // 0: instance.v1.SchedulingOptions.PodPlacement
 	(InstanceLogFrame_Kind)(0),               // 1: instance.v1.InstanceLogFrame.Kind
@@ -4252,64 +4356,66 @@ var file_instance_v1_instance_proto_goTypes = []any{
 	(*Operation)(nil),                        // 42: instance.v1.Operation
 	(*ResolveTerminalTargetRequest)(nil),     // 43: instance.v1.ResolveTerminalTargetRequest
 	(*InstanceMetricScope)(nil),              // 44: instance.v1.InstanceMetricScope
-	nil,                                      // 45: instance.v1.CreateInstanceData.LabelsEntry
-	nil,                                      // 46: instance.v1.CreateInstanceData.AnnotationsEntry
-	nil,                                      // 47: instance.v1.InstanceConfiguration.LabelsEntry
-	nil,                                      // 48: instance.v1.InstanceConfiguration.AnnotationsEntry
-	nil,                                      // 49: instance.v1.CreateSpec.LabelsEntry
-	nil,                                      // 50: instance.v1.CreateSpec.AnnotationsEntry
-	(v1.SupplyMode)(0),                       // 51: accelerator.v1.SupplyMode
-	(*v1.GpuExecution)(nil),                  // 52: accelerator.v1.GpuExecution
-	(*v1.GpuDisplay)(nil),                    // 53: accelerator.v1.GpuDisplay
-	(*v11.DurableOwnerAck)(nil),              // 54: accelerator.command.v1.DurableOwnerAck
-	(*timestamppb.Timestamp)(nil),            // 55: google.protobuf.Timestamp
-	(*v12.TerminalTarget)(nil),               // 56: instance.terminal.v1.TerminalTarget
+	(*SetNetworkInterfaceRequest)(nil),       // 45: instance.v1.SetNetworkInterfaceRequest
+	nil,                                      // 46: instance.v1.CreateInstanceData.LabelsEntry
+	nil,                                      // 47: instance.v1.CreateInstanceData.AnnotationsEntry
+	nil,                                      // 48: instance.v1.InstanceConfiguration.LabelsEntry
+	nil,                                      // 49: instance.v1.InstanceConfiguration.AnnotationsEntry
+	nil,                                      // 50: instance.v1.CreateSpec.LabelsEntry
+	nil,                                      // 51: instance.v1.CreateSpec.AnnotationsEntry
+	(v1.SupplyMode)(0),                       // 52: accelerator.v1.SupplyMode
+	(*v1.GpuExecution)(nil),                  // 53: accelerator.v1.GpuExecution
+	(*v1.GpuDisplay)(nil),                    // 54: accelerator.v1.GpuDisplay
+	(*v11.DurableOwnerAck)(nil),              // 55: accelerator.command.v1.DurableOwnerAck
+	(*timestamppb.Timestamp)(nil),            // 56: google.protobuf.Timestamp
+	(*v12.NetworkInterfaces)(nil),            // 57: network.v1.NetworkInterfaces
+	(*v13.TerminalTarget)(nil),               // 58: instance.terminal.v1.TerminalTarget
 }
 var file_instance_v1_instance_proto_depIdxs = []int32{
 	0,  // 0: instance.v1.SchedulingOptions.pod_placement:type_name -> instance.v1.SchedulingOptions.PodPlacement
 	2,  // 1: instance.v1.CreateInstanceData.scheduling:type_name -> instance.v1.SchedulingOptions
 	4,  // 2: instance.v1.CreateInstanceData.volume_mounts:type_name -> instance.v1.VolumeMount
 	7,  // 3: instance.v1.CreateInstanceData.network:type_name -> instance.v1.NetworkSelection
-	45, // 4: instance.v1.CreateInstanceData.labels:type_name -> instance.v1.CreateInstanceData.LabelsEntry
-	46, // 5: instance.v1.CreateInstanceData.annotations:type_name -> instance.v1.CreateInstanceData.AnnotationsEntry
+	46, // 4: instance.v1.CreateInstanceData.labels:type_name -> instance.v1.CreateInstanceData.LabelsEntry
+	47, // 5: instance.v1.CreateInstanceData.annotations:type_name -> instance.v1.CreateInstanceData.AnnotationsEntry
 	6,  // 6: instance.v1.CreateInstanceData.env:type_name -> instance.v1.InstanceEnvVar
 	9,  // 7: instance.v1.ListMountablePVCsResponse.items:type_name -> instance.v1.MountablePVC
 	4,  // 8: instance.v1.InstanceConfiguration.volume_mounts:type_name -> instance.v1.VolumeMount
 	7,  // 9: instance.v1.InstanceConfiguration.network:type_name -> instance.v1.NetworkSelection
-	47, // 10: instance.v1.InstanceConfiguration.labels:type_name -> instance.v1.InstanceConfiguration.LabelsEntry
-	48, // 11: instance.v1.InstanceConfiguration.annotations:type_name -> instance.v1.InstanceConfiguration.AnnotationsEntry
+	48, // 10: instance.v1.InstanceConfiguration.labels:type_name -> instance.v1.InstanceConfiguration.LabelsEntry
+	49, // 11: instance.v1.InstanceConfiguration.annotations:type_name -> instance.v1.InstanceConfiguration.AnnotationsEntry
 	6,  // 12: instance.v1.InstanceConfiguration.env:type_name -> instance.v1.InstanceEnvVar
 	26, // 13: instance.v1.InstanceConfiguration.pending_change:type_name -> instance.v1.PendingMountChange
-	51, // 14: instance.v1.GpuPresetReference.mode:type_name -> accelerator.v1.SupplyMode
-	51, // 15: instance.v1.GpuSummary.mode:type_name -> accelerator.v1.SupplyMode
+	52, // 14: instance.v1.GpuPresetReference.mode:type_name -> accelerator.v1.SupplyMode
+	52, // 15: instance.v1.GpuSummary.mode:type_name -> accelerator.v1.SupplyMode
 	3,  // 16: instance.v1.ResolveCreateSpecRequest.data:type_name -> instance.v1.CreateInstanceData
 	2,  // 17: instance.v1.ResolveCreateSpecRequest.scheduling_defaults:type_name -> instance.v1.SchedulingOptions
 	2,  // 18: instance.v1.CreateSpec.scheduling:type_name -> instance.v1.SchedulingOptions
-	52, // 19: instance.v1.CreateSpec.gpu_execution:type_name -> accelerator.v1.GpuExecution
-	53, // 20: instance.v1.CreateSpec.gpu_display:type_name -> accelerator.v1.GpuDisplay
+	53, // 19: instance.v1.CreateSpec.gpu_execution:type_name -> accelerator.v1.GpuExecution
+	54, // 20: instance.v1.CreateSpec.gpu_display:type_name -> accelerator.v1.GpuDisplay
 	12, // 21: instance.v1.CreateSpec.gpu_selection:type_name -> instance.v1.GpuPresetReference
 	5,  // 22: instance.v1.CreateSpec.volume_mounts:type_name -> instance.v1.FrozenVolumeMount
 	7,  // 23: instance.v1.CreateSpec.network:type_name -> instance.v1.NetworkSelection
-	49, // 24: instance.v1.CreateSpec.labels:type_name -> instance.v1.CreateSpec.LabelsEntry
-	50, // 25: instance.v1.CreateSpec.annotations:type_name -> instance.v1.CreateSpec.AnnotationsEntry
+	50, // 24: instance.v1.CreateSpec.labels:type_name -> instance.v1.CreateSpec.LabelsEntry
+	51, // 25: instance.v1.CreateSpec.annotations:type_name -> instance.v1.CreateSpec.AnnotationsEntry
 	6,  // 26: instance.v1.CreateSpec.env:type_name -> instance.v1.InstanceEnvVar
 	16, // 27: instance.v1.AcceptCreateRequest.context:type_name -> instance.v1.CommandContext
 	15, // 28: instance.v1.AcceptCreateRequest.spec:type_name -> instance.v1.CreateSpec
 	16, // 29: instance.v1.AcceptDeleteRequest.context:type_name -> instance.v1.CommandContext
 	4,  // 30: instance.v1.MountConfiguration.volume_mounts:type_name -> instance.v1.VolumeMount
 	25, // 31: instance.v1.PendingMountChange.target_configuration:type_name -> instance.v1.MountConfiguration
-	54, // 32: instance.v1.OperationResponse.durable_owner_ack:type_name -> accelerator.command.v1.DurableOwnerAck
+	55, // 32: instance.v1.OperationResponse.durable_owner_ack:type_name -> accelerator.command.v1.DurableOwnerAck
 	31, // 33: instance.v1.ListInstancesResponse.items:type_name -> instance.v1.Instance
-	55, // 34: instance.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
+	56, // 34: instance.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
 	13, // 35: instance.v1.Instance.gpu_summary:type_name -> instance.v1.GpuSummary
 	2,  // 36: instance.v1.Instance.scheduling:type_name -> instance.v1.SchedulingOptions
 	32, // 37: instance.v1.RuntimePod.environment_sources:type_name -> instance.v1.EnvironmentSource
 	33, // 38: instance.v1.RuntimePod.mounts:type_name -> instance.v1.RuntimeMount
-	55, // 39: instance.v1.InstanceRuntime.observed_at:type_name -> google.protobuf.Timestamp
+	56, // 39: instance.v1.InstanceRuntime.observed_at:type_name -> google.protobuf.Timestamp
 	34, // 40: instance.v1.InstanceRuntime.pod:type_name -> instance.v1.RuntimePod
 	35, // 41: instance.v1.InstanceRuntime.stateful_set:type_name -> instance.v1.RuntimeStatefulSet
-	55, // 42: instance.v1.InstanceEvent.last_occurred_at:type_name -> google.protobuf.Timestamp
-	55, // 43: instance.v1.InstanceEvents.observed_at:type_name -> google.protobuf.Timestamp
+	56, // 42: instance.v1.InstanceEvent.last_occurred_at:type_name -> google.protobuf.Timestamp
+	56, // 43: instance.v1.InstanceEvents.observed_at:type_name -> google.protobuf.Timestamp
 	37, // 44: instance.v1.InstanceEvents.events:type_name -> instance.v1.InstanceEvent
 	1,  // 45: instance.v1.InstanceLogFrame.kind:type_name -> instance.v1.InstanceLogFrame.Kind
 	25, // 46: instance.v1.Operation.target_configuration:type_name -> instance.v1.MountConfiguration
@@ -4324,39 +4430,43 @@ var file_instance_v1_instance_proto_depIdxs = []int32{
 	19, // 55: instance.v1.InstanceService.Start:input_type -> instance.v1.ChangeInstanceRequest
 	19, // 56: instance.v1.InstanceService.Stop:input_type -> instance.v1.ChangeInstanceRequest
 	19, // 57: instance.v1.InstanceService.Restart:input_type -> instance.v1.ChangeInstanceRequest
-	20, // 58: instance.v1.InstanceService.SetSecurityGroups:input_type -> instance.v1.SetSecurityGroupsRequest
-	21, // 59: instance.v1.InstanceService.AttachPVC:input_type -> instance.v1.AttachPVCRequest
-	22, // 60: instance.v1.InstanceService.DetachPVC:input_type -> instance.v1.DetachPVCRequest
-	23, // 61: instance.v1.InstanceService.ListInstanceMountablePVCs:input_type -> instance.v1.ListInstanceMountablePVCsRequest
-	24, // 62: instance.v1.InstanceService.LookupCommandReplay:input_type -> instance.v1.LookupCommandReplayRequest
-	28, // 63: instance.v1.InstanceService.GetInstance:input_type -> instance.v1.GetInstanceRequest
-	28, // 64: instance.v1.InstanceService.ResolveInstanceMetricScope:input_type -> instance.v1.GetInstanceRequest
-	29, // 65: instance.v1.InstanceService.ListInstances:input_type -> instance.v1.ListInstancesRequest
-	41, // 66: instance.v1.InstanceService.GetOperation:input_type -> instance.v1.GetOperationRequest
-	43, // 67: instance.v1.InstanceService.ResolveTerminalTarget:input_type -> instance.v1.ResolveTerminalTargetRequest
-	36, // 68: instance.v1.InstanceService.GetInstanceRuntime:output_type -> instance.v1.InstanceRuntime
-	38, // 69: instance.v1.InstanceService.ListInstanceEvents:output_type -> instance.v1.InstanceEvents
-	40, // 70: instance.v1.InstanceService.StreamInstanceLogs:output_type -> instance.v1.InstanceLogFrame
-	10, // 71: instance.v1.InstanceService.ListMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
-	11, // 72: instance.v1.InstanceService.GetInstanceConfiguration:output_type -> instance.v1.InstanceConfiguration
-	15, // 73: instance.v1.InstanceService.ResolveCreateSpec:output_type -> instance.v1.CreateSpec
-	27, // 74: instance.v1.InstanceService.AcceptCreate:output_type -> instance.v1.OperationResponse
-	27, // 75: instance.v1.InstanceService.AcceptDelete:output_type -> instance.v1.OperationResponse
-	27, // 76: instance.v1.InstanceService.Start:output_type -> instance.v1.OperationResponse
-	27, // 77: instance.v1.InstanceService.Stop:output_type -> instance.v1.OperationResponse
-	27, // 78: instance.v1.InstanceService.Restart:output_type -> instance.v1.OperationResponse
-	27, // 79: instance.v1.InstanceService.SetSecurityGroups:output_type -> instance.v1.OperationResponse
-	27, // 80: instance.v1.InstanceService.AttachPVC:output_type -> instance.v1.OperationResponse
-	27, // 81: instance.v1.InstanceService.DetachPVC:output_type -> instance.v1.OperationResponse
-	10, // 82: instance.v1.InstanceService.ListInstanceMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
-	27, // 83: instance.v1.InstanceService.LookupCommandReplay:output_type -> instance.v1.OperationResponse
-	31, // 84: instance.v1.InstanceService.GetInstance:output_type -> instance.v1.Instance
-	44, // 85: instance.v1.InstanceService.ResolveInstanceMetricScope:output_type -> instance.v1.InstanceMetricScope
-	30, // 86: instance.v1.InstanceService.ListInstances:output_type -> instance.v1.ListInstancesResponse
-	42, // 87: instance.v1.InstanceService.GetOperation:output_type -> instance.v1.Operation
-	56, // 88: instance.v1.InstanceService.ResolveTerminalTarget:output_type -> instance.terminal.v1.TerminalTarget
-	68, // [68:89] is the sub-list for method output_type
-	47, // [47:68] is the sub-list for method input_type
+	28, // 58: instance.v1.InstanceService.GetNetworkInterfaces:input_type -> instance.v1.GetInstanceRequest
+	45, // 59: instance.v1.InstanceService.SetNetworkInterface:input_type -> instance.v1.SetNetworkInterfaceRequest
+	20, // 60: instance.v1.InstanceService.SetSecurityGroups:input_type -> instance.v1.SetSecurityGroupsRequest
+	21, // 61: instance.v1.InstanceService.AttachPVC:input_type -> instance.v1.AttachPVCRequest
+	22, // 62: instance.v1.InstanceService.DetachPVC:input_type -> instance.v1.DetachPVCRequest
+	23, // 63: instance.v1.InstanceService.ListInstanceMountablePVCs:input_type -> instance.v1.ListInstanceMountablePVCsRequest
+	24, // 64: instance.v1.InstanceService.LookupCommandReplay:input_type -> instance.v1.LookupCommandReplayRequest
+	28, // 65: instance.v1.InstanceService.GetInstance:input_type -> instance.v1.GetInstanceRequest
+	28, // 66: instance.v1.InstanceService.ResolveInstanceMetricScope:input_type -> instance.v1.GetInstanceRequest
+	29, // 67: instance.v1.InstanceService.ListInstances:input_type -> instance.v1.ListInstancesRequest
+	41, // 68: instance.v1.InstanceService.GetOperation:input_type -> instance.v1.GetOperationRequest
+	43, // 69: instance.v1.InstanceService.ResolveTerminalTarget:input_type -> instance.v1.ResolveTerminalTargetRequest
+	36, // 70: instance.v1.InstanceService.GetInstanceRuntime:output_type -> instance.v1.InstanceRuntime
+	38, // 71: instance.v1.InstanceService.ListInstanceEvents:output_type -> instance.v1.InstanceEvents
+	40, // 72: instance.v1.InstanceService.StreamInstanceLogs:output_type -> instance.v1.InstanceLogFrame
+	10, // 73: instance.v1.InstanceService.ListMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
+	11, // 74: instance.v1.InstanceService.GetInstanceConfiguration:output_type -> instance.v1.InstanceConfiguration
+	15, // 75: instance.v1.InstanceService.ResolveCreateSpec:output_type -> instance.v1.CreateSpec
+	27, // 76: instance.v1.InstanceService.AcceptCreate:output_type -> instance.v1.OperationResponse
+	27, // 77: instance.v1.InstanceService.AcceptDelete:output_type -> instance.v1.OperationResponse
+	27, // 78: instance.v1.InstanceService.Start:output_type -> instance.v1.OperationResponse
+	27, // 79: instance.v1.InstanceService.Stop:output_type -> instance.v1.OperationResponse
+	27, // 80: instance.v1.InstanceService.Restart:output_type -> instance.v1.OperationResponse
+	57, // 81: instance.v1.InstanceService.GetNetworkInterfaces:output_type -> network.v1.NetworkInterfaces
+	27, // 82: instance.v1.InstanceService.SetNetworkInterface:output_type -> instance.v1.OperationResponse
+	27, // 83: instance.v1.InstanceService.SetSecurityGroups:output_type -> instance.v1.OperationResponse
+	27, // 84: instance.v1.InstanceService.AttachPVC:output_type -> instance.v1.OperationResponse
+	27, // 85: instance.v1.InstanceService.DetachPVC:output_type -> instance.v1.OperationResponse
+	10, // 86: instance.v1.InstanceService.ListInstanceMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
+	27, // 87: instance.v1.InstanceService.LookupCommandReplay:output_type -> instance.v1.OperationResponse
+	31, // 88: instance.v1.InstanceService.GetInstance:output_type -> instance.v1.Instance
+	44, // 89: instance.v1.InstanceService.ResolveInstanceMetricScope:output_type -> instance.v1.InstanceMetricScope
+	30, // 90: instance.v1.InstanceService.ListInstances:output_type -> instance.v1.ListInstancesResponse
+	42, // 91: instance.v1.InstanceService.GetOperation:output_type -> instance.v1.Operation
+	58, // 92: instance.v1.InstanceService.ResolveTerminalTarget:output_type -> instance.terminal.v1.TerminalTarget
+	70, // [70:93] is the sub-list for method output_type
+	47, // [47:70] is the sub-list for method input_type
 	47, // [47:47] is the sub-list for extension type_name
 	47, // [47:47] is the sub-list for extension extendee
 	0,  // [0:47] is the sub-list for field type_name
@@ -4378,7 +4488,7 @@ func file_instance_v1_instance_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_instance_v1_instance_proto_rawDesc), len(file_instance_v1_instance_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   49,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -174,6 +174,24 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 	if progress.Observed && !progress.Proof.Covers(work.Requirement) {
 		return biz.ErrLeaseLost
 	}
+	// Admission and completion hold the same parent lock. A generated MAC must
+	// also respect manual reservations, including an accepted custom request.
+	if work.Resource.Kind == "vnic" && progress.Observed && progress.VNic != nil && progress.VNic.MACAddress != "" && progress.State != biz.Deleted {
+		var conflict bool
+		queryErr := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM network_vnics WHERE tenant_id=$1 AND subnet_id=$2 AND vnic_id<>$3 AND state<>'deleted' AND lower(COALESCE(NULLIF(requested_mac,''),mac_address))=lower($4))`, work.Resource.TenantID, work.Resource.SubnetID, work.Resource.ID, progress.VNic.MACAddress).Scan(&conflict)
+		if queryErr != nil {
+			return databaseFailure(queryErr)
+		}
+		if conflict && progress.State != biz.Deleting {
+			progress.State, progress.Reason = biz.Failed, biz.AddressConflict
+			if work.ActiveOperation {
+				progress.OperationState = biz.OpFailed
+			}
+		}
+		if conflict {
+			progress.VNic = nil
+		}
+	}
 	now, err := q.DatabaseTime(ctx)
 	if err != nil {
 		return databaseFailure(err)
@@ -192,6 +210,14 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 	}
 	if work.Resource.Kind == "load_balancer" {
 		if err = p.finishLB(ctx, q, work, progress); err != nil {
+			return databaseFailure(err)
+		}
+	}
+	if work.Resource.Kind == "vnic" && progress.State == biz.Deleted && progress.Observed {
+		if err = q.ReleaseSecurityGroupReferences(ctx, sqlcgen.ReleaseSecurityGroupReferencesParams{TenantID: work.Resource.TenantID, TargetType: "vnic", TargetID: work.Resource.ID, KeepIds: []string{}}); err != nil {
+			return databaseFailure(err)
+		}
+		if _, err = tx.Exec(ctx, `UPDATE network_security_group_targets SET payload=jsonb_set(payload,'{State}','"deleted"'::jsonb) WHERE tenant_id=$1 AND target_type='vnic' AND target_id=$2`, work.Resource.TenantID, work.Resource.ID); err != nil {
 			return databaseFailure(err)
 		}
 	}
@@ -232,7 +258,9 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 	if work.ActiveOperation || work.Resource.State != progress.State || work.Resource.Reason != progress.Reason {
 		entry := sqlcgen.InsertHistoryParams{TenantID: row.TenantID, HistoryID: uuid.NewString(),
 			Event: "reconciled", ResourceState: string(row.State), Reason: string(row.Reason), CreatedAt: row.UpdatedAt}
-		if row.Kind == "load_balancer" {
+		if row.Kind == "vnic" {
+			entry.VnicID = row.ID
+		} else if row.Kind == "load_balancer" {
 			entry.LbID = row.ID
 		} else if row.Kind == "eip" {
 			entry.EipID = row.ID

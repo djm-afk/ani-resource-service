@@ -176,6 +176,7 @@ type Delete struct {
 }
 
 type Command struct {
+	NetworkInterface                                    *NetworkInterfaceIntent
 	SecurityGroupIDs                                    []string
 	CanonicalIntent                                     []byte
 	Mount                                               *VolumeMount
@@ -197,6 +198,7 @@ type Operation struct {
 	CreatedAt                                                         time.Time
 }
 type Instance struct {
+	NetworkInterfaces                                                  []NetworkInterface
 	SecurityGroupIDs, SecurityGroupNames                               []string
 	SecurityGroupsInitialized                                          bool
 	SecurityGroupRevision                                              int64
@@ -402,6 +404,8 @@ func validateResources(kind string, gpu GPU) error {
 }
 
 type ListFilter struct {
+	SubnetID, ClusterID, Namespace                 string
+	BindableOnly                                   bool
 	Page, PageSize                                 uint32
 	InstanceKind, ComputeType, ObservedState, Name string
 	ID                                             string

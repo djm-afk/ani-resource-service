@@ -169,3 +169,7 @@ Storage 方法全部为租户委托、unary RPC，完整清单以 [`internal/ser
 ## 租户安全组
 
 上述安全组方法使用现有受信租户委托，不允许平台或 owner 范围借用。容器和 VM 创建请求中的 `security_group_ids` 与后续独立 SetSecurityGroups 均在 Resource 核对租户、placement 及组状态；绑定更换不修改不可变 CREATE 意图。规则默认值、应用证据和旧引用释放见[安全组合同](security-groups.md)。
+
+### 手动 VNIC 精确方法
+
+受信 Governance tenant listener 新增 `NetworkService/{CreateVNic,GetVNic,ListVNics,DeleteVNic,ListVNicBindingTargets}`，请求显式 `target_tenant_id` 与认证租户一致，caller/actor/request attribution 来自 mTLS 受信元数据。VMService 与 InstanceService 各新增 `GetNetworkInterfaces`、`SetNetworkInterface`，沿本域 tenant scope；保存命令不隐式执行 Restart。正式方法与字段见对应 Proto，禁止平台范围跨租户调用这些租户方法。

@@ -159,12 +159,44 @@ func (p *KCProvider) managedControllersExist(ctx context.Context, w biz.Attachme
 		if err != nil {
 			return false, readFailure(err)
 		}
-		if workloadIdentity(obj) != ref {
+		if workloadIdentity(obj) != ref && !acceptedManagedControllerReplacement(w, ref, obj) {
 			return false, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 		exists = true
 	}
 	return exists, nil
+}
+
+func acceptedManagedControllerReplacement(w biz.AttachmentWork, previous biz.WorkloadReference, obj *unstructured.Unstructured) bool {
+	c, a := w.ConsumerSnapshot, w.Attachment
+	if c == nil || a.WorkloadMode != "controller_managed" || c.TenantID != a.TenantID || c.InstanceID != a.InstanceID || c.AttachmentID != a.ID || c.SubmissionID != a.SubmissionID || c.Generation != a.Generation || c.ClusterID != a.ClusterID || c.Namespace != a.Namespace {
+		return false
+	}
+	root := c.RootController
+	if root != a.RootController || root.APIVersion != "kubeflow.org/v1" || root.Kind != "Notebook" || root.Namespace != a.Namespace || root.Name == "" || root.UID == "" {
+		return false
+	}
+	current := workloadIdentity(obj)
+	if previous.APIVersion != "apps/v1" || previous.Kind != "StatefulSet" || previous.Namespace != root.Namespace || previous.UID == "" || current.UID == "" || current.UID == previous.UID {
+		return false
+	}
+	sameName := current
+	sameName.UID = previous.UID
+	if sameName != previous {
+		return false
+	}
+	owner, ok := workloadController(obj, root.APIVersion, root.Kind)
+	if !ok || owner != root {
+		return false
+	}
+	// The old UID has exited, but a specifically accepted successor still
+	// exists. It remains a dependency until it exits normally.
+	for _, accepted := range c.Controllers {
+		if accepted.Reference == current && accepted.Owner == root {
+			return true
+		}
+	}
+	return false
 }
 
 // Nic lives in kcn's system Namespace and has no Pod UID ownerReference. Its

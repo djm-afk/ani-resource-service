@@ -35,6 +35,17 @@ func ConsumerSnapshotHash(c ConsumerSubmission) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }
+
+// The persisted snapshot is the semantic source of truth. Canonicalize it
+// with the same optional-field rules as an incoming snapshot so adding an
+// absent optional reference never changes an existing consumer revision.
+func frozenConsumerSnapshotHash(a Attachment) string {
+	if a.ConsumerSnapshot != nil {
+		return ConsumerSnapshotHash(*a.ConsumerSnapshot)
+	}
+	return a.SnapshotHash
+}
+
 func referenceValid(r WorkloadReference, api, kind, namespace string) bool {
 	return r.APIVersion == api && r.Kind == kind && r.Namespace == namespace && namespaceName.MatchString(r.Name) && r.UID != "" && len(r.UID) <= 128
 }
@@ -105,7 +116,7 @@ func CompareConsumerSnapshot(a Attachment, c ConsumerSubmission) SnapshotCompari
 	if !valid {
 		return SnapshotConflict
 	}
-	if c.SnapshotRevision == a.SnapshotRevision && a.SnapshotHash != "" && ConsumerSnapshotHash(c) != a.SnapshotHash {
+	if c.SnapshotRevision == a.SnapshotRevision && a.SnapshotHash != "" && ConsumerSnapshotHash(c) != frozenConsumerSnapshotHash(a) {
 		return SnapshotConflict
 	}
 	if a.RootController.UID != "" && a.RootController != c.RootController {
@@ -158,7 +169,7 @@ func ManagedProtocolRecoveryMatches(a Attachment, c ConsumerSubmission, podName,
 	if (a.WorkloadMode != "controller_managed" && a.WorkloadMode != "vm_managed") || (a.State != Reserved && a.State != Attached) || a.FinalizationID != "" || a.ConsumerSnapshot == nil || a.SnapshotRevision < 1 || a.SnapshotHash == "" || a.RootController.UID == "" {
 		return false
 	}
-	if CompareConsumerSnapshot(a, c) != SnapshotAccepted || c.SnapshotRevision != a.SnapshotRevision || ConsumerSnapshotHash(c) != a.SnapshotHash || ConsumerSnapshotHash(*a.ConsumerSnapshot) != a.SnapshotHash {
+	if CompareConsumerSnapshot(a, c) != SnapshotAccepted || c.SnapshotRevision != a.SnapshotRevision || ConsumerSnapshotHash(c) != frozenConsumerSnapshotHash(a) {
 		return false
 	}
 	if c.State != "open" || c.DesiredRunState != "running" || c.FinalizationID != "" || c.ClosedAt != nil || len(c.CurrentPods) != 1 || c.RootController != a.RootController {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 )
@@ -18,6 +19,7 @@ const (
 )
 
 type Subnet struct {
+	SubnetOptions
 	AvailableIPRange, UsedIPRange                         *string
 	ID, TenantID, VPCID, Name, CIDR, Gateway, Description string
 	State                                                 ResourceState
@@ -35,6 +37,7 @@ type SubnetIPRanges struct {
 }
 
 type CreateSubnet struct {
+	SubnetOptions
 	TenantID, VPCID, Name, CIDR, Description, IdempotencyKey string
 	// nil is the default gateway; a present empty string is invalid.
 	Gateway     *string
@@ -43,7 +46,70 @@ type CreateSubnet struct {
 
 type SubnetIntent struct {
 	VPCIntent
+	SubnetOptions
 	VPCID, Gateway string
+}
+
+// SubnetOptions are immutable creation settings, distinct from allocation facts.
+type SubnetOptions struct {
+	ExcludeIPs []string `json:",omitempty"`
+	EnableDHCP bool     `json:",omitempty"`
+	DNSServers []string `json:",omitempty"`
+}
+
+func normalizeSubnetOptions(input SubnetOptions, prefix netip.Prefix) (SubnetOptions, error) {
+	type ipRange struct{ start, end netip.Addr }
+	ranges := make([]ipRange, 0, len(input.ExcludeIPs))
+	for _, raw := range input.ExcludeIPs {
+		parts := strings.Split(strings.TrimSpace(raw), "..")
+		if len(parts) < 1 || len(parts) > 2 {
+			return SubnetOptions{}, Fail(InvalidArgument, "exclude_ips must contain IPv4 addresses or startIP..endIP ranges")
+		}
+		start, err := netip.ParseAddr(strings.TrimSpace(parts[0]))
+		if err != nil || !start.Is4() || !prefix.Contains(start) {
+			return SubnetOptions{}, Fail(InvalidArgument, "excluded IPv4 addresses must belong to the subnet")
+		}
+		end := start
+		if len(parts) == 2 {
+			end, err = netip.ParseAddr(strings.TrimSpace(parts[1]))
+			if err != nil || !end.Is4() || !prefix.Contains(end) || end.Less(start) {
+				return SubnetOptions{}, Fail(InvalidArgument, "excluded IPv4 range must be ordered and belong to the subnet")
+			}
+		}
+		ranges = append(ranges, ipRange{start, end})
+	}
+	slices.SortFunc(ranges, func(a, b ipRange) int { return a.start.Compare(b.start) })
+	merged := make([]ipRange, 0, len(ranges))
+	for _, r := range ranges {
+		if len(merged) > 0 {
+			last := &merged[len(merged)-1]
+			if r.start.Compare(last.end) <= 0 || (last.end.Next().IsValid() && r.start == last.end.Next()) {
+				if last.end.Less(r.end) {
+					last.end = r.end
+				}
+				continue
+			}
+		}
+		merged = append(merged, r)
+	}
+	out := SubnetOptions{EnableDHCP: input.EnableDHCP, ExcludeIPs: []string{}, DNSServers: []string{}}
+	for _, r := range merged {
+		value := r.start.String()
+		if r.start != r.end {
+			value += ".." + r.end.String()
+		}
+		out.ExcludeIPs = append(out.ExcludeIPs, value)
+	}
+	for _, raw := range input.DNSServers {
+		ip, err := netip.ParseAddr(strings.TrimSpace(raw))
+		if err != nil || !ip.Is4() || ip.IsUnspecified() || ip.IsMulticast() || ip == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
+			return SubnetOptions{}, Fail(InvalidArgument, "dns_servers must contain IPv4 unicast addresses")
+		}
+		if !slices.Contains(out.DNSServers, ip.String()) {
+			out.DNSServers = append(out.DNSServers, ip.String())
+		}
+	}
+	return out, nil
 }
 
 func NewSubnetIntent(r CreateSubnet) (SubnetIntent, error) {
@@ -65,14 +131,23 @@ func NewSubnetIntent(r CreateSubnet) (SubnetIntent, error) {
 	if !prefix.Contains(gateway) || gateway == prefix.Addr() || !prefix.Contains(gateway.Next()) {
 		return SubnetIntent{}, Fail(InvalidArgument, "gateway must be a usable host within the subnet")
 	}
-	return SubnetIntent{VPCIntent: common, VPCID: r.VPCID, Gateway: gateway.String()}, nil
+	options, err := normalizeSubnetOptions(r.SubnetOptions, prefix)
+	if err != nil {
+		return SubnetIntent{}, err
+	}
+	return SubnetIntent{VPCIntent: common, SubnetOptions: options, VPCID: r.VPCID, Gateway: gateway.String()}, nil
 }
 
 func (s SubnetIntent) Fingerprint() string {
+	var options *SubnetOptions
+	if s.EnableDHCP || len(s.ExcludeIPs) > 0 || len(s.DNSServers) > 0 {
+		options = &s.SubnetOptions
+	}
 	value, _ := json.Marshal(struct {
 		Version                                 int
 		Name, CIDR, Description, VPCID, Gateway string
-	}{1, s.Name, s.CIDR, s.Description, s.VPCID, s.Gateway})
+		Options                                 *SubnetOptions `json:",omitempty"`
+	}{1, s.Name, s.CIDR, s.Description, s.VPCID, s.Gateway, options})
 	digest := sha256.Sum256(value)
 	return hex.EncodeToString(digest[:])
 }

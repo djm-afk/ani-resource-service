@@ -1,0 +1,18 @@
+syntax = "proto3";
+package network.v1;
+option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1;networkv1";
+import "google/protobuf/timestamp.proto";
+
+message NetworkInterfaceChoice {
+ string mode = 1; string vnic_id = 2 [json_name="vnic_id"]; string vnic_name = 3 [json_name="vnic_name"];
+ string provider_uid = 4 [json_name="provider_uid"]; string mac_address = 5 [json_name="mac_address"]; repeated string ips = 6;
+}
+message NetworkInterface {
+ string slot = 1; NetworkInterfaceChoice desired = 2; NetworkInterfaceChoice applied = 3;
+ int64 requested_revision = 4 [json_name="requested_revision"]; int64 applied_revision = 5 [json_name="applied_revision"];
+ bool pending_restart = 6 [json_name="pending_restart"]; bool effective_now = 7 [json_name="effective_now"];
+ string current_vnic_name = 8 [json_name="current_vnic_name"]; string current_mac_address = 9 [json_name="current_mac_address"]; repeated string current_ips = 10 [json_name="current_ips"];
+ google.protobuf.Timestamp observed_at = 11 [json_name="observed_at"]; string observation_reason = 12 [json_name="observation_reason"];
+ string configuration_state = 13 [json_name="configuration_state"];string operation_id = 14 [json_name="operation_id"];string operation_reason = 15 [json_name="operation_reason"];
+}
+message NetworkInterfaces { repeated NetworkInterface items = 1; int64 version = 2; bool supported = 3; string unsupported_reason = 4 [json_name="unsupported_reason"]; }

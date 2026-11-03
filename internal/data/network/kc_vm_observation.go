@@ -23,6 +23,19 @@ func attachmentObservationKeys(w biz.AttachmentWork) ([]string, error) {
 	for _, r := range prior {
 		keys = append(keys, "uid:"+r.UID, "uid:"+r.OwnerUID, "object:"+r.Kind+"/"+r.Namespace+"/"+r.Name, "vNic:"+r.Namespace+"/"+r.Name)
 	}
+	if w.ConsumerSnapshot != nil && (a.WorkloadMode == "controller_managed" || a.WorkloadMode == "vm_managed") {
+		// A retained manual VNIC has no Pod owner. Initial/recreated Pods must
+		// locate its original identity before any current relation is persisted.
+		// These are candidate hints; Provider still verifies the DB binding/UID.
+		for _, manual := range w.ConsumerSnapshot.ManualVNics {
+			if manual.ProviderUID != "" {
+				keys = append(keys, "uid:"+manual.ProviderUID)
+			}
+			if manual.ProviderName != "" {
+				keys = append(keys, "object:VNic/"+a.Namespace+"/"+manual.ProviderName, "vNic:"+a.Namespace+"/"+manual.ProviderName)
+			}
+		}
+	}
 	if a.WorkloadMode != "vm_managed" || w.ConsumerSnapshot == nil {
 		return keys, nil
 	}

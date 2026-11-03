@@ -166,6 +166,36 @@ func (p *Postgres) GetAttachment(ctx context.Context, t, id string) (biz.Attachm
 	if err != nil {
 		return biz.Attachment{}, err
 	}
+	if a.State == biz.Attached && a.PodUID != "" {
+		var relations []attachmentRelation
+		if err = json.Unmarshal(row.ProviderRelations, &relations); err != nil {
+			return biz.Attachment{}, databaseFailure(err)
+		}
+		current := map[string]bool{}
+		for _, r := range relations {
+
+			manual := false
+			if a.ConsumerSnapshot != nil {
+				for _, ref := range a.ConsumerSnapshot.ManualVNics {
+					if ref.ProviderName == r.Name && ref.ProviderUID != "" && ref.ProviderUID == r.UID {
+						manual = true
+						break
+					}
+				}
+			}
+			if r.Kind == "VNic" && r.Current && (r.OwnerUID == a.PodUID || manual) {
+				current[r.UID] = true
+				a.CurrentVNicName = r.Name
+				a.CurrentVNicUID = r.UID
+				a.CurrentMACAddress = r.MACAddress
+			}
+		}
+		for _, r := range relations {
+			if r.Kind == "VNicIP" && r.Current && r.AddressEligible && current[r.OwnerUID] && r.Address != "" {
+				a.CurrentIPs = append(a.CurrentIPs, r.Address)
+			}
+		}
+	}
 	if a.WorkloadMode == "vm_managed" {
 		a.VMCurrentAddresses = p.vmCurrentAddresses(ctx, a, row.ProviderRelations)
 		if a.State == biz.Attached && a.Reason == "" && len(a.VMCurrentAddresses) == 0 {

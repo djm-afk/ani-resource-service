@@ -461,7 +461,7 @@ func CanonicalCommandIntent(m proto.Message) ([]byte, error) {
 	switch m.(type) {
 	case *ChangeVMRequest, *ForceStopRequest, *CreateDiskRequest, *DiskChangeRequest,
 		*SetMediaRequest, *EjectMediaRequest, *SetBootDeviceRequest, *SnapshotCreateRequest,
-		*SnapshotChangeRequest, *RestoreSnapshotRequest, *SetSecurityGroupsRequest:
+		*SnapshotChangeRequest, *RestoreSnapshotRequest, *SetSecurityGroupsRequest, *SetNetworkInterfaceRequest:
 	default:
 		return nil, ErrInvalidRequest
 	}

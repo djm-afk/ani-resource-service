@@ -34,6 +34,9 @@ func (p *KCProvider) Observe(ctx context.Context, t biz.ProviderTarget) (biz.Pro
 		p.observation.mu.Unlock()
 		if v != nil && time.Since(v.collected) <= p.observation.options.AuditInterval+p.observation.options.AuditJitter {
 			kind := "VPC"
+			if b.ResourceKind == "vnic" {
+				kind = "VNic"
+			}
 			if b.ResourceKind == "subnet" {
 				kind = "Subnet"
 			}

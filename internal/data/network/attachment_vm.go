@@ -260,9 +260,9 @@ func vmCurrentAddressRelations(a biz.Attachment, raw []byte) []biz.VMCurrentAddr
 }
 
 // containerAddressRelations projects the primary Pod's current VNicIP facts. The
-// identity chain is Pod UID -> VNic owner -> VNicIP owner, so a recycled name or
-// a Pod that was replaced under the same attachment yields no address instead of
-// an old IP.
+// identity chain uses the Pod-owned VNic or an accepted manual VNic's exact UID,
+// followed by the VNicIP owner. Current was validated by the provider against
+// the live Pod, so a replaced Pod or recycled name never yields an old IP.
 func containerAddressRelations(a biz.Attachment, raw []byte) []biz.AttachmentAddress {
 	if a.State != biz.Attached || a.Reason != "" || a.ObservedAt == nil || a.PodUID == "" {
 		return nil
@@ -280,7 +280,16 @@ func containerAddressRelations(a biz.Attachment, raw []byte) []biz.AttachmentAdd
 	}
 	nics := map[string]bool{}
 	for _, relation := range relations {
-		if relation.Kind == "VNic" && relation.OwnerUID == a.PodUID && relation.Current && relation.UID != "" {
+		manual := false
+		if a.ConsumerSnapshot != nil {
+			for _, ref := range a.ConsumerSnapshot.ManualVNics {
+				if ref.ProviderName == relation.Name && ref.ProviderUID != "" && ref.ProviderUID == relation.UID {
+					manual = true
+					break
+				}
+			}
+		}
+		if relation.Kind == "VNic" && (relation.OwnerUID == a.PodUID || manual) && relation.Current && relation.UID != "" {
 			nics[relation.UID] = true
 		}
 	}

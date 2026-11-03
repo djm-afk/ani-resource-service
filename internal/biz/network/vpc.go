@@ -138,6 +138,8 @@ func (r Reason) Message() string {
 		return "The requested configuration is not ready yet."
 	case ProviderRejected:
 		return "The network provider rejected the creation request."
+	case AddressConflict:
+		return "The requested address is already reserved by another network interface."
 	case ProviderOwnership:
 		return "The provider object identity or configuration conflicts with this resource."
 	case ProviderUnknown:

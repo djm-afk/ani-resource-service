@@ -2,6 +2,9 @@ package biz
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -175,6 +178,56 @@ func TestManagedProtocolRecoveryKeepsFrozenIdentityAndConfirmFence(t *testing.T)
 				}
 			} else if !r.progress.ProtocolBlocked || r.progress.ProtocolRecovered {
 				t.Fatal("unproven retry cleared the protocol fence", r.progress)
+			}
+		})
+	}
+}
+
+func TestManagedConsumerOptionalManualReferencesPreserveSnapshotIdentity(t *testing.T) {
+	for _, explicitNull := range []bool{false, true} {
+		name := "omitted"
+		if explicitNull {
+			name = "null"
+		}
+		t.Run(name, func(t *testing.T) {
+			a, c := managedSnapshotFixture()
+			raw, e := json.Marshal(c)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if explicitNull {
+				raw = append([]byte(`{"ManualVNics":null,`), raw[1:]...)
+			}
+			var persisted ConsumerSubmission
+			if e = json.Unmarshal(raw, &persisted); e != nil {
+				t.Fatal(e)
+			}
+			h := sha256.Sum256(raw)
+			a.SnapshotHash = hex.EncodeToString(h[:])
+			a.SnapshotRevision = c.SnapshotRevision
+			a.ConsumerSnapshot = &persisted
+			a.RootController = c.RootController
+			a.State = Attached
+			a.ConfirmedSnapshotRevision = c.SnapshotRevision
+			a.ConfirmedPodUID = c.CurrentPods[0].Reference.UID
+			if CompareConsumerSnapshot(a, c) != SnapshotAccepted || !ManagedProtocolRecoveryMatches(a, c, "instance-0", a.ConfirmedPodUID) {
+				t.Fatal("absent optional VNIC reference invalidated the unchanged consumer snapshot")
+			}
+			changed := c
+			changed.DesiredRunState = "stopped"
+			if CompareConsumerSnapshot(a, changed) != SnapshotConflict {
+				t.Fatal("same-revision run-state change accepted")
+			}
+			changed = c
+			changed.ManualVNics = []ManualVNicReference{{VNicID: "vnic_11111111111111111111111111111111", ProviderUID: "new-uid", ProviderName: "manual"}}
+			if CompareConsumerSnapshot(a, changed) != SnapshotConflict {
+				t.Fatal("same-revision manual VNIC change accepted")
+			}
+			changed = c
+			changed.CurrentPods = append([]PodReference(nil), c.CurrentPods...)
+			changed.CurrentPods[0].Reference.UID = "replacement-pod"
+			if CompareConsumerSnapshot(a, changed) != SnapshotConflict {
+				t.Fatal("same-revision endpoint replacement accepted")
 			}
 		})
 	}

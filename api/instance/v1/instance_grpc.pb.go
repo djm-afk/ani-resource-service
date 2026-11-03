@@ -8,7 +8,8 @@ package instancev1
 
 import (
 	context "context"
-	v1 "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/terminal/v1"
+	v11 "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/terminal/v1"
+	v1 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -31,6 +32,8 @@ const (
 	InstanceService_Start_FullMethodName                      = "/instance.v1.InstanceService/Start"
 	InstanceService_Stop_FullMethodName                       = "/instance.v1.InstanceService/Stop"
 	InstanceService_Restart_FullMethodName                    = "/instance.v1.InstanceService/Restart"
+	InstanceService_GetNetworkInterfaces_FullMethodName       = "/instance.v1.InstanceService/GetNetworkInterfaces"
+	InstanceService_SetNetworkInterface_FullMethodName        = "/instance.v1.InstanceService/SetNetworkInterface"
 	InstanceService_SetSecurityGroups_FullMethodName          = "/instance.v1.InstanceService/SetSecurityGroups"
 	InstanceService_AttachPVC_FullMethodName                  = "/instance.v1.InstanceService/AttachPVC"
 	InstanceService_DetachPVC_FullMethodName                  = "/instance.v1.InstanceService/DetachPVC"
@@ -61,6 +64,8 @@ type InstanceServiceClient interface {
 	Start(ctx context.Context, in *ChangeInstanceRequest, opts ...grpc.CallOption) (*OperationResponse, error)
 	Stop(ctx context.Context, in *ChangeInstanceRequest, opts ...grpc.CallOption) (*OperationResponse, error)
 	Restart(ctx context.Context, in *ChangeInstanceRequest, opts ...grpc.CallOption) (*OperationResponse, error)
+	GetNetworkInterfaces(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*v1.NetworkInterfaces, error)
+	SetNetworkInterface(ctx context.Context, in *SetNetworkInterfaceRequest, opts ...grpc.CallOption) (*OperationResponse, error)
 	SetSecurityGroups(ctx context.Context, in *SetSecurityGroupsRequest, opts ...grpc.CallOption) (*OperationResponse, error)
 	AttachPVC(ctx context.Context, in *AttachPVCRequest, opts ...grpc.CallOption) (*OperationResponse, error)
 	DetachPVC(ctx context.Context, in *DetachPVCRequest, opts ...grpc.CallOption) (*OperationResponse, error)
@@ -70,7 +75,7 @@ type InstanceServiceClient interface {
 	ResolveInstanceMetricScope(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*InstanceMetricScope, error)
 	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
 	GetOperation(ctx context.Context, in *GetOperationRequest, opts ...grpc.CallOption) (*Operation, error)
-	ResolveTerminalTarget(ctx context.Context, in *ResolveTerminalTargetRequest, opts ...grpc.CallOption) (*v1.TerminalTarget, error)
+	ResolveTerminalTarget(ctx context.Context, in *ResolveTerminalTargetRequest, opts ...grpc.CallOption) (*v11.TerminalTarget, error)
 }
 
 type instanceServiceClient struct {
@@ -200,6 +205,26 @@ func (c *instanceServiceClient) Restart(ctx context.Context, in *ChangeInstanceR
 	return out, nil
 }
 
+func (c *instanceServiceClient) GetNetworkInterfaces(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*v1.NetworkInterfaces, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(v1.NetworkInterfaces)
+	err := c.cc.Invoke(ctx, InstanceService_GetNetworkInterfaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *instanceServiceClient) SetNetworkInterface(ctx context.Context, in *SetNetworkInterfaceRequest, opts ...grpc.CallOption) (*OperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OperationResponse)
+	err := c.cc.Invoke(ctx, InstanceService_SetNetworkInterface_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *instanceServiceClient) SetSecurityGroups(ctx context.Context, in *SetSecurityGroupsRequest, opts ...grpc.CallOption) (*OperationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(OperationResponse)
@@ -290,9 +315,9 @@ func (c *instanceServiceClient) GetOperation(ctx context.Context, in *GetOperati
 	return out, nil
 }
 
-func (c *instanceServiceClient) ResolveTerminalTarget(ctx context.Context, in *ResolveTerminalTargetRequest, opts ...grpc.CallOption) (*v1.TerminalTarget, error) {
+func (c *instanceServiceClient) ResolveTerminalTarget(ctx context.Context, in *ResolveTerminalTargetRequest, opts ...grpc.CallOption) (*v11.TerminalTarget, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(v1.TerminalTarget)
+	out := new(v11.TerminalTarget)
 	err := c.cc.Invoke(ctx, InstanceService_ResolveTerminalTarget_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -318,6 +343,8 @@ type InstanceServiceServer interface {
 	Start(context.Context, *ChangeInstanceRequest) (*OperationResponse, error)
 	Stop(context.Context, *ChangeInstanceRequest) (*OperationResponse, error)
 	Restart(context.Context, *ChangeInstanceRequest) (*OperationResponse, error)
+	GetNetworkInterfaces(context.Context, *GetInstanceRequest) (*v1.NetworkInterfaces, error)
+	SetNetworkInterface(context.Context, *SetNetworkInterfaceRequest) (*OperationResponse, error)
 	SetSecurityGroups(context.Context, *SetSecurityGroupsRequest) (*OperationResponse, error)
 	AttachPVC(context.Context, *AttachPVCRequest) (*OperationResponse, error)
 	DetachPVC(context.Context, *DetachPVCRequest) (*OperationResponse, error)
@@ -327,7 +354,7 @@ type InstanceServiceServer interface {
 	ResolveInstanceMetricScope(context.Context, *GetInstanceRequest) (*InstanceMetricScope, error)
 	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
 	GetOperation(context.Context, *GetOperationRequest) (*Operation, error)
-	ResolveTerminalTarget(context.Context, *ResolveTerminalTargetRequest) (*v1.TerminalTarget, error)
+	ResolveTerminalTarget(context.Context, *ResolveTerminalTargetRequest) (*v11.TerminalTarget, error)
 	mustEmbedUnimplementedInstanceServiceServer()
 }
 
@@ -371,6 +398,12 @@ func (UnimplementedInstanceServiceServer) Stop(context.Context, *ChangeInstanceR
 func (UnimplementedInstanceServiceServer) Restart(context.Context, *ChangeInstanceRequest) (*OperationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Restart not implemented")
 }
+func (UnimplementedInstanceServiceServer) GetNetworkInterfaces(context.Context, *GetInstanceRequest) (*v1.NetworkInterfaces, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNetworkInterfaces not implemented")
+}
+func (UnimplementedInstanceServiceServer) SetNetworkInterface(context.Context, *SetNetworkInterfaceRequest) (*OperationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetNetworkInterface not implemented")
+}
 func (UnimplementedInstanceServiceServer) SetSecurityGroups(context.Context, *SetSecurityGroupsRequest) (*OperationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetSecurityGroups not implemented")
 }
@@ -398,7 +431,7 @@ func (UnimplementedInstanceServiceServer) ListInstances(context.Context, *ListIn
 func (UnimplementedInstanceServiceServer) GetOperation(context.Context, *GetOperationRequest) (*Operation, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOperation not implemented")
 }
-func (UnimplementedInstanceServiceServer) ResolveTerminalTarget(context.Context, *ResolveTerminalTargetRequest) (*v1.TerminalTarget, error) {
+func (UnimplementedInstanceServiceServer) ResolveTerminalTarget(context.Context, *ResolveTerminalTargetRequest) (*v11.TerminalTarget, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveTerminalTarget not implemented")
 }
 func (UnimplementedInstanceServiceServer) mustEmbedUnimplementedInstanceServiceServer() {}
@@ -609,6 +642,42 @@ func _InstanceService_Restart_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(InstanceServiceServer).Restart(ctx, req.(*ChangeInstanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstanceService_GetNetworkInterfaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInstanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstanceServiceServer).GetNetworkInterfaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstanceService_GetNetworkInterfaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstanceServiceServer).GetNetworkInterfaces(ctx, req.(*GetInstanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstanceService_SetNetworkInterface_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetNetworkInterfaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstanceServiceServer).SetNetworkInterface(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstanceService_SetNetworkInterface_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstanceServiceServer).SetNetworkInterface(ctx, req.(*SetNetworkInterfaceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -839,6 +908,14 @@ var InstanceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Restart",
 			Handler:    _InstanceService_Restart_Handler,
+		},
+		{
+			MethodName: "GetNetworkInterfaces",
+			Handler:    _InstanceService_GetNetworkInterfaces_Handler,
+		},
+		{
+			MethodName: "SetNetworkInterface",
+			Handler:    _InstanceService_SetNetworkInterface_Handler,
 		},
 		{
 			MethodName: "SetSecurityGroups",

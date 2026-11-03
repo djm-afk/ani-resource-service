@@ -1,5 +1,28 @@
 # Network 执行状态
 
+<a id="subnet-creation-options-20261103"></a>
+
+## 2026-11-03：租户子网创建参数
+
+已完成网关 IP（复用原字段）及排除 IP、DHCP、DNS 的租户创建接线。Resource `d54aafa`（迁移30、generation89/Ready1）、Gov `0a285584` 已部署，Console `2b56757` 独占预览已更新，三仓均 SSH 推送。真实页面仅提交一次，子网 `subnet_2e5a7520556f469f8320ad3a051ef14e` 已 available，四项回显正确；实际 OVN DHCP 网关/DNS 选项及 KCN IPAM 排除范围通过，测试子网保留。未声称 guest/Pod 的 DNS 解析可达。相关 Fedora 检查与初始旧 fixture 失败边界见[实施记录](records/SUBNET-OPTIONS-20261103.md)。原排查资源及基础网络聚合规则未修改。详情页既有“关联实例”调用仍因公开接口不支持 subnet_id 过滤而400，此次未扩展后端查询能力。
+
+2026-11-04 PR #53 收尾已正常合并主干 `9aa96edf` 的关联实例查询与consumer type迁移；修复其手动VNIC当前地址投影交点。统一源码采用canonical31，显式owner迁移精确桥接旧任务28–30，Fedora两条真实PG升级/拒绝路径及相关定向检查和服务构建通过。该合并源码未部署、canonical31未现场应用；实际运行仍为上述 `d54aafa`/schema30。来源、初始fixture失败及验证边界见[PR收尾记录](records/SUBNET-OPTIONS-20261103.md#pr53-merge-20261104)。
+
+<a id="kcn-vnic-management-20261103"></a>
+
+## 2026-11-03：手动 VNIC 管理
+
+自定义 IPv4/MAC 增量已完成：Resource `3e1ef97`（generation88/Ready1）、Gov `67e6c8e0` 已部署，Console `f2e517d` 预览已更新；三仓均 SSH 推送。页面原申请 `vnic_3b55300002864620b1abf0e601ef5ef8` 自然 available/free，原 UID 保持、申请/实际均 `.21 / 02:75:00:00:00:21`。新建仅指定 IP `.22` 自动分配 MAC、手动 MAC 重复409、实际 KCN IP 冲突 Failed/ADDRESS_CONFLICT均通过；临时正反样本及首个泛化失败样本均正常删除，成功 `.21` 留给用户查看。修复现场隐式IPv4字段及子IP身份写回的父版本并发重试，分别只复验相关行为。Harbor按用户确认在线扩到20Gi后发布成功。基础网络短暂降级的只读证据已交用户另开agent处理，本增量未改其聚合规则或原排查场景。详细来源与初始失败边界见[本轮增量](records/KCN-VNIC-20261103/README.md#自定义-ipv4mac-增量)。
+
+
+原手动 VNIC 的 VM/容器范围已完成，以下保留自定义地址增量前的验收时点。正式源已 SSH 推送，Resource 业务源 `b70271b`、Gov `aed3378a` 已部署，Console `e741b25` 独占预览完成真实页面验收（未发布生产 Console）。默认自动创建、手动保存/取消/换绑与平台重启、停止启动复用、实际 MAC/IP/guest SSH/HTTP 均通过。SG deny8080、替换 allow、清空的实际策略通过，待重启 current/target 同步跟随 SG且预留禁止删除。VM/容器恢复自动模式通过；C 跨两台 VM 及容器复用，空组完整清除上个实例策略。VM2/Notebook 删除均完成而原手动 VNIC/IP 留存，空闲网卡继续保护 SG 引用；随后 B/C 显式删除、原 CR/VNicIP 与 .12/.13 分配消失，仅两 run-owned SG 正常 Deleted。测试 VM2/VM3/Notebook 已正常删除；保护场景六个原 UID 全部保留，原两台 Notebook 仍 version1/Running。详细证据和初始失败边界见[本轮记录](records/KCN-VNIC-20261103/README.md)。
+
+VM1 保存目标 A 原先等待 VNIC.status.appliedSecurityGroups；2026-11-03 用户转达 KCN 团队确认：以相关 SG.status.appliedVNics 包含目标 VNIC 认定绑定成功，无需该 VNIC 字段，也不额外等待 SG Ready/generation 应用回执；旧组移除对应成员消失。原资源身份、租户/位置准入和 owner 版本围栏保留。新口径已发布；原 operation `8d2bc3dd` 已自然 succeeded，A 的 SG 继承已落库。手动 A、allow SG、VM1 当前自动 VNIC/Nic 和原 VMI/launcher 均保留，不删除、解绑或重启。
+
+Notebook 重新保存 B 后同 Pod/原地址保持 Running，普通观察误 Pending 已修复。最初 Restart 503 为双端既有开关漏启用，随后已补 ANI_INSTANCE_RESTART_ENABLED=true。v1.10 不更新已有 STS 模板注解，现由实例 owner 在停止/无 Pod、原 Notebook 与受控 STS UID/RV 保护下正常重建；权限仅目标租户 writer Role。随后共享观察遗漏无 Pod owner 的手动 B 索引，`c710a54` 补原 UID/名称候选，`e1e4c49` 接既有正常 Confirm 严格恢复。原 b55 deadline failed 并安全停机的历史保留；新 Start `5ec174e4` 与普通 UI Restart `291f0488` 均 completed/runtime_verified。VM2 删除阶段保留的手动 IP 曾错误标为本消费者 Current，`b70271b` 修正关系语义并经真实 PG RED→GREEN；原 `3aa09f76` 自然 succeeded，未清 flag 或强制删除网卡/IP。最新镜像及证据见[本轮记录](records/KCN-VNIC-20261103/README.md)。
+
+此前空 ManualVNics 改变旧自动摘要的回归已在 `2145760` 修复并真实恢复原两台 Notebook，原 Pod UID/revision 保持；部署缺失的 VM 只读观察 RBAC 已补齐，长期 Unknown 已恢复。验证与精确证据见[本轮记录](records/KCN-VNIC-20261103/README.md)。
+
 ## 2026-11-03：网络管理简化
 
 R7 业务源码 `caefebc` 已发布到 10/12，12 镜像由 `ubuntu@100.64.128.15` 独立构建并推送。Fedora 定向真实 PG 与完整 `make verify` PASS；最终 300 秒 GET/LIST：12 为 6000→1461（减少 75.65%，基础 LIST 9 轮），10 为 4728→1587（减少 66.43%，基础 LIST 13 轮，额外来源未逐次归因）。原 LB 身份四入口、五分钟无误降级、默认出口失败保留均通过。12 的完整 VM 生命周期和物理释放已在代码相同的 R6 路径通过，R7 窗口中原 5 台 VM 保持不变；采样的 37/40 条租户/平台 Deleted 停放且 epoch 不变。#48/#49 按各自现场证据关闭，#47 保留为 KCN 缺陷。Resource PR #50、Console PR #11 均未合并；Console 源码检查通过、生产部署/浏览器验收 NOT_RUN。完整网络 PG 集成组曾超时，不冒充全量通过。来源、失败回退、旧环境残留及回滚限制见[实施记录](records/network-management-simplification-20261103.md)。

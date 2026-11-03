@@ -123,7 +123,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		_ = observability.Shutdown(ctx)
 		return nil, err
 	}
-	vms, routedConsumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, routedConsumer, policy.StaleAfter)
+	vms, routedConsumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, routedConsumer, policy.StaleAfter, network)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,9 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	}
 	storagev1.RegisterStorageServiceServer(grpcServer, storageComponents.service)
 	storageRecovery = storageComponents.worker
-	networkv1.RegisterNetworkServiceServer(grpcServer, service.NewNetworkService(network, attachments))
+	vnicHandler := service.NewNetworkService(network, attachments)
+	wireVNicConsumers(repository, vnicHandler, vms, instances)
+	networkv1.RegisterNetworkServiceServer(grpcServer, vnicHandler)
 	networkv1.RegisterNetworkSecurityGroupServiceServer(grpcServer, securityGroups)
 	repository.UseEgressInfrastructure(provider)
 	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, policy.StaleAfter, time.Now)

@@ -19,21 +19,26 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NetworkService_ListVPCCIDRPresets_FullMethodName   = "/network.v1.NetworkService/ListVPCCIDRPresets"
-	NetworkService_CreateVPC_FullMethodName            = "/network.v1.NetworkService/CreateVPC"
-	NetworkService_GetVPC_FullMethodName               = "/network.v1.NetworkService/GetVPC"
-	NetworkService_ListVPCs_FullMethodName             = "/network.v1.NetworkService/ListVPCs"
-	NetworkService_DeleteVPC_FullMethodName            = "/network.v1.NetworkService/DeleteVPC"
-	NetworkService_CreateSubnet_FullMethodName         = "/network.v1.NetworkService/CreateSubnet"
-	NetworkService_GetSubnet_FullMethodName            = "/network.v1.NetworkService/GetSubnet"
-	NetworkService_ListSubnets_FullMethodName          = "/network.v1.NetworkService/ListSubnets"
-	NetworkService_DeleteSubnet_FullMethodName         = "/network.v1.NetworkService/DeleteSubnet"
-	NetworkService_GetOperation_FullMethodName         = "/network.v1.NetworkService/GetOperation"
-	NetworkService_PrepareAttachment_FullMethodName    = "/network.v1.NetworkService/PrepareAttachment"
-	NetworkService_GetAttachment_FullMethodName        = "/network.v1.NetworkService/GetAttachment"
-	NetworkService_ConfirmAttachment_FullMethodName    = "/network.v1.NetworkService/ConfirmAttachment"
-	NetworkService_ReleaseAttachment_FullMethodName    = "/network.v1.NetworkService/ReleaseAttachment"
-	NetworkService_ListNetworkInstances_FullMethodName = "/network.v1.NetworkService/ListNetworkInstances"
+	NetworkService_CreateVNic_FullMethodName             = "/network.v1.NetworkService/CreateVNic"
+	NetworkService_GetVNic_FullMethodName                = "/network.v1.NetworkService/GetVNic"
+	NetworkService_ListVNics_FullMethodName              = "/network.v1.NetworkService/ListVNics"
+	NetworkService_DeleteVNic_FullMethodName             = "/network.v1.NetworkService/DeleteVNic"
+	NetworkService_ListVNicBindingTargets_FullMethodName = "/network.v1.NetworkService/ListVNicBindingTargets"
+	NetworkService_ListVPCCIDRPresets_FullMethodName     = "/network.v1.NetworkService/ListVPCCIDRPresets"
+	NetworkService_CreateVPC_FullMethodName              = "/network.v1.NetworkService/CreateVPC"
+	NetworkService_GetVPC_FullMethodName                 = "/network.v1.NetworkService/GetVPC"
+	NetworkService_ListVPCs_FullMethodName               = "/network.v1.NetworkService/ListVPCs"
+	NetworkService_DeleteVPC_FullMethodName              = "/network.v1.NetworkService/DeleteVPC"
+	NetworkService_CreateSubnet_FullMethodName           = "/network.v1.NetworkService/CreateSubnet"
+	NetworkService_GetSubnet_FullMethodName              = "/network.v1.NetworkService/GetSubnet"
+	NetworkService_ListSubnets_FullMethodName            = "/network.v1.NetworkService/ListSubnets"
+	NetworkService_DeleteSubnet_FullMethodName           = "/network.v1.NetworkService/DeleteSubnet"
+	NetworkService_GetOperation_FullMethodName           = "/network.v1.NetworkService/GetOperation"
+	NetworkService_PrepareAttachment_FullMethodName      = "/network.v1.NetworkService/PrepareAttachment"
+	NetworkService_GetAttachment_FullMethodName          = "/network.v1.NetworkService/GetAttachment"
+	NetworkService_ConfirmAttachment_FullMethodName      = "/network.v1.NetworkService/ConfirmAttachment"
+	NetworkService_ReleaseAttachment_FullMethodName      = "/network.v1.NetworkService/ReleaseAttachment"
+	NetworkService_ListNetworkInstances_FullMethodName   = "/network.v1.NetworkService/ListNetworkInstances"
 )
 
 // NetworkServiceClient is the client API for NetworkService service.
@@ -43,6 +48,11 @@ const (
 // NetworkService owns tenant network intent, operations and queries. Caller
 // authentication is deferred; tenant_id is mandatory caller-supplied scope.
 type NetworkServiceClient interface {
+	CreateVNic(ctx context.Context, in *CreateVNicRequest, opts ...grpc.CallOption) (*CreateVNicResponse, error)
+	GetVNic(ctx context.Context, in *GetVNicRequest, opts ...grpc.CallOption) (*GetVNicResponse, error)
+	ListVNics(ctx context.Context, in *ListVNicsRequest, opts ...grpc.CallOption) (*ListVNicsResponse, error)
+	DeleteVNic(ctx context.Context, in *DeleteVNicRequest, opts ...grpc.CallOption) (*DeleteVNicResponse, error)
+	ListVNicBindingTargets(ctx context.Context, in *ListVNicBindingTargetsRequest, opts ...grpc.CallOption) (*ListVNicBindingTargetsResponse, error)
 	ListVPCCIDRPresets(ctx context.Context, in *ListVPCCIDRPresetsRequest, opts ...grpc.CallOption) (*ListVPCCIDRPresetsResponse, error)
 	CreateVPC(ctx context.Context, in *CreateVPCRequest, opts ...grpc.CallOption) (*CreateVPCResponse, error)
 	GetVPC(ctx context.Context, in *GetVPCRequest, opts ...grpc.CallOption) (*GetVPCResponse, error)
@@ -66,6 +76,56 @@ type networkServiceClient struct {
 
 func NewNetworkServiceClient(cc grpc.ClientConnInterface) NetworkServiceClient {
 	return &networkServiceClient{cc}
+}
+
+func (c *networkServiceClient) CreateVNic(ctx context.Context, in *CreateVNicRequest, opts ...grpc.CallOption) (*CreateVNicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateVNicResponse)
+	err := c.cc.Invoke(ctx, NetworkService_CreateVNic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networkServiceClient) GetVNic(ctx context.Context, in *GetVNicRequest, opts ...grpc.CallOption) (*GetVNicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetVNicResponse)
+	err := c.cc.Invoke(ctx, NetworkService_GetVNic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networkServiceClient) ListVNics(ctx context.Context, in *ListVNicsRequest, opts ...grpc.CallOption) (*ListVNicsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVNicsResponse)
+	err := c.cc.Invoke(ctx, NetworkService_ListVNics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networkServiceClient) DeleteVNic(ctx context.Context, in *DeleteVNicRequest, opts ...grpc.CallOption) (*DeleteVNicResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteVNicResponse)
+	err := c.cc.Invoke(ctx, NetworkService_DeleteVNic_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networkServiceClient) ListVNicBindingTargets(ctx context.Context, in *ListVNicBindingTargetsRequest, opts ...grpc.CallOption) (*ListVNicBindingTargetsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVNicBindingTargetsResponse)
+	err := c.cc.Invoke(ctx, NetworkService_ListVNicBindingTargets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *networkServiceClient) ListVPCCIDRPresets(ctx context.Context, in *ListVPCCIDRPresetsRequest, opts ...grpc.CallOption) (*ListVPCCIDRPresetsResponse, error) {
@@ -225,6 +285,11 @@ func (c *networkServiceClient) ListNetworkInstances(ctx context.Context, in *Lis
 // NetworkService owns tenant network intent, operations and queries. Caller
 // authentication is deferred; tenant_id is mandatory caller-supplied scope.
 type NetworkServiceServer interface {
+	CreateVNic(context.Context, *CreateVNicRequest) (*CreateVNicResponse, error)
+	GetVNic(context.Context, *GetVNicRequest) (*GetVNicResponse, error)
+	ListVNics(context.Context, *ListVNicsRequest) (*ListVNicsResponse, error)
+	DeleteVNic(context.Context, *DeleteVNicRequest) (*DeleteVNicResponse, error)
+	ListVNicBindingTargets(context.Context, *ListVNicBindingTargetsRequest) (*ListVNicBindingTargetsResponse, error)
 	ListVPCCIDRPresets(context.Context, *ListVPCCIDRPresetsRequest) (*ListVPCCIDRPresetsResponse, error)
 	CreateVPC(context.Context, *CreateVPCRequest) (*CreateVPCResponse, error)
 	GetVPC(context.Context, *GetVPCRequest) (*GetVPCResponse, error)
@@ -250,6 +315,21 @@ type NetworkServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedNetworkServiceServer struct{}
 
+func (UnimplementedNetworkServiceServer) CreateVNic(context.Context, *CreateVNicRequest) (*CreateVNicResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateVNic not implemented")
+}
+func (UnimplementedNetworkServiceServer) GetVNic(context.Context, *GetVNicRequest) (*GetVNicResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetVNic not implemented")
+}
+func (UnimplementedNetworkServiceServer) ListVNics(context.Context, *ListVNicsRequest) (*ListVNicsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListVNics not implemented")
+}
+func (UnimplementedNetworkServiceServer) DeleteVNic(context.Context, *DeleteVNicRequest) (*DeleteVNicResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteVNic not implemented")
+}
+func (UnimplementedNetworkServiceServer) ListVNicBindingTargets(context.Context, *ListVNicBindingTargetsRequest) (*ListVNicBindingTargetsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListVNicBindingTargets not implemented")
+}
 func (UnimplementedNetworkServiceServer) ListVPCCIDRPresets(context.Context, *ListVPCCIDRPresetsRequest) (*ListVPCCIDRPresetsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListVPCCIDRPresets not implemented")
 }
@@ -314,6 +394,96 @@ func RegisterNetworkServiceServer(s grpc.ServiceRegistrar, srv NetworkServiceSer
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&NetworkService_ServiceDesc, srv)
+}
+
+func _NetworkService_CreateVNic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateVNicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkServiceServer).CreateVNic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkService_CreateVNic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkServiceServer).CreateVNic(ctx, req.(*CreateVNicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworkService_GetVNic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetVNicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkServiceServer).GetVNic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkService_GetVNic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkServiceServer).GetVNic(ctx, req.(*GetVNicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworkService_ListVNics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVNicsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkServiceServer).ListVNics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkService_ListVNics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkServiceServer).ListVNics(ctx, req.(*ListVNicsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworkService_DeleteVNic_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteVNicRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkServiceServer).DeleteVNic(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkService_DeleteVNic_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkServiceServer).DeleteVNic(ctx, req.(*DeleteVNicRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworkService_ListVNicBindingTargets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVNicBindingTargetsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkServiceServer).ListVNicBindingTargets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkService_ListVNicBindingTargets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkServiceServer).ListVNicBindingTargets(ctx, req.(*ListVNicBindingTargetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _NetworkService_ListVPCCIDRPresets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -593,6 +763,26 @@ var NetworkService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "network.v1.NetworkService",
 	HandlerType: (*NetworkServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateVNic",
+			Handler:    _NetworkService_CreateVNic_Handler,
+		},
+		{
+			MethodName: "GetVNic",
+			Handler:    _NetworkService_GetVNic_Handler,
+		},
+		{
+			MethodName: "ListVNics",
+			Handler:    _NetworkService_ListVNics_Handler,
+		},
+		{
+			MethodName: "DeleteVNic",
+			Handler:    _NetworkService_DeleteVNic_Handler,
+		},
+		{
+			MethodName: "ListVNicBindingTargets",
+			Handler:    _NetworkService_ListVNicBindingTargets_Handler,
+		},
 		{
 			MethodName: "ListVPCCIDRPresets",
 			Handler:    _NetworkService_ListVPCCIDRPresets_Handler,

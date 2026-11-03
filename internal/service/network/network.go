@@ -16,6 +16,7 @@ import (
 // NetworkService only translates the wire contract; domain decisions and
 // transactions remain behind Network's use cases.
 type NetworkService struct {
+	vnicBindingTargets func(context.Context, biz.VNic, string, string, uint32, uint32) ([]biz.VNicConsumerScope, int64, error)
 	networkv1.UnimplementedNetworkServiceServer
 	network     *biz.Network
 	attachments *biz.Attachments
@@ -110,7 +111,7 @@ var operationsToWire = map[biz.OperationState]networkv1.OperationState{
 	biz.Retrying: networkv1.OperationState_OPERATION_STATE_RETRYING, biz.Blocked: networkv1.OperationState_OPERATION_STATE_BLOCKED,
 	biz.Succeeded: networkv1.OperationState_OPERATION_STATE_SUCCEEDED, biz.OpFailed: networkv1.OperationState_OPERATION_STATE_FAILED,
 }
-var kindsToWire = map[string]networkv1.OperationKind{"ensure_vpc_base_connectivity": networkv1.OperationKind_OPERATION_KIND_ENSURE_VPC_BASE_CONNECTIVITY, "create_subnet": networkv1.OperationKind_OPERATION_KIND_CREATE_SUBNET, "delete_subnet": networkv1.OperationKind_OPERATION_KIND_DELETE_SUBNET, "create_vpc": networkv1.OperationKind_OPERATION_KIND_CREATE_VPC, "delete_vpc": networkv1.OperationKind_OPERATION_KIND_DELETE_VPC,
+var kindsToWire = map[string]networkv1.OperationKind{"create_vnic": networkv1.OperationKind_OPERATION_KIND_CREATE_VNIC, "delete_vnic": networkv1.OperationKind_OPERATION_KIND_DELETE_VNIC, "ensure_vpc_base_connectivity": networkv1.OperationKind_OPERATION_KIND_ENSURE_VPC_BASE_CONNECTIVITY, "create_subnet": networkv1.OperationKind_OPERATION_KIND_CREATE_SUBNET, "delete_subnet": networkv1.OperationKind_OPERATION_KIND_DELETE_SUBNET, "create_vpc": networkv1.OperationKind_OPERATION_KIND_CREATE_VPC, "delete_vpc": networkv1.OperationKind_OPERATION_KIND_DELETE_VPC,
 	"create_eip":                   networkv1.OperationKind_OPERATION_KIND_CREATE_EIP,
 	"delete_eip":                   networkv1.OperationKind_OPERATION_KIND_DELETE_EIP,
 	"bind_snat":                    networkv1.OperationKind_OPERATION_KIND_BIND_SNAT,
@@ -157,7 +158,7 @@ func rpcError(err error) error {
 		code = codes.InvalidArgument
 	case biz.ResourceNotFound:
 		code = codes.NotFound
-	case biz.IdempotencyConflict, biz.CIDROverlap, biz.AttachmentConflict:
+	case biz.IdempotencyConflict, biz.CIDROverlap, biz.AttachmentConflict, biz.AddressConflict:
 		code = codes.AlreadyExists
 	case biz.EIPInUse, biz.VIPInUse, biz.BackendIdentityMismatch, biz.VPCSnatExists, biz.ProviderOwnership, biz.ProviderStateMismatch, biz.ResourceInUse, biz.ResourceBusy, biz.ParentNotReady, biz.NetworkNotReady, biz.PlacementMismatch, biz.VersionConflict:
 		code = codes.FailedPrecondition
@@ -178,7 +179,7 @@ func rpcError(err error) error {
 
 }
 
-var resourceTypesToWire = map[string]networkv1.ResourceType{"load_balancer": networkv1.ResourceType_RESOURCE_TYPE_LOAD_BALANCER, "vpc": networkv1.ResourceType_RESOURCE_TYPE_VPC, "subnet": networkv1.ResourceType_RESOURCE_TYPE_SUBNET, "eip": networkv1.ResourceType_RESOURCE_TYPE_EIP, "snat": networkv1.ResourceType_RESOURCE_TYPE_VPC_SNAT_BINDING, "device": networkv1.ResourceType_RESOURCE_TYPE_NETWORK_DEVICE, "vlan": networkv1.ResourceType_RESOURCE_TYPE_VLAN_NETWORK, "egress_gateway": networkv1.ResourceType_RESOURCE_TYPE_EGRESS_GATEWAY, "public_pool": networkv1.ResourceType_RESOURCE_TYPE_PUBLIC_ADDRESS_POOL}
+var resourceTypesToWire = map[string]networkv1.ResourceType{"vnic": networkv1.ResourceType_RESOURCE_TYPE_VNIC, "load_balancer": networkv1.ResourceType_RESOURCE_TYPE_LOAD_BALANCER, "vpc": networkv1.ResourceType_RESOURCE_TYPE_VPC, "subnet": networkv1.ResourceType_RESOURCE_TYPE_SUBNET, "eip": networkv1.ResourceType_RESOURCE_TYPE_EIP, "snat": networkv1.ResourceType_RESOURCE_TYPE_VPC_SNAT_BINDING, "device": networkv1.ResourceType_RESOURCE_TYPE_NETWORK_DEVICE, "vlan": networkv1.ResourceType_RESOURCE_TYPE_VLAN_NETWORK, "egress_gateway": networkv1.ResourceType_RESOURCE_TYPE_EGRESS_GATEWAY, "public_pool": networkv1.ResourceType_RESOURCE_TYPE_PUBLIC_ADDRESS_POOL}
 
 func (s *NetworkService) ListVPCCIDRPresets(ctx context.Context, r *networkv1.ListVPCCIDRPresetsRequest) (*networkv1.ListVPCCIDRPresetsResponse, error) {
 	if r == nil {

@@ -3,6 +3,7 @@ package instance.v1;
 option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/v1;instancev1";
 
 import "accelerator/v1/accelerator.proto";
+import "network/v1/vnic.proto";
 import "accelerator/command/v1/command.proto";
 import "instance/terminal/v1/terminal.proto";
 import "google/protobuf/timestamp.proto";
@@ -21,6 +22,8 @@ service InstanceService {
   rpc Start(ChangeInstanceRequest) returns (OperationResponse);
   rpc Stop(ChangeInstanceRequest) returns (OperationResponse);
   rpc Restart(ChangeInstanceRequest) returns (OperationResponse);
+  rpc GetNetworkInterfaces(GetInstanceRequest) returns (network.v1.NetworkInterfaces);
+  rpc SetNetworkInterface(SetNetworkInterfaceRequest) returns (OperationResponse);
   rpc SetSecurityGroups(SetSecurityGroupsRequest) returns (OperationResponse);
   rpc AttachPVC(AttachPVCRequest) returns (OperationResponse);
   rpc DetachPVC(DetachPVCRequest) returns (OperationResponse);
@@ -292,4 +295,10 @@ message InstanceMetricScope {
   string cluster_id = 3;
   string namespace = 4;
   string container_name = 5;
+}
+
+message SetNetworkInterfaceRequest {
+  string tenant_id = 1; string instance_id = 2; string slot = 3; string mode = 4;
+  string vnic_id = 5 [json_name = "vnic_id"]; int64 expected_version = 6 [json_name = "expected_version"];
+  string idempotency_key = 7 [json_name = "idempotency_key"];
 }

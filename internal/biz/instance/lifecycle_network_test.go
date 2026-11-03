@@ -43,6 +43,44 @@ func TestLifecycleNetworkObservationFailureDoesNotConfirm(t *testing.T) {
 	}
 }
 
+func TestLifecycleNetworkProtocolRecoveryRequiresConfirmAndFreshObservation(t *testing.T) {
+	repo, network, worker := lifecycleNetworkFixture(t)
+	network.reason = "ATTACHMENT_PROTOCOL_VIOLATION"
+	network.confirmError = ErrNetworkUnavailable
+	stepCleanupWorker(t, worker)
+	operation := repo.instance.ActiveOperation
+	if network.confirms != 1 || network.confirmed != 0 || repo.instance.Network.ConfirmedSnapshotRevision != 2 || repo.instance.Network.Reason != "INSTANCE_NETWORK_UNAVAILABLE" || operation.State != "blocked" || operation.Execution.Phase != "waiting_network" {
+		t.Fatal("failed protocol recovery confirmation did not remain blocked", network, operation, repo.instance.Network)
+	}
+	network.confirmError = nil
+	stepCleanupWorker(t, worker)
+	operation = repo.instance.ActiveOperation
+	if network.confirmed != 1 || repo.instance.Network.ConfirmedSnapshotRevision != 5 || operation.State == "completed" || operation.Execution.Phase != "waiting_network" || operation.Execution.VerifiedPodUID != "" {
+		t.Fatal("normal owner confirmation was skipped or completed runtime early", network, operation)
+	}
+	// A durable Confirm is necessary, but neither the old protocol result nor
+	// another Pod or snapshot may qualify this runtime as attached.
+	for _, mismatch := range []string{"protocol still blocked", "different Pod", "different snapshot"} {
+		switch mismatch {
+		case "different Pod":
+			network.reason, network.podUID = "", "another-pod"
+		case "different snapshot":
+			network.podUID, network.snapshot = "new-pod", 4
+		}
+		stepCleanupWorker(t, worker)
+		operation = repo.instance.ActiveOperation
+		if operation.State != "blocked" || operation.Execution.Phase != "waiting_network" || operation.Execution.VerifiedPodUID != "" || operation.Execution.CompletionScope != "" || network.confirms != 2 {
+			t.Fatal("unverified post-Confirm observation completed the lifecycle", mismatch, network, operation)
+		}
+	}
+	network.snapshot = 5
+	stepCleanupWorker(t, worker)
+	operation = repo.instance.ActiveOperation
+	if operation.State != "completed" || operation.Execution.Phase != "done" || operation.Execution.VerifiedPodUID != "new-pod" || operation.Execution.NetworkSnapshotRevision != 5 || repo.instance.Observed != Running || network.confirms != 2 || network.observes != 6 {
+		t.Fatal("fresh matching network observation did not complete the lifecycle", network, operation)
+	}
+}
+
 func TestLifecycleNetworkCompletionRequiresCurrentPodAndSnapshot(t *testing.T) {
 	for _, mismatch := range []string{"network-pod", "network-snapshot", "old-runtime-pod"} {
 		t.Run(mismatch, func(t *testing.T) {
@@ -342,7 +380,9 @@ type lifecycleNetworkPort struct {
 	NetworkPort
 	version, snapshot             int64
 	podUID                        string
+	reason                        string
 	observeError                  error
+	confirmError                  error
 	observes, confirms, confirmed int
 }
 
@@ -351,11 +391,14 @@ func (n *lifecycleNetworkPort) Observe(context.Context, Instance) (NetworkObserv
 	if n.observeError != nil {
 		return NetworkObservation{}, n.observeError
 	}
-	return NetworkObservation{State: "attached", Version: n.version, SnapshotRevision: n.snapshot, PodUID: n.podUID}, nil
+	return NetworkObservation{State: "attached", Reason: n.reason, Version: n.version, SnapshotRevision: n.snapshot, PodUID: n.podUID}, nil
 }
 
 func (n *lifecycleNetworkPort) Confirm(_ context.Context, i Instance) error {
 	n.confirms++
+	if n.confirmError != nil {
+		return n.confirmError
+	}
 	if i.Network.AttachmentVersion != n.version || i.Network.SnapshotRevision != n.snapshot || i.PodUID != n.podUID {
 		return ErrNetworkConflict
 	}

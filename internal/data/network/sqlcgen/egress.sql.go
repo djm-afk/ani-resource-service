@@ -296,17 +296,18 @@ func (q *Queries) CountEIPs(ctx context.Context, arg CountEIPsParams) (int64, er
 }
 
 const dueResourceCandidates = `-- name: DueResourceCandidates :many
-SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)::text AS resource_id,b.resource_kind,
- coalesce(r.vpc_id,s.vpc_id,sn.vpc_id,e.system_owner_vpc,lb.vpc_id,'')::text AS parent_vpc_id,coalesce(r.eip_id,sn.eip_id,'')::text AS parent_eip_id,
+SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)::text AS resource_id,b.resource_kind,
+ coalesce(r.vpc_id,s.vpc_id,sn.vpc_id,e.system_owner_vpc,lb.vpc_id,vn.vpc_id,'')::text AS parent_vpc_id,coalesce(r.eip_id,sn.eip_id,'')::text AS parent_eip_id,
  r.next_run_at AS due_at
 FROM network_reconciliations r JOIN network_provider_bindings b ON b.tenant_id=r.tenant_id
- AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)
+ AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id,b.vnic_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)
 LEFT JOIN network_subnets s ON s.tenant_id=r.tenant_id AND s.subnet_id=r.subnet_id
 LEFT JOIN network_snat_bindings sn ON sn.tenant_id=r.tenant_id AND sn.snat_id=r.snat_id
 LEFT JOIN network_eips e ON e.tenant_id=r.tenant_id AND e.eip_id=r.eip_id
 LEFT JOIN network_load_balancers lb ON lb.tenant_id=r.tenant_id AND lb.lb_id=r.lb_id
+LEFT JOIN network_vnics vn ON vn.tenant_id=r.tenant_id AND vn.vnic_id=r.vnic_id
 WHERE NOT r.retired AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
-ORDER BY r.next_run_at,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id) LIMIT 32
+ORDER BY r.next_run_at,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id) LIMIT 32
 `
 
 type DueResourceCandidatesRow struct {
@@ -503,7 +504,7 @@ func (q *Queries) GetEIPInternal(ctx context.Context, arg GetEIPInternalParams) 
 }
 
 const getEgressIdempotency = `-- name: GetEgressIdempotency :one
-SELECT tenant_id, operation_kind, idempotency_key, fingerprint, fingerprint_version, vpc_id, operation_id, response, created_at, subnet_id, eip_id, snat_id, lb_id FROM network_idempotency WHERE tenant_id=$1 AND operation_kind=$2 AND idempotency_key=$3
+SELECT tenant_id, operation_kind, idempotency_key, fingerprint, fingerprint_version, vpc_id, operation_id, response, created_at, subnet_id, eip_id, snat_id, lb_id, vnic_id FROM network_idempotency WHERE tenant_id=$1 AND operation_kind=$2 AND idempotency_key=$3
 `
 
 type GetEgressIdempotencyParams struct {
@@ -529,6 +530,7 @@ func (q *Queries) GetEgressIdempotency(ctx context.Context, arg GetEgressIdempot
 		&i.EipID,
 		&i.SnatID,
 		&i.LbID,
+		&i.VnicID,
 	)
 	return i, err
 }

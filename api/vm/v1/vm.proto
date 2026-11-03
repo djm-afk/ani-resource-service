@@ -3,6 +3,7 @@ package vm.v1;
 option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/vm/v1;vmv1";
 
 import "compute/v1/compute.proto";
+import "network/v1/vnic.proto";
 import "vm/console/v1/console.proto";
 
 // Trusted Governance gRPC only. Public callers cannot supply frozen identities.
@@ -19,6 +20,8 @@ service VMService {
   rpc Stop(ChangeVMRequest) returns (Operation);
   rpc ForceStop(ForceStopRequest) returns (Operation);
   rpc Restart(ChangeVMRequest) returns (Operation);
+  rpc GetNetworkInterfaces(GetVMRequest) returns (network.v1.NetworkInterfaces);
+  rpc SetNetworkInterface(SetNetworkInterfaceRequest) returns (Operation);
   rpc SetSecurityGroups(SetSecurityGroupsRequest) returns (Operation);
   rpc ListDisks(GetVMRequest) returns (ListDisksResponse);
   rpc CreateDisk(CreateDiskRequest) returns (Operation);
@@ -249,4 +252,10 @@ message StreamVMLogsRequest { string tenant_id = 1; string vm_id = 2; uint32 tai
 message VMLogFrame {
   enum Kind { KIND_UNSPECIFIED = 0; READY = 1; DATA = 2; END = 3; ERROR = 4; }
   Kind kind = 1; bytes data = 2; string reason = 3;
+}
+
+message SetNetworkInterfaceRequest {
+  string tenant_id = 1; string vm_id = 2; string slot = 3; string mode = 4;
+  string vnic_id = 5 [json_name = "vnic_id"]; int64 expected_version = 6 [json_name = "expected_version"];
+  string idempotency_key = 7 [json_name = "idempotency_key"];
 }

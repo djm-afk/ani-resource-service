@@ -144,3 +144,5 @@ NET-05A 的观察、时效、调度与增量验收统一见[持续观察规格](
 - [逐批计划](plans/image-mvp.md)、[执行授权](plans/image-mvp-goal.md)、[来源](plans/image-mvp-sources.md)、[设计包](plans/image-mvp-package.md)
 - [ADR-0007](adr/0007-image-domain-and-private-registry.md)、[Fedora 手册](runbooks/image-mvp-fedora.md)
 - 当前结果仍以[唯一执行状态](execution/status.md#image-mvp)为准。
+
+手动 VNIC：[实施计划](plans/kcn-vnic-management-20261103.md)、[KCN 固定源码](references/kcn-vnic-source-20261103.md)、[正式资源规则](specs/vpc-subnet.md#手动-vnic-与实例选择)、[当前结果](execution/status.md#kcn-vnic-management-20261103)。

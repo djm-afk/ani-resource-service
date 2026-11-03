@@ -5,8 +5,8 @@ SELECT * FROM network_idempotency WHERE tenant_id=$1 AND operation_kind='create_
 SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(tenant_id)::text || ':create_subnet:' || sqlc.arg(idempotency_key)::text,0));
 
 -- name: InsertSubnet :one
-INSERT INTO network_subnets (tenant_id,subnet_id,vpc_id,name,description,cidr,gateway,state,created_at,updated_at,last_operation_id)
-VALUES ($1,$2,$3,$4,$5,$6,$7,'provisioning',$8,$8,$9) RETURNING *;
+INSERT INTO network_subnets (tenant_id,subnet_id,vpc_id,name,description,cidr,gateway,state,created_at,updated_at,last_operation_id,exclude_ips,enable_dhcp,dns_servers)
+VALUES ($1,$2,$3,$4,$5,$6,$7,'provisioning',$8,$8,$9,$10,$11,$12) RETURNING *;
 
 -- name: InsertSubnetIdempotency :exec
 INSERT INTO network_idempotency (tenant_id,operation_kind,idempotency_key,fingerprint,fingerprint_version,subnet_id,operation_id,response,created_at)

@@ -6,6 +6,11 @@ import "google/protobuf/timestamp.proto";
 // NetworkService owns tenant network intent, operations and queries. Caller
 // authentication is deferred; tenant_id is mandatory caller-supplied scope.
 service NetworkService {
+  rpc CreateVNic(CreateVNicRequest) returns (CreateVNicResponse);
+  rpc GetVNic(GetVNicRequest) returns (GetVNicResponse);
+  rpc ListVNics(ListVNicsRequest) returns (ListVNicsResponse);
+  rpc DeleteVNic(DeleteVNicRequest) returns (DeleteVNicResponse);
+  rpc ListVNicBindingTargets(ListVNicBindingTargetsRequest) returns (ListVNicBindingTargetsResponse);
   rpc ListVPCCIDRPresets(ListVPCCIDRPresetsRequest) returns (ListVPCCIDRPresetsResponse);
   rpc CreateVPC(CreateVPCRequest) returns (CreateVPCResponse);
   rpc GetVPC(GetVPCRequest) returns (GetVPCResponse);
@@ -79,6 +84,8 @@ enum OperationKind {
   OPERATION_KIND_UPDATE_SECURITY_GROUP = 32;
   OPERATION_KIND_DELETE_SECURITY_GROUP = 33;
   OPERATION_KIND_SET_EIP_SECURITY_GROUPS = 34;
+  OPERATION_KIND_CREATE_VNIC = 35;
+  OPERATION_KIND_DELETE_VNIC = 36;
 }
 message VPC {
   string id = 1;
@@ -142,6 +149,7 @@ enum ResourceType {
   RESOURCE_TYPE_INTRANET_ADDRESS_POOL = 9;
   RESOURCE_TYPE_LOAD_BALANCER = 10;
   RESOURCE_TYPE_SECURITY_GROUP = 11;
+  RESOURCE_TYPE_VNIC = 12;
 }
 message Operation {
   string id = 1;
@@ -211,6 +219,9 @@ message Subnet {
   reserved "available_ip_count", "used_ip_count";
   optional string available_ip_range = 19;
   optional string used_ip_range = 20;
+  repeated string exclude_ips = 21;
+  bool enable_dhcp = 22;
+  repeated string dns_servers = 23;
 }
 message CreateSubnetRequest {
  string tenant_id = 1;
@@ -221,6 +232,9 @@ message CreateSubnetRequest {
  Attribution attribution = 6;
  string vpc_id = 7;
  optional string gateway = 8;
+ repeated string exclude_ips = 9;
+ optional bool enable_dhcp = 10;
+ repeated string dns_servers = 11;
 }
 message CreateSubnetResponse { Subnet subnet = 1; }
 message GetSubnetRequest { string tenant_id = 1; string subnet_id = 2; }
@@ -435,3 +449,30 @@ message GetSubmissionResponse {
 
 message ListVPCCIDRPresetsRequest { string tenant_id = 1; }
 message ListVPCCIDRPresetsResponse { repeated string cidrs = 1; }
+
+message VNicBinding {
+ string binding_id=1; string consumer_kind=2; string consumer_id=3; string slot=4;
+ int64 requested_revision=5; int64 applied_revision=6; bool current=7; bool target=8;string consumer_name=9;string compute_type=10;
+}
+message VNic {
+ string id=1; string tenant_id=2; string name=3; string description=4; string vpc_id=5; string subnet_id=6;
+ ResourceState state=7; int64 version=8; string mac_address=9; string primary_ip=10; repeated string ips=11;
+ repeated VNicBinding bindings=12; repeated string security_group_ids=13; google.protobuf.Timestamp observed_at=14;
+ bool observation_stale=15; string reason=16; string last_operation_id=17;
+ google.protobuf.Timestamp created_at=18; google.protobuf.Timestamp updated_at=19; string binding_state=20;string vpc_name=21;string subnet_name=22;repeated string security_group_names=23;
+ string requested_ip=24; string requested_mac=25;
+}
+message CreateVNicRequest { string target_tenant_id=1; string idempotency_key=2; string name=3; string description=4; string subnet_id=5; string requested_ip=6; string requested_mac=7; }
+message CreateVNicResponse { VNic vnic=1; }
+message GetVNicRequest { string target_tenant_id=1; string vnic_id=2; }
+message GetVNicResponse { VNic vnic=1; }
+message DeleteVNicRequest { string target_tenant_id=1; string vnic_id=2; }
+message DeleteVNicResponse { VNic vnic=1; }
+message ListVNicsRequest {
+ string target_tenant_id=1; optional uint32 page=2; optional uint32 page_size=3; string name=4; string subnet_id=5;
+ string state=6; string binding_state=7; string bindable_to_kind=8; string bindable_to_id=9;
+}
+message ListVNicsResponse { repeated VNic items=1; int64 total=2; }
+message ListVNicBindingTargetsRequest { string target_tenant_id=1;string vnic_id=2;string consumer_kind=3;string name=4;optional uint32 page=5;optional uint32 page_size=6; }
+message VNicBindingTarget { string consumer_kind=1; string consumer_id=2;string name=3;int64 version=4;string state=5;repeated string security_group_ids=6; string compute_type=7; }
+message ListVNicBindingTargetsResponse { repeated VNicBindingTarget items=1;int64 total=2; }

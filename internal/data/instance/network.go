@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
@@ -124,7 +125,15 @@ func (n *InstanceNetwork) Observe(ctx context.Context, i biz.Instance) (biz.Netw
 	if a.ObservedAt == nil || time.Since(*a.ObservedAt) > n.freshness {
 		return biz.NetworkObservation{}, biz.ErrNetworkUnavailable
 	}
-	return biz.NetworkObservation{State: string(a.State), Reason: string(a.Reason), PodUID: a.PodUID, Version: a.Version, SnapshotRevision: a.SnapshotRevision}, nil
+	mode := "manual"
+	if strings.HasPrefix(a.CurrentVNicName, "auto-") {
+		mode = "automatic"
+	}
+	var observed time.Time
+	if a.ObservedAt != nil {
+		observed = *a.ObservedAt
+	}
+	return biz.NetworkObservation{Confirmed: a.State == networkbiz.Attached && a.Reason == "" && a.ConfirmedPodUID == a.PodUID && a.PodUID == i.PodUID, ObservedAt: observed, CurrentMode: mode, CurrentVNicUID: a.CurrentVNicUID, CurrentIPs: a.CurrentIPs, CurrentVNicName: a.CurrentVNicName, CurrentMACAddress: a.CurrentMACAddress, State: string(a.State), Reason: string(a.Reason), PodUID: a.PodUID, Version: a.Version, SnapshotRevision: a.SnapshotRevision}, nil
 }
 func (n *InstanceNetwork) Confirm(ctx context.Context, i biz.Instance) error {
 	if err := n.runtime(i); err != nil {
@@ -195,6 +204,17 @@ func (c *InstanceNetworkConsumer) GetSubmission(ctx context.Context, a networkbi
 	}
 	n := i.Network
 	out := networkbiz.ConsumerSubmission{ProtocolVersion: 2, TenantID: i.TenantID, InstanceID: i.ID, SubmissionID: n.SubmissionID, Generation: n.Generation, AttachmentID: n.AttachmentID, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, State: n.State, FinalizationID: n.FinalizationID, ClosedAt: n.ClosedAt, SnapshotRevision: n.SnapshotRevision, DesiredRunState: n.DesiredRunState, RootController: networkWorkload(n.RootController)}
+	for _, c := range []biz.NetworkInterfaceChoice{biz.PrimaryNetworkInterface(i).Desired, biz.PrimaryNetworkInterface(i).Applied} {
+		if c.Mode == "manual" {
+			found := false
+			for _, ref := range out.ManualVNics {
+				found = found || ref.VNicID == c.VNicID
+			}
+			if !found {
+				out.ManualVNics = append(out.ManualVNics, networkbiz.ManualVNicReference{VNicID: c.VNicID, ProviderName: c.ProviderName, ProviderUID: c.ProviderUID})
+			}
+		}
+	}
 	for _, set := range n.Controllers {
 		out.Controllers = append(out.Controllers, networkbiz.ControllerReference{Reference: networkWorkload(set.Reference), Owner: networkWorkload(set.Owner)})
 		out.ControllerUIDs = append(out.ControllerUIDs, set.Reference.UID)

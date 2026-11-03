@@ -80,6 +80,8 @@ func (w *Worker) advance(ctx context.Context, o *Operation, v *VM) error {
 		return w.power(ctx, o, v)
 	case "create-disk", "attach-disk", "detach-disk", "delete-disk":
 		return w.disk(ctx, o, v)
+	case "set-network-interface":
+		return w.setNetworkInterface(ctx, o, v)
 	case "set-security-groups":
 		return w.setSecurityGroups(ctx, o, v)
 	case "set-media", "eject-media", "set-boot":
@@ -203,12 +205,44 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 			}
 		}
 	}
+	if o.Action == "restart" && (PrimaryNetworkInterface(*v).PendingRestart() || o.Step == "network-stopping" || o.Step == "network-starting") {
+		if o.Step != "network-starting" {
+			if !x.Stopped || x.VMI != nil || x.Launcher != nil || len(x.StateChangeRequests) != 0 {
+				if o.Step != "network-stopping" {
+					o.Step = "network-stopping"
+					if e = w.checkpoint(ctx, o, *v, "network-stop", v.Native); e != nil {
+						return e
+					}
+					return w.native.Stop(ctx, *v, false)
+				}
+				return ErrDependency
+			}
+			if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
+				return e
+			}
+			o.Step = "network-starting"
+			o.Pending = nil
+			return nil
+		}
+	}
+	if (o.Action == "start" || o.Step == "network-starting") && PrimaryNetworkInterface(*v).PendingRestart() {
+		if !x.Stopped || x.VMI != nil || x.Launcher != nil || len(x.StateChangeRequests) != 0 {
+			return ErrDependency
+		}
+		if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
+			return e
+		}
+		return nil
+	}
 	addresses, e := w.network.Observe(ctx, *v, x)
 	if e != nil && !errors.Is(e, ErrDependency) {
 		return e
 	}
 	v.Addresses = addresses
 	action := o.Action
+	if o.Step == "network-starting" {
+		action = "start"
+	}
 	if action == CreateAction {
 		action = "start"
 	}
@@ -216,6 +250,12 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	case "start":
 		v.Desired = "Running"
 		if x.Running {
+			if e != nil {
+				return e
+			}
+			if e = w.confirmNetworkInterface(ctx, v, x, addresses); e != nil {
+				return e
+			}
 			o.State = "succeeded"
 			o.Pending = nil
 			return nil
@@ -396,6 +436,13 @@ func (w *Worker) remove(ctx context.Context, o *Operation, v *VM) error {
 	}
 	if !done {
 		return nil
+	}
+	if port, ok := w.network.(ManualNetworkPort); ok {
+		if err := port.ReleaseNetworkInterfaces(ctx, *v, nil); err != nil {
+			return err
+		}
+	} else if len(v.NetworkInterfaces) > 0 {
+		return ErrDependency
 	}
 	if w.securityGroups != nil {
 		if err := w.securityGroups.ReleaseSecurityGroupBinding(ctx, v.TenantID, "vm", v.ID, v.Version); err != nil {

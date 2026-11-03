@@ -10,7 +10,7 @@ import (
 func (s *NetworkService) CreateSubnet(ctx context.Context, r *networkv1.CreateSubnetRequest) (*networkv1.CreateSubnetResponse, error) {
 	attribution := r.GetAttribution()
 	value, err := s.network.CreateSubnet(ctx, biz.CreateSubnet{TenantID: r.GetTenantId(), Name: r.GetName(), CIDR: r.GetCidr(), Description: r.GetDescription(), IdempotencyKey: r.GetIdempotencyKey(),
-		VPCID: r.GetVpcId(), Gateway: r.Gateway, Attribution: biz.Attribution{Actor: attribution.GetActor(), DirectCaller: attribution.GetDirectCaller(), CorrelationID: attribution.GetCorrelationId()}})
+		VPCID: r.GetVpcId(), Gateway: r.Gateway, SubnetOptions: biz.SubnetOptions{ExcludeIPs: r.GetExcludeIps(), EnableDHCP: r.GetEnableDhcp(), DNSServers: r.GetDnsServers()}, Attribution: biz.Attribution{Actor: attribution.GetActor(), DirectCaller: attribution.GetDirectCaller(), CorrelationID: attribution.GetCorrelationId()}})
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -46,5 +46,5 @@ func (s *NetworkService) DeleteSubnet(ctx context.Context, r *networkv1.DeleteSu
 	return &networkv1.DeleteSubnetResponse{Subnet: wireSubnet(value)}, nil
 }
 func wireSubnet(v biz.Subnet) *networkv1.Subnet {
-	return &networkv1.Subnet{AvailableIpRange: v.AvailableIPRange, UsedIpRange: v.UsedIPRange, Id: v.ID, TenantId: v.TenantID, Name: v.Name, Description: v.Description, Cidr: v.CIDR, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), Version: v.Version, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, LastOperationId: v.LastOperationID, VpcId: v.VPCID, Gateway: v.Gateway}
+	return &networkv1.Subnet{AvailableIpRange: v.AvailableIPRange, UsedIpRange: v.UsedIPRange, Id: v.ID, TenantId: v.TenantID, Name: v.Name, Description: v.Description, Cidr: v.CIDR, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), Version: v.Version, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, LastOperationId: v.LastOperationID, VpcId: v.VPCID, Gateway: v.Gateway, ExcludeIps: v.ExcludeIPs, EnableDhcp: v.EnableDHCP, DnsServers: v.DNSServers}
 }

@@ -12,6 +12,8 @@ work=$(mktemp -d "${TMPDIR:?task-owned TMPDIR}/instance-api.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/api/instance" "$work/api/compute" "$work/upstream"
 cp -R api/compute/v1 "$work/api/compute/"
+mkdir -p "$work/api/network"
+cp -R api/network/v1 "$work/api/network/"
 cp -R api/instance/v1 "$work/api/instance/"
 mkdir -p "$work/api/instance/terminal"
 cp -R api/instance/terminal/v1 "$work/api/instance/terminal/"

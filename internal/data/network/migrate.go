@@ -70,6 +70,9 @@ func Migrate(ctx context.Context, owner *pgxpool.Pool, runtimeRole string) error
 		return err
 	}
 	sort.Strings(files)
+	if err := bridgeReleasedVNicHistory(ctx, tx, files); err != nil {
+		return err
+	}
 	for index, name := range files {
 		body, err := migrations.Files.ReadFile(name)
 		if err != nil {
@@ -116,6 +119,7 @@ func Migrate(ctx context.Context, owner *pgxpool.Pool, runtimeRole string) error
 }
 
 var networkTables = []string{
+	"network_vnics", "network_vnic_bindings",
 	"network_security_groups", "network_security_group_targets", "network_security_group_references", "network_security_group_operations", "network_security_group_idempotency", "network_security_group_reconciliations",
 	"network_vm_namespaces",
 	"network_default_vpc_egresses", "network_default_vpc_egress_operations", "network_default_vpc_egress_idempotency", "network_default_vpc_egress_history",

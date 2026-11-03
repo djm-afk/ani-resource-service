@@ -238,3 +238,7 @@ VM operation 删除完成需：目标 VM/VMI/launcher 已退出，自有 DV/PVC/
 不要求重写注册框架、通用 operation 平台、Network worker、整个 API module 结构或 installer。运行时、共享 gate、KCN、存储策略、生产部署各按实际明确授权范围执行。
 
 若本版固定选择与实际能力不符，记录具体失败与受影响卡；先完成不受影响工作，再由用户决定范围变更。不得把失败功能自动降级为下一期、改网络/模式绕过，或宣称未跑的 Linux/Windows/热插拔/快照已通过。
+
+### S07 手动主网卡选择增量
+
+手动网卡是可选的 primary 选择，普通自动分配保持不变。保存运行中选择只改变 desired，平台重建 VMI/launcher 后再确认 applied 的接网结果；停止态显示下次启动配置，guest reboot/暂停恢复不构成应用边界。删除 VM 留存手动网卡。身份、预留、SG 与释放的唯一规则见[VPC/Subnet 规格](vpc-subnet.md#手动-vnic-与实例选择)，字段见[VM 合同](../contracts/vm-v1.md#c05-手动主网卡选择增量)。

@@ -77,6 +77,11 @@ var governancePlatformMethods = map[string]struct{}{
 // adds a group, never a new transport or trust contract. Keep in sync with
 // docs/specs/governance-calls.md (the registered method table is authoritative).
 var governanceReadMethods = map[string]struct{}{
+	"/network.v1.NetworkService/CreateVNic":             {},
+	"/network.v1.NetworkService/GetVNic":                {},
+	"/network.v1.NetworkService/ListVNics":              {},
+	"/network.v1.NetworkService/DeleteVNic":             {},
+	"/network.v1.NetworkService/ListVNicBindingTargets": {},
 	// Network domain: tenant VPC/Subnet read+write and operation lookup.
 	"/network.v1.NetworkService/GetVPC":               {},
 	"/network.v1.NetworkService/ListVPCs":             {},
@@ -425,12 +430,18 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 				return nil, status.Error(codes.PermissionDenied, "request tenant differs from authenticated governance scope")
 			}
 		}
+		if isVNicMethod(info.FullMethod) {
+			fd := value.Descriptor().Fields().ByName("target_tenant_id")
+			if fd == nil || value.Get(fd).String() != p.TenantID {
+				return nil, status.Error(codes.PermissionDenied, "request tenant differs from authenticated governance scope")
+			}
+		}
 		// GetOperation resolves egress/lb operations, whose authorization also
 		// requires the trusted caller context.
 		needsCaller := strings.HasPrefix(info.FullMethod, "/network.v1.TenantEgressService/") ||
 			strings.HasPrefix(info.FullMethod, "/network.v1.TenantLoadBalancerService/") ||
 			strings.HasPrefix(info.FullMethod, "/network.v1.NetworkSecurityGroupService/") ||
-			info.FullMethod == "/network.v1.NetworkService/GetOperation"
+			(info.FullMethod == "/network.v1.NetworkService/GetOperation" || isVNicMethod(info.FullMethod))
 		if needsCaller {
 			caller := biz.EgressCaller{
 				TenantID: p.TenantID,
@@ -456,3 +467,11 @@ func DenyGovernanceStreams(_ any, _ grpc.ServerStream, _ *grpc.StreamServerInfo,
 //
 // Deprecated: use DenyGovernanceStreams.
 var DenyVPCStreams = DenyGovernanceStreams
+
+func isVNicMethod(method string) bool {
+	switch method {
+	case "/network.v1.NetworkService/CreateVNic", "/network.v1.NetworkService/GetVNic", "/network.v1.NetworkService/ListVNics", "/network.v1.NetworkService/DeleteVNic", "/network.v1.NetworkService/ListVNicBindingTargets":
+		return true
+	}
+	return false
+}

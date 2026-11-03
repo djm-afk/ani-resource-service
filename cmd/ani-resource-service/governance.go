@@ -131,7 +131,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	vms, consumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, consumer, policy.StaleAfter)
+	vms, consumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, consumer, policy.StaleAfter, networkUC)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,9 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	networkv1.RegisterNetworkServiceServer(gs, networkService.NewNetworkService(networkUC, attachments))
+	vnicHandler := networkService.NewNetworkService(networkUC, attachments)
+	wireVNicConsumers(repository, vnicHandler, vms, instances)
+	networkv1.RegisterNetworkServiceServer(gs, vnicHandler)
 	networkv1.RegisterNetworkSecurityGroupServiceServer(gs, securityGroups)
 	networkv1.RegisterTenantEgressServiceServer(gs, networkService.NewTenantEgressService(egress))
 	networkv1.RegisterPlatformNetworkServiceServer(gs, networkService.NewPlatformNetworkService(egress))

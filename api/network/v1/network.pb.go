@@ -184,6 +184,8 @@ const (
 	OperationKind_OPERATION_KIND_UPDATE_SECURITY_GROUP   OperationKind = 32
 	OperationKind_OPERATION_KIND_DELETE_SECURITY_GROUP   OperationKind = 33
 	OperationKind_OPERATION_KIND_SET_EIP_SECURITY_GROUPS OperationKind = 34
+	OperationKind_OPERATION_KIND_CREATE_VNIC             OperationKind = 35
+	OperationKind_OPERATION_KIND_DELETE_VNIC             OperationKind = 36
 )
 
 // Enum value maps for OperationKind.
@@ -224,6 +226,8 @@ var (
 		32: "OPERATION_KIND_UPDATE_SECURITY_GROUP",
 		33: "OPERATION_KIND_DELETE_SECURITY_GROUP",
 		34: "OPERATION_KIND_SET_EIP_SECURITY_GROUPS",
+		35: "OPERATION_KIND_CREATE_VNIC",
+		36: "OPERATION_KIND_DELETE_VNIC",
 	}
 	OperationKind_value = map[string]int32{
 		"OPERATION_KIND_UNSPECIFIED":                  0,
@@ -261,6 +265,8 @@ var (
 		"OPERATION_KIND_UPDATE_SECURITY_GROUP":        32,
 		"OPERATION_KIND_DELETE_SECURITY_GROUP":        33,
 		"OPERATION_KIND_SET_EIP_SECURITY_GROUPS":      34,
+		"OPERATION_KIND_CREATE_VNIC":                  35,
+		"OPERATION_KIND_DELETE_VNIC":                  36,
 	}
 )
 
@@ -306,6 +312,7 @@ const (
 	ResourceType_RESOURCE_TYPE_INTRANET_ADDRESS_POOL ResourceType = 9
 	ResourceType_RESOURCE_TYPE_LOAD_BALANCER         ResourceType = 10
 	ResourceType_RESOURCE_TYPE_SECURITY_GROUP        ResourceType = 11
+	ResourceType_RESOURCE_TYPE_VNIC                  ResourceType = 12
 )
 
 // Enum value maps for ResourceType.
@@ -323,6 +330,7 @@ var (
 		9:  "RESOURCE_TYPE_INTRANET_ADDRESS_POOL",
 		10: "RESOURCE_TYPE_LOAD_BALANCER",
 		11: "RESOURCE_TYPE_SECURITY_GROUP",
+		12: "RESOURCE_TYPE_VNIC",
 	}
 	ResourceType_value = map[string]int32{
 		"RESOURCE_TYPE_UNSPECIFIED":           0,
@@ -337,6 +345,7 @@ var (
 		"RESOURCE_TYPE_INTRANET_ADDRESS_POOL": 9,
 		"RESOURCE_TYPE_LOAD_BALANCER":         10,
 		"RESOURCE_TYPE_SECURITY_GROUP":        11,
+		"RESOURCE_TYPE_VNIC":                  12,
 	}
 )
 
@@ -1657,6 +1666,9 @@ type Subnet struct {
 	Gateway          string                 `protobuf:"bytes,16,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	AvailableIpRange *string                `protobuf:"bytes,19,opt,name=available_ip_range,json=availableIpRange,proto3,oneof" json:"available_ip_range,omitempty"`
 	UsedIpRange      *string                `protobuf:"bytes,20,opt,name=used_ip_range,json=usedIpRange,proto3,oneof" json:"used_ip_range,omitempty"`
+	ExcludeIps       []string               `protobuf:"bytes,21,rep,name=exclude_ips,json=excludeIps,proto3" json:"exclude_ips,omitempty"`
+	EnableDhcp       bool                   `protobuf:"varint,22,opt,name=enable_dhcp,json=enableDhcp,proto3" json:"enable_dhcp,omitempty"`
+	DnsServers       []string               `protobuf:"bytes,23,rep,name=dns_servers,json=dnsServers,proto3" json:"dns_servers,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1817,6 +1829,27 @@ func (x *Subnet) GetUsedIpRange() string {
 	return ""
 }
 
+func (x *Subnet) GetExcludeIps() []string {
+	if x != nil {
+		return x.ExcludeIps
+	}
+	return nil
+}
+
+func (x *Subnet) GetEnableDhcp() bool {
+	if x != nil {
+		return x.EnableDhcp
+	}
+	return false
+}
+
+func (x *Subnet) GetDnsServers() []string {
+	if x != nil {
+		return x.DnsServers
+	}
+	return nil
+}
+
 type CreateSubnetRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TenantId       string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
@@ -1827,6 +1860,9 @@ type CreateSubnetRequest struct {
 	Attribution    *Attribution           `protobuf:"bytes,6,opt,name=attribution,proto3" json:"attribution,omitempty"`
 	VpcId          string                 `protobuf:"bytes,7,opt,name=vpc_id,json=vpcId,proto3" json:"vpc_id,omitempty"`
 	Gateway        *string                `protobuf:"bytes,8,opt,name=gateway,proto3,oneof" json:"gateway,omitempty"`
+	ExcludeIps     []string               `protobuf:"bytes,9,rep,name=exclude_ips,json=excludeIps,proto3" json:"exclude_ips,omitempty"`
+	EnableDhcp     *bool                  `protobuf:"varint,10,opt,name=enable_dhcp,json=enableDhcp,proto3,oneof" json:"enable_dhcp,omitempty"`
+	DnsServers     []string               `protobuf:"bytes,11,rep,name=dns_servers,json=dnsServers,proto3" json:"dns_servers,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1915,6 +1951,27 @@ func (x *CreateSubnetRequest) GetGateway() string {
 		return *x.Gateway
 	}
 	return ""
+}
+
+func (x *CreateSubnetRequest) GetExcludeIps() []string {
+	if x != nil {
+		return x.ExcludeIps
+	}
+	return nil
+}
+
+func (x *CreateSubnetRequest) GetEnableDhcp() bool {
+	if x != nil && x.EnableDhcp != nil {
+		return *x.EnableDhcp
+	}
+	return false
+}
+
+func (x *CreateSubnetRequest) GetDnsServers() []string {
+	if x != nil {
+		return x.DnsServers
+	}
+	return nil
 }
 
 type CreateSubnetResponse struct {
@@ -4328,6 +4385,1074 @@ func (x *ListVPCCIDRPresetsResponse) GetCidrs() []string {
 	return nil
 }
 
+type VNicBinding struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	BindingId         string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	ConsumerKind      string                 `protobuf:"bytes,2,opt,name=consumer_kind,json=consumerKind,proto3" json:"consumer_kind,omitempty"`
+	ConsumerId        string                 `protobuf:"bytes,3,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	Slot              string                 `protobuf:"bytes,4,opt,name=slot,proto3" json:"slot,omitempty"`
+	RequestedRevision int64                  `protobuf:"varint,5,opt,name=requested_revision,json=requestedRevision,proto3" json:"requested_revision,omitempty"`
+	AppliedRevision   int64                  `protobuf:"varint,6,opt,name=applied_revision,json=appliedRevision,proto3" json:"applied_revision,omitempty"`
+	Current           bool                   `protobuf:"varint,7,opt,name=current,proto3" json:"current,omitempty"`
+	Target            bool                   `protobuf:"varint,8,opt,name=target,proto3" json:"target,omitempty"`
+	ConsumerName      string                 `protobuf:"bytes,9,opt,name=consumer_name,json=consumerName,proto3" json:"consumer_name,omitempty"`
+	ComputeType       string                 `protobuf:"bytes,10,opt,name=compute_type,json=computeType,proto3" json:"compute_type,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *VNicBinding) Reset() {
+	*x = VNicBinding{}
+	mi := &file_network_v1_network_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VNicBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VNicBinding) ProtoMessage() {}
+
+func (x *VNicBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VNicBinding.ProtoReflect.Descriptor instead.
+func (*VNicBinding) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *VNicBinding) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *VNicBinding) GetConsumerKind() string {
+	if x != nil {
+		return x.ConsumerKind
+	}
+	return ""
+}
+
+func (x *VNicBinding) GetConsumerId() string {
+	if x != nil {
+		return x.ConsumerId
+	}
+	return ""
+}
+
+func (x *VNicBinding) GetSlot() string {
+	if x != nil {
+		return x.Slot
+	}
+	return ""
+}
+
+func (x *VNicBinding) GetRequestedRevision() int64 {
+	if x != nil {
+		return x.RequestedRevision
+	}
+	return 0
+}
+
+func (x *VNicBinding) GetAppliedRevision() int64 {
+	if x != nil {
+		return x.AppliedRevision
+	}
+	return 0
+}
+
+func (x *VNicBinding) GetCurrent() bool {
+	if x != nil {
+		return x.Current
+	}
+	return false
+}
+
+func (x *VNicBinding) GetTarget() bool {
+	if x != nil {
+		return x.Target
+	}
+	return false
+}
+
+func (x *VNicBinding) GetConsumerName() string {
+	if x != nil {
+		return x.ConsumerName
+	}
+	return ""
+}
+
+func (x *VNicBinding) GetComputeType() string {
+	if x != nil {
+		return x.ComputeType
+	}
+	return ""
+}
+
+type VNic struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId           string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name               string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description        string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	VpcId              string                 `protobuf:"bytes,5,opt,name=vpc_id,json=vpcId,proto3" json:"vpc_id,omitempty"`
+	SubnetId           string                 `protobuf:"bytes,6,opt,name=subnet_id,json=subnetId,proto3" json:"subnet_id,omitempty"`
+	State              ResourceState          `protobuf:"varint,7,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Version            int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
+	MacAddress         string                 `protobuf:"bytes,9,opt,name=mac_address,json=macAddress,proto3" json:"mac_address,omitempty"`
+	PrimaryIp          string                 `protobuf:"bytes,10,opt,name=primary_ip,json=primaryIp,proto3" json:"primary_ip,omitempty"`
+	Ips                []string               `protobuf:"bytes,11,rep,name=ips,proto3" json:"ips,omitempty"`
+	Bindings           []*VNicBinding         `protobuf:"bytes,12,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	SecurityGroupIds   []string               `protobuf:"bytes,13,rep,name=security_group_ids,json=securityGroupIds,proto3" json:"security_group_ids,omitempty"`
+	ObservedAt         *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	ObservationStale   bool                   `protobuf:"varint,15,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	Reason             string                 `protobuf:"bytes,16,opt,name=reason,proto3" json:"reason,omitempty"`
+	LastOperationId    string                 `protobuf:"bytes,17,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,19,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	BindingState       string                 `protobuf:"bytes,20,opt,name=binding_state,json=bindingState,proto3" json:"binding_state,omitempty"`
+	VpcName            string                 `protobuf:"bytes,21,opt,name=vpc_name,json=vpcName,proto3" json:"vpc_name,omitempty"`
+	SubnetName         string                 `protobuf:"bytes,22,opt,name=subnet_name,json=subnetName,proto3" json:"subnet_name,omitempty"`
+	SecurityGroupNames []string               `protobuf:"bytes,23,rep,name=security_group_names,json=securityGroupNames,proto3" json:"security_group_names,omitempty"`
+	RequestedIp        string                 `protobuf:"bytes,24,opt,name=requested_ip,json=requestedIp,proto3" json:"requested_ip,omitempty"`
+	RequestedMac       string                 `protobuf:"bytes,25,opt,name=requested_mac,json=requestedMac,proto3" json:"requested_mac,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *VNic) Reset() {
+	*x = VNic{}
+	mi := &file_network_v1_network_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VNic) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VNic) ProtoMessage() {}
+
+func (x *VNic) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VNic.ProtoReflect.Descriptor instead.
+func (*VNic) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *VNic) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *VNic) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *VNic) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *VNic) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *VNic) GetVpcId() string {
+	if x != nil {
+		return x.VpcId
+	}
+	return ""
+}
+
+func (x *VNic) GetSubnetId() string {
+	if x != nil {
+		return x.SubnetId
+	}
+	return ""
+}
+
+func (x *VNic) GetState() ResourceState {
+	if x != nil {
+		return x.State
+	}
+	return ResourceState_RESOURCE_STATE_UNSPECIFIED
+}
+
+func (x *VNic) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *VNic) GetMacAddress() string {
+	if x != nil {
+		return x.MacAddress
+	}
+	return ""
+}
+
+func (x *VNic) GetPrimaryIp() string {
+	if x != nil {
+		return x.PrimaryIp
+	}
+	return ""
+}
+
+func (x *VNic) GetIps() []string {
+	if x != nil {
+		return x.Ips
+	}
+	return nil
+}
+
+func (x *VNic) GetBindings() []*VNicBinding {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+func (x *VNic) GetSecurityGroupIds() []string {
+	if x != nil {
+		return x.SecurityGroupIds
+	}
+	return nil
+}
+
+func (x *VNic) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+func (x *VNic) GetObservationStale() bool {
+	if x != nil {
+		return x.ObservationStale
+	}
+	return false
+}
+
+func (x *VNic) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *VNic) GetLastOperationId() string {
+	if x != nil {
+		return x.LastOperationId
+	}
+	return ""
+}
+
+func (x *VNic) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *VNic) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *VNic) GetBindingState() string {
+	if x != nil {
+		return x.BindingState
+	}
+	return ""
+}
+
+func (x *VNic) GetVpcName() string {
+	if x != nil {
+		return x.VpcName
+	}
+	return ""
+}
+
+func (x *VNic) GetSubnetName() string {
+	if x != nil {
+		return x.SubnetName
+	}
+	return ""
+}
+
+func (x *VNic) GetSecurityGroupNames() []string {
+	if x != nil {
+		return x.SecurityGroupNames
+	}
+	return nil
+}
+
+func (x *VNic) GetRequestedIp() string {
+	if x != nil {
+		return x.RequestedIp
+	}
+	return ""
+}
+
+func (x *VNic) GetRequestedMac() string {
+	if x != nil {
+		return x.RequestedMac
+	}
+	return ""
+}
+
+type CreateVNicRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetTenantId string                 `protobuf:"bytes,1,opt,name=target_tenant_id,json=targetTenantId,proto3" json:"target_tenant_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Name           string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description    string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	SubnetId       string                 `protobuf:"bytes,5,opt,name=subnet_id,json=subnetId,proto3" json:"subnet_id,omitempty"`
+	RequestedIp    string                 `protobuf:"bytes,6,opt,name=requested_ip,json=requestedIp,proto3" json:"requested_ip,omitempty"`
+	RequestedMac   string                 `protobuf:"bytes,7,opt,name=requested_mac,json=requestedMac,proto3" json:"requested_mac,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CreateVNicRequest) Reset() {
+	*x = CreateVNicRequest{}
+	mi := &file_network_v1_network_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateVNicRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateVNicRequest) ProtoMessage() {}
+
+func (x *CreateVNicRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateVNicRequest.ProtoReflect.Descriptor instead.
+func (*CreateVNicRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *CreateVNicRequest) GetTargetTenantId() string {
+	if x != nil {
+		return x.TargetTenantId
+	}
+	return ""
+}
+
+func (x *CreateVNicRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *CreateVNicRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateVNicRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateVNicRequest) GetSubnetId() string {
+	if x != nil {
+		return x.SubnetId
+	}
+	return ""
+}
+
+func (x *CreateVNicRequest) GetRequestedIp() string {
+	if x != nil {
+		return x.RequestedIp
+	}
+	return ""
+}
+
+func (x *CreateVNicRequest) GetRequestedMac() string {
+	if x != nil {
+		return x.RequestedMac
+	}
+	return ""
+}
+
+type CreateVNicResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Vnic          *VNic                  `protobuf:"bytes,1,opt,name=vnic,proto3" json:"vnic,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateVNicResponse) Reset() {
+	*x = CreateVNicResponse{}
+	mi := &file_network_v1_network_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateVNicResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateVNicResponse) ProtoMessage() {}
+
+func (x *CreateVNicResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateVNicResponse.ProtoReflect.Descriptor instead.
+func (*CreateVNicResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *CreateVNicResponse) GetVnic() *VNic {
+	if x != nil {
+		return x.Vnic
+	}
+	return nil
+}
+
+type GetVNicRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetTenantId string                 `protobuf:"bytes,1,opt,name=target_tenant_id,json=targetTenantId,proto3" json:"target_tenant_id,omitempty"`
+	VnicId         string                 `protobuf:"bytes,2,opt,name=vnic_id,json=vnicId,proto3" json:"vnic_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetVNicRequest) Reset() {
+	*x = GetVNicRequest{}
+	mi := &file_network_v1_network_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetVNicRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetVNicRequest) ProtoMessage() {}
+
+func (x *GetVNicRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetVNicRequest.ProtoReflect.Descriptor instead.
+func (*GetVNicRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *GetVNicRequest) GetTargetTenantId() string {
+	if x != nil {
+		return x.TargetTenantId
+	}
+	return ""
+}
+
+func (x *GetVNicRequest) GetVnicId() string {
+	if x != nil {
+		return x.VnicId
+	}
+	return ""
+}
+
+type GetVNicResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Vnic          *VNic                  `protobuf:"bytes,1,opt,name=vnic,proto3" json:"vnic,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetVNicResponse) Reset() {
+	*x = GetVNicResponse{}
+	mi := &file_network_v1_network_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetVNicResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetVNicResponse) ProtoMessage() {}
+
+func (x *GetVNicResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetVNicResponse.ProtoReflect.Descriptor instead.
+func (*GetVNicResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *GetVNicResponse) GetVnic() *VNic {
+	if x != nil {
+		return x.Vnic
+	}
+	return nil
+}
+
+type DeleteVNicRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetTenantId string                 `protobuf:"bytes,1,opt,name=target_tenant_id,json=targetTenantId,proto3" json:"target_tenant_id,omitempty"`
+	VnicId         string                 `protobuf:"bytes,2,opt,name=vnic_id,json=vnicId,proto3" json:"vnic_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeleteVNicRequest) Reset() {
+	*x = DeleteVNicRequest{}
+	mi := &file_network_v1_network_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteVNicRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteVNicRequest) ProtoMessage() {}
+
+func (x *DeleteVNicRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteVNicRequest.ProtoReflect.Descriptor instead.
+func (*DeleteVNicRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *DeleteVNicRequest) GetTargetTenantId() string {
+	if x != nil {
+		return x.TargetTenantId
+	}
+	return ""
+}
+
+func (x *DeleteVNicRequest) GetVnicId() string {
+	if x != nil {
+		return x.VnicId
+	}
+	return ""
+}
+
+type DeleteVNicResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Vnic          *VNic                  `protobuf:"bytes,1,opt,name=vnic,proto3" json:"vnic,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteVNicResponse) Reset() {
+	*x = DeleteVNicResponse{}
+	mi := &file_network_v1_network_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteVNicResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteVNicResponse) ProtoMessage() {}
+
+func (x *DeleteVNicResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteVNicResponse.ProtoReflect.Descriptor instead.
+func (*DeleteVNicResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *DeleteVNicResponse) GetVnic() *VNic {
+	if x != nil {
+		return x.Vnic
+	}
+	return nil
+}
+
+type ListVNicsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetTenantId string                 `protobuf:"bytes,1,opt,name=target_tenant_id,json=targetTenantId,proto3" json:"target_tenant_id,omitempty"`
+	Page           *uint32                `protobuf:"varint,2,opt,name=page,proto3,oneof" json:"page,omitempty"`
+	PageSize       *uint32                `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
+	Name           string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	SubnetId       string                 `protobuf:"bytes,5,opt,name=subnet_id,json=subnetId,proto3" json:"subnet_id,omitempty"`
+	State          string                 `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
+	BindingState   string                 `protobuf:"bytes,7,opt,name=binding_state,json=bindingState,proto3" json:"binding_state,omitempty"`
+	BindableToKind string                 `protobuf:"bytes,8,opt,name=bindable_to_kind,json=bindableToKind,proto3" json:"bindable_to_kind,omitempty"`
+	BindableToId   string                 `protobuf:"bytes,9,opt,name=bindable_to_id,json=bindableToId,proto3" json:"bindable_to_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListVNicsRequest) Reset() {
+	*x = ListVNicsRequest{}
+	mi := &file_network_v1_network_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVNicsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVNicsRequest) ProtoMessage() {}
+
+func (x *ListVNicsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVNicsRequest.ProtoReflect.Descriptor instead.
+func (*ListVNicsRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ListVNicsRequest) GetTargetTenantId() string {
+	if x != nil {
+		return x.TargetTenantId
+	}
+	return ""
+}
+
+func (x *ListVNicsRequest) GetPage() uint32 {
+	if x != nil && x.Page != nil {
+		return *x.Page
+	}
+	return 0
+}
+
+func (x *ListVNicsRequest) GetPageSize() uint32 {
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
+	}
+	return 0
+}
+
+func (x *ListVNicsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ListVNicsRequest) GetSubnetId() string {
+	if x != nil {
+		return x.SubnetId
+	}
+	return ""
+}
+
+func (x *ListVNicsRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ListVNicsRequest) GetBindingState() string {
+	if x != nil {
+		return x.BindingState
+	}
+	return ""
+}
+
+func (x *ListVNicsRequest) GetBindableToKind() string {
+	if x != nil {
+		return x.BindableToKind
+	}
+	return ""
+}
+
+func (x *ListVNicsRequest) GetBindableToId() string {
+	if x != nil {
+		return x.BindableToId
+	}
+	return ""
+}
+
+type ListVNicsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*VNic                `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Total         int64                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListVNicsResponse) Reset() {
+	*x = ListVNicsResponse{}
+	mi := &file_network_v1_network_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVNicsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVNicsResponse) ProtoMessage() {}
+
+func (x *ListVNicsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVNicsResponse.ProtoReflect.Descriptor instead.
+func (*ListVNicsResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ListVNicsResponse) GetItems() []*VNic {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ListVNicsResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+type ListVNicBindingTargetsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetTenantId string                 `protobuf:"bytes,1,opt,name=target_tenant_id,json=targetTenantId,proto3" json:"target_tenant_id,omitempty"`
+	VnicId         string                 `protobuf:"bytes,2,opt,name=vnic_id,json=vnicId,proto3" json:"vnic_id,omitempty"`
+	ConsumerKind   string                 `protobuf:"bytes,3,opt,name=consumer_kind,json=consumerKind,proto3" json:"consumer_kind,omitempty"`
+	Name           string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	Page           *uint32                `protobuf:"varint,5,opt,name=page,proto3,oneof" json:"page,omitempty"`
+	PageSize       *uint32                `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListVNicBindingTargetsRequest) Reset() {
+	*x = ListVNicBindingTargetsRequest{}
+	mi := &file_network_v1_network_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVNicBindingTargetsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVNicBindingTargetsRequest) ProtoMessage() {}
+
+func (x *ListVNicBindingTargetsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVNicBindingTargetsRequest.ProtoReflect.Descriptor instead.
+func (*ListVNicBindingTargetsRequest) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *ListVNicBindingTargetsRequest) GetTargetTenantId() string {
+	if x != nil {
+		return x.TargetTenantId
+	}
+	return ""
+}
+
+func (x *ListVNicBindingTargetsRequest) GetVnicId() string {
+	if x != nil {
+		return x.VnicId
+	}
+	return ""
+}
+
+func (x *ListVNicBindingTargetsRequest) GetConsumerKind() string {
+	if x != nil {
+		return x.ConsumerKind
+	}
+	return ""
+}
+
+func (x *ListVNicBindingTargetsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ListVNicBindingTargetsRequest) GetPage() uint32 {
+	if x != nil && x.Page != nil {
+		return *x.Page
+	}
+	return 0
+}
+
+func (x *ListVNicBindingTargetsRequest) GetPageSize() uint32 {
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
+	}
+	return 0
+}
+
+type VNicBindingTarget struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ConsumerKind     string                 `protobuf:"bytes,1,opt,name=consumer_kind,json=consumerKind,proto3" json:"consumer_kind,omitempty"`
+	ConsumerId       string                 `protobuf:"bytes,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Version          int64                  `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	State            string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
+	SecurityGroupIds []string               `protobuf:"bytes,6,rep,name=security_group_ids,json=securityGroupIds,proto3" json:"security_group_ids,omitempty"`
+	ComputeType      string                 `protobuf:"bytes,7,opt,name=compute_type,json=computeType,proto3" json:"compute_type,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *VNicBindingTarget) Reset() {
+	*x = VNicBindingTarget{}
+	mi := &file_network_v1_network_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VNicBindingTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VNicBindingTarget) ProtoMessage() {}
+
+func (x *VNicBindingTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VNicBindingTarget.ProtoReflect.Descriptor instead.
+func (*VNicBindingTarget) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *VNicBindingTarget) GetConsumerKind() string {
+	if x != nil {
+		return x.ConsumerKind
+	}
+	return ""
+}
+
+func (x *VNicBindingTarget) GetConsumerId() string {
+	if x != nil {
+		return x.ConsumerId
+	}
+	return ""
+}
+
+func (x *VNicBindingTarget) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *VNicBindingTarget) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *VNicBindingTarget) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *VNicBindingTarget) GetSecurityGroupIds() []string {
+	if x != nil {
+		return x.SecurityGroupIds
+	}
+	return nil
+}
+
+func (x *VNicBindingTarget) GetComputeType() string {
+	if x != nil {
+		return x.ComputeType
+	}
+	return ""
+}
+
+type ListVNicBindingTargetsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*VNicBindingTarget   `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Total         int64                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListVNicBindingTargetsResponse) Reset() {
+	*x = ListVNicBindingTargetsResponse{}
+	mi := &file_network_v1_network_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVNicBindingTargetsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVNicBindingTargetsResponse) ProtoMessage() {}
+
+func (x *ListVNicBindingTargetsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_network_v1_network_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVNicBindingTargetsResponse.ProtoReflect.Descriptor instead.
+func (*ListVNicBindingTargetsResponse) Descriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *ListVNicBindingTargetsResponse) GetItems() []*VNicBindingTarget {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ListVNicBindingTargetsResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
 var File_network_v1_network_proto protoreflect.FileDescriptor
 
 const file_network_v1_network_proto_rawDesc = "" +
@@ -4442,7 +5567,7 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\"K\n" +
 	"\x14GetOperationResponse\x123\n" +
-	"\toperation\x18\x01 \x01(\v2\x15.network.v1.OperationR\toperation\"\xfa\x05\n" +
+	"\toperation\x18\x01 \x01(\v2\x15.network.v1.OperationR\toperation\"\xdd\x06\n" +
 	"\x06Subnet\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
@@ -4465,9 +5590,15 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x0ereason_message\x18\x0f \x01(\tR\rreasonMessage\x12\x18\n" +
 	"\agateway\x18\x10 \x01(\tR\agateway\x121\n" +
 	"\x12available_ip_range\x18\x13 \x01(\tH\x00R\x10availableIpRange\x88\x01\x01\x12'\n" +
-	"\rused_ip_range\x18\x14 \x01(\tH\x01R\vusedIpRange\x88\x01\x01B\x15\n" +
+	"\rused_ip_range\x18\x14 \x01(\tH\x01R\vusedIpRange\x88\x01\x01\x12\x1f\n" +
+	"\vexclude_ips\x18\x15 \x03(\tR\n" +
+	"excludeIps\x12\x1f\n" +
+	"\venable_dhcp\x18\x16 \x01(\bR\n" +
+	"enableDhcp\x12\x1f\n" +
+	"\vdns_servers\x18\x17 \x03(\tR\n" +
+	"dnsServersB\x15\n" +
 	"\x13_available_ip_rangeB\x10\n" +
-	"\x0e_used_ip_rangeJ\x04\b\x11\x10\x12J\x04\b\x12\x10\x13R\x12available_ip_countR\rused_ip_count\"\xa2\x02\n" +
+	"\x0e_used_ip_rangeJ\x04\b\x11\x10\x12J\x04\b\x12\x10\x13R\x12available_ip_countR\rused_ip_count\"\x9a\x03\n" +
 	"\x13CreateSubnetRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -4476,9 +5607,17 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x129\n" +
 	"\vattribution\x18\x06 \x01(\v2\x17.network.v1.AttributionR\vattribution\x12\x15\n" +
 	"\x06vpc_id\x18\a \x01(\tR\x05vpcId\x12\x1d\n" +
-	"\agateway\x18\b \x01(\tH\x00R\agateway\x88\x01\x01B\n" +
+	"\agateway\x18\b \x01(\tH\x00R\agateway\x88\x01\x01\x12\x1f\n" +
+	"\vexclude_ips\x18\t \x03(\tR\n" +
+	"excludeIps\x12$\n" +
+	"\venable_dhcp\x18\n" +
+	" \x01(\bH\x01R\n" +
+	"enableDhcp\x88\x01\x01\x12\x1f\n" +
+	"\vdns_servers\x18\v \x03(\tR\n" +
+	"dnsServersB\n" +
 	"\n" +
-	"\b_gateway\"B\n" +
+	"\b_gatewayB\x0e\n" +
+	"\f_enable_dhcp\"B\n" +
 	"\x14CreateSubnetResponse\x12*\n" +
 	"\x06subnet\x18\x01 \x01(\v2\x12.network.v1.SubnetR\x06subnet\"L\n" +
 	"\x10GetSubnetRequest\x12\x1b\n" +
@@ -4713,7 +5852,112 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x19ListVPCCIDRPresetsRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"2\n" +
 	"\x1aListVPCCIDRPresetsResponse\x12\x14\n" +
-	"\x05cidrs\x18\x01 \x03(\tR\x05cidrs*\xdf\x01\n" +
+	"\x05cidrs\x18\x01 \x03(\tR\x05cidrs\"\xda\x02\n" +
+	"\vVNicBinding\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x01 \x01(\tR\tbindingId\x12#\n" +
+	"\rconsumer_kind\x18\x02 \x01(\tR\fconsumerKind\x12\x1f\n" +
+	"\vconsumer_id\x18\x03 \x01(\tR\n" +
+	"consumerId\x12\x12\n" +
+	"\x04slot\x18\x04 \x01(\tR\x04slot\x12-\n" +
+	"\x12requested_revision\x18\x05 \x01(\x03R\x11requestedRevision\x12)\n" +
+	"\x10applied_revision\x18\x06 \x01(\x03R\x0fappliedRevision\x12\x18\n" +
+	"\acurrent\x18\a \x01(\bR\acurrent\x12\x16\n" +
+	"\x06target\x18\b \x01(\bR\x06target\x12#\n" +
+	"\rconsumer_name\x18\t \x01(\tR\fconsumerName\x12!\n" +
+	"\fcompute_type\x18\n" +
+	" \x01(\tR\vcomputeType\"\x9c\a\n" +
+	"\x04VNic\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x15\n" +
+	"\x06vpc_id\x18\x05 \x01(\tR\x05vpcId\x12\x1b\n" +
+	"\tsubnet_id\x18\x06 \x01(\tR\bsubnetId\x12/\n" +
+	"\x05state\x18\a \x01(\x0e2\x19.network.v1.ResourceStateR\x05state\x12\x18\n" +
+	"\aversion\x18\b \x01(\x03R\aversion\x12\x1f\n" +
+	"\vmac_address\x18\t \x01(\tR\n" +
+	"macAddress\x12\x1d\n" +
+	"\n" +
+	"primary_ip\x18\n" +
+	" \x01(\tR\tprimaryIp\x12\x10\n" +
+	"\x03ips\x18\v \x03(\tR\x03ips\x123\n" +
+	"\bbindings\x18\f \x03(\v2\x17.network.v1.VNicBindingR\bbindings\x12,\n" +
+	"\x12security_group_ids\x18\r \x03(\tR\x10securityGroupIds\x12;\n" +
+	"\vobserved_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\x12+\n" +
+	"\x11observation_stale\x18\x0f \x01(\bR\x10observationStale\x12\x16\n" +
+	"\x06reason\x18\x10 \x01(\tR\x06reason\x12*\n" +
+	"\x11last_operation_id\x18\x11 \x01(\tR\x0flastOperationId\x129\n" +
+	"\n" +
+	"created_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12#\n" +
+	"\rbinding_state\x18\x14 \x01(\tR\fbindingState\x12\x19\n" +
+	"\bvpc_name\x18\x15 \x01(\tR\avpcName\x12\x1f\n" +
+	"\vsubnet_name\x18\x16 \x01(\tR\n" +
+	"subnetName\x120\n" +
+	"\x14security_group_names\x18\x17 \x03(\tR\x12securityGroupNames\x12!\n" +
+	"\frequested_ip\x18\x18 \x01(\tR\vrequestedIp\x12#\n" +
+	"\rrequested_mac\x18\x19 \x01(\tR\frequestedMac\"\x81\x02\n" +
+	"\x11CreateVNicRequest\x12(\n" +
+	"\x10target_tenant_id\x18\x01 \x01(\tR\x0etargetTenantId\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x1b\n" +
+	"\tsubnet_id\x18\x05 \x01(\tR\bsubnetId\x12!\n" +
+	"\frequested_ip\x18\x06 \x01(\tR\vrequestedIp\x12#\n" +
+	"\rrequested_mac\x18\a \x01(\tR\frequestedMac\":\n" +
+	"\x12CreateVNicResponse\x12$\n" +
+	"\x04vnic\x18\x01 \x01(\v2\x10.network.v1.VNicR\x04vnic\"S\n" +
+	"\x0eGetVNicRequest\x12(\n" +
+	"\x10target_tenant_id\x18\x01 \x01(\tR\x0etargetTenantId\x12\x17\n" +
+	"\avnic_id\x18\x02 \x01(\tR\x06vnicId\"7\n" +
+	"\x0fGetVNicResponse\x12$\n" +
+	"\x04vnic\x18\x01 \x01(\v2\x10.network.v1.VNicR\x04vnic\"V\n" +
+	"\x11DeleteVNicRequest\x12(\n" +
+	"\x10target_tenant_id\x18\x01 \x01(\tR\x0etargetTenantId\x12\x17\n" +
+	"\avnic_id\x18\x02 \x01(\tR\x06vnicId\":\n" +
+	"\x12DeleteVNicResponse\x12$\n" +
+	"\x04vnic\x18\x01 \x01(\v2\x10.network.v1.VNicR\x04vnic\"\xca\x02\n" +
+	"\x10ListVNicsRequest\x12(\n" +
+	"\x10target_tenant_id\x18\x01 \x01(\tR\x0etargetTenantId\x12\x17\n" +
+	"\x04page\x18\x02 \x01(\rH\x00R\x04page\x88\x01\x01\x12 \n" +
+	"\tpage_size\x18\x03 \x01(\rH\x01R\bpageSize\x88\x01\x01\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12\x1b\n" +
+	"\tsubnet_id\x18\x05 \x01(\tR\bsubnetId\x12\x14\n" +
+	"\x05state\x18\x06 \x01(\tR\x05state\x12#\n" +
+	"\rbinding_state\x18\a \x01(\tR\fbindingState\x12(\n" +
+	"\x10bindable_to_kind\x18\b \x01(\tR\x0ebindableToKind\x12$\n" +
+	"\x0ebindable_to_id\x18\t \x01(\tR\fbindableToIdB\a\n" +
+	"\x05_pageB\f\n" +
+	"\n" +
+	"_page_size\"Q\n" +
+	"\x11ListVNicsResponse\x12&\n" +
+	"\x05items\x18\x01 \x03(\v2\x10.network.v1.VNicR\x05items\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x03R\x05total\"\xed\x01\n" +
+	"\x1dListVNicBindingTargetsRequest\x12(\n" +
+	"\x10target_tenant_id\x18\x01 \x01(\tR\x0etargetTenantId\x12\x17\n" +
+	"\avnic_id\x18\x02 \x01(\tR\x06vnicId\x12#\n" +
+	"\rconsumer_kind\x18\x03 \x01(\tR\fconsumerKind\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12\x17\n" +
+	"\x04page\x18\x05 \x01(\rH\x00R\x04page\x88\x01\x01\x12 \n" +
+	"\tpage_size\x18\x06 \x01(\rH\x01R\bpageSize\x88\x01\x01B\a\n" +
+	"\x05_pageB\f\n" +
+	"\n" +
+	"_page_size\"\xee\x01\n" +
+	"\x11VNicBindingTarget\x12#\n" +
+	"\rconsumer_kind\x18\x01 \x01(\tR\fconsumerKind\x12\x1f\n" +
+	"\vconsumer_id\x18\x02 \x01(\tR\n" +
+	"consumerId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\x03R\aversion\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12,\n" +
+	"\x12security_group_ids\x18\x06 \x03(\tR\x10securityGroupIds\x12!\n" +
+	"\fcompute_type\x18\a \x01(\tR\vcomputeType\"k\n" +
+	"\x1eListVNicBindingTargetsResponse\x123\n" +
+	"\x05items\x18\x01 \x03(\v2\x1d.network.v1.VNicBindingTargetR\x05items\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x03R\x05total*\xdf\x01\n" +
 	"\rResourceState\x12\x1e\n" +
 	"\x1aRESOURCE_STATE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bRESOURCE_STATE_PROVISIONING\x10\x01\x12\x1c\n" +
@@ -4729,8 +5973,7 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x18OPERATION_STATE_RETRYING\x10\x03\x12\x1b\n" +
 	"\x17OPERATION_STATE_BLOCKED\x10\x04\x12\x1d\n" +
 	"\x19OPERATION_STATE_SUCCEEDED\x10\x05\x12\x1a\n" +
-	"\x16OPERATION_STATE_FAILED\x10\x06*\xcd\n" +
-	"\n" +
+	"\x16OPERATION_STATE_FAILED\x10\x06*\x8d\v\n" +
 	"\rOperationKind\x12\x1e\n" +
 	"\x1aOPERATION_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19OPERATION_KIND_CREATE_VPC\x10\x01\x12\x1d\n" +
@@ -4767,7 +6010,9 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"$OPERATION_KIND_CREATE_SECURITY_GROUP\x10\x1f\x12(\n" +
 	"$OPERATION_KIND_UPDATE_SECURITY_GROUP\x10 \x12(\n" +
 	"$OPERATION_KIND_DELETE_SECURITY_GROUP\x10!\x12*\n" +
-	"&OPERATION_KIND_SET_EIP_SECURITY_GROUPS\x10\"*\x90\x03\n" +
+	"&OPERATION_KIND_SET_EIP_SECURITY_GROUPS\x10\"\x12\x1e\n" +
+	"\x1aOPERATION_KIND_CREATE_VNIC\x10#\x12\x1e\n" +
+	"\x1aOPERATION_KIND_DELETE_VNIC\x10$*\xa8\x03\n" +
 	"\fResourceType\x12\x1d\n" +
 	"\x19RESOURCE_TYPE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11RESOURCE_TYPE_VPC\x10\x01\x12\x18\n" +
@@ -4781,7 +6026,8 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"#RESOURCE_TYPE_INTRANET_ADDRESS_POOL\x10\t\x12\x1f\n" +
 	"\x1bRESOURCE_TYPE_LOAD_BALANCER\x10\n" +
 	"\x12 \n" +
-	"\x1cRESOURCE_TYPE_SECURITY_GROUP\x10\v*\xb0\x01\n" +
+	"\x1cRESOURCE_TYPE_SECURITY_GROUP\x10\v\x12\x16\n" +
+	"\x12RESOURCE_TYPE_VNIC\x10\f*\xb0\x01\n" +
 	"\x0fAttachmentState\x12 \n" +
 	"\x1cATTACHMENT_STATE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19ATTACHMENT_STATE_RESERVED\x10\x01\x12\x1d\n" +
@@ -4792,9 +6038,15 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x1cSUBMISSION_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SUBMISSION_STATE_OPEN\x10\x01\x12\x1c\n" +
 	"\x18SUBMISSION_STATE_CLOSING\x10\x02\x12\x1b\n" +
-	"\x17SUBMISSION_STATE_CLOSED\x10\x032\x8b\n" +
+	"\x17SUBMISSION_STATE_CLOSED\x10\x032\xa4\r\n" +
+	"\x0eNetworkService\x12K\n" +
 	"\n" +
-	"\x0eNetworkService\x12c\n" +
+	"CreateVNic\x12\x1d.network.v1.CreateVNicRequest\x1a\x1e.network.v1.CreateVNicResponse\x12B\n" +
+	"\aGetVNic\x12\x1a.network.v1.GetVNicRequest\x1a\x1b.network.v1.GetVNicResponse\x12H\n" +
+	"\tListVNics\x12\x1c.network.v1.ListVNicsRequest\x1a\x1d.network.v1.ListVNicsResponse\x12K\n" +
+	"\n" +
+	"DeleteVNic\x12\x1d.network.v1.DeleteVNicRequest\x1a\x1e.network.v1.DeleteVNicResponse\x12o\n" +
+	"\x16ListVNicBindingTargets\x12).network.v1.ListVNicBindingTargetsRequest\x1a*.network.v1.ListVNicBindingTargetsResponse\x12c\n" +
 	"\x12ListVPCCIDRPresets\x12%.network.v1.ListVPCCIDRPresetsRequest\x1a&.network.v1.ListVPCCIDRPresetsResponse\x12H\n" +
 	"\tCreateVPC\x12\x1c.network.v1.CreateVPCRequest\x1a\x1d.network.v1.CreateVPCResponse\x12?\n" +
 	"\x06GetVPC\x12\x19.network.v1.GetVPCRequest\x1a\x1a.network.v1.GetVPCResponse\x12E\n" +
@@ -4826,81 +6078,94 @@ func file_network_v1_network_proto_rawDescGZIP() []byte {
 }
 
 var file_network_v1_network_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_network_v1_network_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_network_v1_network_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_network_v1_network_proto_goTypes = []any{
-	(ResourceState)(0),                   // 0: network.v1.ResourceState
-	(OperationState)(0),                  // 1: network.v1.OperationState
-	(OperationKind)(0),                   // 2: network.v1.OperationKind
-	(ResourceType)(0),                    // 3: network.v1.ResourceType
-	(AttachmentState)(0),                 // 4: network.v1.AttachmentState
-	(SubmissionState)(0),                 // 5: network.v1.SubmissionState
-	(*VPC)(nil),                          // 6: network.v1.VPC
-	(*VPCPublicEgress)(nil),              // 7: network.v1.VPCPublicEgress
-	(*VPCBaseConnectivity)(nil),          // 8: network.v1.VPCBaseConnectivity
-	(*Operation)(nil),                    // 9: network.v1.Operation
-	(*Attribution)(nil),                  // 10: network.v1.Attribution
-	(*CreateVPCRequest)(nil),             // 11: network.v1.CreateVPCRequest
-	(*CreateVPCResponse)(nil),            // 12: network.v1.CreateVPCResponse
-	(*GetVPCRequest)(nil),                // 13: network.v1.GetVPCRequest
-	(*GetVPCResponse)(nil),               // 14: network.v1.GetVPCResponse
-	(*ListVPCsRequest)(nil),              // 15: network.v1.ListVPCsRequest
-	(*ListVPCsResponse)(nil),             // 16: network.v1.ListVPCsResponse
-	(*DeleteVPCRequest)(nil),             // 17: network.v1.DeleteVPCRequest
-	(*DeleteVPCResponse)(nil),            // 18: network.v1.DeleteVPCResponse
-	(*GetOperationRequest)(nil),          // 19: network.v1.GetOperationRequest
-	(*GetOperationResponse)(nil),         // 20: network.v1.GetOperationResponse
-	(*Subnet)(nil),                       // 21: network.v1.Subnet
-	(*CreateSubnetRequest)(nil),          // 22: network.v1.CreateSubnetRequest
-	(*CreateSubnetResponse)(nil),         // 23: network.v1.CreateSubnetResponse
-	(*GetSubnetRequest)(nil),             // 24: network.v1.GetSubnetRequest
-	(*GetSubnetResponse)(nil),            // 25: network.v1.GetSubnetResponse
-	(*ListSubnetsRequest)(nil),           // 26: network.v1.ListSubnetsRequest
-	(*ListSubnetsResponse)(nil),          // 27: network.v1.ListSubnetsResponse
-	(*DeleteSubnetRequest)(nil),          // 28: network.v1.DeleteSubnetRequest
-	(*DeleteSubnetResponse)(nil),         // 29: network.v1.DeleteSubnetResponse
-	(*PodPrimaryPlan)(nil),               // 30: network.v1.PodPrimaryPlan
-	(*VMNetworkExpectation)(nil),         // 31: network.v1.VMNetworkExpectation
-	(*VMPrimaryPlan)(nil),                // 32: network.v1.VMPrimaryPlan
-	(*VMCurrentAddress)(nil),             // 33: network.v1.VMCurrentAddress
-	(*AttachmentLabels)(nil),             // 34: network.v1.AttachmentLabels
-	(*WorkloadReference)(nil),            // 35: network.v1.WorkloadReference
-	(*ControllerReference)(nil),          // 36: network.v1.ControllerReference
-	(*PodReference)(nil),                 // 37: network.v1.PodReference
-	(*Attachment)(nil),                   // 38: network.v1.Attachment
-	(*PrepareAttachmentRequest)(nil),     // 39: network.v1.PrepareAttachmentRequest
-	(*GetAttachmentRequest)(nil),         // 40: network.v1.GetAttachmentRequest
-	(*ConfirmAttachmentRequest)(nil),     // 41: network.v1.ConfirmAttachmentRequest
-	(*ReleaseAttachmentRequest)(nil),     // 42: network.v1.ReleaseAttachmentRequest
-	(*PrepareAttachmentResponse)(nil),    // 43: network.v1.PrepareAttachmentResponse
-	(*GetAttachmentResponse)(nil),        // 44: network.v1.GetAttachmentResponse
-	(*ConfirmAttachmentResponse)(nil),    // 45: network.v1.ConfirmAttachmentResponse
-	(*ReleaseAttachmentResponse)(nil),    // 46: network.v1.ReleaseAttachmentResponse
-	(*NetworkAddress)(nil),               // 47: network.v1.NetworkAddress
-	(*AssociatedInstance)(nil),           // 48: network.v1.AssociatedInstance
-	(*ListNetworkInstancesRequest)(nil),  // 49: network.v1.ListNetworkInstancesRequest
-	(*ListNetworkInstancesResponse)(nil), // 50: network.v1.ListNetworkInstancesResponse
-	(*GetSubmissionRequest)(nil),         // 51: network.v1.GetSubmissionRequest
-	(*GetSubmissionResponse)(nil),        // 52: network.v1.GetSubmissionResponse
-	(*ListVPCCIDRPresetsRequest)(nil),    // 53: network.v1.ListVPCCIDRPresetsRequest
-	(*ListVPCCIDRPresetsResponse)(nil),   // 54: network.v1.ListVPCCIDRPresetsResponse
-	(*timestamppb.Timestamp)(nil),        // 55: google.protobuf.Timestamp
+	(ResourceState)(0),                     // 0: network.v1.ResourceState
+	(OperationState)(0),                    // 1: network.v1.OperationState
+	(OperationKind)(0),                     // 2: network.v1.OperationKind
+	(ResourceType)(0),                      // 3: network.v1.ResourceType
+	(AttachmentState)(0),                   // 4: network.v1.AttachmentState
+	(SubmissionState)(0),                   // 5: network.v1.SubmissionState
+	(*VPC)(nil),                            // 6: network.v1.VPC
+	(*VPCPublicEgress)(nil),                // 7: network.v1.VPCPublicEgress
+	(*VPCBaseConnectivity)(nil),            // 8: network.v1.VPCBaseConnectivity
+	(*Operation)(nil),                      // 9: network.v1.Operation
+	(*Attribution)(nil),                    // 10: network.v1.Attribution
+	(*CreateVPCRequest)(nil),               // 11: network.v1.CreateVPCRequest
+	(*CreateVPCResponse)(nil),              // 12: network.v1.CreateVPCResponse
+	(*GetVPCRequest)(nil),                  // 13: network.v1.GetVPCRequest
+	(*GetVPCResponse)(nil),                 // 14: network.v1.GetVPCResponse
+	(*ListVPCsRequest)(nil),                // 15: network.v1.ListVPCsRequest
+	(*ListVPCsResponse)(nil),               // 16: network.v1.ListVPCsResponse
+	(*DeleteVPCRequest)(nil),               // 17: network.v1.DeleteVPCRequest
+	(*DeleteVPCResponse)(nil),              // 18: network.v1.DeleteVPCResponse
+	(*GetOperationRequest)(nil),            // 19: network.v1.GetOperationRequest
+	(*GetOperationResponse)(nil),           // 20: network.v1.GetOperationResponse
+	(*Subnet)(nil),                         // 21: network.v1.Subnet
+	(*CreateSubnetRequest)(nil),            // 22: network.v1.CreateSubnetRequest
+	(*CreateSubnetResponse)(nil),           // 23: network.v1.CreateSubnetResponse
+	(*GetSubnetRequest)(nil),               // 24: network.v1.GetSubnetRequest
+	(*GetSubnetResponse)(nil),              // 25: network.v1.GetSubnetResponse
+	(*ListSubnetsRequest)(nil),             // 26: network.v1.ListSubnetsRequest
+	(*ListSubnetsResponse)(nil),            // 27: network.v1.ListSubnetsResponse
+	(*DeleteSubnetRequest)(nil),            // 28: network.v1.DeleteSubnetRequest
+	(*DeleteSubnetResponse)(nil),           // 29: network.v1.DeleteSubnetResponse
+	(*PodPrimaryPlan)(nil),                 // 30: network.v1.PodPrimaryPlan
+	(*VMNetworkExpectation)(nil),           // 31: network.v1.VMNetworkExpectation
+	(*VMPrimaryPlan)(nil),                  // 32: network.v1.VMPrimaryPlan
+	(*VMCurrentAddress)(nil),               // 33: network.v1.VMCurrentAddress
+	(*AttachmentLabels)(nil),               // 34: network.v1.AttachmentLabels
+	(*WorkloadReference)(nil),              // 35: network.v1.WorkloadReference
+	(*ControllerReference)(nil),            // 36: network.v1.ControllerReference
+	(*PodReference)(nil),                   // 37: network.v1.PodReference
+	(*Attachment)(nil),                     // 38: network.v1.Attachment
+	(*PrepareAttachmentRequest)(nil),       // 39: network.v1.PrepareAttachmentRequest
+	(*GetAttachmentRequest)(nil),           // 40: network.v1.GetAttachmentRequest
+	(*ConfirmAttachmentRequest)(nil),       // 41: network.v1.ConfirmAttachmentRequest
+	(*ReleaseAttachmentRequest)(nil),       // 42: network.v1.ReleaseAttachmentRequest
+	(*PrepareAttachmentResponse)(nil),      // 43: network.v1.PrepareAttachmentResponse
+	(*GetAttachmentResponse)(nil),          // 44: network.v1.GetAttachmentResponse
+	(*ConfirmAttachmentResponse)(nil),      // 45: network.v1.ConfirmAttachmentResponse
+	(*ReleaseAttachmentResponse)(nil),      // 46: network.v1.ReleaseAttachmentResponse
+	(*NetworkAddress)(nil),                 // 47: network.v1.NetworkAddress
+	(*AssociatedInstance)(nil),             // 48: network.v1.AssociatedInstance
+	(*ListNetworkInstancesRequest)(nil),    // 49: network.v1.ListNetworkInstancesRequest
+	(*ListNetworkInstancesResponse)(nil),   // 50: network.v1.ListNetworkInstancesResponse
+	(*GetSubmissionRequest)(nil),           // 51: network.v1.GetSubmissionRequest
+	(*GetSubmissionResponse)(nil),          // 52: network.v1.GetSubmissionResponse
+	(*ListVPCCIDRPresetsRequest)(nil),      // 53: network.v1.ListVPCCIDRPresetsRequest
+	(*ListVPCCIDRPresetsResponse)(nil),     // 54: network.v1.ListVPCCIDRPresetsResponse
+	(*VNicBinding)(nil),                    // 55: network.v1.VNicBinding
+	(*VNic)(nil),                           // 56: network.v1.VNic
+	(*CreateVNicRequest)(nil),              // 57: network.v1.CreateVNicRequest
+	(*CreateVNicResponse)(nil),             // 58: network.v1.CreateVNicResponse
+	(*GetVNicRequest)(nil),                 // 59: network.v1.GetVNicRequest
+	(*GetVNicResponse)(nil),                // 60: network.v1.GetVNicResponse
+	(*DeleteVNicRequest)(nil),              // 61: network.v1.DeleteVNicRequest
+	(*DeleteVNicResponse)(nil),             // 62: network.v1.DeleteVNicResponse
+	(*ListVNicsRequest)(nil),               // 63: network.v1.ListVNicsRequest
+	(*ListVNicsResponse)(nil),              // 64: network.v1.ListVNicsResponse
+	(*ListVNicBindingTargetsRequest)(nil),  // 65: network.v1.ListVNicBindingTargetsRequest
+	(*VNicBindingTarget)(nil),              // 66: network.v1.VNicBindingTarget
+	(*ListVNicBindingTargetsResponse)(nil), // 67: network.v1.ListVNicBindingTargetsResponse
+	(*timestamppb.Timestamp)(nil),          // 68: google.protobuf.Timestamp
 }
 var file_network_v1_network_proto_depIdxs = []int32{
 	0,  // 0: network.v1.VPC.state:type_name -> network.v1.ResourceState
-	55, // 1: network.v1.VPC.created_at:type_name -> google.protobuf.Timestamp
-	55, // 2: network.v1.VPC.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 3: network.v1.VPC.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 1: network.v1.VPC.created_at:type_name -> google.protobuf.Timestamp
+	68, // 2: network.v1.VPC.updated_at:type_name -> google.protobuf.Timestamp
+	68, // 3: network.v1.VPC.observed_at:type_name -> google.protobuf.Timestamp
 	8,  // 4: network.v1.VPC.base_connectivity:type_name -> network.v1.VPCBaseConnectivity
 	7,  // 5: network.v1.VPC.public_egress:type_name -> network.v1.VPCPublicEgress
 	0,  // 6: network.v1.VPCPublicEgress.state:type_name -> network.v1.ResourceState
-	55, // 7: network.v1.VPCPublicEgress.observed_at:type_name -> google.protobuf.Timestamp
-	55, // 8: network.v1.VPCBaseConnectivity.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 7: network.v1.VPCPublicEgress.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 8: network.v1.VPCBaseConnectivity.observed_at:type_name -> google.protobuf.Timestamp
 	2,  // 9: network.v1.Operation.kind:type_name -> network.v1.OperationKind
 	1,  // 10: network.v1.Operation.state:type_name -> network.v1.OperationState
-	55, // 11: network.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
-	55, // 12: network.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 13: network.v1.Operation.completed_at:type_name -> google.protobuf.Timestamp
-	55, // 14: network.v1.Operation.next_attempt_at:type_name -> google.protobuf.Timestamp
+	68, // 11: network.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
+	68, // 12: network.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
+	68, // 13: network.v1.Operation.completed_at:type_name -> google.protobuf.Timestamp
+	68, // 14: network.v1.Operation.next_attempt_at:type_name -> google.protobuf.Timestamp
 	3,  // 15: network.v1.Operation.resource_type:type_name -> network.v1.ResourceType
 	10, // 16: network.v1.CreateVPCRequest.attribution:type_name -> network.v1.Attribution
 	6,  // 17: network.v1.CreateVPCResponse.vpc:type_name -> network.v1.VPC
@@ -4910,9 +6175,9 @@ var file_network_v1_network_proto_depIdxs = []int32{
 	6,  // 21: network.v1.DeleteVPCResponse.vpc:type_name -> network.v1.VPC
 	9,  // 22: network.v1.GetOperationResponse.operation:type_name -> network.v1.Operation
 	0,  // 23: network.v1.Subnet.state:type_name -> network.v1.ResourceState
-	55, // 24: network.v1.Subnet.created_at:type_name -> google.protobuf.Timestamp
-	55, // 25: network.v1.Subnet.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 26: network.v1.Subnet.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 24: network.v1.Subnet.created_at:type_name -> google.protobuf.Timestamp
+	68, // 25: network.v1.Subnet.updated_at:type_name -> google.protobuf.Timestamp
+	68, // 26: network.v1.Subnet.observed_at:type_name -> google.protobuf.Timestamp
 	10, // 27: network.v1.CreateSubnetRequest.attribution:type_name -> network.v1.Attribution
 	21, // 28: network.v1.CreateSubnetResponse.subnet:type_name -> network.v1.Subnet
 	21, // 29: network.v1.GetSubnetResponse.subnet:type_name -> network.v1.Subnet
@@ -4927,10 +6192,10 @@ var file_network_v1_network_proto_depIdxs = []int32{
 	35, // 38: network.v1.PodReference.owner:type_name -> network.v1.WorkloadReference
 	4,  // 39: network.v1.Attachment.state:type_name -> network.v1.AttachmentState
 	30, // 40: network.v1.Attachment.pod_primary:type_name -> network.v1.PodPrimaryPlan
-	55, // 41: network.v1.Attachment.created_at:type_name -> google.protobuf.Timestamp
-	55, // 42: network.v1.Attachment.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 43: network.v1.Attachment.observed_at:type_name -> google.protobuf.Timestamp
-	55, // 44: network.v1.Attachment.released_at:type_name -> google.protobuf.Timestamp
+	68, // 41: network.v1.Attachment.created_at:type_name -> google.protobuf.Timestamp
+	68, // 42: network.v1.Attachment.updated_at:type_name -> google.protobuf.Timestamp
+	68, // 43: network.v1.Attachment.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 44: network.v1.Attachment.released_at:type_name -> google.protobuf.Timestamp
 	35, // 45: network.v1.Attachment.root_controller:type_name -> network.v1.WorkloadReference
 	32, // 46: network.v1.Attachment.vm_primary:type_name -> network.v1.VMPrimaryPlan
 	33, // 47: network.v1.Attachment.vm_current_addresses:type_name -> network.v1.VMCurrentAddress
@@ -4939,52 +6204,72 @@ var file_network_v1_network_proto_depIdxs = []int32{
 	38, // 50: network.v1.GetAttachmentResponse.attachment:type_name -> network.v1.Attachment
 	38, // 51: network.v1.ConfirmAttachmentResponse.attachment:type_name -> network.v1.Attachment
 	38, // 52: network.v1.ReleaseAttachmentResponse.attachment:type_name -> network.v1.Attachment
-	55, // 53: network.v1.AssociatedInstance.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 53: network.v1.AssociatedInstance.observed_at:type_name -> google.protobuf.Timestamp
 	47, // 54: network.v1.AssociatedInstance.addresses:type_name -> network.v1.NetworkAddress
 	48, // 55: network.v1.ListNetworkInstancesResponse.items:type_name -> network.v1.AssociatedInstance
 	5,  // 56: network.v1.GetSubmissionResponse.state:type_name -> network.v1.SubmissionState
-	55, // 57: network.v1.GetSubmissionResponse.closed_at:type_name -> google.protobuf.Timestamp
+	68, // 57: network.v1.GetSubmissionResponse.closed_at:type_name -> google.protobuf.Timestamp
 	35, // 58: network.v1.GetSubmissionResponse.root_controller:type_name -> network.v1.WorkloadReference
 	36, // 59: network.v1.GetSubmissionResponse.controllers:type_name -> network.v1.ControllerReference
 	37, // 60: network.v1.GetSubmissionResponse.current_pods:type_name -> network.v1.PodReference
 	37, // 61: network.v1.GetSubmissionResponse.retired_pods:type_name -> network.v1.PodReference
-	53, // 62: network.v1.NetworkService.ListVPCCIDRPresets:input_type -> network.v1.ListVPCCIDRPresetsRequest
-	11, // 63: network.v1.NetworkService.CreateVPC:input_type -> network.v1.CreateVPCRequest
-	13, // 64: network.v1.NetworkService.GetVPC:input_type -> network.v1.GetVPCRequest
-	15, // 65: network.v1.NetworkService.ListVPCs:input_type -> network.v1.ListVPCsRequest
-	17, // 66: network.v1.NetworkService.DeleteVPC:input_type -> network.v1.DeleteVPCRequest
-	22, // 67: network.v1.NetworkService.CreateSubnet:input_type -> network.v1.CreateSubnetRequest
-	24, // 68: network.v1.NetworkService.GetSubnet:input_type -> network.v1.GetSubnetRequest
-	26, // 69: network.v1.NetworkService.ListSubnets:input_type -> network.v1.ListSubnetsRequest
-	28, // 70: network.v1.NetworkService.DeleteSubnet:input_type -> network.v1.DeleteSubnetRequest
-	19, // 71: network.v1.NetworkService.GetOperation:input_type -> network.v1.GetOperationRequest
-	39, // 72: network.v1.NetworkService.PrepareAttachment:input_type -> network.v1.PrepareAttachmentRequest
-	40, // 73: network.v1.NetworkService.GetAttachment:input_type -> network.v1.GetAttachmentRequest
-	41, // 74: network.v1.NetworkService.ConfirmAttachment:input_type -> network.v1.ConfirmAttachmentRequest
-	42, // 75: network.v1.NetworkService.ReleaseAttachment:input_type -> network.v1.ReleaseAttachmentRequest
-	49, // 76: network.v1.NetworkService.ListNetworkInstances:input_type -> network.v1.ListNetworkInstancesRequest
-	51, // 77: network.v1.InstanceNetworkConsumerService.GetSubmission:input_type -> network.v1.GetSubmissionRequest
-	54, // 78: network.v1.NetworkService.ListVPCCIDRPresets:output_type -> network.v1.ListVPCCIDRPresetsResponse
-	12, // 79: network.v1.NetworkService.CreateVPC:output_type -> network.v1.CreateVPCResponse
-	14, // 80: network.v1.NetworkService.GetVPC:output_type -> network.v1.GetVPCResponse
-	16, // 81: network.v1.NetworkService.ListVPCs:output_type -> network.v1.ListVPCsResponse
-	18, // 82: network.v1.NetworkService.DeleteVPC:output_type -> network.v1.DeleteVPCResponse
-	23, // 83: network.v1.NetworkService.CreateSubnet:output_type -> network.v1.CreateSubnetResponse
-	25, // 84: network.v1.NetworkService.GetSubnet:output_type -> network.v1.GetSubnetResponse
-	27, // 85: network.v1.NetworkService.ListSubnets:output_type -> network.v1.ListSubnetsResponse
-	29, // 86: network.v1.NetworkService.DeleteSubnet:output_type -> network.v1.DeleteSubnetResponse
-	20, // 87: network.v1.NetworkService.GetOperation:output_type -> network.v1.GetOperationResponse
-	43, // 88: network.v1.NetworkService.PrepareAttachment:output_type -> network.v1.PrepareAttachmentResponse
-	44, // 89: network.v1.NetworkService.GetAttachment:output_type -> network.v1.GetAttachmentResponse
-	45, // 90: network.v1.NetworkService.ConfirmAttachment:output_type -> network.v1.ConfirmAttachmentResponse
-	46, // 91: network.v1.NetworkService.ReleaseAttachment:output_type -> network.v1.ReleaseAttachmentResponse
-	50, // 92: network.v1.NetworkService.ListNetworkInstances:output_type -> network.v1.ListNetworkInstancesResponse
-	52, // 93: network.v1.InstanceNetworkConsumerService.GetSubmission:output_type -> network.v1.GetSubmissionResponse
-	78, // [78:94] is the sub-list for method output_type
-	62, // [62:78] is the sub-list for method input_type
-	62, // [62:62] is the sub-list for extension type_name
-	62, // [62:62] is the sub-list for extension extendee
-	0,  // [0:62] is the sub-list for field type_name
+	0,  // 62: network.v1.VNic.state:type_name -> network.v1.ResourceState
+	55, // 63: network.v1.VNic.bindings:type_name -> network.v1.VNicBinding
+	68, // 64: network.v1.VNic.observed_at:type_name -> google.protobuf.Timestamp
+	68, // 65: network.v1.VNic.created_at:type_name -> google.protobuf.Timestamp
+	68, // 66: network.v1.VNic.updated_at:type_name -> google.protobuf.Timestamp
+	56, // 67: network.v1.CreateVNicResponse.vnic:type_name -> network.v1.VNic
+	56, // 68: network.v1.GetVNicResponse.vnic:type_name -> network.v1.VNic
+	56, // 69: network.v1.DeleteVNicResponse.vnic:type_name -> network.v1.VNic
+	56, // 70: network.v1.ListVNicsResponse.items:type_name -> network.v1.VNic
+	66, // 71: network.v1.ListVNicBindingTargetsResponse.items:type_name -> network.v1.VNicBindingTarget
+	57, // 72: network.v1.NetworkService.CreateVNic:input_type -> network.v1.CreateVNicRequest
+	59, // 73: network.v1.NetworkService.GetVNic:input_type -> network.v1.GetVNicRequest
+	63, // 74: network.v1.NetworkService.ListVNics:input_type -> network.v1.ListVNicsRequest
+	61, // 75: network.v1.NetworkService.DeleteVNic:input_type -> network.v1.DeleteVNicRequest
+	65, // 76: network.v1.NetworkService.ListVNicBindingTargets:input_type -> network.v1.ListVNicBindingTargetsRequest
+	53, // 77: network.v1.NetworkService.ListVPCCIDRPresets:input_type -> network.v1.ListVPCCIDRPresetsRequest
+	11, // 78: network.v1.NetworkService.CreateVPC:input_type -> network.v1.CreateVPCRequest
+	13, // 79: network.v1.NetworkService.GetVPC:input_type -> network.v1.GetVPCRequest
+	15, // 80: network.v1.NetworkService.ListVPCs:input_type -> network.v1.ListVPCsRequest
+	17, // 81: network.v1.NetworkService.DeleteVPC:input_type -> network.v1.DeleteVPCRequest
+	22, // 82: network.v1.NetworkService.CreateSubnet:input_type -> network.v1.CreateSubnetRequest
+	24, // 83: network.v1.NetworkService.GetSubnet:input_type -> network.v1.GetSubnetRequest
+	26, // 84: network.v1.NetworkService.ListSubnets:input_type -> network.v1.ListSubnetsRequest
+	28, // 85: network.v1.NetworkService.DeleteSubnet:input_type -> network.v1.DeleteSubnetRequest
+	19, // 86: network.v1.NetworkService.GetOperation:input_type -> network.v1.GetOperationRequest
+	39, // 87: network.v1.NetworkService.PrepareAttachment:input_type -> network.v1.PrepareAttachmentRequest
+	40, // 88: network.v1.NetworkService.GetAttachment:input_type -> network.v1.GetAttachmentRequest
+	41, // 89: network.v1.NetworkService.ConfirmAttachment:input_type -> network.v1.ConfirmAttachmentRequest
+	42, // 90: network.v1.NetworkService.ReleaseAttachment:input_type -> network.v1.ReleaseAttachmentRequest
+	49, // 91: network.v1.NetworkService.ListNetworkInstances:input_type -> network.v1.ListNetworkInstancesRequest
+	51, // 92: network.v1.InstanceNetworkConsumerService.GetSubmission:input_type -> network.v1.GetSubmissionRequest
+	58, // 93: network.v1.NetworkService.CreateVNic:output_type -> network.v1.CreateVNicResponse
+	60, // 94: network.v1.NetworkService.GetVNic:output_type -> network.v1.GetVNicResponse
+	64, // 95: network.v1.NetworkService.ListVNics:output_type -> network.v1.ListVNicsResponse
+	62, // 96: network.v1.NetworkService.DeleteVNic:output_type -> network.v1.DeleteVNicResponse
+	67, // 97: network.v1.NetworkService.ListVNicBindingTargets:output_type -> network.v1.ListVNicBindingTargetsResponse
+	54, // 98: network.v1.NetworkService.ListVPCCIDRPresets:output_type -> network.v1.ListVPCCIDRPresetsResponse
+	12, // 99: network.v1.NetworkService.CreateVPC:output_type -> network.v1.CreateVPCResponse
+	14, // 100: network.v1.NetworkService.GetVPC:output_type -> network.v1.GetVPCResponse
+	16, // 101: network.v1.NetworkService.ListVPCs:output_type -> network.v1.ListVPCsResponse
+	18, // 102: network.v1.NetworkService.DeleteVPC:output_type -> network.v1.DeleteVPCResponse
+	23, // 103: network.v1.NetworkService.CreateSubnet:output_type -> network.v1.CreateSubnetResponse
+	25, // 104: network.v1.NetworkService.GetSubnet:output_type -> network.v1.GetSubnetResponse
+	27, // 105: network.v1.NetworkService.ListSubnets:output_type -> network.v1.ListSubnetsResponse
+	29, // 106: network.v1.NetworkService.DeleteSubnet:output_type -> network.v1.DeleteSubnetResponse
+	20, // 107: network.v1.NetworkService.GetOperation:output_type -> network.v1.GetOperationResponse
+	43, // 108: network.v1.NetworkService.PrepareAttachment:output_type -> network.v1.PrepareAttachmentResponse
+	44, // 109: network.v1.NetworkService.GetAttachment:output_type -> network.v1.GetAttachmentResponse
+	45, // 110: network.v1.NetworkService.ConfirmAttachment:output_type -> network.v1.ConfirmAttachmentResponse
+	46, // 111: network.v1.NetworkService.ReleaseAttachment:output_type -> network.v1.ReleaseAttachmentResponse
+	50, // 112: network.v1.NetworkService.ListNetworkInstances:output_type -> network.v1.ListNetworkInstancesResponse
+	52, // 113: network.v1.InstanceNetworkConsumerService.GetSubmission:output_type -> network.v1.GetSubmissionResponse
+	93, // [93:114] is the sub-list for method output_type
+	72, // [72:93] is the sub-list for method input_type
+	72, // [72:72] is the sub-list for extension type_name
+	72, // [72:72] is the sub-list for extension extendee
+	0,  // [0:72] is the sub-list for field type_name
 }
 
 func init() { file_network_v1_network_proto_init() }
@@ -4997,13 +6282,15 @@ func file_network_v1_network_proto_init() {
 	file_network_v1_network_proto_msgTypes[15].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[16].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[43].OneofWrappers = []any{}
+	file_network_v1_network_proto_msgTypes[57].OneofWrappers = []any{}
+	file_network_v1_network_proto_msgTypes[59].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_network_v1_network_proto_rawDesc), len(file_network_v1_network_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   49,
+			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

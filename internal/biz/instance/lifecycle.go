@@ -50,26 +50,27 @@ type MountTemplateProof struct {
 	SafeStopped                                                              bool
 }
 type Execution struct {
-	SecurityGroupIDs        []string            `json:"security_group_ids,omitempty"`
-	SchemaVersion           int                 `json:"schema_version"`
-	Phase                   string              `json:"phase"`
-	PhaseSequence           int64               `json:"phase_sequence"`
-	CanonicalIntent         json.RawMessage     `json:"canonical_intent,omitempty"`
-	BeforeRunState          string              `json:"before_run_state"`
-	FinalRunState           string              `json:"final_run_state"`
-	BeforeMounts            []StoredMount       `json:"before_mounts"`
-	TargetConfiguration     *MountTarget        `json:"target_configuration"`
-	TargetMountDigest       string              `json:"target_mount_digest,omitempty"`
-	BeforePods              []PodRef            `json:"before_pods"`
-	TemplateProof           *MountTemplateProof `json:"template_proof,omitempty"`
-	TemplateCommitCompleted bool                `json:"template_commit_completed"`
-	AppliedMountVersion     int64               `json:"applied_mount_version"`
-	StartedAt               time.Time           `json:"started_at"`
-	DeadlineAt              *time.Time          `json:"deadline_at,omitempty"`
-	FailureReason           string              `json:"failure_reason"`
-	CompletionScope         string              `json:"completion_scope"`
-	VerifiedPodUID          string              `json:"verified_pod_uid,omitempty"`
-	NetworkSnapshotRevision int64               `json:"network_snapshot_revision,omitempty"`
+	NetworkInterfaceTarget  *NetworkInterfaceIntent `json:"network_interface_target,omitempty"`
+	SecurityGroupIDs        []string                `json:"security_group_ids,omitempty"`
+	SchemaVersion           int                     `json:"schema_version"`
+	Phase                   string                  `json:"phase"`
+	PhaseSequence           int64                   `json:"phase_sequence"`
+	CanonicalIntent         json.RawMessage         `json:"canonical_intent,omitempty"`
+	BeforeRunState          string                  `json:"before_run_state"`
+	FinalRunState           string                  `json:"final_run_state"`
+	BeforeMounts            []StoredMount           `json:"before_mounts"`
+	TargetConfiguration     *MountTarget            `json:"target_configuration"`
+	TargetMountDigest       string                  `json:"target_mount_digest,omitempty"`
+	BeforePods              []PodRef                `json:"before_pods"`
+	TemplateProof           *MountTemplateProof     `json:"template_proof,omitempty"`
+	TemplateCommitCompleted bool                    `json:"template_commit_completed"`
+	AppliedMountVersion     int64                   `json:"applied_mount_version"`
+	StartedAt               time.Time               `json:"started_at"`
+	DeadlineAt              *time.Time              `json:"deadline_at,omitempty"`
+	FailureReason           string                  `json:"failure_reason"`
+	CompletionScope         string                  `json:"completion_scope"`
+	VerifiedPodUID          string                  `json:"verified_pod_uid,omitempty"`
+	NetworkSnapshotRevision int64                   `json:"network_snapshot_revision,omitempty"`
 }
 
 func TerminalOperation(state string) bool {

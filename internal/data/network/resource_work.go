@@ -13,7 +13,7 @@ func vpcWork(v sqlcgen.NetworkVpc) biz.ResourceWork {
 	return biz.ResourceWork{ID: v.VpcID, TenantID: v.TenantID, Kind: "vpc", BaseRequired: v.BaseConnectivityRequired, CIDR: v.Cidr, State: biz.ResourceState(v.State), Reason: biz.Reason(v.Reason), Version: v.Version, UpdatedAt: v.UpdatedAt, ObservedAt: v.ObservedAt, LastOperationID: v.LastOperationID}
 }
 func subnetWork(s sqlcgen.NetworkSubnet) biz.ResourceWork {
-	return biz.ResourceWork{ID: s.SubnetID, TenantID: s.TenantID, Kind: "subnet", VPCID: s.VpcID, CIDR: s.Cidr, Gateway: s.Gateway, State: biz.ResourceState(s.State), Reason: biz.Reason(s.Reason), Version: s.Version, UpdatedAt: s.UpdatedAt, ObservedAt: s.ObservedAt, LastOperationID: s.LastOperationID}
+	return biz.ResourceWork{ID: s.SubnetID, TenantID: s.TenantID, Kind: "subnet", VPCID: s.VpcID, CIDR: s.Cidr, Gateway: s.Gateway, State: biz.ResourceState(s.State), Reason: biz.Reason(s.Reason), Version: s.Version, UpdatedAt: s.UpdatedAt, ObservedAt: s.ObservedAt, LastOperationID: s.LastOperationID, SubnetOptions: &biz.SubnetOptions{ExcludeIPs: s.ExcludeIps, EnableDHCP: s.EnableDhcp, DNSServers: s.DnsServers}}
 }
 func claimResource(ctx context.Context, q *sqlcgen.Queries) (biz.ResourceWork, error) {
 	rows, err := q.DueResourceCandidates(ctx)
@@ -42,6 +42,9 @@ func claimResource(ctx context.Context, q *sqlcgen.Queries) (biz.ResourceWork, e
 			}
 		}
 		switch c.ResourceKind {
+		case "vnic":
+			r, err := q.LockVNicRow(ctx, sqlcgen.LockVNicRowParams{TenantID: c.TenantID, VnicID: c.ResourceID})
+			return vnicWork(r), err
 		case "load_balancer":
 			return lockLBWork(ctx, q, c.TenantID, c.ResourceID)
 		case "vpc":
@@ -73,6 +76,13 @@ func snatWork(s sqlcgen.NetworkSnatBinding) biz.ResourceWork {
 	return biz.ResourceWork{ID: s.SnatID, TenantID: s.TenantID, Kind: "snat", VPCID: s.VpcID, SystemManaged: s.Purpose == "intranet", State: biz.ResourceState(s.State), Reason: biz.Reason(s.Reason), Version: s.Version, UpdatedAt: s.UpdatedAt, ObservedAt: s.ObservedAt, LastOperationID: s.LastOperationID, Egress: &biz.EgressWorkSpec{EIPID: s.EipID, DesiredEnabled: s.DesiredEnabled, TargetGeneration: s.TargetGeneration}}
 }
 func lockResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork) (biz.ResourceWork, error) {
+	if r.Kind == "vnic" {
+		if _, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: r.VPCID}); err != nil {
+			return biz.ResourceWork{}, err
+		}
+		v, err := q.LockVNicRow(ctx, sqlcgen.LockVNicRowParams{TenantID: r.TenantID, VnicID: r.ID})
+		return vnicWork(v), err
+	}
 	if r.Kind == "load_balancer" {
 		return lockLBWork(ctx, q, r.TenantID, r.ID)
 	}
@@ -123,6 +133,15 @@ func lockResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork) (
 	return subnetWork(s), err
 }
 func advanceResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork, p biz.Progress) (biz.ResourceWork, error) {
+	if r.Kind == "vnic" {
+		f := biz.VNicFacts{}
+		if p.VNic != nil {
+			f = *p.VNic
+		}
+		v, err := q.AdvanceVNic(ctx, sqlcgen.AdvanceVNicParams{TenantID: r.TenantID, VnicID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof), MacAddress: f.MACAddress, PrimaryIp: f.PrimaryIP, Ips: f.IPs})
+		return vnicWork(v), err
+	}
+
 	if r.Kind == "load_balancer" {
 		occupied, absence := "", ""
 		state := "unknown"

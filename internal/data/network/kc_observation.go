@@ -463,6 +463,9 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 			v.recovery = append(v.recovery, t)
 		}
 		kind, field := "VPC", "gateway"
+		if r.ResourceKind == "vnic" {
+			kind, field = "VNic", "vnic"
+		}
 		if r.ResourceKind == "subnet" {
 			kind, field = "Subnet", "subnet"
 			subnetRefs[r.ResourceID] = r.Namespace + "/" + r.ProviderName
@@ -480,6 +483,8 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 			switch r.ResourceKind {
 			case "vpc":
 				gvr = kcVPCs
+			case "vnic":
+				gvr = kcManualVNics
 			case "subnet":
 				gvr = kcSubnets
 			case "load_balancer":

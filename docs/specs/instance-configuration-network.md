@@ -165,6 +165,8 @@ Storage 前台与恢复 worker 共用[有限推进](../../internal/biz/storage/d
 
 Notebook v1.10 的用户标签/注解写入 Notebook 顶层 metadata，由 controller 传播到 Pod；PodSpec 继续写 `spec.template.spec`，不能写入会被 CRD 丢弃的 `spec.template.metadata`。最终读取实际 Pod 核对用户配置及系统字段都存在，不能只断言 RenderNotebook 的输出。
 
+手动主网卡应用时，v1.10 不更新已有 StatefulSet 的模板 metadata；实例 owner 仅在原 Notebook UID、受控 StatefulSet UID/RV、安全停止、零副本及无受控 Pod 再次确认后删除旧 StatefulSet，保留 Notebook/PVC/VNIC/绑定，沿原 operation 等待 controller 从根注解重建并确认目标模板后再启动，不直接修改 StatefulSet/Pod。
+
 ## 6. Res Network 支持 Notebook 的 Pod 替换
 
 ### 6.1 明确关联模式

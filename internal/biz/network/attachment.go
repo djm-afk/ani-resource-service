@@ -36,6 +36,8 @@ type PodPrimaryPlan struct {
 	VMPrimary                                        *VMPrimaryPlan `json:",omitempty"`
 }
 type Attachment struct {
+	CurrentVNicName, CurrentVNicUID, CurrentMACAddress            string
+	CurrentIPs                                                    []string
 	VMPrimary                                                     *VMPrimaryPlan
 	VMCurrentAddresses                                            []VMCurrentAddress
 	WorkloadMode                                                  string

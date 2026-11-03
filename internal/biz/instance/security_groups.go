@@ -121,6 +121,15 @@ func (w *Worker) stepSecurityGroups(ctx context.Context, work Work) (bool, error
 		o.State = "blocked"
 		return true, w.repo.Finish(ctx, work, p)
 	}
+	if port, ok := w.network.(ManualNetworkPort); ok {
+		if err = port.SyncNetworkInterfaces(ctx, p.Instance, ids); err != nil {
+			block(&p, err.Error())
+			return true, w.repo.Finish(ctx, work, p)
+		}
+	} else if len(p.Instance.NetworkInterfaces) > 0 {
+		block(&p, ErrNetworkUnavailable.Error())
+		return true, w.repo.Finish(ctx, work, p)
+	}
 	err = provider.SetSecurityGroups(ctx, p.Instance, names)
 	if err != nil {
 		p.Instance.Reason = err.Error()

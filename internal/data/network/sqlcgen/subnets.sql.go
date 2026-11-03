@@ -13,7 +13,7 @@ import (
 
 const admitSubnetDeletion = `-- name: AdmitSubnetDeletion :one
 UPDATE network_subnets SET state='deleting',reason='',last_operation_id=$1,version=version+1,updated_at=clock_timestamp()
-WHERE tenant_id=$2 AND subnet_id=$3 AND version=$4 RETURNING tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range
+WHERE tenant_id=$2 AND subnet_id=$3 AND version=$4 RETURNING tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers
 `
 
 type AdmitSubnetDeletionParams struct {
@@ -50,6 +50,9 @@ func (q *Queries) AdmitSubnetDeletion(ctx context.Context, arg AdmitSubnetDeleti
 		&i.UsedIpCount,
 		&i.AvailableIpRange,
 		&i.UsedIpRange,
+		&i.ExcludeIps,
+		&i.EnableDhcp,
+		&i.DnsServers,
 	)
 	return i, err
 }
@@ -59,7 +62,7 @@ UPDATE network_subnets SET state=$1,reason=$2,version=version+1,updated_at=clock
  observed_at=CASE WHEN $3::boolean THEN $4::timestamptz ELSE observed_at END,
  available_ip_range=CASE WHEN $3::boolean THEN $5::text ELSE available_ip_range END,
  used_ip_range=CASE WHEN $3::boolean THEN $6::text ELSE used_ip_range END
-WHERE tenant_id=$7 AND subnet_id=$8 AND version=$9 RETURNING tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range
+WHERE tenant_id=$7 AND subnet_id=$8 AND version=$9 RETURNING tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers
 `
 
 type AdvanceSubnetParams struct {
@@ -106,6 +109,9 @@ func (q *Queries) AdvanceSubnet(ctx context.Context, arg AdvanceSubnetParams) (N
 		&i.UsedIpCount,
 		&i.AvailableIpRange,
 		&i.UsedIpRange,
+		&i.ExcludeIps,
+		&i.EnableDhcp,
+		&i.DnsServers,
 	)
 	return i, err
 }
@@ -170,7 +176,7 @@ func (q *Queries) CountSubnets(ctx context.Context, arg CountSubnetsParams) (int
 }
 
 const getSubnet = `-- name: GetSubnet :one
-SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2
+SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2
 `
 
 type GetSubnetParams struct {
@@ -200,12 +206,15 @@ func (q *Queries) GetSubnet(ctx context.Context, arg GetSubnetParams) (NetworkSu
 		&i.UsedIpCount,
 		&i.AvailableIpRange,
 		&i.UsedIpRange,
+		&i.ExcludeIps,
+		&i.EnableDhcp,
+		&i.DnsServers,
 	)
 	return i, err
 }
 
 const getSubnetIdempotency = `-- name: GetSubnetIdempotency :one
-SELECT tenant_id, operation_kind, idempotency_key, fingerprint, fingerprint_version, vpc_id, operation_id, response, created_at, subnet_id, eip_id, snat_id, lb_id FROM network_idempotency WHERE tenant_id=$1 AND operation_kind='create_subnet' AND idempotency_key=$2
+SELECT tenant_id, operation_kind, idempotency_key, fingerprint, fingerprint_version, vpc_id, operation_id, response, created_at, subnet_id, eip_id, snat_id, lb_id, vnic_id FROM network_idempotency WHERE tenant_id=$1 AND operation_kind='create_subnet' AND idempotency_key=$2
 `
 
 type GetSubnetIdempotencyParams struct {
@@ -230,13 +239,14 @@ func (q *Queries) GetSubnetIdempotency(ctx context.Context, arg GetSubnetIdempot
 		&i.EipID,
 		&i.SnatID,
 		&i.LbID,
+		&i.VnicID,
 	)
 	return i, err
 }
 
 const insertSubnet = `-- name: InsertSubnet :one
-INSERT INTO network_subnets (tenant_id,subnet_id,vpc_id,name,description,cidr,gateway,state,created_at,updated_at,last_operation_id)
-VALUES ($1,$2,$3,$4,$5,$6,$7,'provisioning',$8,$8,$9) RETURNING tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range
+INSERT INTO network_subnets (tenant_id,subnet_id,vpc_id,name,description,cidr,gateway,state,created_at,updated_at,last_operation_id,exclude_ips,enable_dhcp,dns_servers)
+VALUES ($1,$2,$3,$4,$5,$6,$7,'provisioning',$8,$8,$9,$10,$11,$12) RETURNING tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers
 `
 
 type InsertSubnetParams struct {
@@ -249,6 +259,9 @@ type InsertSubnetParams struct {
 	Gateway         string
 	CreatedAt       time.Time
 	LastOperationID string
+	ExcludeIps      []string
+	EnableDhcp      bool
+	DnsServers      []string
 }
 
 func (q *Queries) InsertSubnet(ctx context.Context, arg InsertSubnetParams) (NetworkSubnet, error) {
@@ -262,6 +275,9 @@ func (q *Queries) InsertSubnet(ctx context.Context, arg InsertSubnetParams) (Net
 		arg.Gateway,
 		arg.CreatedAt,
 		arg.LastOperationID,
+		arg.ExcludeIps,
+		arg.EnableDhcp,
+		arg.DnsServers,
 	)
 	var i NetworkSubnet
 	err := row.Scan(
@@ -283,6 +299,9 @@ func (q *Queries) InsertSubnet(ctx context.Context, arg InsertSubnetParams) (Net
 		&i.UsedIpCount,
 		&i.AvailableIpRange,
 		&i.UsedIpRange,
+		&i.ExcludeIps,
+		&i.EnableDhcp,
+		&i.DnsServers,
 	)
 	return i, err
 }
@@ -316,7 +335,7 @@ func (q *Queries) InsertSubnetIdempotency(ctx context.Context, arg InsertSubnetI
 }
 
 const listSubnets = `-- name: ListSubnets :many
-SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range FROM network_subnets WHERE tenant_id=$1
+SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers FROM network_subnets WHERE tenant_id=$1
  AND ($2::text='' OR vpc_id=$2)
  AND ($3::text='' OR name=$3)
  AND (($4::text='' AND state<>'deleted') OR state=$4)
@@ -370,6 +389,9 @@ func (q *Queries) ListSubnets(ctx context.Context, arg ListSubnetsParams) ([]Net
 			&i.UsedIpCount,
 			&i.AvailableIpRange,
 			&i.UsedIpRange,
+			&i.ExcludeIps,
+			&i.EnableDhcp,
+			&i.DnsServers,
 		); err != nil {
 			return nil, err
 		}
@@ -382,7 +404,7 @@ func (q *Queries) ListSubnets(ctx context.Context, arg ListSubnetsParams) ([]Net
 }
 
 const lockDueSubnet = `-- name: LockDueSubnet :one
-SELECT s.tenant_id, s.subnet_id, s.vpc_id, s.name, s.description, s.cidr, s.gateway, s.state, s.reason, s.version, s.created_at, s.updated_at, s.observed_at, s.last_operation_id, s.available_ip_count, s.used_ip_count, s.available_ip_range, s.used_ip_range FROM network_subnets s JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id
+SELECT s.tenant_id, s.subnet_id, s.vpc_id, s.name, s.description, s.cidr, s.gateway, s.state, s.reason, s.version, s.created_at, s.updated_at, s.observed_at, s.last_operation_id, s.available_ip_count, s.used_ip_count, s.available_ip_range, s.used_ip_range, s.exclude_ips, s.enable_dhcp, s.dns_servers FROM network_subnets s JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id
 WHERE s.tenant_id=$1 AND s.vpc_id=$2 AND r.next_run_at<=clock_timestamp()
  AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
 ORDER BY r.next_run_at,s.subnet_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED
@@ -415,12 +437,15 @@ func (q *Queries) LockDueSubnet(ctx context.Context, arg LockDueSubnetParams) (N
 		&i.UsedIpCount,
 		&i.AvailableIpRange,
 		&i.UsedIpRange,
+		&i.ExcludeIps,
+		&i.EnableDhcp,
+		&i.DnsServers,
 	)
 	return i, err
 }
 
 const lockSubnet = `-- name: LockSubnet :one
-SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2 FOR UPDATE
+SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2 FOR UPDATE
 `
 
 type LockSubnetParams struct {
@@ -450,6 +475,9 @@ func (q *Queries) LockSubnet(ctx context.Context, arg LockSubnetParams) (Network
 		&i.UsedIpCount,
 		&i.AvailableIpRange,
 		&i.UsedIpRange,
+		&i.ExcludeIps,
+		&i.EnableDhcp,
+		&i.DnsServers,
 	)
 	return i, err
 }

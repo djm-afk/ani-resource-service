@@ -107,6 +107,7 @@ type Spec struct {
 	GuestInitialization                                                               *GuestInitialization
 }
 type VM struct {
+	NetworkInterfaces                          []NetworkInterface
 	SecurityGroupIDs, SecurityGroupNames       []string
 	SecurityGroupsInitialized                  bool
 	TenantID, ID, Name, CreateOperationID      string
@@ -136,8 +137,10 @@ type VM struct {
 // ListFilter is the tenant-scoped list query. State is the display-state group
 // accepted by the public contract, not the raw Observed value.
 type ListFilter struct {
-	Page, PageSize uint32
-	State, Keyword string
+	SubnetID, ClusterID, Namespace string
+	BindableOnly                   bool
+	Page, PageSize                 uint32
+	State, Keyword                 string
 }
 
 // vmListStates is the closed set of display-state groups. "all" and the empty

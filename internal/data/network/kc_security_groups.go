@@ -460,6 +460,14 @@ func (p *KCProvider) observeSecurityGroupConsumerPods(ctx context.Context, bindi
 			return false, readFailure(e)
 		}
 		owner, owned := ownerUID(*vnic, "Pod", map[string]bool{string(pod.GetUID()): true})
+		manual, e := p.manualVNicIdentity(ctx, binding.TenantID, binding.TargetID, binding.Namespace, "", *vnic, true)
+		if e != nil {
+			return false, e
+		}
+		if manual {
+			owner, owned = string(pod.GetUID()), true
+		}
+
 		if !owned || owner != string(pod.GetUID()) || vnic.GetAPIVersion() != "networking.kubercloud.com/v1" || vnic.GetKind() != "VNic" || vnic.GetNamespace() != binding.Namespace ||
 			vnic.GetName() != name || vnic.GetUID() == "" || vnic.GetResourceVersion() == "" {
 			return false, sgProviderConflict("VNic owner does not match the current Pod UID")
@@ -514,6 +522,13 @@ func (p *KCProvider) observeRetiredSecurityGroupVNics(ctx context.Context, bindi
 			if o.GetAPIVersion() != "networking.kubercloud.com/v1" || o.GetKind() != "VNic" || o.GetNamespace() != relation.Namespace ||
 				o.GetName() != relation.Name || string(o.GetUID()) != relation.UID || o.GetResourceVersion() == "" {
 				return sgProviderConflict("historical consumer VNic was replaced")
+			}
+			manual, e := p.manualVNicIdentity(ctx, binding.TenantID, binding.TargetID, binding.Namespace, "", *o, false)
+			if e != nil {
+				return e
+			}
+			if manual {
+				continue
 			}
 			// A terminating object still owns its SG membership until KCN removes
 			// it. Never release the database reference merely because its Pod left.

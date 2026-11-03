@@ -222,7 +222,7 @@ func (p *Postgres) AcceptCommand(ctx context.Context, c biz.Command) (biz.ACK, e
 	if !biz.UUID(c.TenantID) || !biz.UUID(c.ID) || !biz.UUID(c.OperationID) || !biz.UUID(c.Key) || len(c.RequestHash) != 64 || c.ExpectedVersion < 1 {
 		return ack, biz.ErrInvalid
 	}
-	if c.Action != "start" && c.Action != "stop" && c.Action != "set-security-groups" && !biz.NewLifecycleAction(c.Action) {
+	if c.Action != "start" && c.Action != "stop" && c.Action != "set-security-groups" && c.Action != "set-network-interface" && !biz.NewLifecycleAction(c.Action) {
 		return ack, biz.ErrInvalid
 	}
 	tx, err := p.pool.Begin(ctx)
@@ -269,7 +269,15 @@ func (p *Postgres) AcceptCommand(ctx context.Context, c biz.Command) (biz.ACK, e
 	if c.Action == "set-security-groups" && (i.Spec.Network == nil || biz.ValidateSecurityGroupIDs(c.SecurityGroupIDs) != nil) {
 		return ack, biz.ErrInvalid
 	}
+	if c.Action == "set-network-interface" && (i.Spec.Network == nil || c.NetworkInterface == nil || c.NetworkInterface.Validate() != nil) {
+		return ack, biz.ErrInvalid
+	}
 	e := newExecution(i, c.Action)
+	if c.Action == "set-network-interface" {
+		e.Phase = "saving_network_interface"
+		target := *c.NetworkInterface
+		e.NetworkInterfaceTarget = &target
+	}
 	if c.Action == "set-security-groups" {
 		e.Phase = "applying_security_groups"
 		e.SecurityGroupIDs = append([]string{}, c.SecurityGroupIDs...)

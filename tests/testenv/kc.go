@@ -153,7 +153,10 @@ func (s *KC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		meta := o["metadata"].(map[string]any)
-		if options.Preconditions.UID != meta["uid"] || options.Preconditions.ResourceVersion != meta["resourceVersion"] || options.PropagationPolicy != "Orphan" {
+		// Manual VNICs use ordinary background garbage collection for their
+		// KCN-owned IP children; existing VPC/Subnet fixtures remain orphan-only.
+		validPropagation := options.PropagationPolicy == "Orphan" || (kind == "vnics" && (options.PropagationPolicy == "" || options.PropagationPolicy == "Background"))
+		if options.Preconditions.UID != meta["uid"] || options.Preconditions.ResourceVersion != meta["resourceVersion"] || !validPropagation {
 			s.Invalid = fmt.Sprintf("unconditional deletion of %s", kind)
 			fail(409, "Conflict")
 			return

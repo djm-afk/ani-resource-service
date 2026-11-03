@@ -326,6 +326,12 @@ func (p *Postgres) accept(ctx context.Context, c biz.Command, id, createID strin
 		if busy {
 			return biz.Operation{}, biz.ErrBusy
 		}
+		if c.Action == "set-network-interface" {
+			var intent biz.NetworkInterfaceIntent
+			if json.Unmarshal(c.Intent, &intent) != nil || intent.Validate() != nil {
+				return biz.Operation{}, biz.ErrInvalid
+			}
+		}
 		if c.Action == "set-security-groups" {
 			var intent biz.SecurityGroupIntent
 			if json.Unmarshal(c.Intent, &intent) != nil || biz.ValidateSecurityGroupIDs(intent.IDs) != nil {
@@ -404,7 +410,8 @@ func vmListWhere(tenant string, f biz.ListFilter) (string, []any) {
 		" AND ($2::text<>'' OR (" + vmDisplayState + ")<>'deleted')" +
 		" AND ($3::text='' OR position(lower($3) in lower(coalesce(current_configuration->>'Name','')))>0" +
 		" OR position(lower($3) in lower(id::text))>0)"
-	return where, []any{tenant, f.State, f.Keyword}
+	where += " AND ($4::text='' OR current_configuration->'Spec'->'Network'->>'SubnetID'=$4) AND ($5::text='' OR current_configuration->'Spec'->>'ClusterID'=$5) AND ($6::text='' OR current_configuration->'Spec'->>'Namespace'=$6) AND (NOT $7::boolean OR (NOT closing AND lower(coalesce(current_configuration->>'Observed',''))<>'deleted'))"
+	return where, []any{tenant, f.State, f.Keyword, f.SubnetID, f.ClusterID, f.Namespace, f.BindableOnly}
 }
 
 func (p *Postgres) List(ctx context.Context, t string, f biz.ListFilter) ([]biz.VM, int64, error) {
@@ -423,7 +430,7 @@ func (p *Postgres) List(ctx context.Context, t string, f biz.ListFilter) ([]biz.
 		return nil, 0, e
 	}
 	args = append(args, int64(f.PageSize), int64(f.Page-1)*int64(f.PageSize))
-	rows, e := tx.Query(ctx, "SELECT current_configuration,created_at FROM vm.virtual_machines"+where+" ORDER BY created_at DESC,id LIMIT $4 OFFSET $5", args...)
+	rows, e := tx.Query(ctx, "SELECT current_configuration,created_at FROM vm.virtual_machines"+where+" ORDER BY created_at DESC,id LIMIT $8 OFFSET $9", args...)
 	if e != nil {
 		return nil, 0, e
 	}

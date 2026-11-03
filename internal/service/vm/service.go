@@ -354,7 +354,7 @@ func (s *Service) LookupCommandReplay(ctx context.Context, r *pb.LookupCommandRe
 }
 func validAction(a string) bool {
 	switch a {
-	case "start", "stop", "restart", "force-stop", "create-disk", "attach-disk", "detach-disk", "delete-disk", "set-media", "eject-media", "set-boot", "create-snapshot", "delete-snapshot", "restore-snapshot", "set-security-groups":
+	case "start", "stop", "restart", "force-stop", "create-disk", "attach-disk", "detach-disk", "delete-disk", "set-media", "eject-media", "set-boot", "create-snapshot", "delete-snapshot", "restore-snapshot", "set-security-groups", "set-network-interface":
 		return true
 	}
 	return false

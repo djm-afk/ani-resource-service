@@ -15,6 +15,7 @@ import (
 // Network uses public domain ports; it never reads Network tables or CRs.
 type Network struct {
 	attachments *network.Attachments
+	vnics       *network.Network
 	repo        biz.Repository
 	native      biz.NativePort
 }
@@ -23,7 +24,7 @@ func NewNetwork(a *network.Attachments, r biz.Repository, n biz.NativePort) (*Ne
 	if a == nil || r == nil || n == nil {
 		return nil, biz.ErrInvalid
 	}
-	return &Network{a, r, n}, nil
+	return &Network{attachments: a, repo: r, native: n}, nil
 }
 func (n *Network) Prepare(ctx context.Context, v biz.VM) (biz.NetworkPlan, error) {
 	submission := uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-network/"+v.ID)).String()
@@ -145,6 +146,17 @@ func (n *Network) GetVMNetworkSubmission(ctx context.Context, a network.Attachme
 		}
 	}
 	c := network.ConsumerSubmission{ProtocolVersion: 3, TenantID: v.TenantID, InstanceID: v.ID, SubmissionID: a.SubmissionID, AttachmentID: a.ID, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, Generation: a.Generation, State: "open", DesiredRunState: strings.ToLower(v.Desired), SnapshotRevision: v.Network.SnapshotRevision, Controllers: append([]network.ControllerReference(nil), old.Controllers...), RetiredPods: append([]network.PodReference(nil), old.RetiredPods...)}
+	for _, choice := range []biz.NetworkInterfaceChoice{biz.PrimaryNetworkInterface(v).Desired, biz.PrimaryNetworkInterface(v).Applied} {
+		if choice.Mode == "manual" {
+			found := false
+			for _, ref := range c.ManualVNics {
+				found = found || ref.VNicID == choice.VNicID
+			}
+			if !found {
+				c.ManualVNics = append(c.ManualVNics, network.ManualVNicReference{VNicID: choice.VNicID, ProviderName: choice.ProviderName, ProviderUID: choice.ProviderUID})
+			}
+		}
+	}
 	if x.VM.UID != "" {
 		c.RootController = nativeRef(x.VM, "kubevirt.io/v1")
 	} else {

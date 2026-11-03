@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -123,7 +124,7 @@ func (p *KCProvider) observeDirect(ctx context.Context, target biz.ProviderTarge
 	}
 	object, err := p.client.Resource(kcResource(binding)).Namespace(binding.Namespace).Get(ctx, binding.ProviderName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		if !target.Deleting {
+		if !target.Deleting || binding.ResourceKind == "vnic" {
 			return biz.ProviderObservation{}, nil
 		}
 		dependencies, err := p.hasDependencies(ctx, binding)
@@ -164,9 +165,15 @@ func inspectResource(object *unstructured.Unstructured, binding sqlcgen.NetworkP
 		parent, _, _ := unstructured.NestedString(object.Object, "spec", "gateway")
 		gateway, _, _ := unstructured.NestedString(object.Object, "spec", "gatewayIP")
 		underlay, _, _ := unstructured.NestedMap(object.Object, "spec", "underlayConfig")
-		exclusions, _, _ := unstructured.NestedSlice(object.Object, "spec", "excludeIPs")
+		exclusions, _, exclusionsErr := unstructured.NestedStringSlice(object.Object, "spec", "excludeIPs")
+		dhcp, _, dhcpErr := unstructured.NestedBool(object.Object, "spec", "enableDHCP")
+		dns, _, dnsErr := unstructured.NestedStringSlice(object.Object, "spec", "dnsServers")
 		nat, _, _ := unstructured.NestedBool(object.Object, "spec", "natOutgoing")
-		if kind != "VPC" || parentRef == "" || parent != parentRef || gateway != target.Gateway || len(underlay) > 0 || len(exclusions) > 0 || nat {
+		options := biz.SubnetOptions{}
+		if target.SubnetOptions != nil {
+			options = *target.SubnetOptions
+		}
+		if kind != "VPC" || parentRef == "" || parent != parentRef || gateway != target.Gateway || len(underlay) > 0 || nat || exclusionsErr != nil || dhcpErr != nil || dnsErr != nil || !sameStrings(exclusions, options.ExcludeIPs) || dhcp != options.EnableDHCP || !slices.Equal(dns, options.DNSServers) {
 			return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 	}
@@ -213,6 +220,18 @@ func subnetIPRange(object *unstructured.Unstructured, field string) *string {
 		return nil
 	}
 	return &value
+}
+
+func subnetProviderSpec(target biz.ProviderTarget, parent string) map[string]any {
+	options := biz.SubnetOptions{}
+	if target.SubnetOptions != nil {
+		options = *target.SubnetOptions
+	}
+	spec := map[string]any{"type": "VPC", "ipVersion": "IPv4", "cidrBlock": target.CIDR, "gateway": parent, "gatewayIP": target.Gateway, "allowedNamespaces": map[string]any{"from": "Same"}, "enableDHCP": options.EnableDHCP}
+	// Unstructured requires JSON arrays, including when accepted defaults are empty.
+	_ = unstructured.SetNestedStringSlice(spec, options.ExcludeIPs, "excludeIPs")
+	_ = unstructured.SetNestedStringSlice(spec, options.DNSServers, "dnsServers")
+	return spec
 }
 
 func (p *KCProvider) EnsureVPC(ctx context.Context, target biz.ProviderTarget) (biz.ProviderObservation, error) {
@@ -270,7 +289,7 @@ func (p *KCProvider) ensure(ctx context.Context, target biz.ProviderTarget) (biz
 			return biz.ProviderObservation{}, err
 		}
 		object.SetKind("Subnet")
-		object.Object["spec"] = map[string]any{"type": "VPC", "ipVersion": "IPv4", "cidrBlock": target.CIDR, "gateway": parent, "gatewayIP": target.Gateway, "allowedNamespaces": map[string]any{"from": "Same"}}
+		object.Object["spec"] = subnetProviderSpec(target, parent)
 	}
 	created, err := resource.Create(ctx, object, metav1.CreateOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
 	if apierrors.IsAlreadyExists(err) {
@@ -292,6 +311,9 @@ func (p *KCProvider) ensure(ctx context.Context, target biz.ProviderTarget) (biz
 }
 
 func (p *KCProvider) Delete(ctx context.Context, target biz.ProviderTarget) error {
+	if target.Kind == "vnic" {
+		return p.deleteVNic(ctx, target)
+	}
 	if egressKind(target.Kind) {
 		return p.deleteEgress(ctx, target)
 	}
@@ -357,6 +379,9 @@ func mutationFailure(err error) error {
 }
 
 func kcResource(b sqlcgen.NetworkProviderBinding) schema.GroupVersionResource {
+	if b.ResourceKind == "vnic" {
+		return kcManualVNics
+	}
 	if b.ResourceKind == "subnet" {
 		return kcSubnets
 	}
@@ -373,6 +398,9 @@ func (p *KCProvider) parentReference(ctx context.Context, b sqlcgen.NetworkProvi
 	return parent.Namespace + "/" + parent.ProviderName, nil
 }
 func (p *KCProvider) inspect(ctx context.Context, o *unstructured.Unstructured, b sqlcgen.NetworkProviderBinding, t biz.ProviderTarget) (biz.ProviderObservation, error) {
+	if b.ResourceKind == "vnic" {
+		return p.inspectVNic(ctx, o, b, t)
+	}
 	parent := ""
 	if b.ResourceKind == "subnet" {
 		var err error

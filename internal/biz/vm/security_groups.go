@@ -102,6 +102,13 @@ func (w *Worker) setSecurityGroups(ctx context.Context, o *Operation, v *VM) err
 	if err := ValidateSecurityGroupNames(intent.IDs, names); err != nil {
 		return err
 	}
+	if port, ok := w.network.(ManualNetworkPort); ok {
+		if err = port.SyncNetworkInterfaces(ctx, *v, intent.IDs); err != nil {
+			return err
+		}
+	} else if len(v.NetworkInterfaces) > 0 {
+		return ErrDependency
+	}
 	if err = provider.SetSecurityGroups(ctx, *v, names); err != nil {
 		return err
 	}

@@ -14,9 +14,9 @@ const acquireLease = `-- name: AcquireLease :one
 UPDATE network_reconciliations
 SET lease_owner=$1::uuid, lease_epoch=lease_epoch+1,
     lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond'
-WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$4::text
+WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$4::text
   AND (lease_until IS NULL OR lease_until <= clock_timestamp())
-RETURNING tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, eip_id, snat_id, retired, lb_id
+RETURNING tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, eip_id, snat_id, retired, lb_id, vnic_id
 `
 
 type AcquireLeaseParams struct {
@@ -52,6 +52,7 @@ func (q *Queries) AcquireLease(ctx context.Context, arg AcquireLeaseParams) (Net
 		&i.SnatID,
 		&i.Retired,
 		&i.LbID,
+		&i.VnicID,
 	)
 	return i, err
 }
@@ -148,7 +149,7 @@ UPDATE network_provider_bindings
 SET pending_action=$1, pending_since=clock_timestamp(),
     create_dispatched=create_dispatched OR $1::text='create',
     provider_uid=CASE WHEN provider_uid='' THEN $2::text ELSE provider_uid END
-WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$4::text AND binding_id=$5
+WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$4::text AND binding_id=$5
   AND (provider_uid='' OR provider_uid=$2)
   AND (($1::text='create' AND pending_action='')
        OR ($1='update' AND provider_uid<>'' AND pending_action IN ('','update'))
@@ -178,8 +179,8 @@ func (q *Queries) BeginProviderMutation(ctx context.Context, arg BeginProviderMu
 }
 
 const checkLease = `-- name: CheckLease :one
-SELECT tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, eip_id, snat_id, retired, lb_id FROM network_reconciliations
-WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$2::text AND lease_owner=$3 AND lease_epoch=$4
+SELECT tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, eip_id, snat_id, retired, lb_id, vnic_id FROM network_reconciliations
+WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$2::text AND lease_owner=$3 AND lease_epoch=$4
   AND lease_until > clock_timestamp()
 FOR UPDATE
 `
@@ -217,6 +218,7 @@ func (q *Queries) CheckLease(ctx context.Context, arg CheckLeaseParams) (Network
 		&i.SnatID,
 		&i.Retired,
 		&i.LbID,
+		&i.VnicID,
 	)
 	return i, err
 }
@@ -227,7 +229,7 @@ SET state=$1, reason=$2, updated_at=clock_timestamp(),
     completed_at=CASE WHEN $1::text IN ('succeeded','failed') THEN clock_timestamp() ELSE NULL END,
     next_attempt_at=CASE WHEN $1::text IN ('succeeded','failed') THEN NULL
       ELSE clock_timestamp()+$3::bigint*interval '1 microsecond' END
-WHERE tenant_id=$4 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$5::text
+WHERE tenant_id=$4 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$5::text
   AND operation_id=$6 AND execution_epoch=$7
   AND state NOT IN ('succeeded','failed')
 `
@@ -259,7 +261,7 @@ func (q *Queries) CompleteAttempt(ctx context.Context, arg CompleteAttemptParams
 }
 
 const getBinding = `-- name: GetBinding :one
-SELECT tenant_id, vpc_id, binding_id, cluster_id, namespace, provider_name, provider_uid, pending_action, pending_since, subnet_id, resource_kind, eip_id, snat_id, create_dispatched, lb_id, provider_ready, provider_observed_at, provider_observed_uid, provider_generation, provider_observed_generation FROM network_provider_bindings WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$2::text
+SELECT tenant_id, vpc_id, binding_id, cluster_id, namespace, provider_name, provider_uid, pending_action, pending_since, subnet_id, resource_kind, eip_id, snat_id, create_dispatched, lb_id, provider_ready, provider_observed_at, provider_observed_uid, provider_generation, provider_observed_generation, vnic_id FROM network_provider_bindings WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$2::text
 `
 
 type GetBindingParams struct {
@@ -291,6 +293,7 @@ func (q *Queries) GetBinding(ctx context.Context, arg GetBindingParams) (Network
 		&i.ProviderObservedUid,
 		&i.ProviderGeneration,
 		&i.ProviderObservedGeneration,
+		&i.VnicID,
 	)
 	return i, err
 }
@@ -334,7 +337,7 @@ LEFT JOIN network_subnets s ON s.tenant_id=r.tenant_id AND s.subnet_id=r.subnet_
 JOIN network_vpcs v ON v.tenant_id=r.tenant_id AND v.vpc_id=coalesce(r.vpc_id,s.vpc_id)
 WHERE r.next_run_at <= clock_timestamp()
   AND (r.lease_until IS NULL OR r.lease_until <= clock_timestamp())
-ORDER BY r.next_run_at, coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)
+ORDER BY r.next_run_at, coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)
 LIMIT 1 FOR UPDATE OF v SKIP LOCKED
 `
 
@@ -425,7 +428,7 @@ SET lease_owner=NULL, lease_until=NULL,
     evidence_applied_at=CASE WHEN $2::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
     retry_not_before=CASE WHEN $4::boolean THEN clock_timestamp()+$5::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
     next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() WHEN $6::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
-WHERE tenant_id=$7 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$8::text
+WHERE tenant_id=$7 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$8::text
   AND lease_owner=$9 AND lease_epoch=$10 AND lease_until>clock_timestamp()
 `
 
@@ -464,9 +467,9 @@ func (q *Queries) ReleaseLease(ctx context.Context, arg ReleaseLeaseParams) (int
 const runOperation = `-- name: RunOperation :one
 UPDATE network_operations SET state='running', attempt=attempt+1,
     execution_epoch=$1, updated_at=clock_timestamp()
-WHERE tenant_id=$2 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$3::text
+WHERE tenant_id=$2 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$3::text
   AND operation_id=$4 AND state NOT IN ('succeeded','failed')
-RETURNING tenant_id, operation_id, vpc_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, subnet_id, eip_id, snat_id, lb_id
+RETURNING tenant_id, operation_id, vpc_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, subnet_id, eip_id, snat_id, lb_id, vnic_id
 `
 
 type RunOperationParams struct {
@@ -501,6 +504,7 @@ func (q *Queries) RunOperation(ctx context.Context, arg RunOperationParams) (Net
 		&i.EipID,
 		&i.SnatID,
 		&i.LbID,
+		&i.VnicID,
 	)
 	return i, err
 }
@@ -510,7 +514,7 @@ UPDATE network_provider_bindings
 SET provider_uid=CASE WHEN provider_uid='' THEN $1::text ELSE provider_uid END,
     pending_action=CASE WHEN $2::boolean THEN '' ELSE pending_action END,
     pending_since=CASE WHEN $2::boolean THEN NULL ELSE pending_since END
-WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$4::text AND binding_id=$5
+WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$4::text AND binding_id=$5
   AND (provider_uid='' OR provider_uid=$1)
 `
 
@@ -575,7 +579,7 @@ func (q *Queries) SaveVPCProviderReadiness(ctx context.Context, arg SaveVPCProvi
 const scheduleDeletion = `-- name: ScheduleDeletion :execrows
 UPDATE network_reconciliations SET next_run_at=clock_timestamp(),
     lease_owner=NULL, lease_until=NULL, lease_epoch=lease_epoch+1
-WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$2::text
+WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$2::text
 `
 
 type ScheduleDeletionParams struct {

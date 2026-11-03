@@ -49,7 +49,10 @@ type AttachmentObservation struct {
 type AttachmentProvider interface {
 	ObserveAttachment(context.Context, AttachmentWork) (AttachmentObservation, error)
 }
+type ManualVNicReference struct{ VNicID, ProviderName, ProviderUID, BindingID string }
+
 type ConsumerSubmission struct {
+	ManualVNics                                                            []ManualVNicReference `json:",omitempty"`
 	SnapshotRevision                                                       int64
 	DesiredRunState                                                        string
 	RootController                                                         WorkloadReference
@@ -203,7 +206,7 @@ func releasedManagedClosure(work AttachmentWork) bool {
 		return false
 	}
 	c := *a.ConsumerSnapshot
-	return c.State == "closed" && c.FinalizationID == a.FinalizationID && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == a.SnapshotHash && CompareConsumerSnapshot(a, c) == SnapshotAccepted
+	return c.State == "closed" && c.FinalizationID == a.FinalizationID && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == frozenConsumerSnapshotHash(a) && CompareConsumerSnapshot(a, c) == SnapshotAccepted
 }
 func validConsumer(a Attachment, c ConsumerSubmission) bool {
 	if a.WorkloadMode == "controller_managed" || a.WorkloadMode == "vm_managed" {

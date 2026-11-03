@@ -5,7 +5,7 @@
 UPDATE network_reconciliations
 SET requested_generation=requested_generation+1,
     next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp()))
-WHERE NOT retired AND tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=sqlc.arg(resource_id)::text;
+WHERE NOT retired AND tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=sqlc.arg(resource_id)::text;
 
 -- name: NotifyAttachment :execrows
 UPDATE network_attachments
@@ -15,15 +15,16 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND attachment_id=sqlc.arg(attachment_id);
 
 -- Complete range inventory for observer recovery only; not a product query.
 -- name: ObservationResources :many
-SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)::text AS resource_id,
- r.requested_generation,(coalesce(v.state,s.state,e.state,n.state,l.state)<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery,b.resource_kind,b.namespace,b.provider_name,b.provider_uid
+SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)::text AS resource_id,
+ r.requested_generation,(coalesce(v.state,s.state,e.state,n.state,l.state,vn.state)<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery,b.resource_kind,b.namespace,b.provider_name,b.provider_uid
 FROM network_reconciliations r JOIN network_provider_bindings b
- ON b.tenant_id=r.tenant_id AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)
+ ON b.tenant_id=r.tenant_id AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id,b.vnic_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id,r.vnic_id)
 LEFT JOIN network_vpcs v ON v.tenant_id=r.tenant_id AND v.vpc_id=r.vpc_id
 LEFT JOIN network_subnets s ON s.tenant_id=r.tenant_id AND s.subnet_id=r.subnet_id
 LEFT JOIN network_eips e ON e.tenant_id=r.tenant_id AND e.eip_id=r.eip_id
 LEFT JOIN network_snat_bindings n ON n.tenant_id=r.tenant_id AND n.snat_id=r.snat_id
 LEFT JOIN network_load_balancers l ON l.tenant_id=r.tenant_id AND l.lb_id=r.lb_id
+LEFT JOIN network_vnics vn ON vn.tenant_id=r.tenant_id AND vn.vnic_id=r.vnic_id
 WHERE b.cluster_id=sqlc.arg(cluster_id) AND NOT r.retired;
 
 -- name: ObservationAttachments :many
@@ -95,7 +96,7 @@ SELECT g.tenant_id,g.lb_id,('uid:'||g.provider_uid)::text FROM network_lb_genera
 -- event generation. Notifications and fault backoff retain precedence.
 -- name: WakeAuditedResource :exec
 UPDATE network_reconciliations SET next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp()))
-WHERE NOT retired AND tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=sqlc.arg(resource_id)::text;
+WHERE NOT retired AND tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=sqlc.arg(resource_id)::text;
 -- name: WakeAuditedPlatform :exec
 UPDATE network_platform_reconciliations SET next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp())) WHERE resource_id=sqlc.arg(resource_id);
 -- name: WakeAuditedAttachment :exec

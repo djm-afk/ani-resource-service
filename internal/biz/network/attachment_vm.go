@@ -121,5 +121,5 @@ func VMClosedProtocolRecoveryMatches(a Attachment, c ConsumerSubmission) bool {
 		return false
 	}
 	return c.State == "closed" && c.DesiredRunState == "deleted" && len(c.CurrentPods) == 0 && c.FinalizationID == a.FinalizationID && c.RootController == a.RootController &&
-		CompareConsumerSnapshot(a, c) == SnapshotAccepted && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == a.SnapshotHash && ConsumerSnapshotHash(*a.ConsumerSnapshot) == a.SnapshotHash
+		CompareConsumerSnapshot(a, c) == SnapshotAccepted && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == frozenConsumerSnapshotHash(a)
 }

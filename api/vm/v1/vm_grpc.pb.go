@@ -8,7 +8,8 @@ package vmv1
 
 import (
 	context "context"
-	v1 "github.com/zhangzhe-ctrl/ani-resource-service/api/vm/console/v1"
+	v1 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
+	v11 "github.com/zhangzhe-ctrl/ani-resource-service/api/vm/console/v1"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -31,6 +32,8 @@ const (
 	VMService_Stop_FullMethodName                 = "/vm.v1.VMService/Stop"
 	VMService_ForceStop_FullMethodName            = "/vm.v1.VMService/ForceStop"
 	VMService_Restart_FullMethodName              = "/vm.v1.VMService/Restart"
+	VMService_GetNetworkInterfaces_FullMethodName = "/vm.v1.VMService/GetNetworkInterfaces"
+	VMService_SetNetworkInterface_FullMethodName  = "/vm.v1.VMService/SetNetworkInterface"
 	VMService_SetSecurityGroups_FullMethodName    = "/vm.v1.VMService/SetSecurityGroups"
 	VMService_ListDisks_FullMethodName            = "/vm.v1.VMService/ListDisks"
 	VMService_CreateDisk_FullMethodName           = "/vm.v1.VMService/CreateDisk"
@@ -70,6 +73,8 @@ type VMServiceClient interface {
 	Stop(ctx context.Context, in *ChangeVMRequest, opts ...grpc.CallOption) (*Operation, error)
 	ForceStop(ctx context.Context, in *ForceStopRequest, opts ...grpc.CallOption) (*Operation, error)
 	Restart(ctx context.Context, in *ChangeVMRequest, opts ...grpc.CallOption) (*Operation, error)
+	GetNetworkInterfaces(ctx context.Context, in *GetVMRequest, opts ...grpc.CallOption) (*v1.NetworkInterfaces, error)
+	SetNetworkInterface(ctx context.Context, in *SetNetworkInterfaceRequest, opts ...grpc.CallOption) (*Operation, error)
 	SetSecurityGroups(ctx context.Context, in *SetSecurityGroupsRequest, opts ...grpc.CallOption) (*Operation, error)
 	ListDisks(ctx context.Context, in *GetVMRequest, opts ...grpc.CallOption) (*ListDisksResponse, error)
 	CreateDisk(ctx context.Context, in *CreateDiskRequest, opts ...grpc.CallOption) (*Operation, error)
@@ -87,7 +92,7 @@ type VMServiceClient interface {
 	DeleteSnapshot(ctx context.Context, in *SnapshotChangeRequest, opts ...grpc.CallOption) (*Operation, error)
 	PreviewRestore(ctx context.Context, in *PreviewRestoreRequest, opts ...grpc.CallOption) (*RestorePreview, error)
 	RestoreSnapshot(ctx context.Context, in *RestoreSnapshotRequest, opts ...grpc.CallOption) (*Operation, error)
-	ResolveConsoleTarget(ctx context.Context, in *ResolveConsoleTargetRequest, opts ...grpc.CallOption) (*v1.VMConsoleBinding, error)
+	ResolveConsoleTarget(ctx context.Context, in *ResolveConsoleTargetRequest, opts ...grpc.CallOption) (*v11.VMConsoleBinding, error)
 	// Guest serial console of the live launcher, same framing as instance logs.
 	StreamVMLogs(ctx context.Context, in *StreamVMLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[VMLogFrame], error)
 }
@@ -204,6 +209,26 @@ func (c *vMServiceClient) Restart(ctx context.Context, in *ChangeVMRequest, opts
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Operation)
 	err := c.cc.Invoke(ctx, VMService_Restart_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) GetNetworkInterfaces(ctx context.Context, in *GetVMRequest, opts ...grpc.CallOption) (*v1.NetworkInterfaces, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(v1.NetworkInterfaces)
+	err := c.cc.Invoke(ctx, VMService_GetNetworkInterfaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) SetNetworkInterface(ctx context.Context, in *SetNetworkInterfaceRequest, opts ...grpc.CallOption) (*Operation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Operation)
+	err := c.cc.Invoke(ctx, VMService_SetNetworkInterface_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -380,9 +405,9 @@ func (c *vMServiceClient) RestoreSnapshot(ctx context.Context, in *RestoreSnapsh
 	return out, nil
 }
 
-func (c *vMServiceClient) ResolveConsoleTarget(ctx context.Context, in *ResolveConsoleTargetRequest, opts ...grpc.CallOption) (*v1.VMConsoleBinding, error) {
+func (c *vMServiceClient) ResolveConsoleTarget(ctx context.Context, in *ResolveConsoleTargetRequest, opts ...grpc.CallOption) (*v11.VMConsoleBinding, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(v1.VMConsoleBinding)
+	out := new(v11.VMConsoleBinding)
 	err := c.cc.Invoke(ctx, VMService_ResolveConsoleTarget_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -427,6 +452,8 @@ type VMServiceServer interface {
 	Stop(context.Context, *ChangeVMRequest) (*Operation, error)
 	ForceStop(context.Context, *ForceStopRequest) (*Operation, error)
 	Restart(context.Context, *ChangeVMRequest) (*Operation, error)
+	GetNetworkInterfaces(context.Context, *GetVMRequest) (*v1.NetworkInterfaces, error)
+	SetNetworkInterface(context.Context, *SetNetworkInterfaceRequest) (*Operation, error)
 	SetSecurityGroups(context.Context, *SetSecurityGroupsRequest) (*Operation, error)
 	ListDisks(context.Context, *GetVMRequest) (*ListDisksResponse, error)
 	CreateDisk(context.Context, *CreateDiskRequest) (*Operation, error)
@@ -444,7 +471,7 @@ type VMServiceServer interface {
 	DeleteSnapshot(context.Context, *SnapshotChangeRequest) (*Operation, error)
 	PreviewRestore(context.Context, *PreviewRestoreRequest) (*RestorePreview, error)
 	RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*Operation, error)
-	ResolveConsoleTarget(context.Context, *ResolveConsoleTargetRequest) (*v1.VMConsoleBinding, error)
+	ResolveConsoleTarget(context.Context, *ResolveConsoleTargetRequest) (*v11.VMConsoleBinding, error)
 	// Guest serial console of the live launcher, same framing as instance logs.
 	StreamVMLogs(*StreamVMLogsRequest, grpc.ServerStreamingServer[VMLogFrame]) error
 	mustEmbedUnimplementedVMServiceServer()
@@ -489,6 +516,12 @@ func (UnimplementedVMServiceServer) ForceStop(context.Context, *ForceStopRequest
 }
 func (UnimplementedVMServiceServer) Restart(context.Context, *ChangeVMRequest) (*Operation, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Restart not implemented")
+}
+func (UnimplementedVMServiceServer) GetNetworkInterfaces(context.Context, *GetVMRequest) (*v1.NetworkInterfaces, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNetworkInterfaces not implemented")
+}
+func (UnimplementedVMServiceServer) SetNetworkInterface(context.Context, *SetNetworkInterfaceRequest) (*Operation, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetNetworkInterface not implemented")
 }
 func (UnimplementedVMServiceServer) SetSecurityGroups(context.Context, *SetSecurityGroupsRequest) (*Operation, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetSecurityGroups not implemented")
@@ -541,7 +574,7 @@ func (UnimplementedVMServiceServer) PreviewRestore(context.Context, *PreviewRest
 func (UnimplementedVMServiceServer) RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*Operation, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RestoreSnapshot not implemented")
 }
-func (UnimplementedVMServiceServer) ResolveConsoleTarget(context.Context, *ResolveConsoleTargetRequest) (*v1.VMConsoleBinding, error) {
+func (UnimplementedVMServiceServer) ResolveConsoleTarget(context.Context, *ResolveConsoleTargetRequest) (*v11.VMConsoleBinding, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveConsoleTarget not implemented")
 }
 func (UnimplementedVMServiceServer) StreamVMLogs(*StreamVMLogsRequest, grpc.ServerStreamingServer[VMLogFrame]) error {
@@ -762,6 +795,42 @@ func _VMService_Restart_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(VMServiceServer).Restart(ctx, req.(*ChangeVMRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_GetNetworkInterfaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetVMRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).GetNetworkInterfaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_GetNetworkInterfaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).GetNetworkInterfaces(ctx, req.(*GetVMRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_SetNetworkInterface_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetNetworkInterfaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).SetNetworkInterface(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_SetNetworkInterface_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).SetNetworkInterface(ctx, req.(*SetNetworkInterfaceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1151,6 +1220,14 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Restart",
 			Handler:    _VMService_Restart_Handler,
+		},
+		{
+			MethodName: "GetNetworkInterfaces",
+			Handler:    _VMService_GetNetworkInterfaces_Handler,
+		},
+		{
+			MethodName: "SetNetworkInterface",
+			Handler:    _VMService_SetNetworkInterface_Handler,
 		},
 		{
 			MethodName: "SetSecurityGroups",
