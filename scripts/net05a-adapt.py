@@ -65,7 +65,7 @@ def adapted(name):
         insert='''edit('network','internal/data/network/kc_observation.go',[
  ('go func() { defer group.Done(); informer.Run(ctx.Done()) }()', 'go func() { defer group.Done(); net05Hook(ctx,"pause-observer","*",nil); informer.Run(ctx.Done()) }()'),
  ('\\t\\t\\to.flush(ctx)','\\t\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\t\\to.flush(ctx)'),
- ('\\t\\t_, _ = o.refresh(ctx, time.Time{}, true)','\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\t_, _ = o.refresh(ctx, time.Time{}, true)')],helper=True)
+ ('\\t\\tif v, err := o.refresh(ctx, time.Time{}, true); err == nil {','\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\tif v, err := o.refresh(ctx, time.Time{}, true); err == nil {')],helper=True)
 '''
         replace("edit('ani', 'repo/pkg/adapters/runtime/network_submission_owner.go'",insert+"edit('ani', 'repo/pkg/adapters/runtime/network_submission_owner.go'")
     if name=='faults':

@@ -277,7 +277,7 @@ func NewEgress(r EgressRepository, p EgressInfrastructure, a EgressAuthorization
 	return &Egress{repository: r, infrastructure: p, authorization: a, cursor: &Network{cursorKey: slices.Clone(key)}, freshness: freshness, now: now}, nil
 }
 func (e *Egress) metadata(v EgressMetadata) EgressMetadata {
-	v.ObservationStale = v.ObservedAt == nil || v.ObservedAt.After(e.now()) || e.now().Sub(*v.ObservedAt) > e.freshness
+	v.ObservationStale = v.Reason == ProviderUnavailable || v.ObservedAt == nil || v.ObservedAt.After(e.now()) || e.now().Sub(*v.ObservedAt) > e.freshness
 	return v
 }
 func (e *Egress) eip(v EIP) EIP { v.EgressMetadata = e.metadata(v.EgressMetadata); return v }

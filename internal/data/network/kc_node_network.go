@@ -105,14 +105,14 @@ func (p *KCProvider) nodeNetworkObjects(ctx context.Context) ([]unstructured.Uns
 			if _, bounded := ctx.Deadline(); !bounded && refreshed {
 				return nil, nil, nil, time.Time{}, readFailure(fmt.Errorf("node network audit invalidated after one fresh collection"))
 			}
-			after, err = p.repository.queries.DatabaseTime(ctx)
+			after, err = p.repository.readQueries(ctx).DatabaseTime(ctx)
 			if err != nil {
 				return nil, nil, nil, time.Time{}, readFailure(fmt.Errorf("node network audit boundary failed: %w", err))
 			}
 			refreshed = true
 		}
 	}
-	collected, err := p.repository.queries.DatabaseTime(ctx)
+	collected, err := p.repository.readQueries(ctx).DatabaseTime(ctx)
 	if err != nil {
 		return nil, nil, nil, time.Time{}, readFailure(err)
 	}

@@ -40,6 +40,7 @@ type auditView struct {
 	indices         map[schema.GroupVersionResource]cache.Indexer
 	generations     map[string]int64
 	targets         map[string][]observationTarget
+	recovery        []observationTarget
 	bytes           int64
 }
 
@@ -95,10 +96,15 @@ func (p *KCProvider) EnableObservation(options ObservationOptions) (*KCObservati
 		resource := o.client.Resource(gvr)
 		informer := cache.NewSharedIndexInformer(&cache.ListWatch{
 			ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+				o.sourceBoundary()
 				return resource.List(ctx, opts)
 			},
 			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-				o.sourceBoundary()
+				// Streaming initial events rebuild the store just like LIST. A
+				// normal watch resumes its RV without replaying initial events.
+				if opts.SendInitialEvents != nil && *opts.SendInitialEvents {
+					o.sourceBoundary()
+				}
 				return resource.Watch(ctx, opts)
 			},
 		}, &unstructured.Unstructured{}, 0, cache.Indexers{relationshipIndex: relationshipKeys})
@@ -112,10 +118,12 @@ func (p *KCProvider) EnableObservation(options ObservationOptions) (*KCObservati
 		o.informers = append(o.informers, informer)
 	}
 	p.observation = o
+	p.repository.sharedObservation = true
 	return o, nil
 }
 
-// A new Watch request or a reported source failure is a continuity boundary.
+// A relist or reported source failure is a continuity boundary. Normal Watch
+// renewal resumes from resourceVersion and does not invalidate independent audits.
 // In-flight independent collections cannot inherit proof from before it. The
 // full audit recovers the scope; ordinary unrelated object events remain keyed.
 func (o *KCObservation) sourceBoundary() {
@@ -263,7 +271,9 @@ func (o *KCObservation) auditLoop(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		_, _ = o.refresh(ctx, time.Time{}, true)
+		if v, err := o.refresh(ctx, time.Time{}, true); err == nil {
+			o.wakeAudited(ctx, v)
+		}
 		probe, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		metrics := o.provider.repository.observationTelemetry(probe)
 		cancel()
@@ -285,6 +295,10 @@ func (o *KCObservation) flush(ctx context.Context) {
 		return
 	}
 	keys := o.pending
+	attachmentKeys := map[string]bool{}
+	for key := range keys {
+		attachmentKeys[key] = o.attachmentChanges[key] > v.sequence
+	}
 	o.pending = map[string]struct{}{}
 	o.pendingSince = time.Time{}
 	overflow := o.overflow
@@ -300,6 +314,12 @@ func (o *KCObservation) flush(ctx context.Context) {
 	} else {
 		for key := range keys {
 			for _, t := range v.targets[key] {
+				// Services/controllers can share an owner UID with an attachment
+				// without changing its Pod/NIC/IP/EIP facts. Do not turn those
+				// events into repeated owner reads and durable attachment work.
+				if t.kind == "attachment" && !attachmentKeys[key] {
+					continue
+				}
 				targets[t.key()] = t
 			}
 		}
@@ -434,9 +454,14 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 		}
 	}
 	subnetRefs := map[string]string{}
+	parkedTargets := map[string]bool{}
 	for _, r := range resources {
 		t := observationTarget{r.TenantID, r.ResourceID, r.ResourceKind}
+		parkedTargets[t.key()] = !r.Recovery
 		v.generations[t.key()] = r.RequestedGeneration
+		if r.Recovery {
+			v.recovery = append(v.recovery, t)
+		}
 		kind, field := "VPC", "gateway"
 		if r.ResourceKind == "subnet" {
 			kind, field = "Subnet", "subnet"
@@ -450,11 +475,29 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 			kind, field = "Gateway", "load-balancer"
 		}
 
+		if !r.Recovery && r.ProviderUid != "" {
+			gvr := egressGVR(r.ResourceKind)
+			switch r.ResourceKind {
+			case "vpc":
+				gvr = kcVPCs
+			case "subnet":
+				gvr = kcSubnets
+			case "load_balancer":
+				gvr = lbGateways
+			}
+			if obj := lbViewObject(v, gvr, r.Namespace, r.ProviderName); obj != nil && string(obj.GetUID()) == r.ProviderUid {
+				v.recovery = append(v.recovery, t)
+			}
+		}
 		bind([]string{"object:" + kind + "/" + r.Namespace + "/" + r.ProviderName, field + ":" + r.Namespace + "/" + r.ProviderName, "uid:" + r.ProviderUid}, t)
 	}
 	for _, r := range platforms {
 		t := observationTarget{"", r.ResourceID, r.Kind}
+		parkedTargets[t.key()] = !r.Recovery
 		v.generations[t.key()] = r.RequestedGeneration
+		if r.Recovery {
+			v.recovery = append(v.recovery, t)
+		}
 		ns := ""
 		if r.Kind == "public_pool" {
 			ns = kcSystemNamespace
@@ -467,11 +510,11 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 			relation = "gateway"
 		}
 		keys := []string{"object:" + egressCRKind(r.Kind) + "/" + ns + "/" + r.ProviderName, relation + ":" + ns + "/" + r.ProviderName, "uid:" + r.ProviderUid}
-		if r.Kind == "device" || r.Kind == "vlan" {
+		if r.Recovery && (r.Kind == "device" || r.Kind == "vlan") {
 			keys = append(keys, "node-network")
 		}
 
-		if r.Kind == "public_pool" {
+		if r.Recovery && r.Kind == "public_pool" {
 			keys = append(keys, "provider-images", "object:ConfigMap/kcn-system/kcn-config", "intranet-service-ranges")
 		}
 		bind(keys, t)
@@ -481,6 +524,13 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 		return nil, err
 	}
 	for _, edge := range edges {
+		target := observationTarget{edge.TenantID, edge.ResourceID, edge.Kind}
+		parked := parkedTargets[target.key()]
+		// Parked history still tracks its original object and EIP/SNAT
+		// orphan references, but unrelated platform churn cannot reopen it.
+		if parked && edge.RefKind != "eip" && edge.RefKind != "snat" {
+			continue
+		}
 		relation := edge.RefKind
 		if relation == "public_pool" {
 			relation = "pool"
@@ -488,11 +538,18 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 		if relation == "egress_gateway" {
 			relation = "gateway"
 		}
-		bind([]string{"node-network", "provider-images", "object:ConfigMap/kcn-system/kcn-config", "intranet-service-ranges", "object:" + egressCRKind(edge.RefKind) + "/" + edge.Namespace + "/" + edge.ProviderName, relation + ":" + edge.Namespace + "/" + edge.ProviderName, "uid:" + edge.ProviderUid}, observationTarget{edge.TenantID, edge.ResourceID, edge.Kind})
+		keys := []string{"object:" + egressCRKind(edge.RefKind) + "/" + edge.Namespace + "/" + edge.ProviderName, relation + ":" + edge.Namespace + "/" + edge.ProviderName, "uid:" + edge.ProviderUid}
+		if !parked {
+			keys = append(keys, "node-network")
+		}
+		bind(keys, target)
 	}
 	for _, a := range attachments {
 		t := observationTarget{a.TenantID, a.AttachmentID, "attachment"}
 		v.generations[t.key()] = a.RequestedGeneration
+		if a.Recovery {
+			v.recovery = append(v.recovery, t)
+		}
 		var consumer *biz.ConsumerSubmission
 		if err := json.Unmarshal(a.ConsumerSnapshot, &consumer); err != nil {
 			return nil, err
@@ -519,7 +576,7 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 		return nil, err
 	}
 	for _, edge := range lbEdges {
-		bind([]string{edge.RelationKey, "lb-capability"}, observationTarget{edge.TenantID, edge.LbID, "load_balancer"})
+		bind([]string{edge.RelationKey}, observationTarget{edge.TenantID, edge.LbID, "load_balancer"})
 	}
 	return v, nil
 }
@@ -564,6 +621,18 @@ func (o *KCObservation) validChanges(v *auditView, keys []string, attachment boo
 	}
 	return true
 }
+
+// Ordinary projection consumes the shared recovery audit. It never starts a
+// full collection for one resource; stale/uncovered facts wait for that audit.
+func (o *KCObservation) cachedSnapshot(now time.Time) (*auditView, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.view == nil || now.Sub(o.view.collected) > o.options.AuditInterval+o.options.AuditJitter {
+		return nil, fmt.Errorf("shared observation is pending")
+	}
+	return o.view, nil
+}
+
 func (o *KCObservation) snapshot(ctx context.Context, after time.Time) (*auditView, error) {
 	if after.IsZero() {
 		after = time.Now().Add(-o.options.AuditInterval - o.options.AuditJitter)
@@ -603,4 +672,24 @@ func (o *KCObservation) Snapshot() map[string]float64 {
 		}
 	}
 	return m
+}
+
+func (o *KCObservation) wakeAudited(ctx context.Context, v *auditView) {
+	ctx, cancel := context.WithTimeout(ctx, o.options.AuditTimeout)
+	defer cancel()
+	for _, t := range v.recovery {
+		var err error
+		q := o.provider.repository.queries
+		switch {
+		case t.kind == "attachment":
+			err = q.WakeAuditedAttachment(ctx, sqlcgen.WakeAuditedAttachmentParams{TenantID: t.tenant, AttachmentID: t.id})
+		case t.tenant == "":
+			err = q.WakeAuditedPlatform(ctx, sqlcgen.WakeAuditedPlatformParams{ResourceID: t.id})
+		default:
+			err = q.WakeAuditedResource(ctx, sqlcgen.WakeAuditedResourceParams{TenantID: t.tenant, ResourceID: t.id})
+		}
+		if err != nil {
+			return
+		} // next shared recovery retains this obligation
+	}
 }

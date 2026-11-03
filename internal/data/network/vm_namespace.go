@@ -185,11 +185,11 @@ func (p *KCProvider) lookupManagedVMNetwork(ctx context.Context, tenant, vpc, su
 		}
 		return ManagedVMNAD{}, biz.Fail(biz.NetworkNotReady, "managed VM network is unavailable")
 	}
-	s, err := p.repository.queries.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: tenant, SubnetID: subnet})
+	s, err := p.repository.readQueries(ctx).GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: tenant, SubnetID: subnet})
 	if err != nil {
 		return ManagedVMNAD{}, databaseFailure(err)
 	}
-	b, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: tenant, ResourceID: subnet})
+	b, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: tenant, ResourceID: subnet})
 	if err != nil {
 		return ManagedVMNAD{}, databaseFailure(err)
 	}
@@ -199,7 +199,7 @@ func (p *KCProvider) lookupManagedVMNetwork(ctx context.Context, tenant, vpc, su
 	if s.VpcID != vpc || b.ClusterID != cluster || b.Namespace != namespace || b.ProviderUid == "" || b.ResourceKind != "subnet" {
 		return ManagedVMNAD{}, biz.Fail(biz.PlacementMismatch, "VM network placement differs")
 	}
-	record, err := p.repository.queries.GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: tenant, ClusterID: cluster})
+	record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: tenant, ClusterID: cluster})
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && ((requireRunnable && !record.Ready) || record.Namespace != namespace)) {
 		if hasLegacy {
 			return legacy, nil

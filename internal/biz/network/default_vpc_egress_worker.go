@@ -49,8 +49,13 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 	stop()
 	if inspectErr != nil {
 		p.Reason = providerReason(inspectErr)
-		p.OperationState = Blocked
-		if e.State == Available {
+		if providerKind(inspectErr) == ProviderUncertain {
+			p.Reason = ProviderUnavailable // A failed read is not an unknown mutation.
+		}
+		if p.Reason != ProviderUnavailable {
+			p.OperationState = Blocked
+		}
+		if e.State == Available && p.Reason != ProviderUnavailable {
 			p.State = Degraded
 		}
 		return finish()

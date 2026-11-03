@@ -104,7 +104,7 @@ func (p *Postgres) CreateVirtualSwitch(ctx context.Context, i biz.VirtualSwitchI
 }
 
 func (p *Postgres) GetVirtualSwitch(ctx context.Context, id string) (biz.VirtualSwitch, error) {
-	r, err := p.queries.GetVirtualSwitch(ctx, sqlcgen.GetVirtualSwitchParams{ResourceID: id})
+	r, err := p.readQueries(ctx).GetVirtualSwitch(ctx, sqlcgen.GetVirtualSwitchParams{ResourceID: id})
 	if err != nil {
 		return biz.VirtualSwitch{}, databaseFailure(err)
 	}

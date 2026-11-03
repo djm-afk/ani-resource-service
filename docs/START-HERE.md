@@ -1,5 +1,7 @@
 # ANI Resource 文档导航
 
+[2026-11-03 网络管理简化](plans/network-management-simplification-20261103.md)：Res 管理意图与结果，KCN 负责底层收敛；正式观察语义见[持续观察规格 v2](specs/cr-observation.md)，实际结果见执行状态。
+
 [LB 使用方式对齐（2026-11-02）](specs/vpc-connectivity-lb.md)：公共 `lb-common`、每 LB 专属 Proxy 和独立于基础 Intranet 的运行准入；实际迁移、前后端和业务验证见[执行状态](execution/status.md#lb-usage-alignment-20261102)。
 
 [公网 EIP 独立绑定与关联展示](specs/vpc-connectivity-lb.md#5-public-eip-与-vpc-公网出站调整)：无基础网络准入、VPC/EIP 同快照关系和 EIP 创建选组；实际验证见[执行状态](execution/status.md#public-eip-workflow-20261030)。

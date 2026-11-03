@@ -61,6 +61,9 @@ func (p *KCProvider) observeTombstone(ctx context.Context, t biz.ProviderTarget,
 			Object       *unstructured.Unstructured
 			Dependencies map[string][]unstructured.Unstructured
 		}{object, candidatesForHash(dependencies)})}
+		if p.observation.valid(v, keys) {
+			proof.CoveredGeneration = t.Requirement.RequestedGeneration
+		}
 		if proof.Covers(t.Requirement) && p.observation.valid(v, keys) {
 			var count int64
 			if b.ResourceKind == "subnet" {

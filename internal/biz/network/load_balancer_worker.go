@@ -84,9 +84,9 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 	cancel()
 	if err != nil {
 		p.ProviderError = err
-		p.Reason = providerReason(err)
+		p.Reason = observationReason(err)
 		p.OperationState, p.Backoff = Blocked, true
-		if p.State == Available {
+		if p.State == Available && p.Reason == ProviderOwnership {
 			p.State = Degraded
 		}
 	} else {

@@ -41,11 +41,11 @@ func TestPublicEgressPrerequisitesWithoutManualVerification(t *testing.T) {
 	}
 	r.target.Kind = "eip"
 	set.all[pods] = nil
-	if egressPrerequisites(r, set) {
-		t.Fatal("missing live provider health was ignored")
+	if !egressPrerequisites(r, set) {
+		t.Fatal("existing ready public resources depend on installation Pod health")
 	}
 	r.pool.Scope = "intranet"
-	if verifiedEgressExit(r, set) {
+	if egressPrerequisites(r, set) {
 		t.Fatal("intranet exit without valid default VPC evidence was accepted")
 	}
 }

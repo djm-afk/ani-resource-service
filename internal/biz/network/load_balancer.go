@@ -285,8 +285,8 @@ func (l *LoadBalancers) Update(ctx context.Context, r UpdateLoadBalancer) (LoadB
 func (l *LoadBalancers) observation(v LoadBalancer) LoadBalancer {
 	now := l.now()
 	stale := func(t *time.Time) bool { return t == nil || t.After(now) || now.Sub(*t) > l.freshness }
-	v.ObservationStale = stale(v.ObservedAt)
-	if stale(v.DataPlaneObservedAt) {
+	v.ObservationStale = v.Reason == ProviderUnavailable || stale(v.ObservedAt)
+	if v.ObservationStale || stale(v.DataPlaneObservedAt) {
 		v.DataPlaneState = "unknown"
 		v.DataPlaneObservedAt = nil
 	}

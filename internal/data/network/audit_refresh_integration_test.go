@@ -13,8 +13,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// Keep the periodic audit out of these scenarios. Recovery must happen inside
-// the actual observation call, using a new complete audit after the event.
+// Keep the periodic audit out of these scenarios. Ordinary reads must wait;
+// explicit critical observations collect a complete audit after the event.
 func startSlowAudit(t *testing.T, provider *data.KCProvider) *data.KCObservation {
 	t.Helper()
 	options := data.DefaultObservationOptions()
@@ -38,7 +38,7 @@ func startSlowAudit(t *testing.T, provider *data.KCProvider) *data.KCObservation
 	return observer
 }
 
-func TestEgressRefreshesInvalidAuditWithoutLosingAppliedFacts(t *testing.T) {
+func TestEgressWaitsForSharedAuditAndCriticalReadPreservesAppliedFacts(t *testing.T) {
 	f, api, _, kube := newBaseKCFixture(t, nil)
 	vpc := baseState(t, f, createBaseVPC(t, f, "refresh").ID, biz.Available)
 	eipID, snatID := baseIDs(t, f, vpc.ID)
@@ -70,6 +70,11 @@ func TestEgressRefreshesInvalidAuditWithoutLosingAppliedFacts(t *testing.T) {
 	awaitNET05A(t, 3*time.Second, func() bool { return observer.Snapshot()["notifications_total"] > before })
 	// Exactly one caller attempt. Retrying this assertion would hide the bug.
 	next, err := provider.Observe(f.ctx, target)
+	if err == nil || !next.Proof.CollectedAt.IsZero() {
+		t.Fatalf("ordinary observation consumed invalid proof: %+v %v", next, err)
+	}
+	target.Direct = true
+	next, err = provider.Observe(f.ctx, target)
 	if err != nil || !next.Ready || next.Egress == nil || next.Egress.AppliedEnabled == nil || !*next.Egress.AppliedEnabled || next.Proof.CollectedAt.Before(changedAt) {
 		t.Fatalf("invalid cached audit leaked into SNAT status instead of fresh collection: %+v %v", next, err)
 	}
@@ -85,7 +90,7 @@ func TestEgressRefreshesInvalidAuditWithoutLosingAppliedFacts(t *testing.T) {
 	}
 }
 
-func TestLBRefreshesInvalidAuditAndStillRejectsReusedBackendIdentity(t *testing.T) {
+func TestLBWaitsForSharedAuditAndCriticalReadRejectsReusedBackendIdentity(t *testing.T) {
 	f := newLBAdmissionFixture(t)
 	created, err := f.lbs.Create(f.f.ctx, f.request)
 	if err != nil {
@@ -139,6 +144,11 @@ func TestLBRefreshesInvalidAuditAndStillRejectsReusedBackendIdentity(t *testing.
 	f.api.Change("vnicips", ip, false)
 	awaitNET05A(t, 3*time.Second, func() bool { return observer.Snapshot()["notifications_total"] > before })
 	next, err := provider.ObserveLoadBalancer(f.f.ctx, work)
+	if err == nil || !next.Proof.CollectedAt.IsZero() {
+		t.Fatalf("ordinary LB observation consumed invalid proof: %+v %v", next, err)
+	}
+	work.ActiveOperation = true
+	next, err = provider.ObserveLoadBalancer(f.f.ctx, work)
 	if err != nil || len(next.Members) != 1 || !next.Members[0].Eligible || next.Proof.CollectedAt.Before(changedAt) {
 		t.Fatalf("invalid cached LB audit did not refresh in same call: %+v %v", next.Members, err)
 	}

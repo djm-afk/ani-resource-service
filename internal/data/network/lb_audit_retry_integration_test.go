@@ -22,7 +22,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// Exercise a real worker and PG persistence while two HTTP Watch renewals
+// Exercise a real worker and PG persistence while two HTTP Watch expirations
 // invalidate an audit. Provider conditions and identities stay unchanged.
 type lbAuditRetryTransport struct{ next http.RoundTripper }
 
@@ -76,7 +76,7 @@ func lbAuditRetryObjects(api *controlled.Server) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
+func TestLBOrdinaryObservationWaitsForSharedAuditAndCriticalRelistCompletes(t *testing.T) {
 	// The retry policy is exposure-independent. Keep the combined public/private
 	// entry here; all three exposures retain actual-adapter lifecycle coverage.
 	for _, exposure := range []string{"public_private"} {
@@ -133,7 +133,7 @@ func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 				api.ServeHTTP(response, r)
 				ticker := time.NewTicker(time.Millisecond)
 				defer ticker.Stop()
-				// Two actual renewals while this one complete LIST remains in flight.
+				// Two actual expirations/relist boundaries while this LIST remains in flight.
 				// Waiting on observed boundaries avoids a guessed sleep duration.
 				for i := 0; i < 2; i++ {
 					var session *watchSession
@@ -156,7 +156,7 @@ func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 						}
 					}
 					before := observer.Load().Snapshot()["source_boundaries_total"]
-					session.cancel()
+					api.Disconnect(410)
 					for observer.Load().Snapshot()["source_boundaries_total"] <= before {
 						select {
 						case <-ticker.C:
@@ -228,10 +228,17 @@ func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 			defer stopInitialization()
 			initializationTicker := time.NewTicker(25 * time.Millisecond)
 			defer initializationTicker.Stop()
+			var sourcesReadyAt time.Time
 			for {
 				var ready bool
-				if f.f.owner.QueryRow(initializationCtx, `SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1`, expected.Fingerprint).Scan(&ready) == nil && ready && obs.Snapshot()["source_boundaries_total"] >= 24 {
-					break
+				if f.f.owner.QueryRow(initializationCtx, `SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1`, expected.Fingerprint).Scan(&ready) == nil && ready && obs.Snapshot()["source_synced"] == 1 {
+					if sourcesReadyAt.IsZero() {
+						sourcesReadyAt = time.Now()
+					}
+					var observedAt time.Time
+					if f.f.owner.QueryRow(initializationCtx, `SELECT observed_at FROM network_lb_capabilities WHERE cluster_id='test-cluster'`).Scan(&observedAt) == nil && observedAt.After(sourcesReadyAt) {
+						break
+					}
 				}
 				select {
 				case <-initializationTicker.C:
@@ -277,6 +284,29 @@ func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 			if err != nil || probe.err != nil || baseline.ConfigurationState != "configured" || baseline.ObservationStale {
 				t.Fatalf("measured-provider precondition: lb=%+v adapter=%v read=%v", baseline, probe.err, err)
 			}
+			// A durable parent hint is not a changed Provider fact. Reuse the
+			// complete unchanged view without renewing its collection timestamp.
+			hinted := finishedWork
+			hinted.Requirement.RequestedGeneration++
+			hinted.Requirement.Hash = probe.observation.Proof.Hash
+			hinted.Requirement.AppliedAt = time.Now()
+			lists := obs.Snapshot()["requests_LIST_pods_total"]
+			hintResult, hintErr := provider.ObserveLoadBalancer(f.f.ctx, hinted)
+			if hintErr != nil || !hintResult.GeneratedReady || !hintResult.Proof.CollectedAt.Equal(probe.observation.Proof.CollectedAt) || hintResult.Proof.CoveredGeneration != hinted.Requirement.RequestedGeneration || obs.Snapshot()["requests_LIST_pods_total"] != lists {
+				t.Fatalf("unchanged LB hint must reuse the original proof without LIST: proof=%+v error=%v", hintResult.Proof, hintErr)
+			}
+			attachmentID := baseline.Backends[0].AttachmentID
+			if _, err = f.f.owner.Exec(f.f.ctx, `UPDATE network_attachments SET observed_at=clock_timestamp()-interval '10 minutes' WHERE tenant_id=$1 AND attachment_id=$2`, f.f.tenant, attachmentID); err != nil {
+				t.Fatal(err)
+			}
+			step()
+			pending, err := f.lbs.Get(f.f.ctx, "", initial.ID)
+			if err != nil || pending.State != biz.Available || pending.ConfigurationState != "configured" || !pending.ObservationStale || pending.Reason != biz.ProviderUnavailable || !pending.ObservedAt.Equal(*baseline.ObservedAt) {
+				t.Fatalf("old attachment projection fabricated a backend failure or renewed time: %+v %v", pending, err)
+			}
+			if _, err = f.f.owner.Exec(f.f.ctx, `UPDATE network_attachments SET observed_at=clock_timestamp() WHERE tenant_id=$1 AND attachment_id=$2`, f.f.tenant, attachmentID); err != nil {
+				t.Fatal(err)
+			}
 			beforeNotifications := obs.Snapshot()["notifications_total"]
 			pod := f.api.Object("pods", "tenant-"+f.f.tenant, "lb-backend")
 			metadata := pod["metadata"].(map[string]any)
@@ -290,9 +320,21 @@ func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 			awaitNET05A(t, 3*time.Second, func() bool { return obs.Snapshot()["notifications_total"] > beforeNotifications })
 			factsBefore := lbAuditRetryObjects(f.api)
 			armed.Store(true)
-			step() // The only faulted attempt; no retry-until-green assertion.
-			armed.Store(false)
+			step() // An ordinary invalidated projection must not start a LIST.
 			actual, err := f.lbs.Get(f.f.ctx, "", initial.ID)
+			if err != nil || actual.State != biz.Available || !actual.ObservationStale || probe.err == nil || captured.Load() {
+				t.Fatalf("ordinary observation fabricated health or started a full collection: state=%s stale=%v error=%v captured=%v", actual.State, actual.ObservationStale, probe.err, captured.Load())
+			}
+			criticalWork := finishedWork
+			criticalWork.ActiveOperation = true
+			criticalCtx, stopCritical := context.WithTimeout(f.f.ctx, policy.RequestTimeout)
+			criticalResult, criticalErr := provider.ObserveLoadBalancer(criticalCtx, criticalWork)
+			stopCritical()
+			armed.Store(false)
+			if criticalErr != nil || !criticalResult.GeneratedReady || criticalResult.Proof.CollectedAt.IsZero() {
+				t.Fatalf("critical observation did not survive relists: %+v %v", criticalResult, criticalErr)
+			}
+			actual, err = f.lbs.Get(f.f.ctx, "", initial.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -308,10 +350,10 @@ func TestLBFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 			if probe.finished.After(probe.deadline.Add(time.Second)) {
 				t.Fatal("adapter exceeded caller deadline")
 			}
-			if actual.ConfigurationState != "configured" || actual.ObservationStale || probe.err != nil {
+			if actual.ConfigurationState != "configured" || !actual.ObservationStale || actual.State != biz.Available {
 				t.Fatalf("stable CR facts degraded: exposure=%s state=%s reason=%s stale=%v elapsed=%s remaining=%s error=%v", exposure, actual.ConfigurationState, actual.Reason, actual.ObservationStale, probe.finished.Sub(probe.started), probe.deadline.Sub(probe.finished), probe.err)
 			}
-			t.Logf("%s configured/fresh after %d boundaries; elapsed=%s remaining=%s", exposure, boundaries.Load(), probe.finished.Sub(probe.started), probe.deadline.Sub(probe.finished))
+			t.Logf("%s retains configured/available with a stale warning; critical observation covers %d relist boundaries", exposure, boundaries.Load())
 			// A continuously invalidated audit must not extend the caller's
 			// deadline or return partial proof. No-deadline callers get only
 			// the original bounded fallback, never an infinite retry loop.

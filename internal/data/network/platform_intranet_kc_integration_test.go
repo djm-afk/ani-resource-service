@@ -100,10 +100,10 @@ func TestIntranetKCPlatformActualAdapterObservationAndRecovery(t *testing.T) {
 	if spec["type"] != "Intranet" || spec["gateway"] != "kcn-system/kcn-cluster" || spec["underlayConfig"] != nil {
 		t.Fatal("actual adapter emitted wrong intranet spec", spec)
 	}
-	config := api.Object("configmaps", "kcn-system", "kcn-config")
-	saved := config["data"].(map[string]any)["intranetNetworks"]
-	config["data"].(map[string]any)["intranetNetworks"] = "- 192.168.0.0/16\n"
-	api.Change("configmaps", config, false)
+	gateway := api.Object("vpcs", "kcn-system", "kcn-cluster")
+	conditions := gateway["status"].(map[string]any)["conditions"].([]any)
+	conditions[2].(map[string]any)["status"] = "False"
+	api.Change("vpcs", gateway, false)
 	f.drive(t, func() bool {
 		v, err := f.e.GetPlatform(f.ctx, "intranet_pool", pool.ID)
 		return err == nil && v.State == biz.Degraded
@@ -112,8 +112,8 @@ func TestIntranetKCPlatformActualAdapterObservationAndRecovery(t *testing.T) {
 	if err != nil || caps.BaseConnectivity.Ready || !caps.PublicAddress.Ready {
 		t.Fatal("intranet route loss coupled public capability", caps, err)
 	}
-	config["data"].(map[string]any)["intranetNetworks"] = saved
-	api.Change("configmaps", config, false)
+	conditions[2].(map[string]any)["status"] = "True"
+	api.Change("vpcs", gateway, false)
 	f.drive(t, func() bool {
 		v, err := f.e.GetPlatform(f.ctx, "intranet_pool", pool.ID)
 		return err == nil && v.State == biz.Available
@@ -122,7 +122,7 @@ func TestIntranetKCPlatformActualAdapterObservationAndRecovery(t *testing.T) {
 	if after["metadata"].(map[string]any)["uid"] != object["metadata"].(map[string]any)["uid"] {
 		t.Fatal("observation recovery recreated pool")
 	}
-	gateway := api.Object("vpcs", "kcn-system", "kcn-cluster")
+	gateway = api.Object("vpcs", "kcn-system", "kcn-cluster")
 	gateway["metadata"].(map[string]any)["uid"] = uuid.NewString()
 	api.Change("vpcs", gateway, false)
 	f.drive(t, func() bool {

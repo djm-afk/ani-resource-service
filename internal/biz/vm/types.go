@@ -28,6 +28,13 @@ var (
 	ErrConsole     = errors.New("VM_CONSOLE_TARGET_CHANGED")
 )
 
+// NativeNotSubmittedError confirms that a native command did not reach its
+// submission boundary. It must never describe a lost or rejected PUT response.
+type NativeNotSubmittedError struct{ Err error }
+
+func (e *NativeNotSubmittedError) Error() string { return e.Err.Error() }
+func (e *NativeNotSubmittedError) Unwrap() error { return e.Err }
+
 const Owner = "ani-resource-service"
 const CreateAction = "/vm.v1.VMService/AcceptCreate"
 const DeleteAction = "/vm.v1.VMService/AcceptDelete"

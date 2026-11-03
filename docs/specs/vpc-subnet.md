@@ -1,5 +1,7 @@
 # 租户 VPC / Subnet 首片规格
 
+2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
+
 > 2026-10-19：Notebook 实例接入新增[受控工作负载合同](instance-configuration-network.md#6-res-network-支持-notebook-的-pod-替换)。下文不同 Pod UID 冲突和 Consumer v1 描述继续适用于原 `single_pod` 模式；`controller_managed` 使用持久版本、独立 owner 链核验和当前/历史/待核验关系，不能据新模式放松旧模式的身份保护。实际交付只见[执行状态](../execution/status.md#instance-configuration-and-network-2026-10-19)。
 
 > 2026-09-14 的[统一方案](vpc-connectivity-lb.md)增加 VPC 基础内网创建/删除/观察、既有 VPC 补齐和 LB 占用。这些目标调整接替本文件相应的创建完成和删除准入限制，不改写首片历史验收结果；其余 Subnet/Attachment 协议继续适用。

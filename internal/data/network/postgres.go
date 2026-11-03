@@ -28,6 +28,8 @@ type Placement struct {
 }
 
 type Postgres struct {
+	sharedObservation     bool
+	networkProvider       *KCProvider
 	namespaceResolver     func(context.Context, string) (tenantnamespace.Identity, error)
 	securityGroupObserver biz.SecurityGroupConsumerObserver
 	vmNetworks            biz.VMNetworkResolver
@@ -39,6 +41,21 @@ type Postgres struct {
 	pool                  *pgxpool.Pool
 	queries               *sqlcgen.Queries
 	placement             Placement
+}
+
+// Provider reads invoked by admission must use its transaction connection.
+// Borrowing a second connection while holding parent locks can exhaust the pool.
+type admissionQueriesKey struct{}
+
+func (p *Postgres) readQueries(ctx context.Context) *sqlcgen.Queries {
+	if q, ok := ctx.Value(admissionQueriesKey{}).(*sqlcgen.Queries); ok {
+		return q
+	}
+	return p.queries
+}
+
+func admissionTransaction(ctx context.Context) bool {
+	return ctx.Value(admissionQueriesKey{}) != nil
 }
 
 func OpenPostgres(ctx context.Context, dsn string, placement Placement) (*Postgres, error) {

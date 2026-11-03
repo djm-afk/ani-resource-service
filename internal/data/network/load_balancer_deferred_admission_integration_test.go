@@ -76,6 +76,11 @@ func TestLBDeferredDatabaseAdmissionReplayOfflineAndDeletion(t *testing.T) {
 	if _, err = f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: lb.Version, IdempotencyKey: "old-version", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Name: "stale", UpdateMask: []string{"name"}}}); biz.ReasonOf(err) != biz.VersionConflict {
 		t.Fatal("stale optimistic update", err)
 	}
+	// Activation checks current native readiness; a stale database projection
+	// alone no longer means the runtime is unavailable.
+	vpc := f.api.Object("vpcs", "tenant-"+f.f.tenant, strings.Replace(f.vpc.ID, "_", "-", 1))
+	vpc["status"].(map[string]any)["conditions"] = []any{}
+	f.api.Change("vpcs", vpc, false)
 	activation := updated.LoadBalancer.Listeners[0]
 	activationInput := biz.LoadBalancerListenerInput{ID: activation.ID, Name: activation.Name, Protocol: activation.Protocol, Port: &activation.Port, Backends: f.request.Backends}
 	if _, err = f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: updated.LoadBalancer.Version, IdempotencyKey: "offline-activation", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{activationInput}, UpdateMask: []string{"listeners"}}}); biz.ReasonOf(err) != biz.ParentNotReady {

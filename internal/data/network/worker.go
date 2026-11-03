@@ -178,7 +178,7 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 	if err != nil {
 		return databaseFailure(err)
 	}
-	if work.Resource.Kind == "vpc" {
+	if work.Resource.Kind == "vpc" && (progress.Observed || progress.Reason == biz.ProviderOwnership) {
 		var observed *time.Time
 		if progress.Observed {
 			observed = &progress.Proof.CollectedAt
@@ -259,7 +259,7 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 	}
 	if err := affected(q.ReleaseLease(ctx, sqlcgen.ReleaseLeaseParams{
 		TenantID: row.TenantID, ResourceID: row.ID, Owner: &work.Owner, Epoch: work.Epoch, DelayMicros: progress.NextDelay.Microseconds(),
-		CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, work.Requirement), Observed: progress.Observed, EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff,
+		CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, work.Requirement), Observed: progress.Observed, EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, Park: p.parkResource(work, progress),
 	})); err != nil {
 		return err
 	}
@@ -345,4 +345,18 @@ func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, e
 		return biz.VPC{}, databaseFailure(err)
 	}
 	return vpc(row), nil
+}
+
+// A successful cleanup retires only its timer. The original binding stays in
+// the observer index so an actual late object can still wake its management task.
+func (p *Postgres) parkResource(w biz.Work, v biz.Progress) bool {
+	// Preserve the historical anomaly without asserting cleanup. Only an exact
+	// object event or an explicit recovery action can change an identity conflict.
+	if p.sharedObservation && w.Resource.State == biz.Deleted && !w.ActiveOperation && w.PendingAction == "" && v.Reason == biz.ProviderOwnership {
+		return true
+	}
+	if !v.Observed || v.Backoff || v.Reason != "" || (w.ActiveOperation && v.OperationState != biz.Succeeded) || (w.PendingAction != "" && !v.ClearPending) {
+		return false
+	}
+	return (v.State == biz.Deleted && v.ClearPending && v.Identity != "") || (p.sharedObservation && v.State == biz.Available)
 }

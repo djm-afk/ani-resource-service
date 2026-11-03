@@ -42,7 +42,7 @@ func sgSaveTarget(ctx context.Context, q *db.Queries, v biz.SecurityGroupBinding
 	return q.UpsertSecurityGroupTarget(ctx, db.UpsertSecurityGroupTargetParams{TenantID: v.TenantID, TargetType: v.TargetType, TargetID: v.TargetID, Version: v.Version, Payload: sgJSON(v)})
 }
 func (p *Postgres) GetSecurityGroup(ctx context.Context, tenant, id string) (biz.SecurityGroup, error) {
-	r, e := p.queries.GetSecurityGroupRow(ctx, db.GetSecurityGroupRowParams{TenantID: tenant, SecurityGroupID: id})
+	r, e := p.readQueries(ctx).GetSecurityGroupRow(ctx, db.GetSecurityGroupRowParams{TenantID: tenant, SecurityGroupID: id})
 	if e != nil {
 		return biz.SecurityGroup{}, databaseFailure(e)
 	}
@@ -50,7 +50,7 @@ func (p *Postgres) GetSecurityGroup(ctx context.Context, tenant, id string) (biz
 	if e != nil {
 		return v, e
 	}
-	v.BoundResourceCount, e = p.queries.SecurityGroupReferenceCount(ctx, db.SecurityGroupReferenceCountParams{TenantID: tenant, SecurityGroupID: id})
+	v.BoundResourceCount, e = p.readQueries(ctx).SecurityGroupReferenceCount(ctx, db.SecurityGroupReferenceCountParams{TenantID: tenant, SecurityGroupID: id})
 	return v, databaseFailure(e)
 }
 func (p *Postgres) ListSecurityGroups(ctx context.Context, f biz.SecurityGroupFilter) ([]biz.SecurityGroup, int64, error) {

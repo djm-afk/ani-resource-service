@@ -165,6 +165,9 @@ func TestVMAutoNetworkPGBackfillsExistingSubnetAndPinsAcrossRestart(t *testing.T
 	api.mu.Unlock()
 	legacyExpectation := biz.VMNetworkExpectation{NADName: legacy.NADName, NADUID: legacy.NADUID, NADConfigDigest: legacy.NADConfigDigest}
 	selection := biz.VMNetworkSelection{TenantID: f.r.TenantID, VPCID: f.r.VPCID, SubnetID: f.r.SubnetID, ClusterID: f.r.ClusterID, Namespace: f.r.Namespace, KCNSubnetRef: policy.KCNSubnetRef}
+	if err := f.owner.QueryRow(ctx, "SELECT binding_id||':'||provider_uid FROM network_provider_bindings WHERE tenant_id=$1 AND subnet_id=$2", f.r.TenantID, f.r.SubnetID).Scan(&selection.BindingRevision); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.provider.ResolveVMNetwork(ctx, selection, legacyExpectation); err != nil {
 		t.Fatal("automatic preparation invalidated frozen static VM identity", err)
 	}

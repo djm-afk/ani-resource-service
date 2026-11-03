@@ -114,7 +114,7 @@ func (n *Network) DeleteSubnet(ctx context.Context, tenant, id string) (Subnet, 
 	return n.subnetObservation(value), err
 }
 func (n *Network) subnetObservation(value Subnet) Subnet {
-	value.ObservationStale = value.ObservedAt == nil || n.now().Sub(*value.ObservedAt) > n.freshness
+	value.ObservationStale = value.Reason == ProviderUnavailable || value.ObservedAt == nil || value.ObservedAt.After(n.now()) || n.now().Sub(*value.ObservedAt) > n.freshness
 	return value
 }
 func validSubnetID(id string) bool {

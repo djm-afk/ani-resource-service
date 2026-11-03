@@ -245,7 +245,15 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 		if e = w.repo.Checkpoint(ctx, *o, *v); e != nil {
 			return e
 		}
-		return w.native.Start(ctx, *v)
+		err := w.native.Start(ctx, *v)
+		var notSubmitted *NativeNotSubmittedError
+		if errors.As(err, &notSubmitted) {
+			// The adapter returned before submitting Start. Persist that receipt
+			// so the same operation can retry after its preconditions recover.
+			// A crash or lost native response still retains the checkpoint.
+			o.Pending = nil
+		}
+		return err
 	case "stop", "force-stop":
 		v.Desired = "Stopped"
 		if e != nil {

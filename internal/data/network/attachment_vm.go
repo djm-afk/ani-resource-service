@@ -56,6 +56,14 @@ func (p *Postgres) SetVMNetworkResolver(resolver biz.VMNetworkResolver, freshnes
 var vmNADs = schema.GroupVersionResource{Group: "k8s.cni.cncf.io", Version: "v1", Resource: "network-attachment-definitions"}
 
 func (p *KCProvider) ResolveVMNetwork(ctx context.Context, s biz.VMNetworkSelection, e biz.VMNetworkExpectation) (biz.VMPrimaryPlan, error) {
+	var err error
+	ctx, err = p.namespaceContext(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace})
+	if err != nil {
+		return biz.VMPrimaryPlan{}, err
+	}
+	if err := p.verifyVMNetworkResources(ctx, s); err != nil {
+		return biz.VMPrimaryPlan{}, err
+	}
 	return p.resolveVMNetwork(ctx, s, e, true)
 }
 
@@ -74,19 +82,16 @@ func (p *KCProvider) resolveVMNetwork(ctx context.Context, s biz.VMNetworkSelect
 	if !biz.ValidVMNetworkExpectation(&e) || s.ClusterID != v.ClusterID || s.VPCID != v.VPCID || s.KCNSubnetRef != v.KCNSubnetRef || e.NADName != v.NADName || e.NADUID != v.NADUID || e.NADConfigDigest != v.NADConfigDigest {
 		return biz.VMPrimaryPlan{}, biz.Fail(biz.AttachmentConflict, "managed VM NAD differs from frozen network selection")
 	}
-	if err := p.verifyTenantNamespace(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace}); err != nil {
-		return biz.VMPrimaryPlan{}, err
-	}
-	ns, err := p.client.Resource(namespaces).Get(ctx, s.Namespace, metav1.GetOptions{})
+	ns, err := p.tenantNamespace(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace})
 	if err != nil {
-		return biz.VMPrimaryPlan{}, readFailure(err)
+		return biz.VMPrimaryPlan{}, err
 	}
 	if string(ns.GetUID()) != v.NamespaceUID || ns.GetDeletionTimestamp() != nil {
 		return biz.VMPrimaryPlan{}, biz.Fail(biz.AttachmentConflict, "VM namespace identity changed")
 	}
 	var managedRecord *sqlcgen.NetworkVmNamespace
 	if !static {
-		record, err := p.repository.queries.GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID})
+		record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID})
 		if err != nil {
 			return biz.VMPrimaryPlan{}, databaseFailure(err)
 		}
@@ -182,15 +187,8 @@ func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareA
 	if err != nil {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
 	}
-	now, err := p.queries.DatabaseTime(ctx)
-	if err != nil {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_freshness", databaseFailure(err))
-	}
-	if freshness <= 0 || v.NetworkVpc.State != "available" || s.State != "available" || v.NetworkVpc.ObservedAt == nil || s.ObservedAt == nil || now.Sub(*v.NetworkVpc.ObservedAt) > freshness || now.Sub(*s.ObservedAt) > freshness {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_freshness", biz.Fail(biz.NetworkNotReady, "fresh available VM network required"),
-			"vpc_state", v.NetworkVpc.State, "subnet_state", s.State,
-			"vpc_observed", v.NetworkVpc.ObservedAt != nil, "subnet_observed", s.ObservedAt != nil,
-			"vpc_observation_age_ms", vmNetworkObservationAge(now, v.NetworkVpc.ObservedAt), "subnet_observation_age_ms", vmNetworkObservationAge(now, s.ObservedAt), "freshness_limit_ms", freshness.Milliseconds())
+	if !networkManagementOpen(v.NetworkVpc.State, v.NetworkVpc.Reason) || !networkManagementOpen(s.State, s.Reason) {
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_management", biz.Fail(biz.NetworkNotReady, "VM network management has not completed or is closed"))
 	}
 	if r.VPCID != "" && r.VPCID != s.VpcID {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", biz.Fail(biz.NetworkNotReady, "fresh available VM network required"))
@@ -207,13 +205,6 @@ func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareA
 		return plan, vmNetworkPreflightFailure(ctx, r, "network_identity", err)
 	}
 	return plan, nil
-}
-
-func vmNetworkObservationAge(now time.Time, observed *time.Time) int64 {
-	if observed == nil {
-		return -1
-	}
-	return now.Sub(*observed).Milliseconds()
 }
 
 func vmNetworkPreflightFailure(ctx context.Context, r biz.PrepareAttachment, stage string, err error, details ...any) error {
@@ -255,4 +246,31 @@ func (p *Postgres) vmCurrentAddresses(ctx context.Context, a biz.Attachment, raw
 		}
 	}
 	return out
+}
+
+func networkManagementOpen(state, reason string) bool {
+	return (state == "available" || state == "degraded" || state == "provisioning") && reason != string(biz.ProviderOwnership)
+}
+
+// Command admission verifies only the selected original CRs. A background
+// projection's age neither authorizes the command nor prevents this current read.
+func (p *KCProvider) verifyVMNetworkResources(ctx context.Context, s biz.VMNetworkSelection) error {
+	q := p.repository.readQueries(ctx)
+	subnet, err := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: s.TenantID, SubnetID: s.SubnetID})
+	if err != nil {
+		return databaseFailure(err)
+	}
+	b, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: s.TenantID, ResourceID: s.SubnetID})
+	if err != nil {
+		return databaseFailure(err)
+	}
+	if subnet.VpcID != s.VPCID || b.Namespace != s.Namespace || b.ClusterID != s.ClusterID || b.BindingID+":"+b.ProviderUid != s.BindingRevision || b.Namespace+"/"+b.ProviderName != s.KCNSubnetRef {
+		return biz.Fail(biz.AttachmentConflict, "VM selected network binding changed")
+	}
+	for _, id := range []string{s.VPCID, s.SubnetID} {
+		if _, err := p.currentNetworkResource(ctx, q, s.TenantID, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

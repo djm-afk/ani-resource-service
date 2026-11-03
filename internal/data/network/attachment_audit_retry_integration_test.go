@@ -27,7 +27,7 @@ func (t attachmentAuditTransport) RoundTrip(r *http.Request) (*http.Response, er
 	return t.next.RoundTrip(copy)
 }
 
-func TestAttachmentFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
+func TestAttachmentOrdinaryProjectionWaitsAndCleanupSurvivesRelists(t *testing.T) {
 	// End one real HTTP Watch while each of the first two complete audits is
 	// in flight. The third audit is stable, inside the original caller budget.
 	type watchSession struct {
@@ -81,9 +81,7 @@ func TestAttachmentFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.
 			}
 		}
 		boundary := observation.Load().Snapshot()["source_boundaries_total"]
-		for _, session := range sessions {
-			session.cancel()
-		}
+		api.Disconnect(410)
 		// Wait for the observed continuity boundary, without depending on an
 		// arbitrary delay or a stale bootstrap Watch handle.
 		for observation.Load().Snapshot()["source_boundaries_total"] <= boundary {
@@ -128,6 +126,13 @@ func TestAttachmentFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.
 		t.Fatalf("initial Attachment facts: %+v %v", first, err)
 	}
 	work.RequireFreshRelations = false
+	// Parent-only durable hints must not starve an unchanged attachment view.
+	work.Requirement.RequestedGeneration = first.Proof.CoveredGeneration + 1
+	unchanged, unchangedErr := provider.ObserveAttachment(f.f.ctx, work)
+	if unchangedErr != nil || !unchanged.Exists || unchanged.Proof.CollectedAt != first.Proof.CollectedAt || unchanged.Proof.CoveredGeneration != work.Requirement.RequestedGeneration {
+		t.Fatalf("unrelated hint starved or renewed unchanged facts: %+v %v", unchanged, unchangedErr)
+	}
+	work.Requirement.RequestedGeneration = 0
 	before := observer.Snapshot()["notifications_total"]
 	pod := f.api.Object("pods", a.Namespace, a.PodName)
 	annotations := pod["metadata"].(map[string]any)["annotations"].(map[string]any)
@@ -138,7 +143,13 @@ func TestAttachmentFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.
 	armed.Store(true)
 	ctx, cancel := context.WithTimeout(f.f.ctx, 12*time.Second)
 	defer cancel()
-	// One caller attempt: repeating this call would hide the premature failure.
+	// Stable projection does not repeat a cluster-wide collection. Cleanup
+	// independently requests a post-closure collection and must survive relists.
+	ordinary, ordinaryErr := provider.ObserveAttachment(ctx, work)
+	if ordinaryErr == nil || !ordinary.Proof.CollectedAt.IsZero() || collections.Load() != 0 {
+		t.Fatalf("ordinary projection started a full collection or returned stale proof: %+v %v", ordinary, ordinaryErr)
+	}
+	work.RequireFreshRelations = true
 	next, err := provider.ObserveAttachment(ctx, work)
 	if err != nil || !next.Exists || next.PodUID != a.PodUID || next.Proof.CollectedAt.Before(changedAt) || boundaries.Load() != 2 {
 		t.Fatalf("stable audit within caller budget was not consumed after two Watch boundaries: collections=%d boundaries=%d observation=%+v err=%v", collections.Load(), boundaries.Load(), next, err)

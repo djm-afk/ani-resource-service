@@ -175,7 +175,7 @@ func (p *Postgres) finishPlatform(ctx context.Context, w biz.Work, progress biz.
 			return databaseFailure(err)
 		}
 	}
-	if err = affected(q.ReleasePlatformLease(ctx, sqlcgen.ReleasePlatformLeaseParams{ResourceID: r.ResourceID, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: progress.NextDelay.Microseconds(), CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, w.Requirement), Observed: progress.Observed, EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff})); err != nil {
+	if err = affected(q.ReleasePlatformLease(ctx, sqlcgen.ReleasePlatformLeaseParams{ResourceID: r.ResourceID, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: progress.NextDelay.Microseconds(), CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, w.Requirement), Observed: progress.Observed, EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, Park: p.parkResource(w, progress)})); err != nil {
 		return err
 	}
 	return databaseFailure(tx.Commit(ctx))

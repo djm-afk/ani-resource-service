@@ -238,3 +238,7 @@ Gov 当前动作授权后，若删除已持久受理，仅调用该只读查询�
 `runtime.interfaces` 独立展示 VMI 报告的 MAC、来宾网卡名、地址与来源，不替代 Network 的当前地址资格。文件系统来自 QGA；`filesystems_state` 区分 `AVAILABLE/UNSUPPORTED/UNAVAILABLE/NOT_QUERIED`。容量字段为 optional uint64，缺失与真实零值不同；按挂载点展示，不凭 vdX 名称推断 owner 云盘绑定。查询时间不代表 QGA 在该时刻重新采样，容量也不构成计量账本。所需只读 Kubernetes 权限见 [guest-info-rbac.yaml](../../deployments/vm/guest-info-rbac.yaml)，部署另行执行。
 
 快照 `name` 来自原创建名称，`created_at` 来自校验归属后的原生 VirtualMachineSnapshot metadata.creationTimestamp，并随 owner 观察持久保存。旧记录未保存该值时保持空，不以 observed_at 或当前时间回填。
+
+### 2026-11-03 网络准入依据
+
+网络预检针对同一租户原 Namespace UID、VPC/Subnet binding UID、当前 CR 配置/代次/Ready，以及原 NAD/VM 网络策略完成核验；仅投影超过展示阈值不再拒绝动作。可选基础 EIP/SNAT 不阻断内网接入；管理侧删除、身份冲突或未知发送仍关闭准入。核验不续写投影时间，不触发全局依赖 LIST，沿用原事务/租约与幂等协议。

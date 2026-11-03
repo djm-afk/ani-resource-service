@@ -45,12 +45,12 @@ func (p *DefaultEgressKCProvider) identityObject(ctx context.Context, i biz.Defa
 	}
 	return vpc, nil
 }
-func (p *DefaultEgressKCProvider) poolSet(ctx context.Context, poolID string, cleanup bool) (egressResolved, egressReadSet, bool, error) {
+func (p *DefaultEgressKCProvider) poolSet(ctx context.Context, poolID string, cleanup, critical bool) (egressResolved, egressReadSet, bool, error) {
 	b, err := p.provider.platformBinding(ctx, "public_pool", poolID)
 	if err != nil {
 		return egressResolved{}, egressReadSet{}, false, err
 	}
-	r, err := p.provider.resolveEgress(ctx, biz.ProviderTarget{Kind: "public_pool", ResourceID: poolID, BindingID: b.BindingID, KnownIdentity: b.ProviderUid, Direct: true, Deleting: cleanup})
+	r, err := p.provider.resolveEgress(ctx, biz.ProviderTarget{Kind: "public_pool", ResourceID: poolID, BindingID: b.BindingID, KnownIdentity: b.ProviderUid, Direct: critical, Deleting: cleanup})
 	if err != nil {
 		return r, egressReadSet{}, false, err
 	}
@@ -61,7 +61,7 @@ func (p *DefaultEgressKCProvider) poolSet(ctx context.Context, poolID string, cl
 		r.deviceID = ""
 		r.virtualSwitch = nil
 	} // Cleanup does not require healthy hardware.
-	set, err := p.provider.readEgressSet(ctx, r, true)
+	set, err := p.provider.readEgressSet(ctx, r, critical)
 	if err != nil {
 		return r, set, false, err
 	}
@@ -70,10 +70,7 @@ func (p *DefaultEgressKCProvider) poolSet(ctx context.Context, poolID string, cl
 		return r, set, false, err
 	}
 	// Reuse the joint control-plane, complete device wiring and deployment proof.
-	ready := o.Exists && o.Ready && (!set.deviceRequired || set.deviceReady) && verifiedEgressExit(r, set)
-	c := r.pool
-	c.DefaultVpcName = p.identity.Name
-	ready = ready && controllerDefaultGateway(c, set.all[pods])
+	ready := o.Exists && o.Ready && (!set.deviceRequired || set.deviceReady)
 	return r, set, ready, nil
 }
 func (p *DefaultEgressKCProvider) ValidateDefaultVPCEgress(ctx context.Context, i biz.DefaultVPCIdentity, poolID string) (biz.DefaultEgressPoolProof, error) {
@@ -81,11 +78,13 @@ func (p *DefaultEgressKCProvider) ValidateDefaultVPCEgress(ctx context.Context, 
 	if err != nil {
 		return biz.DefaultEgressPoolProof{}, err
 	}
-	r, set, ready, err := p.poolSet(ctx, poolID, false)
+	r, set, ready, err := p.poolSet(ctx, poolID, false, true)
 	if err != nil {
 		return biz.DefaultEgressPoolProof{}, err
 	}
-	if !ready || !goodConditions(vpc, "Valid", "Initialized", "Ready") || crInt(vpc, "status", "observedGeneration") != vpc.GetGeneration() {
+	c := r.pool
+	c.DefaultVpcName = p.identity.Name
+	if !ready || len(providerImages(set.all[pods])) == 0 || !controllerDefaultGateway(c, set.all[pods]) || !goodConditions(vpc, "Valid", "Initialized", "Ready") || crInt(vpc, "status", "observedGeneration") != vpc.GetGeneration() {
 		return biz.DefaultEgressPoolProof{}, &biz.ProviderError{Kind: biz.ProviderTemporary}
 	}
 	return biz.DefaultEgressPoolProof{Revision: r.pool.ConfigRevision, ProviderUID: r.binding.ProviderUid, Hash: contentHash([]string{set.proof.Hash, i.ClusterUID, i.UID}), ObservedAt: set.proof.CollectedAt}, nil
@@ -131,7 +130,7 @@ func (p *DefaultEgressKCProvider) observe(ctx context.Context, x biz.DefaultEgre
 	if err != nil {
 		return o, nil, nil, err
 	}
-	r, set, ready, err := p.poolSet(ctx, x.Egress.PoolID, cleanup)
+	r, set, ready, err := p.poolSet(ctx, x.Egress.PoolID, cleanup, cleanup || x.Egress.State == biz.Provisioning || x.Egress.PendingAction != "")
 	if err != nil {
 		return o, nil, nil, err
 	}
@@ -149,11 +148,15 @@ func (p *DefaultEgressKCProvider) observe(ctx context.Context, x biz.DefaultEgre
 	// Aggregate bindings are independent of tenant tables and therefore read the
 	// complete external binding relation, including native SNAT/NAT/LB claimants.
 	for _, resource := range []schema.GroupVersionResource{kcSnats, kcNats, kcServices} {
-		items, err := p.provider.listAll(ctx, resource)
-		if err != nil {
-			return o, nil, nil, err
+		if set.view != nil {
+			set.all[resource] = indexedObjects(set.view.indices[resource], []string{"eip:" + x.Egress.Identity.Namespace + "/" + x.Egress.EIPProviderName})
+		} else {
+			items, err := p.provider.listAll(ctx, resource)
+			if err != nil {
+				return o, nil, nil, err
+			}
+			set.all[resource] = items
 		}
-		set.all[resource] = items
 	}
 	conflict := eipBindingConflict(set, x.Egress.Identity.Namespace, x.Egress.EIPProviderName, x.Egress.SnatProviderName)
 	if conflict {

@@ -210,7 +210,13 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 		progress.NextDelay = w.policy.RetryMin
 		return true, w.finish(ctx, work, progress)
 	}
-	tombstone := work.Resource.State == Deleted && !work.ActiveOperation && work.PendingAction == "" && work.KnownIdentity != "" && work.Resource.Reason == ""
+	// A historical Deleted row without an original identity is an exception
+	// for explicit recovery, not a reason to scan every network relation forever.
+	if work.Resource.State == Deleted && !work.ActiveOperation && work.PendingAction == "" && work.KnownIdentity == "" {
+		progress.Reason, progress.Backoff = ProviderOwnership, true
+		return true, w.finish(ctx, work, progress)
+	}
+	tombstone := work.Resource.State == Deleted && !work.ActiveOperation && work.PendingAction == "" && work.KnownIdentity != ""
 	target := ProviderTarget{
 		TenantID: work.Resource.TenantID, ResourceID: work.Resource.ID, BindingID: work.BindingID, Egress: work.Resource.Egress,
 		KnownIdentity: work.KnownIdentity, CIDR: work.Resource.CIDR,
@@ -223,11 +229,11 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	cancel()
 	if observeErr != nil {
 		progress.ProviderError = observeErr
-		progress.Reason = providerReason(observeErr)
+		progress.Reason = observationReason(observeErr)
 		if work.ActiveOperation && progress.Reason == ProviderOwnership {
 			progress.OperationState = Blocked
 		}
-		if work.Resource.State == Available && (progress.Reason == ProviderOwnership || work.Resource.ObservedAt == nil || work.Now.Sub(*work.Resource.ObservedAt) > w.policy.StaleAfter) {
+		if work.Resource.State == Available && progress.Reason == ProviderOwnership {
 			progress.State = Degraded
 		}
 	} else if observation.Exists && (observation.Identity == "" || (work.KnownIdentity != "" && observation.Identity != work.KnownIdentity)) {
@@ -468,6 +474,15 @@ func providerReason(err error) Reason {
 	default:
 		return ProviderUnknown
 	}
+}
+
+// An unsuccessful read carries no new resource-health fact. In particular,
+// an observation timeout is not an unknown mutation result.
+func observationReason(err error) Reason {
+	if providerKind(err) == ProviderConflict {
+		return ProviderOwnership
+	}
+	return ProviderUnavailable
 }
 
 func (w *Worker) retryDelay(attempt int32) time.Duration {

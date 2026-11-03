@@ -84,7 +84,7 @@ func resourceEndpoint(c dynamic.Interface, b sqlcgen.NetworkProviderBinding) dyn
 	return c.Resource(gvr).Namespace(b.Namespace)
 }
 func (p *KCProvider) platformBinding(ctx context.Context, kind, id string) (sqlcgen.NetworkProviderBinding, error) {
-	r, err := p.repository.queries.GetPlatform(ctx, sqlcgen.GetPlatformParams{ClusterID: p.repository.placement.ClusterID, Kind: kind, ResourceID: id})
+	r, err := p.repository.readQueries(ctx).GetPlatform(ctx, sqlcgen.GetPlatformParams{ClusterID: p.repository.placement.ClusterID, Kind: kind, ResourceID: id})
 	if err != nil {
 		return sqlcgen.NetworkProviderBinding{}, readFailure(err)
 	}
@@ -142,7 +142,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 		return nil
 	}
 	addTenant := func(key, kind, id string) error {
-		b, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: id})
+		b, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: id})
 		if err != nil {
 			return readFailure(err)
 		}
@@ -151,7 +151,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 		}
 		r.refs[key] = egressReference{b, id}
 		if kind == "vpc" {
-			v, err := p.repository.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: t.TenantID, VpcID: id})
+			v, err := p.repository.readQueries(ctx).GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: t.TenantID, VpcID: id})
 			if err != nil {
 				return readFailure(err)
 			}
@@ -162,7 +162,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 	poolID := ""
 	switch t.Kind {
 	case "eip":
-		e, err := p.repository.queries.GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: t.TenantID, EipID: t.ResourceID})
+		e, err := p.repository.readQueries(ctx).GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: t.TenantID, EipID: t.ResourceID})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -171,19 +171,19 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 			return r, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 		r.address = e.Address
-		view, err := p.repository.queries.GetEIPClaim(ctx, sqlcgen.GetEIPClaimParams{TenantID: t.TenantID, EipID: t.ResourceID})
+		view, err := p.repository.readQueries(ctx).GetEIPClaim(ctx, sqlcgen.GetEIPClaimParams{TenantID: t.TenantID, EipID: t.ResourceID})
 		if err != nil {
 			return r, readFailure(err)
 		}
 		if view.BindingID != "" {
-			s, err := p.repository.queries.GetSnatInternal(ctx, sqlcgen.GetSnatInternalParams{TenantID: t.TenantID, SnatID: view.BindingID})
+			s, err := p.repository.readQueries(ctx).GetSnatInternal(ctx, sqlcgen.GetSnatInternalParams{TenantID: t.TenantID, SnatID: view.BindingID})
 			if err != nil {
 				return r, readFailure(err)
 			}
 			r.snat = s
 			// An accepted binding may still lack a CR/UID. That is pending, not an
 			// unrelated object to adopt or a reason to release EIP occupancy.
-			b, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: s.SnatID})
+			b, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: s.SnatID})
 			if err != nil {
 				return r, readFailure(err)
 			}
@@ -199,7 +199,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 			r.lbID = view.BindingTargetID
 		}
 	case "snat":
-		s, err := p.repository.queries.GetSnatInternal(ctx, sqlcgen.GetSnatInternalParams{TenantID: t.TenantID, SnatID: t.ResourceID})
+		s, err := p.repository.readQueries(ctx).GetSnatInternal(ctx, sqlcgen.GetSnatInternalParams{TenantID: t.TenantID, SnatID: t.ResourceID})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -213,7 +213,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 		if err = addTenant("vpc", "vpc", s.VpcID); err != nil {
 			return r, err
 		}
-		e, err := p.repository.queries.GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: t.TenantID, EipID: s.EipID})
+		e, err := p.repository.readQueries(ctx).GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: t.TenantID, EipID: s.EipID})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -223,11 +223,11 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 	case "egress_gateway":
 		r.spec = map[string]any{"scope": "Public", "egressType": "Host"}
 	case "vlan":
-		vlan, err := p.repository.queries.GetVlanNetwork(ctx, sqlcgen.GetVlanNetworkParams{ClusterID: r.binding.ClusterID, ResourceID: t.ResourceID})
+		vlan, err := p.repository.readQueries(ctx).GetVlanNetwork(ctx, sqlcgen.GetVlanNetworkParams{ClusterID: r.binding.ClusterID, ResourceID: t.ResourceID})
 		if err != nil {
 			return r, readFailure(err)
 		}
-		device, err := p.repository.queries.GetDeviceAdoption(ctx, sqlcgen.GetDeviceAdoptionParams{ClusterID: r.binding.ClusterID, ResourceID: vlan.DeviceID})
+		device, err := p.repository.readQueries(ctx).GetDeviceAdoption(ctx, sqlcgen.GetDeviceAdoptionParams{ClusterID: r.binding.ClusterID, ResourceID: vlan.DeviceID})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -252,7 +252,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 		return r, &biz.ProviderError{Kind: biz.ProviderReject}
 	}
 	if poolID != "" {
-		r.pool, err = p.repository.queries.GetPublicPool(ctx, sqlcgen.GetPublicPoolParams{ClusterID: r.binding.ClusterID, ResourceID: poolID})
+		r.pool, err = p.repository.readQueries(ctx).GetPublicPool(ctx, sqlcgen.GetPublicPoolParams{ClusterID: r.binding.ClusterID, ResourceID: poolID})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -261,7 +261,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 			if t.Kind == "snat" {
 				eipID = r.snat.EipID
 			}
-			e, err := p.repository.queries.GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: t.TenantID, EipID: eipID})
+			e, err := p.repository.readQueries(ctx).GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: t.TenantID, EipID: eipID})
 			if err != nil {
 				return r, readFailure(err)
 			}
@@ -283,7 +283,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 			}
 		}
 		if r.pool.VlanNetworkID != nil {
-			vlan, err := p.repository.queries.GetVlanNetwork(ctx, sqlcgen.GetVlanNetworkParams{ClusterID: r.binding.ClusterID, ResourceID: *r.pool.VlanNetworkID})
+			vlan, err := p.repository.readQueries(ctx).GetVlanNetwork(ctx, sqlcgen.GetVlanNetworkParams{ClusterID: r.binding.ClusterID, ResourceID: *r.pool.VlanNetworkID})
 			if err != nil {
 				return r, readFailure(err)
 			}
@@ -304,7 +304,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 		}
 	}
 	if r.deviceID != "" {
-		device, err := p.repository.queries.GetDeviceAdoption(ctx, sqlcgen.GetDeviceAdoptionParams{ClusterID: r.binding.ClusterID, ResourceID: r.deviceID})
+		device, err := p.repository.readQueries(ctx).GetDeviceAdoption(ctx, sqlcgen.GetDeviceAdoptionParams{ClusterID: r.binding.ClusterID, ResourceID: r.deviceID})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -324,7 +324,7 @@ func (p *KCProvider) resolveEgress(ctx context.Context, t biz.ProviderTarget) (e
 		}
 	}
 	if t.Kind == "eip" {
-		row, e := p.repository.queries.GetSecurityGroupTarget(ctx, sqlcgen.GetSecurityGroupTargetParams{TenantID: t.TenantID, TargetType: "eip", TargetID: t.ResourceID})
+		row, e := p.repository.readQueries(ctx).GetSecurityGroupTarget(ctx, sqlcgen.GetSecurityGroupTargetParams{TenantID: t.TenantID, TargetType: "eip", TargetID: t.ResourceID})
 		if e == nil {
 			binding, e := sgTarget(row)
 			if e != nil {
@@ -519,6 +519,7 @@ func objectKey(b sqlcgen.NetworkProviderBinding) string {
 var errEgressAuditInvalid = errors.New("egress audit needs a fresh collection")
 
 func (p *KCProvider) readEgressSet(ctx context.Context, r egressResolved, critical bool) (egressReadSet, error) {
+	critical = critical || (r.target.Deleting && !sharedTombstone(r.target))
 	for {
 		if err := ctx.Err(); err != nil {
 			return egressReadSet{}, readFailure(err)
@@ -527,7 +528,10 @@ func (p *KCProvider) readEgressSet(ctx context.Context, r egressResolved, critic
 		if err != errEgressAuditInvalid {
 			return set, err
 		}
-		// Consecutive Watch renewals can invalidate more than one collection.
+		if !critical || admissionTransaction(ctx) {
+			return egressReadSet{}, readFailure(err)
+		}
+		// Relists can invalidate a critical cleanup collection.
 		// Keep the original caller deadline and collect after a new database
 		// boundary on each attempt. Read failures and identity conflicts are
 		// not retry signals. Unbounded callers retain one critical fallback.
@@ -542,7 +546,7 @@ func (p *KCProvider) readEgressSet(ctx context.Context, r egressResolved, critic
 
 func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, critical bool) (egressReadSet, error) {
 	result := egressReadSet{objects: map[string]*unstructured.Unstructured{}, all: map[schema.GroupVersionResource][]unstructured.Unstructured{}}
-	now, err := p.repository.queries.DatabaseTime(ctx)
+	now, err := p.repository.readQueries(ctx).DatabaseTime(ctx)
 	if err != nil {
 		return result, readFailure(err)
 	}
@@ -550,7 +554,10 @@ func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, cr
 	for k, v := range r.refs {
 		refs[k] = v
 	}
-	result.keys = append(result.keys, objectKey(r.binding), "provider-images")
+	result.keys = append(result.keys, objectKey(r.binding))
+	if r.target.Kind == "public_pool" {
+		result.keys = append(result.keys, "provider-images")
+	}
 	if r.pool.Scope == "intranet" {
 		result.keys = append(result.keys, "object:ConfigMap/kcn-system/kcn-config", "intranet-service-ranges")
 	}
@@ -578,7 +585,13 @@ func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, cr
 		if critical {
 			after = now
 		}
-		result.view, err = p.observation.snapshot(ctx, after)
+		// Admission holds parent locks. It consumes the shared complete audit
+		// and exact object GETs below; it must not start another DB-backed audit.
+		if critical && !admissionTransaction(ctx) {
+			result.view, err = p.observation.snapshot(ctx, after)
+		} else {
+			result.view, err = p.observation.cachedSnapshot(now)
+		}
 		if err != nil {
 			return result, readFailure(err)
 		}
@@ -591,6 +604,9 @@ func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, cr
 			result.all[gvr] = indexedObjects(index, result.keys)
 		}
 		result.proof = biz.ObservationProof{CollectedAt: result.view.collected, CoveredGeneration: result.view.generations[observationTarget{r.target.TenantID, r.target.ResourceID, r.target.Kind}.key()]}
+		if !critical && p.observation.valid(result.view, result.keys) {
+			result.proof.CoveredGeneration = r.target.Requirement.RequestedGeneration
+		}
 	}
 	for key, ref := range refs {
 		var o *unstructured.Unstructured
@@ -646,19 +662,29 @@ func (p *KCProvider) readEgressSetOnce(ctx context.Context, r egressResolved, cr
 		result.proof.CoveredGeneration = r.target.Requirement.RequestedGeneration
 	}
 	if r.pool.Scope == "intranet" {
-		config, err := p.client.Resource(kcConfigMaps).Namespace(kcSystemNamespace).Get(ctx, "kcn-config", metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			config, err = nil, nil
+		if result.view != nil {
+			result.objects["intranet_config"] = lbViewObject(result.view, kcConfigMaps, kcSystemNamespace, "kcn-config")
+			if index := result.view.indices[kcServiceCIDRs]; index != nil {
+				for _, raw := range index.List() {
+					result.all[kcServiceCIDRs] = append(result.all[kcServiceCIDRs], *raw.(*unstructured.Unstructured))
+				}
+			} else {
+				return result, readFailure(fmt.Errorf("ServiceCIDR observation unavailable"))
+			}
+		} else {
+			config, err := p.client.Resource(kcConfigMaps).Namespace(kcSystemNamespace).Get(ctx, "kcn-config", metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				config, err = nil, nil
+			}
+			if err != nil {
+				return result, readFailure(err)
+			}
+			result.objects["intranet_config"] = config
+			result.all[kcServiceCIDRs], err = p.listAll(ctx, kcServiceCIDRs)
+			if err != nil {
+				return result, err
+			}
 		}
-		if err != nil {
-			return result, readFailure(err)
-		}
-		result.objects["intranet_config"] = config
-		serviceNetworks, err := p.listAll(ctx, kcServiceCIDRs)
-		if err != nil {
-			return result, err
-		}
-		result.all[kcServiceCIDRs] = serviceNetworks
 	}
 	if r.lbID != "" {
 		if err = p.readEIPLoadBalancer(ctx, r, &result); err != nil {
@@ -816,14 +842,14 @@ func inspectEgressSet(r egressResolved, set egressReadSet) (biz.ProviderObservat
 		conflict := eipBindingConflictAllowed(set, r.binding.Namespace, eipName, expectedSnat, set.lbServiceUID)
 		if r.target.Kind == "eip" {
 			value.HasDependencies = len(bound) > 0 || conflict || expectedSnat != "" || r.lbID != ""
-			value.Ready = ready && verifiedEgressExit(r, set) && !conflict && ((len(bound) == 0 && crString(eip, "status", "phase") == "Available") || bindingApplied(eip, snat, set.objects["vpc"], r.snat.DesiredEnabled) || set.lbBound)
+			value.Ready = ready && !conflict && ((len(bound) == 0 && crString(eip, "status", "phase") == "Available") || bindingApplied(eip, snat, set.objects["vpc"], r.snat.DesiredEnabled) || set.lbBound)
 		} else {
 			value.HasDependencies = conflict || (o == nil && !completedEIPAbsence && (len(bound) > 0 || !goodConditions(eip, "Valid", "Initialized") || crString(eip, "status", "phase") != "Available"))
 			if o != nil {
 				value.NeedsUpdate = crBool(o, "spec", "disable") == r.snat.DesiredEnabled
 				value.Egress.TargetGeneration = o.GetGeneration()
 				applied := !conflict && !value.NeedsUpdate && bindingApplied(eip, o, set.objects["vpc"], r.snat.DesiredEnabled)
-				value.Ready = applied && (!r.snat.DesiredEnabled || (ready && verifiedEgressExit(r, set)))
+				value.Ready = applied && (!r.snat.DesiredEnabled || (ready))
 				if applied {
 					enabled := r.snat.DesiredEnabled
 					value.Egress.AppliedEnabled = &enabled
@@ -1034,7 +1060,7 @@ func (p *KCProvider) UpdateEgress(ctx context.Context, t biz.ProviderTarget) (bi
 	o = current
 	if t.Egress.DesiredEnabled && crBool(o, "spec", "disable") {
 		ready, _ := allocatedEIP(r, set.objects["eip"], set)
-		if !ready || !verifiedEgressExit(r, set) || !bindingApplied(set.objects["eip"], o, set.objects["vpc"], false) || eipBindingConflict(set, r.binding.Namespace, crName(set.objects["eip"]), r.binding.ProviderName) {
+		if !ready || !bindingApplied(set.objects["eip"], o, set.objects["vpc"], false) || eipBindingConflict(set, r.binding.Namespace, crName(set.objects["eip"]), r.binding.ProviderName) {
 			return checked, &biz.ProviderError{Kind: biz.ProviderTemporary}
 		}
 	}
@@ -1120,11 +1146,11 @@ func egressPrerequisites(r egressResolved, set egressReadSet) bool {
 		}
 		return true
 	case "eip":
-		return addressPoolReady(r, set.objects["pool"], set) && verifiedEgressExit(r, set)
+		return addressPoolReady(r, set.objects["pool"], set)
 	case "snat":
 		eip, vpc := set.objects["eip"], set.objects["vpc"]
 		ok, _ := allocatedEIP(r, eip, set)
-		return ok && verifiedEgressExit(r, set) && goodConditions(vpc, "Valid", "Initialized", "Ready") && crInt(vpc, "status", "observedGeneration") == vpc.GetGeneration() && crString(eip, "status", "phase") == "Available" && emptyBoundResource(eip) && !eipBindingConflict(set, r.binding.Namespace, crName(eip), r.binding.ProviderName)
+		return ok && goodConditions(vpc, "Valid", "Initialized", "Ready") && crInt(vpc, "status", "observedGeneration") == vpc.GetGeneration() && crString(eip, "status", "phase") == "Available" && emptyBoundResource(eip) && !eipBindingConflict(set, r.binding.Namespace, crName(eip), r.binding.ProviderName)
 	}
 	return true
 }
@@ -1193,12 +1219,6 @@ func emptyBoundResource(eip *unstructured.Unstructured) bool {
 	}
 	bound, ok := raw.(map[string]any)
 	return ok && len(bound) == 0
-}
-
-func verifiedEgressExit(_ egressResolved, set egressReadSet) bool {
-	// Both scopes use current provider facts. Manual forwarding records are
-	// diagnostic metadata, not a runtime gate for EIP/SNAT reconciliation.
-	return len(providerImages(set.all[pods])) > 0
 }
 
 // KCN publishes notReadyNodes as an optional comma-separated string. Older

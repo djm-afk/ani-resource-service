@@ -26,6 +26,7 @@ type defaultEgressFixture struct {
 	repo     *data.DefaultVPCEgressPostgres
 	usecase  *biz.DefaultVPCEgressUseCase
 	provider *data.DefaultEgressKCProvider
+	kc       *data.KCProvider
 	worker   *biz.DefaultVPCEgressWorker
 	identity biz.DefaultVPCIdentity
 	policy   biz.WorkerPolicy
@@ -98,7 +99,7 @@ func newDefaultEgressFixture(t *testing.T, intercept func(http.ResponseWriter, *
 	policy.ObserveEvery = 15 * time.Millisecond
 	policy.RetryMin = 5 * time.Millisecond
 	policy.RetryMax = 20 * time.Millisecond
-	d := &defaultEgressFixture{egressFixture: f, api: api, repo: repo, usecase: u, provider: provider, identity: identity, policy: policy}
+	d := &defaultEgressFixture{egressFixture: f, api: api, repo: repo, usecase: u, provider: provider, kc: kc, identity: identity, policy: policy}
 	d.restart(t)
 	return d
 }
@@ -336,4 +337,93 @@ func TestDefaultVPCEgressKCExactIdentityAndStaleLease(t *testing.T) {
 		t.Fatal("superseded create retained mutation lease", err)
 	}
 	f.state(t, v.ID, biz.Deleted)
+}
+
+func TestDefaultVPCEgressObservationFailureRetainsResult(t *testing.T) {
+	var unavailable atomic.Bool
+	f := newDefaultEgressFixture(t, func(w http.ResponseWriter, r *http.Request, _ *controlled.Server) bool {
+		if unavailable.Load() && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/namespaces/kube-system") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return true
+		}
+		return false
+	})
+	accepted := f.create(t, "observation-failure")
+	before := f.state(t, accepted.ID, biz.Available)
+	shortLived, err := data.NewDefaultVPCEgressRepository(f.p, f.identity, f.provider, time.Nanosecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := shortLived.GetDefaultVPCEgress(f.ctx, accepted.ID)
+	if err != nil || stale.State != biz.Available || !stale.ObservationStale || stale.ObservedAt == nil || !stale.ObservedAt.Equal(*before.ObservedAt) {
+		t.Fatal("query age changed the confirmed resource state", stale, err)
+	}
+	unavailable.Store(true)
+	after := f.driveDefault(t, accepted.ID, func(v biz.DefaultVPCEgress) bool { return v.Reason == biz.ProviderUnavailable })
+	if after.State != biz.Available || !after.ObservationStale || after.AppliedEnabled == nil || !*after.AppliedEnabled || after.TargetGeneration != before.TargetGeneration || after.ObservedAt == nil || before.ObservedAt == nil || !after.ObservedAt.Equal(*before.ObservedAt) || after.LastOperationID != before.LastOperationID || after.OperationState != before.OperationState || after.EIPProviderUID != before.EIPProviderUID || after.SnatProviderUID != before.SnatProviderUID {
+		t.Fatalf("failed read changed the confirmed result: before=%+v after=%+v", before, after)
+	}
+	unavailable.Store(false)
+	f.driveDefault(t, accepted.ID, func(v biz.DefaultVPCEgress) bool { return v.State == biz.Available && v.Reason == "" })
+	vpc := f.api.Object("vpcs", f.identity.Namespace, f.identity.Name)
+	vpc["metadata"].(map[string]any)["uid"] = uuid.NewString()
+	f.api.Change("vpcs", vpc, false)
+	conflict := f.state(t, accepted.ID, biz.Degraded)
+	if conflict.Reason != biz.ProviderOwnership {
+		t.Fatal("a real identity conflict was hidden as observation uncertainty", conflict)
+	}
+	time.Sleep(2 * f.policy.ObserveEvery)
+	x, found, err := f.repo.ClaimDefaultVPCEgress(f.ctx, uuid.NewString(), f.policy.Lease)
+	if err != nil || !found {
+		t.Fatal("claim for absent proof", found, err)
+	}
+	err = f.repo.FinishDefaultVPCEgress(f.ctx, x, biz.DefaultEgressProgress{State: biz.Available, Phase: "ready", Reason: biz.ProviderUnavailable, Delay: f.policy.ObserveEvery})
+	if biz.ReasonOf(err) != biz.DependencyUnavailable {
+		t.Fatal("observation uncertainty manufactured a new available state", err)
+	}
+}
+
+func TestDefaultVPCEgressOrdinaryObservationDoesNotCollect(t *testing.T) {
+	for _, state := range []biz.ResourceState{biz.Available, biz.Degraded, biz.Provisioning} {
+		t.Run(string(state), func(t *testing.T) {
+			var collections atomic.Int32
+			f := newDefaultEgressFixture(t, func(_ http.ResponseWriter, r *http.Request, _ *controlled.Server) bool {
+				if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/vpcs") && r.URL.Query().Get("watch") != "true" {
+					collections.Add(1)
+				}
+				return false
+			})
+			v := f.create(t, "ordinary-default-observation")
+			if state != biz.Provisioning {
+				v = f.state(t, v.ID, biz.Available)
+			}
+			if state == biz.Degraded {
+				eip := f.api.Object("eips", f.identity.Namespace, v.EIPProviderName)
+				eip["status"].(map[string]any)["boundResource"].(map[string]any)["observedGeneration"] = 0
+				f.api.Change("eips", eip, false)
+				v = f.state(t, v.ID, biz.Degraded)
+			}
+			// No audit is available yet. Ordinary observation must wait for the
+			// shared lifecycle instead of turning this into a per-object LIST.
+			f.stopObservation() // Stop the fixture's independent platform observer.
+			if _, err := f.kc.EnableObservation(data.DefaultObservationOptions()); err != nil {
+				t.Fatal(err)
+			}
+			before := collections.Load()
+			time.Sleep(2 * f.policy.ObserveEvery)
+			if worked, err := f.worker.Step(f.ctx); err != nil || !worked {
+				t.Fatal("default egress step", worked, err)
+			}
+			if state == biz.Provisioning {
+				if collections.Load() == before {
+					t.Fatal("unfinished creation lost its current collection")
+				}
+				return
+			}
+			after, err := f.usecase.Get(f.ctx, v.ID)
+			if err != nil || collections.Load() != before || after.State != state || after.Reason != biz.ProviderUnavailable || after.ObservedAt == nil || v.ObservedAt == nil || !after.ObservedAt.Equal(*v.ObservedAt) {
+				t.Fatalf("ordinary read recollected or changed confirmed facts: collections=%d->%d before=%+v after=%+v err=%v", before, collections.Load(), v, after, err)
+			}
+		})
+	}
 }

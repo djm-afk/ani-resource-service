@@ -131,7 +131,9 @@ func (p *Postgres) FinishAttachment(ctx context.Context, w biz.AttachmentWork, p
 	if progress.FinalizationID != "" {
 		finalization = &progress.FinalizationID
 	}
-	row, e := q.FinishAttachment(ctx, sqlcgen.FinishAttachmentParams{TenantID: a.TenantID, AttachmentID: a.AttachmentID, Version: a.Version, Epoch: w.Epoch, Owner: w.Owner, State: string(progress.State), Reason: string(progress.Reason), ProtocolBlocked: protocolBlocked, PodName: progress.PodName, PodUid: progress.PodUID, FinalizationID: finalization, ProviderRelations: progress.Relations, Observed: progress.Observed, ObservedAt: proofTime(progress.Observed, progress.Proof), CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, w.Requirement), EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, DelayMicros: progress.NextDelay.Microseconds()})
+	stoppedReservation := progress.State == biz.Reserved && w.Attachment.WorkloadMode == "vm_managed" && progress.ConsumerSnapshot != nil && progress.ConsumerSnapshot.State == "open" && progress.ConsumerSnapshot.DesiredRunState == "stopped"
+	park := progress.Observed && progress.Reason == "" && !protocolBlocked && !progress.Backoff && (progress.State == biz.Released || (p.sharedObservation && (progress.State == biz.Attached || stoppedReservation)))
+	row, e := q.FinishAttachment(ctx, sqlcgen.FinishAttachmentParams{TenantID: a.TenantID, AttachmentID: a.AttachmentID, Version: a.Version, Epoch: w.Epoch, Owner: w.Owner, State: string(progress.State), Reason: string(progress.Reason), ProtocolBlocked: protocolBlocked, PodName: progress.PodName, PodUid: progress.PodUID, FinalizationID: finalization, ProviderRelations: progress.Relations, Observed: progress.Observed, ObservedAt: proofTime(progress.Observed, progress.Proof), CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, w.Requirement), EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, Park: park, DelayMicros: progress.NextDelay.Microseconds()})
 	if errors.Is(e, pgx.ErrNoRows) {
 		return biz.ErrLeaseLost
 	}

@@ -35,7 +35,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'available',$16);
 -- name: InsertLBConfigurationMember :exec
 INSERT INTO network_lb_configuration_members(tenant_id,cluster_id,namespace,lb_id,config_version,member_id,weight) VALUES($1,$2,$3,$4,$5,$6,$7);
 -- name: ListLBBackendAttachments :many
-SELECT * FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason='' ORDER BY attachment_id;
+SELECT * FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason IN ('','PROVIDER_UNAVAILABLE') ORDER BY attachment_id;
 -- name: ReserveLBSubnet :exec
 INSERT INTO network_lb_subnet_refs(tenant_id,cluster_id,namespace,lb_id,vpc_id,subnet_id) VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT (tenant_id,lb_id,subnet_id) DO UPDATE SET released_at=NULL;
@@ -102,7 +102,7 @@ UPDATE network_load_balancers SET state=sqlc.arg(state),reason=sqlc.arg(reason),
 vip_occupied_revision=CASE WHEN sqlc.arg(vip_occupied_revision)::text<>'' THEN sqlc.arg(vip_occupied_revision) ELSE vip_occupied_revision END,
 vip_absence_revision=CASE WHEN vip_absence_revision='' THEN sqlc.arg(vip_absence_revision)::text ELSE vip_absence_revision END,
 observed_at=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.narg(observed_at)::timestamptz ELSE observed_at END,
-configuration_state=sqlc.arg(configuration_state),applied_version=greatest(applied_version,sqlc.arg(applied_version)::bigint),
+configuration_state=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.arg(configuration_state) ELSE configuration_state END,applied_version=greatest(applied_version,sqlc.arg(applied_version)::bigint),
 data_plane_state='unknown',data_plane_observed_at=NULL
 WHERE tenant_id=sqlc.arg(tenant_id) AND lb_id=sqlc.arg(lb_id) AND version=sqlc.arg(version) RETURNING *;
 -- name: SaveLBMemberObservation :execrows
