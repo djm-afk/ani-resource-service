@@ -28,6 +28,17 @@ type registryFixture struct {
 	creates, robotCreates, secretSets int
 	disableSets                       int
 	failAfter                         string
+	// now keeps provider-side robot lifetimes on the same clock the lifecycle
+	// under test uses, so advancing time to expire a credential also decides
+	// the lifetime of its successor.
+	now func() time.Time
+}
+
+func (r *registryFixture) clock() time.Time {
+	if r.now == nil {
+		return time.Now()
+	}
+	return r.now()
 }
 
 func newRegistry() *registryFixture {
@@ -101,7 +112,7 @@ func (r *registryFixture) CreateRobot(_ context.Context, want biz.RobotRequest) 
 		}
 	}
 	r.next++
-	expiry := time.Now().Add(time.Duration(want.DurationDays) * 24 * time.Hour).Unix()
+	expiry := r.clock().Add(time.Duration(want.DurationDays) * 24 * time.Hour).Unix()
 	if want.DurationDays == -1 {
 		expiry = -1
 	}
@@ -407,5 +418,104 @@ func TestLifecycleProjectOwnershipRecovery(t *testing.T) {
 				t.Fatal("ownership evidence lost", err)
 			}
 		})
+	}
+}
+
+// An expired pull credential backs no running workload: every token minted
+// from it is already invalid. Enable must therefore mint the next generation
+// instead of refusing, otherwise the only repair entry point stays blocked
+// forever and every image consumer fails with SPACE_NOT_READY.
+func TestLifecycleEnableRepairsExpiredPullCredential(t *testing.T) {
+	f, r, cfg, ring, ctx := lifecycleFixture(t)
+	now := time.Now()
+	r.now = func() time.Time { return now }
+	l := lifecycle(t, f.Repo, r, ring, cfg, func() time.Time { return now })
+	tenant := tenantFrom(t, ctx)
+	in := biz.EnableSpace{TenantID: tenant, Slug: "expired-pull", IdempotencyKey: "enable-key"}
+	s, err := l.EnsureImageSpace(ctx, in)
+	if err != nil || s.State != "available" || s.PullCredentialGeneration != 1 {
+		t.Fatal(s, err)
+	}
+	first, err := f.Repo.GetTenantPull(ctx, tenant, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Advance past the credential lifetime without touching the provider, so
+	// only expiry (not a disable) is what stops the current generation.
+	now = now.Add(time.Duration(cfg.PullDays+1) * 24 * time.Hour)
+	space, err := l.GetImageSpace(ctx, tenant)
+	if err != nil || space.State != "blocked" {
+		t.Fatalf("expired pull credential should read as blocked: %+v %v", space, err)
+	}
+	repaired, err := l.EnsureImageSpace(ctx, biz.EnableSpace{TenantID: tenant, Slug: "expired-pull", IdempotencyKey: "repair-key"})
+	if err != nil {
+		t.Fatalf("enable must repair an expired pull credential: %v", err)
+	}
+	if repaired.State != "available" || repaired.PullCredentialGeneration <= first.Info.Generation {
+		t.Fatal("pull credential generation did not advance", repaired)
+	}
+	second, err := f.Repo.GetTenantPull(ctx, tenant, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The repaired generation must be the one the space reports as current.
+	if repaired.PullCredentialGeneration != second.Info.Generation {
+		t.Fatal("space does not report the repaired generation", repaired.PullCredentialGeneration, second.Info.Generation)
+	}
+	if second.Info.State != "active" || second.Info.Generation <= first.Info.Generation {
+		t.Fatal("repaired pull credential is not an active successor", second.Info)
+	}
+	// Reads must stop reporting the space as blocked once a live successor exists.
+	afterRepair, err := l.GetImageSpace(ctx, tenant)
+	if err != nil || afterRepair.State != "available" {
+		t.Fatal("space still blocked after repair", afterRepair, err)
+	}
+	if second.Info.RobotID == first.Info.RobotID {
+		t.Fatal("repair reused the expired robot identity")
+	}
+	// The retired identity must not be left usable behind the new generation.
+	old, err := r.GetRobot(ctx, first.Info.RobotID)
+	if err != nil || !old.Disabled {
+		t.Fatal("expired generation was not retired", err)
+	}
+	plain, err := ring.Open(ctx, second.AAD, second.Secret)
+	if err != nil || string(plain) != r.secrets[second.Info.RobotID] {
+		t.Fatal("repaired credential secret mismatch", err)
+	}
+}
+
+// A credential that is still live backs running workloads, so enable must
+// keep succeeding idempotently instead of rotating it behind their back.
+func TestLifecycleEnableKeepsLivePullCredential(t *testing.T) {
+	f, r, cfg, ring, ctx := lifecycleFixture(t)
+	now := time.Now()
+	r.now = func() time.Time { return now }
+	l := lifecycle(t, f.Repo, r, ring, cfg, func() time.Time { return now })
+	tenant := tenantFrom(t, ctx)
+	in := biz.EnableSpace{TenantID: tenant, Slug: "live-pull", IdempotencyKey: "enable-key"}
+	s, err := l.EnsureImageSpace(ctx, in)
+	if err != nil || s.State != "available" {
+		t.Fatal(s, err)
+	}
+	first, err := f.Repo.GetTenantPull(ctx, tenant, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Still well inside the credential lifetime: repeated enable must neither
+	// fail nor mint a replacement identity.
+	now = now.Add(24 * time.Hour)
+	again, err := l.EnsureImageSpace(ctx, biz.EnableSpace{TenantID: tenant, Slug: "live-pull", IdempotencyKey: "enable-key-2"})
+	if err != nil || again.State != "available" {
+		t.Fatal("live credential must keep enable succeeding", again, err)
+	}
+	second, err := f.Repo.GetTenantPull(ctx, tenant, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Info.Generation != first.Info.Generation || second.Info.RobotID != first.Info.RobotID {
+		t.Fatal("enable rotated a live pull credential")
+	}
+	if r.robotCreates != 1 {
+		t.Fatal("enable created an extra provider identity", r.robotCreates)
 	}
 }
