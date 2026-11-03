@@ -2,12 +2,16 @@ package vm
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 )
 
 func manualTerminalVMI(v biz.VM, phase string) *unstructured.Unstructured {
@@ -56,6 +60,27 @@ func TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI(t *testing.
 				}
 			})
 		}
+	}
+}
+
+func TestNativeStartResponseErrorDoesNotClaimUnsubmitted(t *testing.T) {
+	n, v, client, _ := inputStoppedFixture(t)
+	v.Disks = nil
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusConflict)
+	}))
+	defer server.Close()
+	var err error
+	n, err = NewNative(client, &rest.Config{Host: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = n.Start(context.Background(), v)
+	var notSubmitted *biz.NativeNotSubmittedError
+	if err == nil || errors.As(err, &notSubmitted) || calls != 1 {
+		t.Fatal("a submitted native request was reported as unsubmitted", err, calls)
 	}
 }
 

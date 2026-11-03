@@ -145,10 +145,7 @@ func (p *DefaultVPCEgressPostgres) observedDefaultEgress(ctx context.Context, ro
 	if err != nil {
 		return v, databaseFailure(err)
 	}
-	v.ObservationStale = v.ObservedAt == nil || v.ObservedAt.After(now) || now.Sub(*v.ObservedAt) > p.freshness
-	if v.State == biz.Available && v.ObservationStale {
-		v.State, v.Reason = biz.Degraded, biz.ProviderNotReady
-	}
+	v.ObservationStale = v.Reason == biz.ProviderUnavailable || v.ObservedAt == nil || v.ObservedAt.After(now) || now.Sub(*v.ObservedAt) > p.freshness
 	return v, nil
 }
 func (p *DefaultVPCEgressPostgres) GetCurrentDefaultVPCEgress(ctx context.Context) (biz.DefaultVPCEgress, error) {
@@ -250,7 +247,10 @@ func (p *DefaultVPCEgressPostgres) BeginDefaultVPCEgressMutation(ctx context.Con
 }
 func (p *DefaultVPCEgressPostgres) FinishDefaultVPCEgress(ctx context.Context, x biz.DefaultEgressWork, v biz.DefaultEgressProgress) error {
 	o := v.Observation
-	if v.State == biz.Available && (!v.Observed || !o.Ready || o.EIPUID == "" || o.SnatUID == "" || o.Address == "" || o.TargetGeneration < 1 || o.AppliedEnabled == nil || !*o.AppliedEnabled) {
+	// A failed observation can retain the previous result, never establish a
+	// new available state, complete a mutation, or advance the evidence clock.
+	retaining := !v.Observed && v.State == x.Egress.State && v.Reason == biz.ProviderUnavailable && !v.ClearPending && v.PendingUnknown == x.Egress.PendingUnknown
+	if v.State == biz.Available && !retaining && (!v.Observed || !o.Ready || o.EIPUID == "" || o.SnatUID == "" || o.Address == "" || o.TargetGeneration < 1 || o.AppliedEnabled == nil || !*o.AppliedEnabled) {
 		return biz.Fail(biz.DependencyUnavailable, "default egress availability needs complete provider binding proof")
 	}
 	if v.State == biz.Deleted && (!v.Observed || o.EIPExists || o.SnatExists || !o.Unbound || !v.ClearPending || v.PendingUnknown) {
@@ -269,6 +269,9 @@ func (p *DefaultVPCEgressPostgres) FinishDefaultVPCEgress(ctx context.Context, x
 	var applied pgtype.Bool
 	if o.AppliedEnabled != nil {
 		applied = pgtype.Bool{Bool: *o.AppliedEnabled, Valid: true}
+	}
+	if retaining && x.Egress.AppliedEnabled != nil {
+		applied = pgtype.Bool{Bool: *x.Egress.AppliedEnabled, Valid: true}
 	}
 	n, err := q.FinishDefaultEgress(ctx, sqlcgen.FinishDefaultEgressParams{State: string(v.State), Phase: v.Phase, Reason: string(v.Reason), EipUid: o.EIPUID, SnatUid: o.SnatUID, Address: o.Address, AppliedEnabled: applied, TargetGeneration: o.TargetGeneration, Observed: v.Observed, ObservedAt: observedAt, ClearPending: v.ClearPending, PendingUnknown: v.PendingUnknown, DelayMs: v.Delay.Milliseconds(), ClusterID: p.identity.ClusterID, ResourceID: x.Egress.ID, Version: x.Egress.Version, OperationID: x.Egress.LastOperationID, Owner: x.Owner, Epoch: x.Epoch})
 	if err != nil {

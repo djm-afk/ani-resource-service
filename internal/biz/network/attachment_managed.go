@@ -201,7 +201,7 @@ func (w *AttachmentWorker) stepManaged(ctx context.Context, work AttachmentWork,
 	o, observeErr := w.provider.ObserveAttachment(call, work)
 	cancel()
 	if observeErr != nil {
-		p.Reason = providerReason(observeErr)
+		p.Reason = observationReason(observeErr)
 		p.Backoff = true
 		if providerKind(observeErr) == ProviderConflict {
 			p.ProtocolBlocked = true

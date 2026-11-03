@@ -1044,7 +1044,7 @@ func (q *Queries) NotifyPlatform(ctx context.Context, arg NotifyPlatformParams) 
 }
 
 const observationPlatformResources = `-- name: ObservationPlatformResources :many
-SELECT p.resource_id, p.kind, p.cluster_id, p.name, p.description, p.state, p.reason, p.version, p.created_at, p.updated_at, p.observed_at, p.last_operation_id, p.provider_name, p.provider_uid, p.provider_images, p.binding_id, p.pending_action, p.pending_since,r.requested_generation FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id WHERE p.cluster_id=$1
+SELECT p.resource_id, p.kind, p.cluster_id, p.name, p.description, p.state, p.reason, p.version, p.created_at, p.updated_at, p.observed_at, p.last_operation_id, p.provider_name, p.provider_uid, p.provider_images, p.binding_id, p.pending_action, p.pending_since,r.requested_generation,(p.state<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id WHERE p.cluster_id=$1
 `
 
 type ObservationPlatformResourcesParams struct {
@@ -1071,6 +1071,7 @@ type ObservationPlatformResourcesRow struct {
 	PendingAction       string
 	PendingSince        *time.Time
 	RequestedGeneration int64
+	Recovery            bool
 }
 
 func (q *Queries) ObservationPlatformResources(ctx context.Context, arg ObservationPlatformResourcesParams) ([]ObservationPlatformResourcesRow, error) {
@@ -1102,6 +1103,7 @@ func (q *Queries) ObservationPlatformResources(ctx context.Context, arg Observat
 			&i.PendingAction,
 			&i.PendingSince,
 			&i.RequestedGeneration,
+			&i.Recovery,
 		); err != nil {
 			return nil, err
 		}
@@ -1212,8 +1214,8 @@ UPDATE network_platform_reconciliations SET lease_owner=NULL,lease_until=NULL,
  evidence_hash=CASE WHEN $2::boolean THEN $3::text ELSE evidence_hash END,
  evidence_applied_at=CASE WHEN $2::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
  retry_not_before=CASE WHEN $4::boolean THEN clock_timestamp()+$5::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
- next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
-WHERE resource_id=$6 AND lease_owner=$7::uuid AND lease_epoch=$8 AND lease_until>clock_timestamp()
+ next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() WHEN $6::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
+WHERE resource_id=$7 AND lease_owner=$8::uuid AND lease_epoch=$9 AND lease_until>clock_timestamp()
 `
 
 type ReleasePlatformLeaseParams struct {
@@ -1222,6 +1224,7 @@ type ReleasePlatformLeaseParams struct {
 	EvidenceHash      string
 	Backoff           bool
 	DelayMicros       int64
+	Park              bool
 	ResourceID        string
 	Owner             string
 	Epoch             int64
@@ -1234,6 +1237,7 @@ func (q *Queries) ReleasePlatformLease(ctx context.Context, arg ReleasePlatformL
 		arg.EvidenceHash,
 		arg.Backoff,
 		arg.DelayMicros,
+		arg.Park,
 		arg.ResourceID,
 		arg.Owner,
 		arg.Epoch,

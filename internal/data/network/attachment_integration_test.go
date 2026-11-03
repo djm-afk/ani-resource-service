@@ -113,7 +113,8 @@ func attachmentPod(a biz.Attachment, name, uid string) map[string]any {
 }
 func TestAttachmentPermanentIdentityTenantScopeAndParentDeletion(t *testing.T) {
 	f := newAttachmentFixture(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	const count = 12
 	values := make(chan biz.Attachment, count)
 	errs := make(chan error, count)

@@ -247,7 +247,7 @@ func TestLBUpdateContendsWithParentDeletionInBothOrders(t *testing.T) {
 						current.ConfigurationState == "configured" && current.State == biz.Available
 				})
 				v, e := f.f.n.GetVPC(f.f.ctx, f.f.tenant, f.vpc.ID)
-				if e != nil || v.State != biz.Available {
+				if e != nil || (v.State != biz.Available && !(v.State == biz.Degraded && v.Reason == biz.BaseConnectivityNotReady)) {
 					t.Fatal("parent was closed during update", v, e)
 				}
 				s, e := f.f.n.GetSubnet(f.f.ctx, f.f.tenant, f.subnet.ID)

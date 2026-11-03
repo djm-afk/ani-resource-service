@@ -1,6 +1,8 @@
 package data_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,21 +83,33 @@ func TestLBAdmissionRejectsInvalidVPCProviderProof(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name, bindingChange, parentState string
+		change                           func(map[string]any)
 		reason                           biz.Reason
 	}{
-		{name: "unready", bindingChange: "provider_ready=false", reason: biz.ParentNotReady},
-		{name: "missing_observation", bindingChange: "provider_observed_at=NULL", reason: biz.ParentNotReady},
-		{name: "stale_observation", bindingChange: "provider_observed_at=clock_timestamp()-interval '2 hour'", reason: biz.ParentNotReady},
-		{name: "future_observation", bindingChange: "provider_observed_at=clock_timestamp()+interval '2 hour'", reason: biz.ParentNotReady},
-		{name: "different_uid", bindingChange: "provider_observed_uid='replaced-vpc'", reason: biz.ProviderOwnership},
-		{name: "missing_generation", bindingChange: "provider_generation=0,provider_observed_generation=0", reason: biz.ParentNotReady},
-		{name: "lagging_generation", bindingChange: "provider_observed_generation=provider_generation-1", reason: biz.ParentNotReady},
+		{name: "unready", change: func(o map[string]any) { o["status"].(map[string]any)["conditions"] = []any{} }, reason: biz.ParentNotReady},
+		{name: "different_uid", change: func(o map[string]any) { o["metadata"].(map[string]any)["uid"] = "replacement" }},
+		{name: "missing_generation", change: func(o map[string]any) { delete(o["metadata"].(map[string]any), "generation") }, reason: biz.ParentNotReady},
+		{name: "lagging_generation", change: func(o map[string]any) { o["status"].(map[string]any)["observedGeneration"] = 0 }, reason: biz.ParentNotReady},
 		{name: "pending_mutation", bindingChange: "pending_action='update',pending_since=clock_timestamp()", reason: biz.ProviderOwnership},
 		{name: "deleting", parentState: "deleting", reason: biz.ParentNotReady},
 		{name: "deleted", parentState: "deleted", reason: biz.ParentNotReady},
 		{name: "failed", parentState: "failed", reason: biz.ParentNotReady},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			original := f.api.Object("vpcs", "tenant-"+f.f.tenant, strings.Replace(f.vpc.ID, "_", "-", 1))
+			defer f.api.Change("vpcs", original, false)
+			if tc.change != nil {
+				changed := f.api.Object("vpcs", "tenant-"+f.f.tenant, strings.Replace(f.vpc.ID, "_", "-", 1))
+				tc.change(changed)
+				f.api.Change("vpcs", changed, false)
+			}
+			rejected := func(err error) bool {
+				if tc.reason != "" {
+					return biz.ReasonOf(err) == tc.reason
+				}
+				var failure *biz.ProviderError
+				return errors.As(err, &failure) && failure.Kind == biz.ProviderConflict
+			}
 			defer func() {
 				if _, err := f.f.owner.Exec(f.f.ctx, `UPDATE network_provider_bindings SET provider_ready=$3,provider_observed_at=$4,provider_observed_uid=$5,provider_generation=$6,provider_observed_generation=$7,pending_action=$8,pending_since=$9 WHERE tenant_id=$1 AND vpc_id=$2`, f.f.tenant, f.vpc.ID, ready, observed, observedUID, generation, observedGeneration, pendingAction, pendingSince); err != nil {
 					t.Error(err)
@@ -116,11 +130,11 @@ func TestLBAdmissionRejectsInvalidVPCProviderProof(t *testing.T) {
 			}
 			request := f.request
 			request.PrivateIP, request.IdempotencyKey = "10.42.1.101", uuid.NewString()
-			if _, err := f.lbs.Create(f.f.ctx, request); biz.ReasonOf(err) != tc.reason {
+			if _, err := f.lbs.Create(f.f.ctx, request); !rejected(err) {
 				t.Fatal("invalid VPC self proof permitted creation", err)
 			}
 			listener := deferredListenerInput(saved.LoadBalancer.Listeners[0], f.request.Backends)
-			if _, err := f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: saved.LoadBalancer.ID, ExpectedVersion: saved.LoadBalancer.Version, IdempotencyKey: uuid.NewString(), LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{listener}, UpdateMask: []string{"listeners"}}}); biz.ReasonOf(err) != tc.reason {
+			if _, err := f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: saved.LoadBalancer.ID, ExpectedVersion: saved.LoadBalancer.Version, IdempotencyKey: uuid.NewString(), LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{listener}, UpdateMask: []string{"listeners"}}}); !rejected(err) {
 				t.Fatal("invalid VPC self proof permitted activation", err)
 			}
 		})
@@ -128,5 +142,19 @@ func TestLBAdmissionRejectsInvalidVPCProviderProof(t *testing.T) {
 	var count int
 	if err := f.f.owner.QueryRow(f.f.ctx, `SELECT count(*) FROM network_lb_configurations WHERE tenant_id=$1`, f.f.tenant).Scan(&count); err != nil || count != 1 {
 		t.Fatal("rejected admission saved a partial configuration", count, err)
+	}
+}
+
+func TestLBAdmissionUsesCurrentVPCInsteadOfOldProjection(t *testing.T) {
+	f := newLBAdmissionFixture(t)
+	if _, err := f.f.owner.Exec(f.f.ctx, `UPDATE network_provider_bindings SET provider_ready=false,provider_observed_at=clock_timestamp()-interval '2 hour',provider_observed_uid='old-observation',provider_generation=0,provider_observed_generation=0 WHERE tenant_id=$1 AND vpc_id=$2`, f.f.tenant, f.vpc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.lbs.Create(f.f.ctx, f.request); err != nil {
+		t.Fatal("current original VPC proof must permit admission", err)
+	}
+	var age float64
+	if err := f.f.owner.QueryRow(f.f.ctx, `SELECT extract(epoch from clock_timestamp()-provider_observed_at) FROM network_provider_bindings WHERE tenant_id=$1 AND vpc_id=$2`, f.f.tenant, f.vpc.ID).Scan(&age); err != nil || age < 3600 {
+		t.Fatal("admission must not refresh projected observation time", age, err)
 	}
 }

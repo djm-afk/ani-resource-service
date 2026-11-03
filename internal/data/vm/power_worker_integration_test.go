@@ -130,6 +130,102 @@ type failedStartNative struct {
 	starts      int
 }
 
+type preflightStartNative struct {
+	failedStartNative
+	startErr error
+}
+
+func (n *preflightStartNative) Start(context.Context, biz.VM) error {
+	n.starts++
+	return n.startErr
+}
+
+func TestVMStartPreflightFailureRetriesOriginalOperation(t *testing.T) {
+	ctx := context.Background()
+	db := testenv.NewDatabase(t)
+	if err := Migrate(ctx, db.Owner.Config().ConnString(), db.RuntimeRole); err != nil {
+		t.Fatal(err)
+	}
+	p, err := OpenPostgres(ctx, db.RuntimeDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for _, submitted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "preflight-busy", true: "lost-response"}[submitted], func(t *testing.T) {
+			tenant, id, createID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			_, err := p.AcceptCreate(ctx, biz.Acceptance{TenantID: tenant, VMID: id, OperationID: createID, RequestDigest: stringDigest('a'), Spec: biz.Spec{Canonical: []byte(`{"power":"preflight"}`), Digest: stringDigest('b'), Name: "preflight"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := &preflightStartNative{failedStartNative: failedStartNative{ref: biz.ObjectRef{Kind: "VirtualMachine", Name: "vm-" + id, UID: uuid.NewString()}}, startErr: &biz.NativeNotSubmittedError{Err: biz.ErrBusy}}
+			n.observation = biz.Observation{VM: n.ref, State: "Stopped", Stopped: true}
+			w, err := biz.NewWorker(p, n, powerVMNetwork{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			step := func() {
+				t.Helper()
+				end := time.Now().Add(3 * time.Second)
+				for time.Now().Before(end) {
+					worked, err := w.Step(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if worked {
+						return
+					}
+					time.Sleep(25 * time.Millisecond)
+				}
+				t.Fatal("original operation did not become due")
+			}
+			step()
+			step()
+			step()
+			n.observation = biz.Observation{VM: n.ref, VMI: &biz.ObjectRef{UID: "guest-shutdown-vmi"}, State: "Stopped", Terminal: true}
+			original, err := p.AcceptCommand(ctx, biz.Command{TenantID: tenant, VMID: id, Action: "start", Key: "start-after-guest-shutdown", RequestDigest: stringDigest('c'), Intent: []byte(`{"expected_version":1}`), ExpectedVersion: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if submitted {
+				n.startErr = errors.New("native response lost")
+			}
+			step()
+			saved, err := p.GetOperation(ctx, tenant, id, original.ID)
+			if err != nil || (saved.Pending != nil) != submitted || n.starts != 1 {
+				t.Fatalf("submission evidence not preserved: %+v starts=%d err=%v", saved, n.starts, err)
+			}
+			reopened, err := OpenPostgres(ctx, db.RuntimeDSN)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			w, err = biz.NewWorker(reopened, n, powerVMNetwork{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			n.startErr = nil
+			step()
+			saved, err = reopened.GetOperation(ctx, tenant, id, original.ID)
+			if submitted {
+				if err != nil || saved.State != "unknown" || saved.Pending == nil || n.starts != 1 {
+					t.Fatalf("lost response retried against retained terminal VMI: %+v starts=%d err=%v", saved, n.starts, err)
+				}
+				return
+			}
+			if err != nil || saved.Pending == nil || n.starts != 2 {
+				t.Fatalf("confirmed unsubmitted Start did not resume: %+v starts=%d err=%v", saved, n.starts, err)
+			}
+			n.observation = biz.Observation{VM: n.ref, VMI: &biz.ObjectRef{UID: "new-running-vmi"}, State: "Running", Running: true}
+			step()
+			saved, err = reopened.GetOperation(ctx, tenant, id, original.ID)
+			if err != nil || saved.State != "succeeded" || saved.Pending != nil || n.starts != 2 || saved.IntentVersion != original.IntentVersion {
+				t.Fatalf("original Start failed to converge: %+v starts=%d err=%v", saved, n.starts, err)
+			}
+		})
+	}
+}
+
 func (n *failedStartNative) ValidateSource(context.Context, biz.Source) error { return nil }
 func (n *failedStartNative) EnsureVM(context.Context, biz.VM) (biz.ObjectRef, error) {
 	return n.ref, nil

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -106,7 +107,7 @@ func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, err
 		return r, err
 	}
 	for id, out := range map[string]*sqlcgen.NetworkProviderBinding{w.Resource.VPCID: &r.vpc, w.Resource.LoadBalancer.LoadBalancer.SubnetID: &r.subnet} {
-		*out, err = p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: w.Resource.TenantID, ResourceID: id})
+		*out, err = p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: w.Resource.TenantID, ResourceID: id})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -115,7 +116,7 @@ func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, err
 		}
 	}
 	if id := w.Resource.LoadBalancer.LoadBalancer.PublicEIPID; id != "" {
-		r.eip, err = p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: w.Resource.TenantID, ResourceID: id})
+		r.eip, err = p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: w.Resource.TenantID, ResourceID: id})
 		if err != nil {
 			return r, readFailure(err)
 		}
@@ -123,13 +124,14 @@ func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, err
 			return r, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 	}
-	now, err := p.repository.queries.DatabaseTime(ctx)
+	// Actual readiness is read from the original VPC/Subnet in this observation.
+	// The management record closes admission but its projection age is not a
+	// second runtime readiness authority.
+	parent, err := p.repository.readQueries(ctx).GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: w.Resource.TenantID, VpcID: w.Resource.VPCID})
 	if err != nil {
 		return r, readFailure(err)
 	}
-	r.dependencies = p.repository.requireLBVPCProviderReady(ctx, p.repository.queries, w.Resource.TenantID, w.Resource.VPCID, now, p.repository.baseFreshnessLimit()) == nil
-	cap, capErr := p.repository.queries.GetLBCapability(ctx, sqlcgen.GetLBCapabilityParams{ClusterID: r.binding.ClusterID})
-	r.dependencies = r.dependencies && capErr == nil && cap.Ready && freshTime(&cap.ObservedAt, now, p.repository.baseFreshnessLimit())
+	r.dependencies = parent.NetworkVpc.State != "deleting" && parent.NetworkVpc.State != "deleted" && parent.NetworkVpc.State != "failed" && r.vpc.PendingAction == "" && r.subnet.PendingAction == ""
 	return r, nil
 }
 func lbComponentName(w biz.Work, kind string) string {
@@ -358,6 +360,7 @@ var errLBAuditInvalid = errors.New("LB audit needs a fresh collection")
 
 func (p *KCProvider) ObserveLoadBalancer(ctx context.Context, w biz.Work) (biz.LoadBalancerObservation, error) {
 	refresh := false
+	critical := w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleting || w.Resource.State == biz.Deleted
 	for {
 		if err := ctx.Err(); err != nil {
 			return biz.LoadBalancerObservation{}, readFailure(err)
@@ -369,7 +372,10 @@ func (p *KCProvider) ObserveLoadBalancer(ctx context.Context, w biz.Work) (biz.L
 			}
 			return o, err
 		}
-		// A Watch renewal invalidates the audit, not the Provider facts. Each
+		if !critical {
+			return biz.LoadBalancerObservation{}, readFailure(err)
+		}
+		// A relist invalidates the audit, not the Provider facts. Each
 		// retry collects after a new database boundary within the original
 		// deadline. Actual read errors and identity conflicts are not retried.
 		// Unbounded callers retain only one fresh-collection fallback.
@@ -388,7 +394,7 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 	if err != nil {
 		return o, err
 	}
-	now, err := p.repository.queries.DatabaseTime(ctx)
+	now, err := p.repository.readQueries(ctx).DatabaseTime(ctx)
 	if err != nil {
 		return o, readFailure(err)
 	}
@@ -411,13 +417,17 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 		}
 	}
 	var view *auditView
-	keys := []string{"load-balancer:" + r.binding.Namespace + "/" + w.Resource.ID, "uid:" + r.binding.ProviderUid, "lb-capability"}
+	keys := []string{"load-balancer:" + r.binding.Namespace + "/" + w.Resource.ID, "uid:" + r.binding.ProviderUid}
 	if p.observation != nil && p.loadBalancerInstallation != nil {
 		after := time.Time{}
-		if refresh || w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleted {
+		if refresh || w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleting || w.Resource.State == biz.Deleted {
 			after = now
 		}
-		view, err = p.observation.snapshot(ctx, after)
+		if after.IsZero() {
+			view, err = p.observation.cachedSnapshot(now)
+		} else {
+			view, err = p.observation.snapshot(ctx, after)
+		}
 		if err != nil {
 			return o, readFailure(err)
 		}
@@ -451,6 +461,11 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 	if view != nil {
 		o.Proof.CollectedAt = view.collected
 		o.Proof.CoveredGeneration = view.generations[observationTarget{w.Resource.TenantID, w.Resource.ID, "load_balancer"}.key()]
+		if !refresh && !w.ActiveOperation && w.PendingAction == "" && w.Resource.State != biz.Deleting && w.Resource.State != biz.Deleted && p.observation.valid(view, keys) {
+			// A management hint does not invalidate unchanged Provider facts.
+			// Keep the source timestamp and the object/source continuity fence.
+			o.Proof.CoveredGeneration = w.Requirement.RequestedGeneration
+		}
 		if !o.Proof.Covers(w.Requirement) || !p.observation.valid(view, keys) {
 			return biz.LoadBalancerObservation{}, errLBAuditInvalid
 		}
@@ -472,7 +487,10 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 		if !desired {
 			continue
 		}
-		eligible := p.lbMemberIdentity(ctx, r, m)
+		eligible, identityErr := p.lbMemberIdentity(ctx, r, m)
+		if identityErr != nil {
+			return biz.LoadBalancerObservation{}, identityErr
+		}
 		reason := biz.Reason("")
 		if !eligible {
 			reason = biz.BackendIdentityMismatch
@@ -534,34 +552,53 @@ func lbOwnerAPIVersion(kind string) string {
 	}
 	return ""
 }
-func (p *KCProvider) lbMemberIdentity(ctx context.Context, r lbResolved, m biz.LoadBalancerMemberIdentity) bool {
-	a, err := p.repository.queries.GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: r.work.Resource.TenantID, AttachmentID: m.AttachmentID})
+func (p *KCProvider) lbMemberIdentity(ctx context.Context, r lbResolved, m biz.LoadBalancerMemberIdentity) (bool, error) {
+	a, err := p.repository.readQueries(ctx).GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: r.work.Resource.TenantID, AttachmentID: m.AttachmentID})
 	if err != nil {
-		return false
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, readFailure(err)
 	}
 	// Attachment observation can advance while this LB waits for its audit.
 	// Read database time after the row, rather than treating a renewal after
 	// work claim as a future timestamp. Stale and truly future facts still fail.
-	now, err := p.repository.queries.DatabaseTime(ctx)
-	if err != nil || a.State != "attached" || a.ProtocolBlocked || a.Reason != "" || a.PodUid != m.PodUID || a.SubnetID != m.SubnetID || a.VpcID != r.work.Resource.VPCID || a.Namespace != r.binding.Namespace || a.ClusterID != r.binding.ClusterID || !freshTime(a.ObservedAt, now, p.repository.baseFreshnessLimit()) {
-		return false
+	now, err := p.repository.readQueries(ctx).DatabaseTime(ctx)
+	if err != nil {
+		return false, readFailure(err)
 	}
-	parent, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: a.TenantID, ResourceID: m.SubnetID})
+	if a.State != "attached" || a.ProtocolBlocked || (a.Reason != "" && a.Reason != string(biz.ProviderUnavailable)) || a.PodUid != m.PodUID || a.SubnetID != m.SubnetID || a.VpcID != r.work.Resource.VPCID || a.Namespace != r.binding.Namespace || a.ClusterID != r.binding.ClusterID {
+		return false, nil
+	}
+	parent, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: a.TenantID, ResourceID: m.SubnetID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, readFailure(err)
+	}
 	if err != nil || parent.ClusterID != r.binding.ClusterID || parent.Namespace != r.binding.Namespace || parent.ProviderUid == "" {
-		return false
+		return false, nil
 	}
 	subnet := lbFind(r.objects[kcSubnets], a.Namespace, parent.ProviderName)
 	if subnet == nil || string(subnet.GetUID()) != parent.ProviderUid || subnet.GetDeletionTimestamp() != nil {
-		return false
+		return false, nil
 	}
 	ref := parent.Namespace + "/" + parent.ProviderName
 	pod := lbFind(r.objects[pods], a.Namespace, m.PodName)
 	nic := lbFind(r.objects[observationGVRs[3]], a.Namespace, m.VNicName)
 	ip := lbFind(r.objects[observationGVRs[4]], a.Namespace, m.VNicIPName)
 	if pod == nil || nic == nil || ip == nil || string(pod.GetUID()) != m.PodUID || string(nic.GetUID()) != m.VNicUID || string(ip.GetUID()) != m.VNicIPUID || pod.GetDeletionTimestamp() != nil || nic.GetDeletionTimestamp() != nil || ip.GetDeletionTimestamp() != nil {
-		return false
+		return false, nil
 	}
-	return pod.GetLabels()[attachmentLabel] == a.AttachmentID && crString(pod, "status", "podIP") == m.Address && lbOwnedBy(nic, "Pod", m.PodName, m.PodUID) && lbOwnedBy(ip, "VNic", m.VNicName, m.VNicUID) && kcRef(crString(nic, "spec", "subnet"), a.Namespace) == ref && kcRef(crString(ip, "spec", "subnet"), a.Namespace) == ref && kcRef(crString(ip, "spec", "vNic"), a.Namespace) == a.Namespace+"/"+m.VNicName && kcRef(crString(ip, "status", "vNic"), a.Namespace) == a.Namespace+"/"+m.VNicName && crString(ip, "spec", "ipAddress") == m.Address
+	matches := pod.GetLabels()[attachmentLabel] == a.AttachmentID && crString(pod, "status", "podIP") == m.Address && lbOwnedBy(nic, "Pod", m.PodName, m.PodUID) && lbOwnedBy(ip, "VNic", m.VNicName, m.VNicUID) && kcRef(crString(nic, "spec", "subnet"), a.Namespace) == ref && kcRef(crString(ip, "spec", "subnet"), a.Namespace) == ref && kcRef(crString(ip, "spec", "vNic"), a.Namespace) == a.Namespace+"/"+m.VNicName && kcRef(crString(ip, "status", "vNic"), a.Namespace) == a.Namespace+"/"+m.VNicName && crString(ip, "spec", "ipAddress") == m.Address
+	if !matches {
+		return false, nil
+	}
+	// An old projection does not establish an identity mismatch. Current
+	// mismatches above still fence the backend; missing freshness reports
+	// observation uncertainty without withdrawing a verified live backend.
+	if !freshTime(a.ObservedAt, now, p.repository.baseFreshnessLimit()) {
+		return false, readFailure(fmt.Errorf("backend attachment observation is pending"))
+	}
+	return true, nil
 }
 
 func (p *KCProvider) MutateLoadBalancer(ctx context.Context, w biz.Work, c biz.LoadBalancerComponent, action string, observed biz.LoadBalancerObservation) (biz.LoadBalancerComponentObservation, error) {

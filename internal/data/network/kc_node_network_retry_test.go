@@ -140,3 +140,62 @@ func TestNodeNetworkAuditRetriesStayBoundedAndDiagnostic(t *testing.T) {
 		}
 	})
 }
+
+func TestStableVirtualSwitchUsesSharedNodeFacts(t *testing.T) {
+	p, collections := nodeAuditRetryProvider(t, nil)
+	p.repository.placement.ClusterID = "cluster"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, _, _, at, err := p.nodeNetworkObjects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := biz.VirtualSwitchNode{NodeName: "node2", NodeUID: "node-uid", Priority: 100, Allocated: true, Prepared: true, Applied: true, LastObservedAt: at}
+	sw := biz.VirtualSwitch{EgressMetadata: biz.EgressMetadata{State: biz.Available}, ClusterID: "cluster", GroupName: "public", BindingID: "binding", BindingState: "configured", Nodes: []biz.VirtualSwitchNode{member}}
+	// Node-probe ConfigMaps change independently of the node ownership facts
+	// needed by an already configured switch. They cannot force a full LIST.
+	cm := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "node-probe", "namespace": kcSystemNamespace, "labels": map[string]any{ownerLabel: "ani-network-node-network"}}, "data": map[string]any{"observed_at": "new-probe"}}}
+	p.observation.changed(nil, cm)
+	current, err := p.InspectVirtualSwitchNode(ctx, sw, member)
+	if err != nil || !current.Applied || !current.LastObservedAt.Equal(at) || collections.Load() != 1 {
+		t.Fatalf("ordinary switch re-collected or renewed old evidence: %+v collections=%d err=%v", current, collections.Load(), err)
+	}
+	for _, change := range []string{"replaced", "added", "source-boundary", "stale"} {
+		t.Run(change, func(t *testing.T) {
+			o := p.observation
+			o.mu.Lock()
+			o.changes = map[string]uint64{}
+			o.epoch = o.view.epoch
+			o.view.collected = at
+			o.mu.Unlock()
+			node := networkObservationNode()
+			switch change {
+			case "replaced":
+				replacement := node.DeepCopy()
+				replacement.SetUID("replacement")
+				o.changed(node, replacement)
+			case "added":
+				node.SetName("new-allocated-node")
+				node.SetUID("new-uid")
+				o.changed(nil, node)
+			case "source-boundary":
+				o.sourceBoundary()
+			case "stale":
+				o.mu.Lock()
+				o.view.collected = at.Add(-time.Minute)
+				o.mu.Unlock()
+			}
+			_, err := p.InspectVirtualSwitchNode(ctx, sw, member)
+			var failure *biz.ProviderError
+			if !errors.As(err, &failure) || failure.Kind != biz.ProviderTemporary || collections.Load() != 1 {
+				t.Fatalf("invalid ordinary facts were accepted or forced a collection: collections=%d err=%v", collections.Load(), err)
+			}
+		})
+	}
+	// An unresolved node mutation retains the current collection/recovery path.
+	member.Unknown = true
+	current, err = p.InspectVirtualSwitchNode(ctx, sw, member)
+	if err != nil || !current.Applied || current.Unknown || collections.Load() != 2 {
+		t.Fatalf("unknown node mutation did not use current proof: %+v collections=%d err=%v", current, collections.Load(), err)
+	}
+}

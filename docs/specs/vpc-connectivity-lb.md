@@ -1,5 +1,7 @@
 # VPC 基础内网、公网出站与租户 LB 统一方案
 
+2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
+
 初始日期：2026-09-14；后端合同更新：2026-10-30。状态：实现范围与实际验收分别见执行状态；用户已确认的约束见 [ADR-0005](../adr/0005-separate-vpc-connectivity-and-exclusive-eip-bindings.md)。本文定义目标行为，实施任务见[执行计划](../plans/vpc-connectivity-lb.md)，当前进度只看[执行状态](../execution/status.md)。历史实施结果保留各自时点；本次固定三规格、多监听器和 VPC 预设只改后端，未修改前端或共享平台预置。
 
 ## 1. 固定输入和变化范围
@@ -196,7 +198,7 @@ Backend Member 引用同VPC内其他Subnet时，也登记该Subnet的网络引�
 
 worker 按稳定依赖推进 Backend → Gateway → 各协议 Route/Policy，观察控制器生成的数据面和 kc VIP/EIP 绑定。独立步骤重试不能重新申请另一个 Public EIP或另一个 VIP，不能留下未登记 CR。
 
-LB 配置完成需：专属 Proxy 及其它自有 CR 身份与期望一致，Gateway Accepted/Programmed，Route Accepted/ResolvedRefs，Policy Accepted且代次匹配；数据面存在并关联正确；Service 类型、端口、EndpointSlice、VIP分配或Public EIP绑定符合 exposure；EIP claim 目标和 Provider实际 Service一致；VPC/Subnet 自身 Provider 证据及观测新鲜，无未决写入。基础 Intranet EIP/SNAT 缺失、故障或引起 VPC 聚合 degraded 均不构成 LB 故障。公共配置关闭数据面探针，Running 不证明监听器真正加载，因此响应还需分别记录 `configuration_state`、`data_plane_state`、`observed_at`，无实际健康来源时 data_plane_state=unknown。
+LB 配置完成需：专属 Proxy 及其它自有 CR 身份与期望一致，Gateway Accepted/Programmed，Route Accepted/ResolvedRefs，Policy Accepted且代次匹配；数据面存在并关联正确；Service 类型、端口、EndpointSlice、VIP分配或Public EIP绑定符合 exposure；EIP claim 目标和 Provider实际 Service一致；VPC/Subnet 原身份与当前配置的 Provider 证据，无未决写入。基础 Intranet EIP/SNAT 缺失、故障或引起 VPC 聚合 degraded 均不构成 LB 故障。公共配置关闭数据面探针，Running 不证明监听器真正加载，因此响应还需分别记录 `configuration_state`、`data_plane_state`、`observed_at`，无实际健康来源时 data_plane_state=unknown。
 
 产品创建 operation 成功表达“配置已完成”；Console 文案显示“已配置”，不得将无健康证据的情况显示成“流量健康”。部署/功能验收必须额外从正确来源实际访问各入口并断言业务响应。后续具备受控主动探测/Envoy运行观测源时可提高 data_plane_state 的证据等级，但不默认开放 Envoy admin 接口或把日志无报错作为证明。
 
@@ -284,3 +286,5 @@ Network构建/真实PG/恢复/契约/观察门禁在ubuntu执行；环境和源�
 ## 列表总数
 
 负载均衡列表返回 `items,next_cursor,total`。`total` 统计当前租户、name/state/vpc/subnet/exposure 筛选下已受理的产品资源，不包含尚未受理的占位记录，不应用 cursor/limit；总数与本页数据来自同一只读数据库快照。跨页不承诺总数固定。
+
+安装核验通过 `scripts/lb-api installation --verify` 显式运行；运行期不反复执行 CRD/镜像/安装指纹/SubjectAccessReview。GatewayClass 当前 Accepted 与实际 API 错误仍保留。生成对象的规格、HA、副本身份和最终释放尚无等价下层合同，相关检查继续限定到 LB，不以 Gateway Programmed 代替真实流量验收。

@@ -149,14 +149,17 @@ func controllerDefaultGateway(c sqlcgen.NetworkPublicPool, objects []unstructure
 	}
 	return found
 }
+func intranetGatewayReady(c sqlcgen.NetworkPublicPool, gateway *unstructured.Unstructured) bool {
+	return c.Scope == "intranet" && c.GatewayID == nil && c.Mode == "overlay" && intranetGatewayIdentity(c, gateway) && goodConditions(gateway, "Valid", "Initialized", "Ready") && crInt(gateway, "status", "observedGeneration") == gateway.GetGeneration()
+}
 func intranetInfrastructureReady(c sqlcgen.NetworkPublicPool, gateway, config *unstructured.Unstructured, services, providerPods []unstructured.Unstructured) bool {
-	return c.Scope == "intranet" && c.GatewayID == nil && c.Mode == "overlay" && intranetGatewayIdentity(c, gateway) && goodConditions(gateway, "Valid", "Initialized", "Ready") && crInt(gateway, "status", "observedGeneration") == gateway.GetGeneration() && intranetRoutesConfigured(c, config, services) && controllerDefaultGateway(c, providerPods)
+	return intranetGatewayReady(c, gateway) && intranetRoutesConfigured(c, config, services) && controllerDefaultGateway(c, providerPods)
 }
 func addressPoolReady(r egressResolved, pool *unstructured.Unstructured, set egressReadSet) bool {
 	if r.pool.Scope != "intranet" {
 		return publicPoolReady(r, pool, set.objects["gateway"], set.objects["vlan"])
 	}
-	return goodConditions(pool, "Valid", "Initialized", "Ready") && crInt(pool, "status", "observedGeneration") == pool.GetGeneration() && matchesEgressSpec(pool, renderIntranetPool(r.pool), "public_pool") && !hasField(pool, "spec", "underlayConfig") && !hasNonNullField(pool, "status", "underlayState") && intranetInfrastructureReady(r.pool, set.objects["default_vpc"], set.objects["intranet_config"], set.all[kcServiceCIDRs], set.all[pods])
+	return goodConditions(pool, "Valid", "Initialized", "Ready") && crInt(pool, "status", "observedGeneration") == pool.GetGeneration() && matchesEgressSpec(pool, renderIntranetPool(r.pool), "public_pool") && !hasField(pool, "spec", "underlayConfig") && !hasNonNullField(pool, "status", "underlayState") && intranetGatewayReady(r.pool, set.objects["default_vpc"])
 }
 func allocatedEIP(r egressResolved, eip *unstructured.Unstructured, set egressReadSet) (bool, string) {
 	if r.pool.Scope != "intranet" {

@@ -40,6 +40,7 @@ func newLBAdmissionFixture(t *testing.T, interceptors ...func(http.ResponseWrite
 	f, api, db, kube := newBaseKCFixture(t, intercept)
 	vpc := baseState(t, f, createBaseVPC(t, f, "lb-parent").ID, biz.Available)
 	makeSubnet := func(name, cidr string) biz.Subnet {
+		baseState(t, f, vpc.ID, biz.Available)
 		s, err := f.n.CreateSubnet(f.ctx, biz.CreateSubnet{TenantID: f.tenant, VPCID: vpc.ID, Name: name, CIDR: cidr, IdempotencyKey: name})
 		if err != nil {
 			t.Fatal(err)

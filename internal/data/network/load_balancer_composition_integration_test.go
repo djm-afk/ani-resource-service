@@ -147,8 +147,8 @@ func TestLBAndPublicBindingCoexistWithBackfillPauseResumeAndDeleteRace(t *testin
 	}()
 	close(start)
 	group.Wait()
-	if results[0] != nil || biz.ReasonOf(results[1]) != biz.BaseConnectivityNotReady || admission.State != "accepted" {
-		t.Fatal("Public binding must wait for backfill evidence", admission, results)
+	if results[0] != nil || (results[1] != nil && biz.ReasonOf(results[1]) != biz.BaseConnectivityNotReady) || admission.State != "accepted" {
+		t.Fatal("backfill and concurrent binding must serialize; binding may win before backfill admission", admission, results)
 	}
 	if _, err = f.f.p.SetBaseBackfillPaused(f.f.ctx, plan.RunID, true, ""); err != nil {
 		t.Fatal(err)

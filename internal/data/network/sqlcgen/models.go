@@ -39,7 +39,7 @@ type NetworkAttachment struct {
 	UpdatedAt           time.Time
 	ObservedAt          *time.Time
 	ReleasedAt          *time.Time
-	NextCheckAt         time.Time
+	NextCheckAt         pgtype.Timestamptz
 	LeaseOwner          *string
 	LeaseUntil          *time.Time
 	Epoch               int64

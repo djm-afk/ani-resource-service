@@ -1,5 +1,9 @@
 # Network 执行状态
 
+## 2026-11-03：网络管理简化
+
+R7 业务源码 `caefebc` 已发布到 10/12，12 镜像由 `ubuntu@100.64.128.15` 独立构建并推送。Fedora 定向真实 PG 与完整 `make verify` PASS；最终 300 秒 GET/LIST：12 为 6000→1461（减少 75.65%，基础 LIST 9 轮），10 为 4728→1587（减少 66.43%，基础 LIST 13 轮，额外来源未逐次归因）。原 LB 身份四入口、五分钟无误降级、默认出口失败保留均通过。12 的完整 VM 生命周期和物理释放已在代码相同的 R6 路径通过，R7 窗口中原 5 台 VM 保持不变；采样的 37/40 条租户/平台 Deleted 停放且 epoch 不变。#48/#49 按各自现场证据关闭，#47 保留为 KCN 缺陷。Resource PR #50、Console PR #11 均未合并；Console 源码检查通过、生产部署/浏览器验收 NOT_RUN。完整网络 PG 集成组曾超时，不冒充全量通过。来源、失败回退、旧环境残留及回滚限制见[实施记录](records/network-management-simplification-20261103.md)。
+
 <a id="base-network-auto-allocation-20261103"></a>
 
 ## 2026-11-03：基础网络默认分配与 LB 产品主链

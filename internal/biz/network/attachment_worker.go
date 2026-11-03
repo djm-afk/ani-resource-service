@@ -117,7 +117,7 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 	o, observeErr := w.provider.ObserveAttachment(call, work)
 	cancel()
 	if observeErr != nil {
-		p.Reason = providerReason(observeErr)
+		p.Reason = observationReason(observeErr)
 		if providerKind(observeErr) == ProviderConflict {
 			p.Reason = AttachmentProtocol
 			p.ProtocolBlocked = true

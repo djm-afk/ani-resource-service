@@ -435,26 +435,26 @@ func (n *Native) observe(ctx context.Context, v biz.VM, includeStorage bool) (bi
 func (n *Native) controlVM(ctx context.Context, v biz.VM, action string, options map[string]any) error {
 	x, e := n.Observe(ctx, v)
 	if e != nil {
-		return e
+		return &biz.NativeNotSubmittedError{Err: e}
 	}
 	if x.VM.UID != v.Native.UID || v.Native.UID == "" {
-		return biz.ErrOwnership
+		return &biz.NativeNotSubmittedError{Err: biz.ErrOwnership}
 	}
 	body, e := json.Marshal(options)
 	if e != nil {
-		return e
+		return &biz.NativeNotSubmittedError{Err: e}
 	}
 	return n.control.Put().SetHeader("Accept", "*/*").SetHeader("Content-Type", "application/json").Namespace(v.Spec.Namespace).Resource("virtualmachines").Name(v.Native.Name).SubResource(action).Body(body).Do(ctx).Error()
 }
 func (n *Native) Start(ctx context.Context, v biz.VM) error {
 	if e := n.ValidateBackendConfiguration(ctx, v.Spec); e != nil {
-		return e
+		return &biz.NativeNotSubmittedError{Err: e}
 	}
 	if e := n.ensureWindowsDomain(ctx, v); e != nil {
-		return e
+		return &biz.NativeNotSubmittedError{Err: e}
 	}
 	if e := n.ensureConsoleTablet(ctx, v); e != nil {
-		return e
+		return &biz.NativeNotSubmittedError{Err: e}
 	}
 	return n.controlVM(ctx, v, "start", map[string]any{})
 }

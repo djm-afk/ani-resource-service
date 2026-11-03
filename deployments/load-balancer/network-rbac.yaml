@@ -24,12 +24,6 @@ rules:
   - apiGroups: [discovery.k8s.io]
     resources: [endpointslices]
     verbs: [get, list, watch]
-  - apiGroups: [apiextensions.k8s.io]
-    resources: [customresourcedefinitions]
-    verbs: [get, list, watch]
-  - apiGroups: [authorization.k8s.io]
-    resources: [subjectaccessreviews]
-    verbs: [create]
 
   # Prefer a namespaced Role granting get to the tenant's selected TLS Secrets.
   # No Secret list/watch or Secret mutation is needed by the listener adapter.

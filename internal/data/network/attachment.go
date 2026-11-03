@@ -58,6 +58,7 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
+	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
 	initial, e := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
@@ -87,7 +88,7 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	if v.State != "available" || s.State != "available" || v.ObservedAt == nil || s.ObservedAt == nil || now.Sub(*v.ObservedAt) > freshness || now.Sub(*s.ObservedAt) > freshness {
+	if ((r.WorkloadMode == "vm_managed" || p.networkProvider != nil) && (!networkManagementOpen(v.State, v.Reason) || !networkManagementOpen(s.State, s.Reason))) || (r.WorkloadMode != "vm_managed" && p.networkProvider == nil && (v.State != "available" || s.State != "available" || v.ObservedAt == nil || s.ObservedAt == nil || now.Sub(*v.ObservedAt) > freshness || now.Sub(*s.ObservedAt) > freshness)) {
 		return biz.Attachment{}, biz.Fail(biz.NetworkNotReady, "fresh available VPC and subnet required")
 	}
 	if r.VPCID != "" && r.VPCID != s.VpcID {
@@ -102,6 +103,17 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	}
 	if b.ProviderUid == "" {
 		return biz.Attachment{}, biz.Fail(biz.NetworkNotReady, "subnet binding identity is unavailable")
+	}
+	if r.WorkloadMode != "vm_managed" && p.networkProvider != nil {
+		currentCtx, err := p.networkProvider.namespaceContext(ctx, b)
+		if err != nil {
+			return biz.Attachment{}, err
+		}
+		for _, id := range []string{s.VpcID, s.SubnetID} {
+			if _, err = p.networkProvider.currentNetworkResource(currentCtx, q, r.TenantID, id); err != nil {
+				return biz.Attachment{}, err
+			}
+		}
 	}
 	id := "att_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	delivery := biz.PodPrimaryPlan{FormatVersion: 1, WorkloadMode: r.WorkloadMode, Namespace: b.Namespace, PrimaryNetworkRef: b.Namespace + "/" + b.ProviderName, TenantID: r.TenantID, InstanceID: r.InstanceID, AttachmentID: id, SubmissionID: r.SubmissionID, Generation: r.Generation}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -30,6 +31,11 @@ func installation(args []string) error {
 	output := flags.String("output", "", "new evidence JSON path (never overwritten)")
 	expectedContext := flags.String("expected-context", installationContext, "verified target context; never changed")
 	expectedUID := flags.String("expected-cluster-uid", installationClusterUID, "verified kube-system UID")
+	verify := flags.Bool("verify", false, "run explicit installation image/CRD/RBAC acceptance")
+	controllerImage := flags.String("controller-image-id", "", "expected running controller image digest")
+	envoyImage := flags.String("envoy-image-id", "", "expected running Envoy image digest")
+	shutdownImage := flags.String("shutdown-image-id", "", "expected running shutdown manager image digest")
+	kcImage := flags.String("kcn-image-id", "", "expected running KCN image digest")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -94,6 +100,16 @@ func installation(args []string) error {
 	sum := sha256.Sum256(canonical)
 	fingerprint := hex.EncodeToString(sum[:])
 	payload := map[string]any{"mode": "read_only_expectation_material", "observed_at": time.Now().UTC(), "context": *expectedContext, "api_server": cfg.Host, "cluster_uid": string(ns.GetUID()), "fingerprint": fingerprint, "bundle": bundle, "records": records, "readiness": "not_verified", "source_to_image_link": "not_verified"}
+	if *verify {
+		ready, err := data.VerifyLoadBalancerInstallation(ctx, client, data.LoadBalancerInstallation{Fingerprint: fingerprint, ControllerImageID: *controllerImage, EnvoyImageID: *envoyImage, ShutdownImageID: *shutdownImage, KCImageID: *kcImage})
+		if err != nil {
+			return err
+		}
+		payload["readiness"] = "fail"
+		if ready {
+			payload["readiness"] = "pass"
+		}
+	}
 	file, err := os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return errors.New("cannot create new installation evidence; no existing file was overwritten")
@@ -107,6 +123,9 @@ func installation(args []string) error {
 	}
 	if closeErr != nil {
 		return closeErr
+	}
+	if *verify && payload["readiness"] != "pass" {
+		return fmt.Errorf("installation acceptance failed; see %s", *output)
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]string{"fingerprint": fingerprint, "evidence": *output, "mode": "read_only_expectation_material"})
 }

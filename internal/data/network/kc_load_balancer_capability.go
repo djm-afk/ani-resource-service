@@ -15,19 +15,20 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/yaml"
 )
 
-// This is a pinned installation expectation, not a readiness override. The
-// shared audit must independently match the installation and running images.
+// Pinned deployment input, also consumed by the explicit installation check.
+// Runtime resources do not repeatedly audit the platform installation.
 type LoadBalancerInstallation struct {
 	Fingerprint, ControllerImageID, EnvoyImageID, ShutdownImageID, KCImageID string
 }
 
 var lbCRDs = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
 var lbReviews = schema.GroupVersionResource{Group: "authorization.k8s.io", Version: "v1", Resource: "subjectaccessreviews"}
-var lbObservationGVRs = []schema.GroupVersionResource{lbGateways, lbRoutes, lbBackends, lbPolicies, lbDeployments, lbReplicaSets, lbEndpointSlices, lbGatewayClasses, lbEnvoyProxies, lbCRDs}
+var lbObservationGVRs = []schema.GroupVersionResource{lbGateways, lbRoutes, lbBackends, lbPolicies, lbDeployments, lbReplicaSets, lbEndpointSlices, lbGatewayClasses, lbEnvoyProxies}
 
 func (p *KCProvider) ConfigureLoadBalancer(expected LoadBalancerInstallation) error {
 	if p.observation != nil {
@@ -288,19 +289,21 @@ func (o *KCObservation) collectLB(ctx context.Context, v *auditView) error {
 		}
 		v.indices[gvr] = index
 	}
-	ready, fingerprint, images := o.provider.inspectLBCapability(optional, v)
-	ready = ready && complete
+	// Runtime capability describes API access and the GatewayClass controller
+	// acknowledgement. Image/CRD/RBAC acceptance belongs to the deployment check.
+	class := lbViewObject(v, lbGatewayClasses, "", biz.LoadBalancerGatewayClass)
+	ready := complete && class != nil && class.GetDeletionTimestamp() == nil && crString(class, "spec", "controllerName") == lbController
+	if class != nil {
+		conditions, _, _ := unstructured.NestedSlice(class.Object, "status", "conditions")
+		ready = ready && lbConditions(conditions, class.GetGeneration(), "Accepted")
+	}
 	reason := ""
-	if !ready {
-		reason = "LOAD_BALANCER_INSTALLATION_NOT_READY"
+	if !complete {
+		reason = "PROVIDER_UNAVAILABLE"
+	} else if !ready {
+		reason = "PROVIDER_NOT_READY"
 	}
-	if images == nil {
-		images = []string{}
-	}
-	if !o.valid(v, []string{"lb-capability"}) {
-		return nil
-	}
-	return o.provider.repository.queries.SaveLBCapability(ctx, sqlcgen.SaveLBCapabilityParams{ClusterID: o.provider.repository.placement.ClusterID, Ready: ready, Reason: reason, ObservedAt: v.collected, Fingerprint: fingerprint, ProviderImages: images})
+	return o.provider.repository.queries.SaveLBCapability(ctx, sqlcgen.SaveLBCapabilityParams{ClusterID: o.provider.repository.placement.ClusterID, Ready: ready, Reason: reason, ObservedAt: v.collected, Fingerprint: o.provider.loadBalancerInstallation.Fingerprint, ProviderImages: []string{}})
 }
 func (p *KCProvider) observationResources() []schema.GroupVersionResource {
 	values := append([]schema.GroupVersionResource{}, observationGVRs...)
@@ -323,4 +326,29 @@ func lbQuantityEquals(obj *unstructured.Unstructured, expected string, fields ..
 	}
 	quantity, err := resource.ParseQuantity(fmt.Sprint(value))
 	return err == nil && quantity.Cmp(resource.MustParse(expected)) == 0
+}
+
+// VerifyLoadBalancerInstallation is invoked explicitly by the deployment driver;
+// it is never called by resource reconciliation or the shared recovery audit.
+func VerifyLoadBalancerInstallation(ctx context.Context, client dynamic.Interface, expected LoadBalancerInstallation) (bool, error) {
+	p := &KCProvider{client: client, repository: &Postgres{placement: Placement{NamespacePrefix: "tenant-"}}}
+	if err := p.ConfigureLoadBalancer(expected); err != nil {
+		return false, err
+	}
+	v := &auditView{indices: map[schema.GroupVersionResource]cache.Indexer{}}
+	for _, gvr := range append(append([]schema.GroupVersionResource{}, lbObservationGVRs...), lbCRDs, kcConfigMaps, pods) {
+		objects, err := p.listAll(ctx, gvr)
+		if err != nil {
+			return false, err
+		}
+		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
+		for _, obj := range objects {
+			if err := index.Add(obj.DeepCopy()); err != nil {
+				return false, err
+			}
+		}
+		v.indices[gvr] = index
+	}
+	ready, _, _ := p.inspectLBCapability(ctx, v)
+	return ready, nil
 }

@@ -97,11 +97,12 @@ func NewKCProvider(repository *Postgres, config *rest.Config) (*KCProvider, erro
 	}
 	provider := &KCProvider{repository: repository, client: client, watchClient: watchClient, io: stats, namespaceIdentityReader: repository.tenantNamespaceIdentity}
 	repository.ConfigureTenantNamespaceResolver(provider.resolveTenantNamespace)
+	repository.networkProvider = provider
 	return provider, nil
 }
 
 func (p *KCProvider) binding(ctx context.Context, target biz.ProviderTarget) (sqlcgen.NetworkProviderBinding, error) {
-	value, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: target.TenantID, ResourceID: target.ResourceID})
+	value, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: target.TenantID, ResourceID: target.ResourceID})
 	if err != nil {
 		return value, &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: err}
 	}
@@ -122,6 +123,9 @@ func (p *KCProvider) observeDirect(ctx context.Context, target biz.ProviderTarge
 	}
 	object, err := p.client.Resource(kcResource(binding)).Namespace(binding.Namespace).Get(ctx, binding.ProviderName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
+		if !target.Deleting {
+			return biz.ProviderObservation{}, nil
+		}
 		dependencies, err := p.hasDependencies(ctx, binding)
 		return biz.ProviderObservation{HasDependencies: dependencies}, err
 	}
@@ -359,7 +363,7 @@ func kcResource(b sqlcgen.NetworkProviderBinding) schema.GroupVersionResource {
 	return kcVPCs
 }
 func (p *KCProvider) parentReference(ctx context.Context, b sqlcgen.NetworkProviderBinding, t biz.ProviderTarget) (string, error) {
-	parent, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: t.VPCID})
+	parent, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: t.VPCID})
 	if err != nil {
 		return "", readFailure(err)
 	}

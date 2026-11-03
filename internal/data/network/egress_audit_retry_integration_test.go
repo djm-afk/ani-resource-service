@@ -27,8 +27,8 @@ func (t egressAuditTransport) RoundTrip(r *http.Request) (*http.Response, error)
 	return t.next.RoundTrip(copy)
 }
 
-func TestEgressFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
-	// Two real HTTP Watch renewals invalidate two complete collections. A
+func TestEgressOrdinaryProjectionWaitsAndCriticalReadSurvivesRelists(t *testing.T) {
+	// Two real HTTP Watch expirations invalidate two complete collections. A
 	// subsequent stable collection must still be usable within the same call.
 	type watchSession struct {
 		cancel context.CancelFunc
@@ -79,9 +79,7 @@ func TestEgressFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 			}
 		}
 		boundary := observation.Load().Snapshot()["source_boundaries_total"]
-		for _, session := range sessions {
-			session.cancel()
-		}
+		api.Disconnect(410)
 		for observation.Load().Snapshot()["source_boundaries_total"] <= boundary {
 			select {
 			case <-ticker.C:
@@ -135,6 +133,11 @@ func TestEgressFinishesFreshAuditAfterConsecutiveWatchBoundaries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(f.ctx, 12*time.Second)
 	defer cancel()
 	next, err := provider.Observe(ctx, target)
+	if err == nil || !next.Proof.CollectedAt.IsZero() || collections.Load() != 0 {
+		t.Fatalf("ordinary observation started a full collection or used invalid proof: %+v %v", next, err)
+	}
+	target.Direct = true
+	next, err = provider.Observe(ctx, target)
 	if err != nil || !next.Ready || next.Egress == nil || next.Egress.AppliedEnabled == nil || !*next.Egress.AppliedEnabled || next.Proof.CollectedAt.Before(changedAt) || boundaries.Load() != 2 {
 		t.Fatalf("stable audit within caller budget was not consumed: collections=%d boundaries=%d observation=%+v err=%v", collections.Load(), boundaries.Load(), next, err)
 	}

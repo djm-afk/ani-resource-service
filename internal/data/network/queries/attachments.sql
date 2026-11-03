@@ -43,5 +43,5 @@ UPDATE network_attachments SET state=sqlc.arg(state),reason=sqlc.arg(reason),pro
  evidence_hash=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.arg(evidence_hash)::text ELSE evidence_hash END,
  evidence_applied_at=CASE WHEN sqlc.arg(observed)::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
  retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
- next_check_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END,lease_owner=NULL,lease_until=NULL
+ next_check_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END,lease_owner=NULL,lease_until=NULL
 WHERE tenant_id=sqlc.arg(tenant_id) AND attachment_id=sqlc.arg(attachment_id) AND version=sqlc.arg(version) AND epoch=sqlc.arg(epoch) AND lease_owner=sqlc.arg(owner)::uuid AND lease_until>clock_timestamp() RETURNING *;

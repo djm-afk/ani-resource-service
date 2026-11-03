@@ -55,7 +55,7 @@ func (q *Queries) NotifyResource(ctx context.Context, arg NotifyResourceParams) 
 const observationAttachments = `-- name: ObservationAttachments :many
 SELECT a.tenant_id,a.attachment_id,a.subnet_id,a.vpc_id,a.namespace,a.pod_name,a.pod_uid,
  coalesce(a.plan->>'WorkloadMode','single_pod')::text AS workload_mode,a.provider_relations,a.requested_generation,
- coalesce(c.snapshot,'null'::jsonb) AS consumer_snapshot
+ (a.state<>'released' OR a.protocol_blocked OR a.next_check_at<>'infinity'::timestamptz)::boolean AS recovery,coalesce(c.snapshot,'null'::jsonb) AS consumer_snapshot
 FROM network_attachments a LEFT JOIN network_attachment_consumer_snapshots c
  ON c.tenant_id=a.tenant_id AND c.attachment_id=a.attachment_id AND coalesce(a.plan->>'WorkloadMode','single_pod')='vm_managed'
 WHERE a.cluster_id=$1
@@ -76,6 +76,7 @@ type ObservationAttachmentsRow struct {
 	WorkloadMode        string
 	ProviderRelations   []byte
 	RequestedGeneration int64
+	Recovery            bool
 	ConsumerSnapshot    []byte
 }
 
@@ -99,6 +100,7 @@ func (q *Queries) ObservationAttachments(ctx context.Context, arg ObservationAtt
 			&i.WorkloadMode,
 			&i.ProviderRelations,
 			&i.RequestedGeneration,
+			&i.Recovery,
 			&i.ConsumerSnapshot,
 		); err != nil {
 			return nil, err
@@ -124,12 +126,6 @@ WITH targets AS (
  UNION ALL
  SELECT b.tenant_id::text,b.vpc_id,'vpc'::text,b.pool_id,b.vpc_id,b.eip_id,b.snat_id
  FROM network_vpc_base_connectivity b WHERE b.cluster_id=$1
- UNION ALL
- SELECT l.tenant_id::text,l.lb_id,'load_balancer'::text,b.pool_id,l.vpc_id,b.eip_id,b.snat_id
- FROM network_load_balancers l JOIN network_vpc_base_connectivity b ON b.tenant_id=l.tenant_id AND b.vpc_id=l.vpc_id WHERE l.cluster_id=$1 AND l.last_operation_id IS NOT NULL
- UNION ALL
- SELECT l.tenant_id::text,l.lb_id,'load_balancer'::text,e.pool_id,l.vpc_id,e.eip_id,NULL::text
- FROM network_load_balancers l JOIN network_eips e ON e.tenant_id=l.tenant_id AND e.eip_id=l.public_eip_id WHERE l.cluster_id=$1 AND l.last_operation_id IS NOT NULL
  UNION ALL
  SELECT ''::text,p.resource_id,p.kind,p.resource_id,NULL::text,NULL::text,NULL::text
  FROM network_platform_resources p WHERE p.cluster_id=$1 AND p.kind='public_pool'
@@ -196,6 +192,15 @@ const observationLBEdges = `-- name: ObservationLBEdges :many
 SELECT l.tenant_id,l.lb_id,('load-balancer:'||l.namespace||'/'||l.lb_id)::text AS relation_key
 FROM network_load_balancers l WHERE l.cluster_id=$1 AND l.last_operation_id IS NOT NULL
 UNION ALL
+SELECT l.tenant_id,l.lb_id,('object:'||CASE b.resource_kind WHEN 'vpc' THEN 'VPC' WHEN 'subnet' THEN 'Subnet' ELSE 'EIP' END||'/'||b.namespace||'/'||b.provider_name)::text
+FROM network_load_balancers l JOIN network_provider_bindings b ON b.tenant_id=l.tenant_id AND b.cluster_id=l.cluster_id
+ AND (b.vpc_id=l.vpc_id OR b.subnet_id=l.subnet_id OR b.eip_id=l.public_eip_id)
+WHERE l.cluster_id=$1 AND l.last_operation_id IS NOT NULL
+UNION ALL
+SELECT l.tenant_id,l.lb_id,('eip:'||b.namespace||'/'||b.provider_name)::text
+FROM network_load_balancers l JOIN network_provider_bindings b ON b.tenant_id=l.tenant_id AND b.cluster_id=l.cluster_id AND b.eip_id=l.public_eip_id
+WHERE l.cluster_id=$1 AND l.last_operation_id IS NOT NULL
+UNION ALL
 SELECT c.tenant_id,c.lb_id,('object:'||CASE c.kind WHEN 'route' THEN 'HTTPRoute' WHEN 'policy' THEN 'BackendTrafficPolicy' ELSE 'Backend' END||'/'||c.namespace||'/'||c.provider_name)::text
 FROM network_lb_components c WHERE c.cluster_id=$1
 UNION ALL
@@ -241,9 +246,14 @@ func (q *Queries) ObservationLBEdges(ctx context.Context, arg ObservationLBEdges
 
 const observationResources = `-- name: ObservationResources :many
 SELECT r.tenant_id,coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)::text AS resource_id,
- r.requested_generation,b.resource_kind,b.namespace,b.provider_name,b.provider_uid
+ r.requested_generation,(coalesce(v.state,s.state,e.state,n.state,l.state)<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery,b.resource_kind,b.namespace,b.provider_name,b.provider_uid
 FROM network_reconciliations r JOIN network_provider_bindings b
  ON b.tenant_id=r.tenant_id AND coalesce(b.vpc_id,b.subnet_id,b.eip_id,b.snat_id,b.lb_id)=coalesce(r.vpc_id,r.subnet_id,r.eip_id,r.snat_id,r.lb_id)
+LEFT JOIN network_vpcs v ON v.tenant_id=r.tenant_id AND v.vpc_id=r.vpc_id
+LEFT JOIN network_subnets s ON s.tenant_id=r.tenant_id AND s.subnet_id=r.subnet_id
+LEFT JOIN network_eips e ON e.tenant_id=r.tenant_id AND e.eip_id=r.eip_id
+LEFT JOIN network_snat_bindings n ON n.tenant_id=r.tenant_id AND n.snat_id=r.snat_id
+LEFT JOIN network_load_balancers l ON l.tenant_id=r.tenant_id AND l.lb_id=r.lb_id
 WHERE b.cluster_id=$1 AND NOT r.retired
 `
 
@@ -255,6 +265,7 @@ type ObservationResourcesRow struct {
 	TenantID            string
 	ResourceID          string
 	RequestedGeneration int64
+	Recovery            bool
 	ResourceKind        string
 	Namespace           string
 	ProviderName        string
@@ -275,6 +286,7 @@ func (q *Queries) ObservationResources(ctx context.Context, arg ObservationResou
 			&i.TenantID,
 			&i.ResourceID,
 			&i.RequestedGeneration,
+			&i.Recovery,
 			&i.ResourceKind,
 			&i.Namespace,
 			&i.ProviderName,
@@ -288,4 +300,48 @@ func (q *Queries) ObservationResources(ctx context.Context, arg ObservationResou
 		return nil, err
 	}
 	return items, nil
+}
+
+const wakeAuditedAttachment = `-- name: WakeAuditedAttachment :exec
+UPDATE network_attachments SET next_check_at=greatest(retry_not_before,least(next_check_at,clock_timestamp())) WHERE tenant_id=$1 AND attachment_id=$2
+`
+
+type WakeAuditedAttachmentParams struct {
+	TenantID     string
+	AttachmentID string
+}
+
+func (q *Queries) WakeAuditedAttachment(ctx context.Context, arg WakeAuditedAttachmentParams) error {
+	_, err := q.db.Exec(ctx, wakeAuditedAttachment, arg.TenantID, arg.AttachmentID)
+	return err
+}
+
+const wakeAuditedPlatform = `-- name: WakeAuditedPlatform :exec
+UPDATE network_platform_reconciliations SET next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp())) WHERE resource_id=$1
+`
+
+type WakeAuditedPlatformParams struct {
+	ResourceID string
+}
+
+func (q *Queries) WakeAuditedPlatform(ctx context.Context, arg WakeAuditedPlatformParams) error {
+	_, err := q.db.Exec(ctx, wakeAuditedPlatform, arg.ResourceID)
+	return err
+}
+
+const wakeAuditedResource = `-- name: WakeAuditedResource :exec
+UPDATE network_reconciliations SET next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp()))
+WHERE NOT retired AND tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$2::text
+`
+
+type WakeAuditedResourceParams struct {
+	TenantID   string
+	ResourceID string
+}
+
+// Successful shared collection wakes application without inventing a new
+// event generation. Notifications and fault backoff retain precedence.
+func (q *Queries) WakeAuditedResource(ctx context.Context, arg WakeAuditedResourceParams) error {
+	_, err := q.db.Exec(ctx, wakeAuditedResource, arg.TenantID, arg.ResourceID)
+	return err
 }

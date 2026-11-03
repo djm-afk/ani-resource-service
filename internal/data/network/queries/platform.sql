@@ -156,7 +156,7 @@ UPDATE network_platform_reconciliations SET lease_owner=NULL,lease_until=NULL,
  evidence_hash=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.arg(evidence_hash)::text ELSE evidence_hash END,
  evidence_applied_at=CASE WHEN sqlc.arg(observed)::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
  retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
- next_run_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
+ next_run_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
 WHERE resource_id=sqlc.arg(resource_id) AND lease_owner=sqlc.arg(owner)::uuid AND lease_epoch=sqlc.arg(epoch) AND lease_until>clock_timestamp();
 
 -- name: NotifyPlatform :execrows
@@ -164,7 +164,7 @@ UPDATE network_platform_reconciliations SET requested_generation=requested_gener
  next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp())) WHERE resource_id=$1;
 
 -- name: ObservationPlatformResources :many
-SELECT p.*,r.requested_generation FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id WHERE p.cluster_id=$1;
+SELECT p.*,r.requested_generation,(p.state<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id WHERE p.cluster_id=$1;
 
 -- name: PublicPoolTopology :one
 SELECT p.resource_id,p.cluster_id,p.config_revision,p.mode,p.gateway_id,p.cidr,p.ovn_gateway_ip,p.excluded_ips,p.vlan_network_id,p.upstream_gateway_ip,

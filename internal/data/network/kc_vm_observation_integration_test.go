@@ -216,3 +216,62 @@ func TestVMConsumerControllerWakesAndRejectsUnlabelledLauncher(t *testing.T) {
 		t.Fatalf("unlabelled VMI-owned launcher was hidden by shared candidate selection: %v", err)
 	}
 }
+
+func TestStoppedVMReservationParksAndReusesUnchangedAudit(t *testing.T) {
+	f, a, consumer, provider, api := newVMRelationAudit(t)
+	seedVMLauncher(api, a, consumer)
+	setManagedConsumer(f, consumer)
+	policy := biz.DefaultWorkerPolicy()
+	policy.ObserveEvery = time.Millisecond
+	var err error
+	f.worker, err = biz.NewAttachmentWorker(f.p, provider, f.consumer, uuid.NewString(), policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a = f.step(t, a.ID)
+	if a.State != biz.Attached {
+		t.Fatal("initial VM did not attach", a)
+	}
+	for _, item := range []struct{ kind, name string }{{"virtualmachineinstances", "vm"}, {"pods", "launcher"}, {"vnics", "vm-nic"}, {"vnicips", "vm-ip"}} {
+		api.Change(item.kind, api.Object(item.kind, a.Namespace, item.name), true)
+	}
+	consumer.SnapshotRevision++
+	consumer.DesiredRunState = "stopped"
+	consumer.RetiredPods, consumer.CurrentPods = consumer.CurrentPods, nil
+	setManagedConsumer(f, consumer)
+	startSlowAudit(t, provider)
+	initial := biz.AttachmentWork{Attachment: a, Relations: []byte("[]"), ConsumerSnapshot: &consumer, RequireFreshRelations: true, Plan: biz.PodPrimaryPlan{PrimaryNetworkRef: a.VMPrimary.KCNSubnetRef, VMPrimary: a.VMPrimary}}
+	if _, err = provider.ObserveAttachment(context.Background(), initial); err != nil {
+		t.Fatal("stopped VM initial audit", err)
+	}
+	if err = f.p.NotifyAttachment(context.Background(), a.TenantID, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	a = f.step(t, a.ID)
+	var parked bool
+	if err = f.owner.QueryRow(context.Background(), "SELECT next_check_at='infinity'::timestamptz FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2", a.TenantID, a.ID).Scan(&parked); err != nil || !parked || a.State != biz.Reserved || a.Reason != "" || len(a.VMCurrentAddresses) != 0 {
+		t.Fatalf("stopped VM kept a per-object timer or an address: parked=%v attachment=%+v err=%v", parked, a, err)
+	}
+	work := biz.AttachmentWork{Attachment: a, Relations: []byte("[]"), ConsumerSnapshot: &consumer, Plan: biz.PodPrimaryPlan{PrimaryNetworkRef: a.VMPrimary.KCNSubnetRef, VMPrimary: a.VMPrimary}}
+	first, err := provider.ObserveAttachment(context.Background(), work)
+	if err != nil || first.Exists || first.HasDependencies {
+		t.Fatalf("stopped VM facts: %+v %v", first, err)
+	}
+	before, _ := api.Counts()
+	work.Requirement.RequestedGeneration = first.Proof.CoveredGeneration + 1
+	next, err := provider.ObserveAttachment(context.Background(), work)
+	if err != nil || !next.Proof.CollectedAt.Equal(first.Proof.CollectedAt) || next.Proof.CoveredGeneration != work.Requirement.RequestedGeneration {
+		t.Fatalf("stopped VM hint renewed or starved unchanged evidence: %+v %v", next, err)
+	}
+	after, _ := api.Counts()
+	if before["LIST/pods"] != after["LIST/pods"] {
+		t.Fatal("stopped VM forced another complete audit")
+	}
+	// Final closure remains a post-owner-response proof even for a parked VM.
+	work.RequireFreshRelations = true
+	work.Requirement.RequestedGeneration = 0
+	closed, err := provider.ObserveAttachment(context.Background(), work)
+	if err != nil || !closed.Proof.CollectedAt.After(first.Proof.CollectedAt) {
+		t.Fatalf("closure reused the stopped projection: %+v %v", closed, err)
+	}
+}

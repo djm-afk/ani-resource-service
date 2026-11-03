@@ -14,6 +14,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -136,30 +137,23 @@ func TestLBCapabilityUsesSharedAuditAndKeepsVPCIndependent(t *testing.T) {
 		})
 	}
 	lbState(t, f, lb.ID, biz.Available)
-	// A configuration drift cannot retain readiness through a prior snapshot.
+	// Platform installation drift is checked explicitly, not projected into
+	// each existing LB's runtime health or normal resource admission.
 	proxy := f.api.Object("envoyproxies", "envoy-gateway-system", "lb-common")
 	proxy["spec"].(map[string]any)["provider"].(map[string]any)["kubernetes"].(map[string]any)["envoyDeployment"].(map[string]any)["replicas"] = float64(1)
 	f.api.Change("envoyproxies", proxy, false)
-	awaitNET05A(t, 5*time.Second, func() bool {
-		cap, err = f.f.e.GetPlatformCapabilities(f.f.ctx)
-		return err == nil && !cap.LoadBalancer.Ready && !cap.LoadBalancer.ObservationStale
-	})
-	if _, err = f.lbs.Create(f.f.ctx, f.request); err != nil {
-		t.Fatal("permanent LB replay rechecked capability", err)
+	client, err := dynamic.NewForConfig(config)
+	if err != nil {
+		t.Fatal(err)
 	}
-	blocked := f.request
-	blocked.IdempotencyKey, blocked.PrivateIP = "capability-blocked", "10.42.1.101"
-	f.f.drive(t, func() bool {
-		_, err = f.lbs.Create(f.f.ctx, blocked)
-		if biz.ReasonOf(err) == biz.BaseConnectivityNotReady || biz.ReasonOf(err) == biz.ParentNotReady {
-			return false
-		}
-		if biz.ReasonOf(err) != biz.LoadBalancerNotReady {
-			t.Fatal("LB accepted with invalid installation", err)
-		}
-		return true
-	})
-	lbState(t, f, lb.ID, biz.Degraded)
+	ready, err := data.VerifyLoadBalancerInstallation(f.f.ctx, client, expected)
+	if err != nil || ready {
+		t.Fatal("explicit installation check missed drift", ready, err)
+	}
+	lbState(t, f, lb.ID, biz.Available)
+	if _, err = f.lbs.Create(f.f.ctx, f.request); err != nil {
+		t.Fatal("permanent LB replay rechecked installation", err)
+	}
 	v, err := f.f.n.CreateVPC(f.f.ctx, biz.CreateVPC{TenantID: f.f.tenant, Name: "lb-independent-vpc", CIDR: "10.61.0.0/16", IdempotencyKey: "lb-independent-vpc"})
 	if err != nil {
 		t.Fatal("LB capability blocked ordinary VPC", err)
@@ -299,8 +293,16 @@ func TestLBCapabilityImportedRuntimeImagesAndInstallDefaults(t *testing.T) {
 			awaitNET05A(t, 5*time.Second, func() bool {
 				return f.f.owner.QueryRow(f.f.ctx, `SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1`, expected.Fingerprint).Scan(&ready) == nil
 			})
-			if ready != (scenario == "valid") {
-				t.Fatalf("capability=%v for %s", ready, scenario)
+			if !ready {
+				t.Fatalf("installation diagnostics leaked into runtime capability: %s", scenario)
+			}
+			client, err := dynamic.NewForConfig(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted, err := data.VerifyLoadBalancerInstallation(f.f.ctx, client, expected)
+			if err != nil || accepted != (scenario == "valid") {
+				t.Fatalf("installation acceptance=%v for %s: %v", accepted, scenario, err)
 			}
 		})
 	}

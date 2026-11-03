@@ -72,7 +72,7 @@ UPDATE network_load_balancers SET state=$1,reason=$2,version=version+1,updated_a
 vip_occupied_revision=CASE WHEN $3::text<>'' THEN $3 ELSE vip_occupied_revision END,
 vip_absence_revision=CASE WHEN vip_absence_revision='' THEN $4::text ELSE vip_absence_revision END,
 observed_at=CASE WHEN $5::boolean THEN $6::timestamptz ELSE observed_at END,
-configuration_state=$7,applied_version=greatest(applied_version,$8::bigint),
+configuration_state=CASE WHEN $5::boolean THEN $7 ELSE configuration_state END,applied_version=greatest(applied_version,$8::bigint),
 data_plane_state='unknown',data_plane_observed_at=NULL
 WHERE tenant_id=$9 AND lb_id=$10 AND version=$11 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
 `
@@ -1004,7 +1004,7 @@ func (q *Queries) InsertLBRetiredBinding(ctx context.Context, arg InsertLBRetire
 }
 
 const listLBBackendAttachments = `-- name: ListLBBackendAttachments :many
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason='' ORDER BY attachment_id
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason IN ('','PROVIDER_UNAVAILABLE') ORDER BY attachment_id
 `
 
 type ListLBBackendAttachmentsParams struct {

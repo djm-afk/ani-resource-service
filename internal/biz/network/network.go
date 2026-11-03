@@ -185,7 +185,7 @@ func (n *Network) observation(value VPC) VPC {
 		b := value.BaseConnectivity
 		b.ObservationStale = b.ObservedAt == nil || b.ObservedAt.After(n.now()) || n.now().Sub(*b.ObservedAt) > n.freshness
 	}
-	value.ObservationStale = value.ObservedAt == nil || n.now().Sub(*value.ObservedAt) > n.freshness
+	value.ObservationStale = value.Reason == ProviderUnavailable || value.ObservedAt == nil || value.ObservedAt.After(n.now()) || n.now().Sub(*value.ObservedAt) > n.freshness
 	return value
 }
 

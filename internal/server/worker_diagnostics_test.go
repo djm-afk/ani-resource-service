@@ -59,7 +59,7 @@ func TestLoadBalancerWorkerObservationFailureReachesFormalDiagnostics(t *testing
 		if finishErr != nil || !errors.Is(progress.ProviderError, cause) {
 			t.Errorf("observation cause did not survive persistence: %v, %v", progress.ProviderError, finishErr)
 		}
-		if progress.State != biz.Degraded || progress.Reason != biz.ProviderUnavailable || !progress.Backoff || progress.Observed || !progress.Proof.CollectedAt.IsZero() {
+		if progress.State != biz.Available || progress.Reason != biz.ProviderUnavailable || !progress.Backoff || progress.Observed || !progress.Proof.CollectedAt.IsZero() {
 			t.Errorf("diagnostics changed observation failure behavior: %+v", progress)
 		}
 		o.ObserveWork(ctx, logger, work, progress, finishErr)

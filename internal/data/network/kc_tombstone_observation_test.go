@@ -50,7 +50,10 @@ func TestCleanVPCTombstonesShareCompleteAbsentAudit(t *testing.T) {
 				} else if !o.Proof.CollectedAt.Equal(collected) {
 					t.Fatal("shared tombstone observation renewed its source timestamp")
 				}
-				target.Requirement = biz.ObservationRequirement{AppliedAt: time.Now(), Hash: o.Proof.Hash}
+				if o.Proof.CoveredGeneration != target.Requirement.RequestedGeneration {
+					t.Fatal("unchanged tombstone failed to cover a parent hint")
+				}
+				target.Requirement = biz.ObservationRequirement{AppliedAt: time.Now(), Hash: o.Proof.Hash, RequestedGeneration: int64(i + 1)}
 			}
 			if collections.Load() != 1 {
 				t.Fatal("completed VPC/Subnet tombstones repeatedly recollected the network", collections.Load())
@@ -72,6 +75,9 @@ func TestCleanEgressTombstonesShareCompleteAbsentAudit(t *testing.T) {
 	r := tombstoneGatewayResolved()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	if _, err := p.observation.snapshot(ctx, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
 	var originalCollected time.Time
 	for i := 0; i < 3; i++ {
 		set, err := p.readEgressSet(ctx, r, false)
@@ -87,7 +93,10 @@ func TestCleanEgressTombstonesShareCompleteAbsentAudit(t *testing.T) {
 		} else if !set.proof.CollectedAt.Equal(originalCollected) {
 			t.Fatal("reading identical tombstones renewed the collection timestamp")
 		}
-		r.target.Requirement = biz.ObservationRequirement{AppliedAt: time.Now(), Hash: set.proof.Hash}
+		if set.proof.CoveredGeneration != r.target.Requirement.RequestedGeneration {
+			t.Fatal("unchanged egress tombstone failed to cover a parent hint")
+		}
+		r.target.Requirement = biz.ObservationRequirement{AppliedAt: time.Now(), Hash: set.proof.Hash, RequestedGeneration: int64(i + 1)}
 	}
 	if got := collections.Load(); got != 1 {
 		t.Fatalf("clean tombstones recollected the entire network instead of sharing: collections=%d", got)
@@ -146,6 +155,9 @@ func TestSharedEgressTombstoneKeepsLateDependencyAndReplacementIdentity(t *testi
 			})
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
+			if _, err := p.observation.snapshot(ctx, time.Time{}); err != nil {
+				t.Fatal(err)
+			}
 			set, err := p.readEgressSet(ctx, r, false)
 			if err != nil {
 				t.Fatal(err)
@@ -167,5 +179,17 @@ func TestSharedEgressTombstoneKeepsLateDependencyAndReplacementIdentity(t *testi
 				}
 			}
 		})
+	}
+}
+
+func TestOrdinaryEgressObservationDoesNotStartFullCollection(t *testing.T) {
+	p, collections := nodeAuditRetryProvider(t, nil)
+	r := tombstoneGatewayResolved()
+	r.target.Deleting, r.target.Tombstone = false, false
+	if _, err := p.readEgressSet(context.Background(), r, false); err == nil {
+		t.Fatal("missing shared audit was treated as current evidence")
+	}
+	if collections.Load() != 0 {
+		t.Fatal("ordinary observation started a full collection")
 	}
 }

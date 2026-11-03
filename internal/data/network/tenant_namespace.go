@@ -5,6 +5,7 @@ import (
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -70,29 +71,39 @@ func (p *KCProvider) resolveTenantNamespace(ctx context.Context, tenant string) 
 // The persisted original UID is authoritative for every provider operation.
 // Missing Namespace is an identity error, never provider resource absence.
 func (p *KCProvider) verifyTenantNamespace(ctx context.Context, binding sqlcgen.NetworkProviderBinding, requireActive ...bool) error {
+	_, err := p.tenantNamespace(ctx, binding, requireActive...)
+	return err
+}
+func (p *KCProvider) tenantNamespace(ctx context.Context, binding sqlcgen.NetworkProviderBinding, requireActive ...bool) (*unstructured.Unstructured, error) {
 	if p.namespaceIdentityReader == nil {
-		return &biz.ProviderError{Kind: biz.ProviderConflict}
+		return nil, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
 	identity, err := p.namespaceIdentityReader(ctx, binding.TenantID)
 	if err != nil {
-		return &biz.ProviderError{Kind: biz.ProviderConflict, Cause: err}
+		return nil, &biz.ProviderError{Kind: biz.ProviderConflict, Cause: err}
 	}
 	if identity.UID == "" || identity.Name != binding.Namespace || identity.TenantID != binding.TenantID || (binding.ClusterID != "" && identity.ClusterID != binding.ClusterID) {
-		return &biz.ProviderError{Kind: biz.ProviderConflict}
+		return nil, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	value, err := p.client.Resource(namespaces).Get(ctx, binding.Namespace, metav1.GetOptions{})
+	value, _ := ctx.Value(tenantNamespaceContextKey{}).(*unstructured.Unstructured)
+	if value == nil || value.GetName() != binding.Namespace {
+		value, err = p.client.Resource(namespaces).Get(ctx, binding.Namespace, metav1.GetOptions{})
+	}
 	if err != nil {
-		return &biz.ProviderError{Kind: biz.ProviderConflict, Cause: err}
+		if !apierrors.IsNotFound(err) {
+			return nil, readFailure(err)
+		}
+		return nil, &biz.ProviderError{Kind: biz.ProviderConflict, Cause: err}
 	}
 	active := len(requireActive) > 0 && requireActive[0]
 	if err := tenantnamespace.Validate(binding.TenantID, namespaceObject(value), identity.UID, active); err != nil {
-		return &biz.ProviderError{Kind: biz.ProviderConflict, Cause: err}
+		return nil, &biz.ProviderError{Kind: biz.ProviderConflict, Cause: err}
 	}
-	return nil
+	return value, nil
 }
 
 func (p *Postgres) tenantNamespaceIdentity(ctx context.Context, tenant string) (tenantnamespace.Identity, error) {
-	row, err := p.queries.GetTenantNamespaceIdentity(ctx, sqlcgen.GetTenantNamespaceIdentityParams{TenantID: tenant, ClusterID: p.placement.ClusterID})
+	row, err := p.readQueries(ctx).GetTenantNamespaceIdentity(ctx, sqlcgen.GetTenantNamespaceIdentityParams{TenantID: tenant, ClusterID: p.placement.ClusterID})
 	if err != nil {
 		return tenantnamespace.Identity{}, err
 	}
@@ -104,4 +115,16 @@ func (p *Postgres) tenantNamespaceIdentity(ctx context.Context, tenant string) (
 		return tenantnamespace.Identity{}, biz.Fail(biz.PlacementMismatch, "tenant namespace name differs")
 	}
 	return tenantnamespace.Identity{TenantID: tenant, ClusterID: row.ClusterID, Name: row.Namespace, UID: *row.NamespaceUid}, nil
+}
+
+// A namespace object may be reused only within one command's context. All
+// callers still validate the persisted tenant/cluster/original UID and liveness.
+type tenantNamespaceContextKey struct{}
+
+func (p *KCProvider) namespaceContext(ctx context.Context, b sqlcgen.NetworkProviderBinding) (context.Context, error) {
+	ns, err := p.tenantNamespace(ctx, b, true)
+	if err != nil {
+		return ctx, err
+	}
+	return context.WithValue(ctx, tenantNamespaceContextKey{}, ns), nil
 }

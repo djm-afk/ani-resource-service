@@ -213,6 +213,17 @@ func TestNET05AAttachmentUsesSharedIndexedAuditAndRetainsOrphan(t *testing.T) {
 			t.Fatalf("per-attachment full scan remains: %s %d -> %d", gvr, before["LIST/"+gvr], after["LIST/"+gvr])
 		}
 	}
+	var generationBefore, generationAfter int64
+	if e = f.owner.QueryRow(ctx, `SELECT requested_generation FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID).Scan(&generationBefore); e != nil {
+		t.Fatal(e)
+	}
+	payload := observer.Snapshot()["watch_index_payload_bytes"]
+	ctl.Change("services", map[string]any{"apiVersion": "v1", "kind": "Service", "metadata": map[string]any{"namespace": a.Namespace, "name": "sibling-service", "uid": uuid.NewString(), "ownerReferences": []any{map[string]any{"kind": "Pod", "apiVersion": "v1", "name": "owned-pod", "uid": uid}}}, "spec": map[string]any{"ports": []any{map[string]any{"port": int64(80)}}}}, false)
+	awaitNET05A(t, time.Second, func() bool { return observer.Snapshot()["watch_index_payload_bytes"] != payload })
+	time.Sleep(3 * options.FlushInterval)
+	if e = f.owner.QueryRow(ctx, `SELECT requested_generation FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID).Scan(&generationAfter); e != nil || generationAfter != generationBefore {
+		t.Fatalf("sibling Service created unrelated attachment work: %d -> %d (%v)", generationBefore, generationAfter, e)
+	}
 	eip := map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "EIP", "metadata": map[string]any{"namespace": "external-owner", "name": "unlabelled-eip", "uid": uuid.NewString()}, "spec": map[string]any{"subnet": a.Plan.PrimaryNetworkRef}}
 	ctl.Change("eips", eip, false)
 	finalization := uuid.NewString()

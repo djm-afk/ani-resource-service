@@ -55,6 +55,10 @@ sql:
         emit_empty_slices: true
         query_parameter_limit: 0
         overrides:
+          - column: network_attachments.next_check_at
+            go_type:
+              import: github.com/jackc/pgx/v5/pgtype
+              type: Timestamptz
           - db_type: text
             nullable: true
             go_type:

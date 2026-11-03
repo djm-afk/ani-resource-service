@@ -27,7 +27,7 @@ Network 的深 Module 隐藏持久化、操作执行和 Provider 细节。`inter
 
 ## 生命周期与一致性
 
-Network 数据库保存产品事实和待执行意图。资源、对应操作和幂等记录按规格在 Network 本地事务内提交，worker 按持久记录执行；请求进程退出不能丢失后续处理。worker 负责重试、观测、状态推进和恢复，Get/List 是纯查询，不靠读请求触发修复。
+Network 数据库保存产品事实和待执行意图。资源、对应操作和幂等记录按规格在 Network 本地事务内提交，worker 按持久记录执行；请求进程退出不能丢失后续处理。worker 负责管理命令投递重试、观测、状态推进和未决请求恢复；KCN 负责其分配/网络收敛重试，Res 不通过改 annotation/spec、换 ID、OVN/IPAM 写入或强制去 finalizer 兜底，Get/List 是纯查询，不靠读请求触发修复。
 
 Network 是产品状态的唯一写入者，kc 是底层网络状态的权威来源。Provider 请求成功不能直接等同于网络可用；Network 根据规格要求的最新观测推进状态，并保护并发执行和迟到结果。删除必须驱动 Provider 释放资源、确认相应对象已不存在，再完成 Network 的删除状态；只改数据库记录不构成删除完成。
 

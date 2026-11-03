@@ -83,7 +83,15 @@ func TestIntranetAdapterRejectsStaleIdentityRoutingAndProviderConfiguration(t *t
 		t.Run(tc.name, func(t *testing.T) {
 			r, s, _ := intranetFixtures()
 			tc.mutate(&r, &s)
-			if addressPoolReady(r, s.objects["pool"], s) {
+			installationCase := tc.name == "route removal" || tc.name == "default route" || tc.name == "service coverage" || tc.name == "controller router"
+			ready := addressPoolReady(r, s.objects["pool"], s)
+			if installationCase {
+				if !ready {
+					t.Fatal("runtime pool readiness depends on installation audit")
+				}
+				ready = intranetInfrastructureReady(r.pool, s.objects["default_vpc"], s.objects["intranet_config"], s.all[kcServiceCIDRs], s.all[pods])
+			}
+			if ready {
 				t.Fatal("unsafe intranet capability accepted")
 			}
 		})

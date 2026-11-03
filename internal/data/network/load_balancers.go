@@ -230,6 +230,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
+	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
 	if result, found, err := lbReplay(ctx, q, i); found || err != nil {
 		return result, err
 	}
@@ -328,13 +329,10 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	if pb.ClusterID != p.placement.ClusterID || (requireRuntimeReady && (pb.ProviderUid == "" || pb.PendingAction != "")) {
 		return biz.LoadBalancerResult{}, biz.Fail(biz.ProviderOwnership, "parent placement or identity is not ready")
 	}
-	if requireRuntimeReady {
-		capability, err := q.GetLBCapability(ctx, sqlcgen.GetLBCapabilityParams{ClusterID: pb.ClusterID})
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return biz.LoadBalancerResult{}, databaseFailure(err)
-		}
-		if err != nil || !capability.Ready || !freshTime(&capability.ObservedAt, now, freshness) {
-			return biz.LoadBalancerResult{}, biz.Fail(biz.LoadBalancerNotReady, "load balancer capability is not fresh and ready")
+	if requireRuntimeReady && p.networkProvider != nil {
+		ctx, err = p.networkProvider.namespaceContext(ctx, pb)
+		if err != nil {
+			return biz.LoadBalancerResult{}, err
 		}
 	}
 	// Only entry and new desired backend subnets must be available. Retired
@@ -352,7 +350,14 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		if s.State == "deleting" || s.State == "deleted" {
 			return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "subnet has closed admission")
 		}
-		if requireRuntimeReady && !freshResource(s.State, s.ObservedAt, now, freshness) {
+		if requireRuntimeReady && p.networkProvider != nil {
+			observation, err := p.networkProvider.currentNetworkResource(ctx, q, i.TenantID, id)
+			if err != nil {
+				return biz.LoadBalancerResult{}, err
+			}
+			s.AvailableIpRange, s.UsedIpRange = observation.SubnetIPRanges.Available, observation.SubnetIPRanges.Used
+			subnets[id] = s
+		} else if requireRuntimeReady && !freshResource(s.State, s.ObservedAt, now, freshness) {
 			return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "subnet is not fresh and ready")
 		}
 		if sb.ClusterID != pb.ClusterID || sb.Namespace != pb.Namespace || (requireRuntimeReady && (sb.ProviderUid == "" || sb.PendingAction != "")) {
@@ -367,7 +372,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		if err != nil {
 			return biz.LoadBalancerResult{}, databaseFailure(err)
 		}
-		if eb.ClusterID != pb.ClusterID || eb.Namespace != pb.Namespace || eip.Address == "" || eip.State == "deleting" || eip.State == "deleted" || (requireRuntimeReady && (eb.ProviderUid == "" || eb.PendingAction != "" || !freshResource(eip.State, eip.ObservedAt, now, freshness))) {
+		if eb.ClusterID != pb.ClusterID || eb.Namespace != pb.Namespace || eip.Address == "" || eip.State == "deleting" || eip.State == "deleted" || (requireRuntimeReady && (eb.ProviderUid == "" || eb.PendingAction != "" || !networkManagementOpen(eip.State, eip.Reason))) {
 			return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "Public EIP is not fresh and allocated")
 		}
 		pool, err := q.GetPublicPool(ctx, sqlcgen.GetPublicPoolParams{ClusterID: eip.ClusterID, ResourceID: eip.PoolID})
@@ -381,8 +386,21 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 			return biz.LoadBalancerResult{}, err
 		}
 		if requireRuntimeReady {
-			if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
-				return biz.LoadBalancerResult{}, err
+			if p.networkProvider != nil {
+				observation, err := p.networkProvider.observeEgress(ctx, biz.ProviderTarget{Kind: "eip", TenantID: i.TenantID, ResourceID: eipID, BindingID: eb.BindingID, KnownIdentity: eb.ProviderUid, Direct: true})
+				if err != nil {
+					return biz.LoadBalancerResult{}, err
+				}
+				if !observation.Ready {
+					return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "public EIP has not confirmed the current allocation and binding")
+				}
+			} else {
+				if !freshResource(eip.State, eip.ObservedAt, now, freshness) {
+					return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "public EIP observation unavailable")
+				}
+				if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
+					return biz.LoadBalancerResult{}, err
+				}
 			}
 		}
 		if creating {

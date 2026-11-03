@@ -10,7 +10,7 @@ import (
 )
 
 func (p *KCProvider) readEIPLoadBalancer(ctx context.Context, e egressResolved, set *egressReadSet) error {
-	row, err := p.repository.queries.GetLBInternal(ctx, sqlcgen.GetLBInternalParams{TenantID: e.target.TenantID, LbID: e.lbID})
+	row, err := p.repository.readQueries(ctx).GetLBInternal(ctx, sqlcgen.GetLBInternalParams{TenantID: e.target.TenantID, LbID: e.lbID})
 	if err != nil {
 		return readFailure(err)
 	}
@@ -22,13 +22,13 @@ func (p *KCProvider) readEIPLoadBalancer(ctx context.Context, e egressResolved, 
 	if textValue(row.PublicEipID) != e.target.ResourceID {
 		return &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	b, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: row.TenantID, ResourceID: row.LbID})
+	b, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: row.TenantID, ResourceID: row.LbID})
 	if err != nil {
 		return readFailure(err)
 	}
 	set.keys = append(set.keys, objectKey(b), "uid:"+b.ProviderUid, "load-balancer:"+b.Namespace+"/"+e.lbID)
 	rw := lbWork(row)
-	if err = hydrateLBWork(ctx, p.repository.queries, &rw, b); err != nil {
+	if err = hydrateLBWork(ctx, p.repository.readQueries(ctx), &rw, b); err != nil {
 		return readFailure(err)
 	}
 	w := biz.Work{Resource: rw, BindingID: b.BindingID, KnownIdentity: b.ProviderUid}
@@ -62,7 +62,7 @@ func (p *KCProvider) readEIPLoadBalancer(ctx context.Context, e egressResolved, 
 	if !lbOwnedBy(svc, "Gateway", b.ProviderName, v.Identity) || !lbServiceMatches(svc, r) {
 		return &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	prior, err := p.repository.queries.ListLBGenerated(ctx, sqlcgen.ListLBGeneratedParams{TenantID: row.TenantID, LbID: row.LbID})
+	prior, err := p.repository.readQueries(ctx).ListLBGenerated(ctx, sqlcgen.ListLBGeneratedParams{TenantID: row.TenantID, LbID: row.LbID})
 	if err != nil {
 		return readFailure(err)
 	}

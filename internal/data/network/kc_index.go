@@ -104,7 +104,7 @@ func relationshipKeys(value any) ([]string, error) {
 			}
 		}
 	case "Node":
-		keys = append(keys, "node-network", "node:"+o.GetName())
+		keys = append(keys, "node-network", "node-membership", "node:"+o.GetName())
 	case "ConfigMap":
 		if o.GetNamespace() == kcSystemNamespace && (o.GetName() == "kcn-config" || o.GetLabels()[ownerLabel] == "ani-network-node-network") {
 			keys = append(keys, "node-network")

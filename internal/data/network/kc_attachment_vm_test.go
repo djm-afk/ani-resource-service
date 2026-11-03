@@ -114,20 +114,20 @@ func TestVMManagedNADRequiresTrustedIdentityAndCanonicalConfig(t *testing.T) {
 	policy := ManagedVMNAD{TenantID: "11111111-1111-4111-8111-111111111111", VPCID: "vpc", SubnetID: "subnet", ClusterID: "cluster", Namespace: "tenant-11111111-1111-4111-8111-111111111111", NamespaceUID: "namespace-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: "tenant-11111111-1111-4111-8111-111111111111/kcn-subnet"}
 	s := biz.VMNetworkSelection{TenantID: policy.TenantID, VPCID: policy.VPCID, SubnetID: policy.SubnetID, ClusterID: policy.ClusterID, Namespace: policy.Namespace, KCNSubnetRef: policy.KCNSubnetRef}
 	e := biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: digest}
-	if _, err = p.ResolveVMNetwork(context.Background(), s, e); err == nil {
+	if _, err = p.resolveVMNetwork(context.Background(), s, e, true); err == nil {
 		t.Fatal("arbitrary observed NAD promoted to managed without policy")
 	}
 	if err = p.ConfigureVMNetworks([]ManagedVMNAD{policy}); err != nil {
 		t.Fatal(err)
 	}
-	if plan, err := p.ResolveVMNetwork(context.Background(), s, e); err != nil || plan.KCNSubnetRef == plan.NADName || plan.NADUID != e.NADUID {
+	if plan, err := p.resolveVMNetwork(context.Background(), s, e, true); err != nil || plan.KCNSubnetRef == plan.NADName || plan.NADUID != e.NADUID {
 		t.Fatal("trusted NAD plan", plan, err)
 	}
 	nad.SetUID("replacement")
 	if _, err = p.client.Resource(vmNADs).Namespace("tenant-11111111-1111-4111-8111-111111111111").Update(context.Background(), nad, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = p.ResolveVMNetwork(context.Background(), s, e); err == nil {
+	if _, err = p.resolveVMNetwork(context.Background(), s, e, true); err == nil {
 		t.Fatal("same-name NAD replacement accepted")
 	}
 }
@@ -169,7 +169,7 @@ func TestVMManagedNADRequiresKCNControllerCompatibleSinglePlugin(t *testing.T) {
 			}
 			selection := biz.VMNetworkSelection{TenantID: policy.TenantID, VPCID: policy.VPCID, SubnetID: policy.SubnetID, ClusterID: policy.ClusterID, Namespace: policy.Namespace, KCNSubnetRef: policy.KCNSubnetRef}
 			expectation := biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: digest}
-			_, err = provider.ResolveVMNetwork(context.Background(), selection, expectation)
+			_, err = provider.resolveVMNetwork(context.Background(), selection, expectation, true)
 			if (err == nil) != test.valid {
 				t.Fatalf("valid=%v, resolve error=%v", test.valid, err)
 			}

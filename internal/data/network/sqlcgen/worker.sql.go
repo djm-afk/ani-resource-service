@@ -424,9 +424,9 @@ SET lease_owner=NULL, lease_until=NULL,
     evidence_hash=CASE WHEN $2::boolean THEN $3::text ELSE evidence_hash END,
     evidence_applied_at=CASE WHEN $2::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
     retry_not_before=CASE WHEN $4::boolean THEN clock_timestamp()+$5::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
-    next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
-WHERE tenant_id=$6 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$7::text
-  AND lease_owner=$8 AND lease_epoch=$9 AND lease_until>clock_timestamp()
+    next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() WHEN $6::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
+WHERE tenant_id=$7 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id)=$8::text
+  AND lease_owner=$9 AND lease_epoch=$10 AND lease_until>clock_timestamp()
 `
 
 type ReleaseLeaseParams struct {
@@ -435,6 +435,7 @@ type ReleaseLeaseParams struct {
 	EvidenceHash      string
 	Backoff           bool
 	DelayMicros       int64
+	Park              bool
 	TenantID          string
 	ResourceID        string
 	Owner             *string
@@ -448,6 +449,7 @@ func (q *Queries) ReleaseLease(ctx context.Context, arg ReleaseLeaseParams) (int
 		arg.EvidenceHash,
 		arg.Backoff,
 		arg.DelayMicros,
+		arg.Park,
 		arg.TenantID,
 		arg.ResourceID,
 		arg.Owner,

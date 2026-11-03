@@ -159,8 +159,8 @@ UPDATE network_attachments SET state=$1,reason=$2,protocol_blocked=$3,pod_name=$
  evidence_hash=CASE WHEN $8::boolean THEN $11::text ELSE evidence_hash END,
  evidence_applied_at=CASE WHEN $8::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
  retry_not_before=CASE WHEN $12::boolean THEN clock_timestamp()+$13::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
- next_check_at=CASE WHEN requested_generation>$10::bigint AND NOT $12::boolean THEN clock_timestamp() ELSE clock_timestamp()+$13::bigint*interval '1 microsecond' END,lease_owner=NULL,lease_until=NULL
-WHERE tenant_id=$14 AND attachment_id=$15 AND version=$16 AND epoch=$17 AND lease_owner=$18::uuid AND lease_until>clock_timestamp() RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+ next_check_at=CASE WHEN requested_generation>$10::bigint AND NOT $12::boolean THEN clock_timestamp() WHEN $14::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$13::bigint*interval '1 microsecond' END,lease_owner=NULL,lease_until=NULL
+WHERE tenant_id=$15 AND attachment_id=$16 AND version=$17 AND epoch=$18 AND lease_owner=$19::uuid AND lease_until>clock_timestamp() RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
 `
 
 type FinishAttachmentParams struct {
@@ -177,6 +177,7 @@ type FinishAttachmentParams struct {
 	EvidenceHash      string
 	Backoff           bool
 	DelayMicros       int64
+	Park              bool
 	TenantID          string
 	AttachmentID      string
 	Version           int64
@@ -199,6 +200,7 @@ func (q *Queries) FinishAttachment(ctx context.Context, arg FinishAttachmentPara
 		arg.EvidenceHash,
 		arg.Backoff,
 		arg.DelayMicros,
+		arg.Park,
 		arg.TenantID,
 		arg.AttachmentID,
 		arg.Version,

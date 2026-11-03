@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -175,7 +176,9 @@ func TestNativeStartTabletRequiresOwnedStoppedVM(t *testing.T) {
 			}
 			_, _ = client.Resource(vmResource).Namespace(v.Spec.Namespace).Update(ctx, root, metav1.UpdateOptions{})
 			client.ClearActions()
-			if err := native.Start(ctx, v); err == nil || *calls != 0 {
+			err := native.Start(ctx, v)
+			var notSubmitted *biz.NativeNotSubmittedError
+			if !errors.As(err, &notSubmitted) || *calls != 0 {
 				t.Fatal("unsafe Start changed inputs or submitted native power", err, *calls)
 			}
 			for _, action := range client.Actions() {
