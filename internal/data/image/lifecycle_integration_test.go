@@ -519,3 +519,49 @@ func TestLifecycleEnableKeepsLivePullCredential(t *testing.T) {
 		t.Fatal("enable created an extra provider identity", r.robotCreates)
 	}
 }
+
+// A never-expiring pull identity is the deployment default for new
+// environments. Pull credentials back running workloads and no renewal path
+// exists, so a finite lifetime strands every space once it elapses.
+func TestLifecycleNeverExpiringPullCredentialStaysAvailable(t *testing.T) {
+	f, r, cfg, ring, ctx := lifecycleFixture(t)
+	cfg.PullDays = -1
+	cfg.AllowNeverExpires = true
+	now := time.Now()
+	r.now = func() time.Time { return now }
+	l := lifecycle(t, f.Repo, r, ring, cfg, func() time.Time { return now })
+	tenant := tenantFrom(t, ctx)
+	s, err := l.EnsureImageSpace(ctx, biz.EnableSpace{TenantID: tenant, Slug: "never-expiring", IdempotencyKey: "enable-key"})
+	if err != nil || s.State != "available" || s.PullCredentialGeneration != 1 {
+		t.Fatal(s, err)
+	}
+	row, err := sqlcgen.New(f.Runtime).GetTenantPullCredential(ctx, sqlcgen.GetTenantPullCredentialParams{TenantID: &tenant, SpaceID: s.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The durable flag, not a far-future timestamp, is what carries the policy.
+	if !row.NeverExpires || row.ExpiresAt != nil {
+		t.Fatal("pull credential was not stored as never expiring", row.NeverExpires, row.ExpiresAt)
+	}
+	if robot, err := r.GetRobot(ctx, row.RobotID.Int64); err != nil || robot.ExpiresAt != -1 {
+		t.Fatal("provider identity is not unlimited", robot, err)
+	}
+	// Well past any finite duration the space must still read available.
+	now = now.Add(5 * 365 * 24 * time.Hour)
+	space, err := l.GetImageSpace(ctx, tenant)
+	if err != nil || space.State != "available" {
+		t.Fatalf("never-expiring pull credential read as blocked: %+v %v", space, err)
+	}
+	again, err := l.EnsureImageSpace(ctx, biz.EnableSpace{TenantID: tenant, Slug: "never-expiring", IdempotencyKey: "enable-key-2"})
+	if err != nil || again.State != "available" || again.PullCredentialGeneration != row.Generation {
+		t.Fatal("enable rotated a never-expiring credential", again, err)
+	}
+	if r.robotCreates != 1 {
+		t.Fatal("enable created an extra provider identity", r.robotCreates)
+	}
+	// The unlimited duration without the explicit opt-in must stay refused, so
+	// a stray -1 cannot silently mint a permanent identity.
+	if _, err := biz.NewLifecycle(f.Repo, r, ring, biz.LifecycleConfig{InstallationID: cfg.InstallationID, RegistryAuthority: cfg.RegistryAuthority, PlatformProject: cfg.PlatformProject, PublisherDays: cfg.PublisherDays, PullDays: -1}, time.Now); err == nil {
+		t.Fatal("unlimited pull duration accepted without allow_never_expires")
+	}
+}
