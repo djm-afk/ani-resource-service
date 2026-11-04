@@ -61,11 +61,10 @@ def adapted(name):
     check_permissions()""")
     if name=='build-faults':
         replace("('\\t\\tworked, stepErr := s.worker.Step(ctx)', '\\t\\tnet05Hook(ctx, \"pause-worker\", \"*\", nil)\\n\\t\\tworked, stepErr := s.worker.Step(ctx)')", "('\\t\\tworked, stepErr := stepper.Step(ctx)', '\\t\\tnet05Hook(ctx, \"pause-worker\", \"*\", nil)\\n\\t\\tworked, stepErr := stepper.Step(ctx)')")
-        # Separate observer pause covers both audit and durable hint bridge.
+        # Pause Watch startup and the current durable notification bridge.
         insert='''edit('network','internal/data/network/kc_observation.go',[
- ('go func() { defer group.Done(); informer.Run(ctx.Done()) }()', 'go func() { defer group.Done(); net05Hook(ctx,"pause-observer","*",nil); informer.Run(ctx.Done()) }()'),
- ('\\t\\t\\to.flush(ctx)','\\t\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\t\\to.flush(ctx)'),
- ('\\t\\tif v, err := o.refresh(ctx, time.Time{}, true); err == nil {','\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\tif v, err := o.refresh(ctx, time.Time{}, true); err == nil {')],helper=True)
+ ('\\t\\t\\tinformer.Run(ctx.Done())', '\\t\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\t\\tinformer.Run(ctx.Done())'),
+ ('\\t\\tfor o.processNextNotification(ctx) {', '\\t\\tnet05Hook(ctx,"pause-observer","*",nil)\\n\\t\\tfor o.processNextNotification(ctx) {')],helper=True)
 '''
         replace("edit('ani', 'repo/pkg/adapters/runtime/network_submission_owner.go'",insert+"edit('ani', 'repo/pkg/adapters/runtime/network_submission_owner.go'")
     if name=='faults':
