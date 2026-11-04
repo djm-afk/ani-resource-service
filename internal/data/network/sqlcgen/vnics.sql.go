@@ -16,7 +16,7 @@ UPDATE network_vnics SET state=$1,reason=$2,version=version+1,updated_at=clock_t
  mac_address=CASE WHEN $3::boolean THEN $5::text ELSE mac_address END,
  primary_ip=CASE WHEN $3::boolean THEN $6::text ELSE primary_ip END,
  ips=CASE WHEN $3::boolean THEN $7::text[] ELSE ips END
-WHERE tenant_id=$8 AND vnic_id=$9 AND version=$10 RETURNING tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac
+WHERE tenant_id=$8 AND vnic_id=$9 AND version=$10 RETURNING tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac, platform_vpc_id, platform_subnet_id
 `
 
 type AdvanceVNicParams struct {
@@ -66,12 +66,14 @@ func (q *Queries) AdvanceVNic(ctx context.Context, arg AdvanceVNicParams) (Netwo
 		&i.LastOperationID,
 		&i.RequestedIp,
 		&i.RequestedMac,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
 
 const getVNic = `-- name: GetVNic :one
-SELECT v.tenant_id, v.vnic_id, v.vpc_id, v.subnet_id, v.name, v.description, v.state, v.reason, v.version, v.mac_address, v.primary_ip, v.ips, v.security_group_ids, v.observed_at, v.created_at, v.updated_at, v.last_operation_id, v.requested_ip, v.requested_mac,coalesce(r.observation_error,'')::text AS observation_error FROM network_vnics v LEFT JOIN network_reconciliations r ON r.tenant_id=v.tenant_id AND r.vnic_id=v.vnic_id WHERE v.tenant_id=$1 AND v.vnic_id=$2
+SELECT v.tenant_id, v.vnic_id, v.vpc_id, v.subnet_id, v.name, v.description, v.state, v.reason, v.version, v.mac_address, v.primary_ip, v.ips, v.security_group_ids, v.observed_at, v.created_at, v.updated_at, v.last_operation_id, v.requested_ip, v.requested_mac, v.platform_vpc_id, v.platform_subnet_id,coalesce(r.observation_error,'')::text AS observation_error FROM network_vnics v LEFT JOIN network_reconciliations r ON r.tenant_id=v.tenant_id AND r.vnic_id=v.vnic_id WHERE v.tenant_id=$1 AND v.vnic_id=$2
 `
 
 type GetVNicParams struct {
@@ -107,13 +109,15 @@ func (q *Queries) GetVNic(ctx context.Context, arg GetVNicParams) (GetVNicRow, e
 		&i.NetworkVnic.LastOperationID,
 		&i.NetworkVnic.RequestedIp,
 		&i.NetworkVnic.RequestedMac,
+		&i.NetworkVnic.PlatformVpcID,
+		&i.NetworkVnic.PlatformSubnetID,
 		&i.ObservationError,
 	)
 	return i, err
 }
 
 const getVNicRow = `-- name: GetVNicRow :one
-SELECT tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac FROM network_vnics WHERE tenant_id=$1 AND vnic_id=$2
+SELECT tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac, platform_vpc_id, platform_subnet_id FROM network_vnics WHERE tenant_id=$1 AND vnic_id=$2
 `
 
 type GetVNicRowParams struct {
@@ -144,12 +148,14 @@ func (q *Queries) GetVNicRow(ctx context.Context, arg GetVNicRowParams) (Network
 		&i.LastOperationID,
 		&i.RequestedIp,
 		&i.RequestedMac,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
 
 const lockVNicRow = `-- name: LockVNicRow :one
-SELECT tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac FROM network_vnics WHERE tenant_id=$1 AND vnic_id=$2 FOR UPDATE
+SELECT tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac, platform_vpc_id, platform_subnet_id FROM network_vnics WHERE tenant_id=$1 AND vnic_id=$2 FOR UPDATE
 `
 
 type LockVNicRowParams struct {
@@ -180,6 +186,46 @@ func (q *Queries) LockVNicRow(ctx context.Context, arg LockVNicRowParams) (Netwo
 		&i.LastOperationID,
 		&i.RequestedIp,
 		&i.RequestedMac,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
+	)
+	return i, err
+}
+
+const tryLockWorkVNic = `-- name: TryLockWorkVNic :one
+SELECT tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac, platform_vpc_id, platform_subnet_id FROM network_vnics WHERE tenant_id=$1 AND vnic_id=$2 FOR UPDATE SKIP LOCKED
+`
+
+type TryLockWorkVNicParams struct {
+	TenantID string
+	VnicID   string
+}
+
+func (q *Queries) TryLockWorkVNic(ctx context.Context, arg TryLockWorkVNicParams) (NetworkVnic, error) {
+	row := q.db.QueryRow(ctx, tryLockWorkVNic, arg.TenantID, arg.VnicID)
+	var i NetworkVnic
+	err := row.Scan(
+		&i.TenantID,
+		&i.VnicID,
+		&i.VpcID,
+		&i.SubnetID,
+		&i.Name,
+		&i.Description,
+		&i.State,
+		&i.Reason,
+		&i.Version,
+		&i.MacAddress,
+		&i.PrimaryIp,
+		&i.Ips,
+		&i.SecurityGroupIds,
+		&i.ObservedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastOperationID,
+		&i.RequestedIp,
+		&i.RequestedMac,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }

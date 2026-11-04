@@ -980,7 +980,7 @@ func (q *Queries) InsertLBRetiredBinding(ctx context.Context, arg InsertLBRetire
 }
 
 const listLBBackendAttachments = `-- name: ListLBBackendAttachments :many
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' ORDER BY attachment_id
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2::text AND state='attached' ORDER BY attachment_id
 `
 
 type ListLBBackendAttachmentsParams struct {
@@ -1037,6 +1037,8 @@ func (q *Queries) ListLBBackendAttachments(ctx context.Context, arg ListLBBacken
 			&i.CurrentVnicUid,
 			&i.CurrentMacAddress,
 			&i.CurrentIps,
+			&i.PlatformVpcID,
+			&i.PlatformSubnetID,
 		); err != nil {
 			return nil, err
 		}

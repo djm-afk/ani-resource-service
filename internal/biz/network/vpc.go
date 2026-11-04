@@ -132,6 +132,8 @@ func (r Reason) Message() string {
 	switch r {
 	case "":
 		return ""
+	case NetworkNewAdmissionClosed:
+		return "This network is closed to new resource admissions."
 	case ProviderUnavailable:
 		return "The network provider is temporarily unavailable."
 	case ProviderNotReady:

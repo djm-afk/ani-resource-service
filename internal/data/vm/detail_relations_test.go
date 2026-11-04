@@ -10,11 +10,11 @@ import (
 
 type detailNetworkStub struct{ seen []string }
 
-func (r *detailNetworkStub) GetVPC(_ context.Context, tenant, id string) (network.VPC, error) {
+func (r *detailNetworkStub) GetVisibleVPC(_ context.Context, tenant, id string) (network.VPC, error) {
 	r.seen = append(r.seen, tenant+":"+id)
 	return network.VPC{Name: "Current VPC"}, nil
 }
-func (r *detailNetworkStub) GetSubnet(_ context.Context, tenant, id string) (network.Subnet, error) {
+func (r *detailNetworkStub) GetVisibleSubnet(_ context.Context, tenant, id string) (network.Subnet, error) {
 	r.seen = append(r.seen, tenant+":"+id)
 	return network.Subnet{Name: "must not escape an error"}, network.Fail(network.ResourceNotFound, "missing")
 }

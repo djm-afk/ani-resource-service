@@ -28,7 +28,7 @@ func (s *NetworkService) ListSubnets(ctx context.Context, r *networkv1.ListSubne
 	if !exists {
 		return nil, rpcError(biz.Fail(biz.InvalidArgument, "invalid Subnet state filter"))
 	}
-	value, err := s.network.ListSubnets(ctx, biz.ListSubnets{VPCID: r.GetVpcId(), TenantID: r.GetTenantId(), Name: r.GetName(), State: string(state), Limit: int(r.GetLimit()), Cursor: r.GetCursor()})
+	value, err := s.network.ListSubnets(ctx, biz.ListSubnets{VPCID: r.GetVpcId(), TenantID: r.GetTenantId(), Name: r.GetName(), State: string(state), Limit: int(r.GetLimit()), Cursor: r.GetCursor(), CanUse: r.CanUse, CanManage: r.CanManage})
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -46,5 +46,5 @@ func (s *NetworkService) DeleteSubnet(ctx context.Context, r *networkv1.DeleteSu
 	return &networkv1.DeleteSubnetResponse{Subnet: wireSubnet(value)}, nil
 }
 func wireSubnet(v biz.Subnet) *networkv1.Subnet {
-	return &networkv1.Subnet{AvailableIpRange: v.AvailableIPRange, UsedIpRange: v.UsedIPRange, Id: v.ID, TenantId: v.TenantID, Name: v.Name, Description: v.Description, Cidr: v.CIDR, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), Version: v.Version, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, LastOperationId: v.LastOperationID, VpcId: v.VPCID, Gateway: v.Gateway, ExcludeIps: v.ExcludeIPs, EnableDhcp: v.EnableDHCP, DnsServers: v.DNSServers}
+	return &networkv1.Subnet{OwnerScope: ownerScopeToWire(v.OwnerScope, v.TenantID), CanManage: v.CanManage, CanUse: v.CanUse, AvailableIpRange: v.AvailableIPRange, UsedIpRange: v.UsedIPRange, Id: v.ID, TenantId: v.TenantID, Name: v.Name, Description: v.Description, Cidr: v.CIDR, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), Version: v.Version, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, LastOperationId: v.LastOperationID, VpcId: v.VPCID, Gateway: v.Gateway, ExcludeIps: v.ExcludeIPs, EnableDhcp: v.EnableDHCP, DnsServers: v.DNSServers}
 }

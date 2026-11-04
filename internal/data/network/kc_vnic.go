@@ -80,6 +80,9 @@ func manualVNicObject(b sqlcgen.NetworkProviderBinding, t biz.ProviderTarget, su
 		annotations["networking.kubercloud.com/allocate_ip_with_dhcp"] = "false"
 	}
 	spec := map[string]any{"type": "VETH", "subnet": subnet}
+	if t.BasicIsolationName != "" {
+		spec["isolationGroup"] = t.BasicIsolationName
+	}
 	if t.RequestedMAC != "" {
 		spec["macAddress"] = t.RequestedMAC
 	}
@@ -176,14 +179,29 @@ func (p *KCProvider) EnsureVNic(ctx context.Context, t biz.ProviderTarget) (biz.
 	if e != nil {
 		return biz.ProviderObservation{}, readFailure(e)
 	}
-	sb, e := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: row.SubnetID})
-	if e != nil {
-		return biz.ProviderObservation{}, readFailure(e)
+	reference := normalizeNetworkReference(row.VpcID, row.SubnetID, row.PlatformVpcID, row.PlatformSubnetID, "")
+	var subnetRef string
+	if reference.OwnerScope == biz.OwnerScopePlatform {
+		selected, err := p.repository.ResolveAcceptedNetworkSelection(ctx, biz.NetworkSelection{TenantID: t.TenantID, VPCID: reference.VPCID, SubnetID: reference.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, Reference: reference})
+		if err != nil {
+			return biz.ProviderObservation{}, err
+		}
+		t.BasicIsolationName, e = p.EnsureTenantBasicIsolation(ctx, t.TenantID)
+		if e != nil {
+			return biz.ProviderObservation{}, e
+		}
+		subnetRef = selected.NativeNamespace + "/" + selected.NativeName
+	} else {
+		sb, err := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: reference.SubnetID})
+		if err != nil {
+			return biz.ProviderObservation{}, readFailure(err)
+		}
+		if sb.Namespace != b.Namespace || sb.ClusterID != b.ClusterID || sb.ProviderName == "" {
+			return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
+		}
+		subnetRef = sb.Namespace + "/" + sb.ProviderName
 	}
-	if sb.Namespace != b.Namespace || sb.ClusterID != b.ClusterID || sb.ProviderName == "" {
-		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	o := manualVNicObject(b, t, sb.Namespace+"/"+sb.ProviderName)
+	o := manualVNicObject(b, t, subnetRef)
 	o, e = r.Create(ctx, o, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(e) {
 		o, e = r.Get(ctx, b.ProviderName, metav1.GetOptions{})

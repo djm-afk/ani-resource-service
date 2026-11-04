@@ -119,6 +119,7 @@ func Migrate(ctx context.Context, owner *pgxpool.Pool, runtimeRole string) error
 }
 
 var networkTables = []string{
+	"network_platform_vpcs", "network_platform_subnets", "network_platform_network_observations",
 	"network_vnics", "network_vnic_bindings",
 	"network_security_groups", "network_security_group_targets", "network_security_group_references", "network_security_group_operations", "network_security_group_idempotency", "network_security_group_reconciliations",
 	"network_vm_namespaces",

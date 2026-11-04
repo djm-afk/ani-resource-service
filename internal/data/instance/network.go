@@ -2,6 +2,7 @@ package instance
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -37,33 +38,22 @@ func (n *InstanceNetwork) placement(tenant, cluster, namespace string) error {
 	return nil
 }
 func (n *InstanceNetwork) ValidateSelection(ctx context.Context, tenant, cluster, namespace string, selection biz.NetworkSelection) error {
+	_, err := n.AdmitNewNetwork(ctx, tenant, cluster, namespace, selection)
+	return err
+}
+
+// AdmitNewNetwork is read-only. The repository invokes it only for the first
+// owner insert; an accepted owner and permanent replay never reenter this gate.
+func (n *InstanceNetwork) AdmitNewNetwork(ctx context.Context, tenant, cluster, namespace string, selection biz.NetworkSelection) (biz.NetworkSelection, error) {
 	if err := n.placement(tenant, cluster, namespace); err != nil {
-		return err
+		return biz.NetworkSelection{}, err
 	}
-	subnet, err := n.network.GetSubnet(ctx, tenant, selection.SubnetID)
+	resolved, err := n.network.ResolveNewNetworkSelection(ctx, networkbiz.NetworkSelection{TenantID: tenant, VPCID: selection.VPCID, SubnetID: selection.SubnetID, ClusterID: cluster, Namespace: namespace})
 	if err != nil {
-		return instanceNetworkError(err)
+		return biz.NetworkSelection{}, instanceNetworkError(err)
 	}
-	if subnet.TenantID != tenant || subnet.ID != selection.SubnetID {
-		return biz.ErrNetworkNotFound
-	}
-	if subnet.VPCID != selection.VPCID {
-		return biz.ErrNetworkConflict
-	}
-	if subnet.State == networkbiz.Deleting || subnet.State == networkbiz.Deleted {
-		return biz.ErrNetworkUnavailable
-	}
-	vpc, err := n.network.GetVPC(ctx, tenant, selection.VPCID)
-	if err != nil {
-		return instanceNetworkError(err)
-	}
-	if vpc.TenantID != tenant || vpc.ID != selection.VPCID {
-		return biz.ErrNetworkNotFound
-	}
-	if vpc.State == networkbiz.Deleting || vpc.State == networkbiz.Deleted {
-		return biz.ErrNetworkUnavailable
-	}
-	return nil
+	selection.Reference = resolved.Reference
+	return selection, nil
 }
 func (n *InstanceNetwork) runtime(i biz.Instance) error {
 	if i.Network == nil || i.Spec.Network == nil || !biz.UUID(i.Network.SubmissionID) || i.Network.RequestKey == "" || i.Network.Generation < 1 {
@@ -80,7 +70,7 @@ func (n *InstanceNetwork) Prepare(ctx context.Context, i biz.Instance) (biz.Netw
 	}
 	// Permanent replay must precede dynamic availability checks. Prepare owns
 	// that decision and verifies the actual provider binding on first accept.
-	a, err := n.attachments.Prepare(ctx, networkbiz.PrepareAttachment{TenantID: i.TenantID, InstanceID: i.ID, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, Slot: "primary", RequestKey: i.Network.RequestKey, SubmissionID: i.Network.SubmissionID, Generation: i.Network.Generation, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, WorkloadMode: "controller_managed", ConsumerType: networkbiz.ConsumerContainerInstance})
+	a, err := n.attachments.PrepareAccepted(ctx, networkbiz.PrepareAttachment{AcceptedReference: i.Spec.Network.Reference, TenantID: i.TenantID, InstanceID: i.ID, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, Slot: "primary", RequestKey: i.Network.RequestKey, SubmissionID: i.Network.SubmissionID, Generation: i.Network.Generation, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, WorkloadMode: "controller_managed", ConsumerType: networkbiz.ConsumerContainerInstance})
 	if err != nil {
 		return biz.NetworkBinding{}, instanceNetworkError(err)
 	}
@@ -97,7 +87,7 @@ func (n *InstanceNetwork) Prepare(ctx context.Context, i biz.Instance) (biz.Netw
 	if p.FormatVersion != 1 || p.TenantID != i.TenantID || p.InstanceID != i.ID || p.AttachmentID != a.ID || p.SubmissionID != i.Network.SubmissionID || p.Generation != i.Network.Generation || p.Namespace != i.Spec.Namespace || p.PrimaryNetworkRef == "" {
 		return biz.NetworkBinding{}, biz.ErrNetworkConflict
 	}
-	return biz.NetworkBinding{AttachmentID: a.ID, BindingRevision: a.BindingRevision, PrimaryNetworkRef: p.PrimaryNetworkRef, Version: a.Version}, nil
+	return biz.NetworkBinding{AttachmentID: a.ID, BindingRevision: a.BindingRevision, PrimaryNetworkRef: p.PrimaryNetworkRef, BasicIsolationName: p.BasicIsolationName, Version: a.Version}, nil
 }
 func (n *InstanceNetwork) Observe(ctx context.Context, i biz.Instance) (biz.NetworkObservation, error) {
 	if err := n.runtime(i); err != nil {
@@ -144,10 +134,16 @@ func instanceNetworkError(err error) error {
 	if err == nil {
 		return nil
 	}
+	var provider *networkbiz.ProviderError
+	if errors.As(err, &provider) && provider.Kind == networkbiz.ProviderConflict {
+		return biz.ErrNetworkConflict
+	}
 	switch networkbiz.ReasonOf(err) {
 	case networkbiz.ResourceNotFound:
 		return biz.ErrNetworkNotFound
-	case networkbiz.AttachmentConflict, networkbiz.AttachmentProtocol, networkbiz.VersionConflict, networkbiz.IdempotencyConflict, networkbiz.PlacementMismatch, networkbiz.InvalidArgument:
+	case networkbiz.NetworkNewAdmissionClosed:
+		return biz.ErrNetworkAdmissionClosed
+	case networkbiz.ProviderOwnership, networkbiz.AttachmentConflict, networkbiz.AttachmentProtocol, networkbiz.VersionConflict, networkbiz.IdempotencyConflict, networkbiz.PlacementMismatch, networkbiz.InvalidArgument:
 		return biz.ErrNetworkConflict
 	default:
 		return biz.ErrNetworkUnavailable

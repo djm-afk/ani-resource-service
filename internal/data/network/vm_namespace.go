@@ -54,9 +54,207 @@ func automaticVMNADConfig(config VMAutoNetworkConfig) string {
 	return string(raw)
 }
 
-// PrepareVMNetwork declares Res's NAD and ServiceAccount independently of KCN
-// readiness. It never creates VM/Pod resources or adopts existing NADs.
-func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTarget) (result error) {
+// VMNetworkIntent is read-only trusted input until a VM owner accepts it. The
+// raw NAD is then stored in that owner's internal snapshot, outside canonical.
+type VMNetworkIntent struct {
+	ManagedVMNAD
+	NADConfig, ServiceAccount string
+}
+
+func vmNetworkFromRecord(s biz.ResolvedNetworkSelection, record sqlcgen.NetworkVmNamespace) VMNetworkIntent {
+	return VMNetworkIntent{ManagedVMNAD: ManagedVMNAD{TenantID: s.TenantID, VPCID: s.VPCID, SubnetID: s.SubnetID, ClusterID: s.ClusterID, Namespace: s.Namespace, NamespaceUID: record.NamespaceUid, NADName: record.NadName, NADUID: record.NadUid, NADConfigDigest: record.NadConfigDigest, KCNSubnetRef: s.NativeNamespace + "/" + s.NativeName}, NADConfig: record.NadConfig, ServiceAccount: record.ServiceAccount}
+}
+
+func vmIntentMatches(s biz.ResolvedNetworkSelection, intent VMNetworkIntent, expected *biz.VMNetworkExpectation, serviceAccount string) error {
+	digest, err := VMNADConfigDigest(intent.NADConfig)
+	if err != nil || validateVMSinglePluginNAD(intent.NADConfig) != nil || digest != intent.NADConfigDigest || intent.TenantID != s.TenantID || intent.VPCID != s.VPCID || intent.SubnetID != s.SubnetID || intent.ClusterID != s.ClusterID || intent.Namespace != s.Namespace || intent.NamespaceUID == "" || (s.NamespaceUID != "" && intent.NamespaceUID != s.NamespaceUID) || intent.NADName == "" || intent.ServiceAccount == "" || intent.KCNSubnetRef != s.NativeNamespace+"/"+s.NativeName {
+		return biz.Fail(biz.AttachmentConflict, "frozen VM network intent differs")
+	}
+	if expected != nil && (expected.NADName != intent.NADName || expected.NADConfigDigest != intent.NADConfigDigest || (expected.NADUID != "" && expected.NADUID != intent.NADUID)) {
+		return biz.Fail(biz.AttachmentConflict, "frozen VM NAD differs")
+	}
+	if serviceAccount != "" && serviceAccount != intent.ServiceAccount {
+		return biz.Fail(biz.AttachmentConflict, "frozen VM ServiceAccount differs")
+	}
+	return nil
+}
+
+// LookupVMNetworkIntent resolves trusted raw configuration without writing a
+// Namespace registration, NAD, ServiceAccount, BNI, Attachment or preparation row.
+// A missing automatic preparation row is a valid initial state.
+func (p *KCProvider) LookupVMNetworkIntent(ctx context.Context, s biz.ResolvedNetworkSelection, expected *biz.VMNetworkExpectation, serviceAccount string) (VMNetworkIntent, error) {
+	identity, err := p.repository.ResolveTenantNamespace(ctx, s.TenantID)
+	if err != nil {
+		return VMNetworkIntent{}, err
+	}
+	if identity.ClusterID != s.ClusterID || identity.Name != s.Namespace || (s.NamespaceUID != "" && identity.UID != s.NamespaceUID) {
+		return VMNetworkIntent{}, biz.Fail(biz.AttachmentConflict, "VM namespace identity changed")
+	}
+	s.NamespaceUID = identity.UID
+	legacy, hasLegacy := p.vmNetworks[vmNetworkPolicyKey(s.TenantID, s.SubnetID, s.Namespace)]
+	useLegacy := hasLegacy && expected != nil && expected.NADUID != "" && expected.NADName == legacy.NADName && expected.NADUID == legacy.NADUID && expected.NADConfigDigest == legacy.NADConfigDigest
+	record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return VMNetworkIntent{}, databaseFailure(err)
+	}
+	useLegacy = useLegacy || (errors.Is(err, pgx.ErrNoRows) && hasLegacy)
+	var intent VMNetworkIntent
+	if useLegacy {
+		intent = VMNetworkIntent{ManagedVMNAD: legacy, ServiceAccount: serviceAccount}
+		if intent.ServiceAccount == "" && p.vmAutoNetwork != nil {
+			intent.ServiceAccount = p.vmAutoNetwork.ServiceAccount
+		}
+		nad, getErr := p.client.Resource(vmNADs).Namespace(s.Namespace).Get(ctx, legacy.NADName, metav1.GetOptions{})
+		if getErr != nil {
+			return VMNetworkIntent{}, readFailure(getErr)
+		}
+		if nad.GetAPIVersion() != "k8s.cni.cncf.io/v1" || nad.GetKind() != "NetworkAttachmentDefinition" || string(nad.GetUID()) != legacy.NADUID || nad.GetDeletionTimestamp() != nil {
+			return VMNetworkIntent{}, biz.Fail(biz.AttachmentConflict, "static VM NAD identity changed")
+		}
+		intent.NADConfig, _, _ = unstructured.NestedString(nad.Object, "spec", "config")
+	} else if err == nil {
+		if record.Namespace != s.Namespace || record.NamespaceUid != s.NamespaceUID || record.TemplateID != vmNetworkTemplate {
+			return VMNetworkIntent{}, biz.Fail(biz.AttachmentConflict, "managed VM namespace identity changed")
+		}
+		intent = vmNetworkFromRecord(s, record)
+	} else {
+		if p.vmAutoNetwork == nil {
+			return VMNetworkIntent{}, biz.Fail(biz.DependencyUnavailable, "automatic VM network configuration unavailable")
+		}
+		raw := automaticVMNADConfig(*p.vmAutoNetwork)
+		digest, digestErr := VMNADConfigDigest(raw)
+		if digestErr != nil {
+			return VMNetworkIntent{}, digestErr
+		}
+		intent = VMNetworkIntent{ManagedVMNAD: ManagedVMNAD{TenantID: s.TenantID, VPCID: s.VPCID, SubnetID: s.SubnetID, ClusterID: s.ClusterID, Namespace: s.Namespace, NamespaceUID: s.NamespaceUID, NADName: vmManagedNADName, NADConfigDigest: digest, KCNSubnetRef: s.NativeNamespace + "/" + s.NativeName}, NADConfig: raw, ServiceAccount: p.vmAutoNetwork.ServiceAccount}
+	}
+	if err := vmIntentMatches(s, intent, expected, serviceAccount); err != nil {
+		return VMNetworkIntent{}, err
+	}
+	return intent, nil
+}
+
+// PrepareTenantVMNetwork consumes a frozen owner intent. Namespace registration
+// and the platform BNI declaration precede this helper in the owner adapter.
+func (p *KCProvider) PrepareTenantVMNetwork(ctx context.Context, s biz.ResolvedNetworkSelection, intent VMNetworkIntent) (out ManagedVMNAD, result error) {
+	if err := vmIntentMatches(s, intent, nil, intent.ServiceAccount); err != nil {
+		return out, err
+	}
+	if err := p.verifyTenantNamespace(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace}); err != nil {
+		return out, err
+	}
+	legacy, hasLegacy := p.vmNetworks[vmNetworkPolicyKey(s.TenantID, s.SubnetID, s.Namespace)]
+	if hasLegacy && intent.NADUID != "" && legacy.NADName == intent.NADName && legacy.NADUID == intent.NADUID && legacy.NADConfigDigest == intent.NADConfigDigest {
+		// An accepted static mapping stays a read-only original-object path.
+		if err := p.ValidateTenantVMNetwork(ctx, s, intent); err != nil {
+			return out, err
+		}
+		return intent.ManagedVMNAD, nil
+	}
+	if intent.NADUID != "" {
+		original, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return out, biz.Fail(biz.AttachmentConflict, "original VM network preparation or static mapping is missing")
+			}
+			return out, databaseFailure(err)
+		}
+		if original.NadName != intent.NADName || original.NadUid != intent.NADUID || original.NadConfigDigest != intent.NADConfigDigest {
+			return out, biz.Fail(biz.AttachmentConflict, "original VM network preparation differs")
+		}
+	}
+	if err := p.repository.queries.ReserveVMNamespace(ctx, sqlcgen.ReserveVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace, NamespaceUid: intent.NamespaceUID, ManagementID: uuid.NewString(), NadName: intent.NADName, NadConfig: intent.NADConfig, NadConfigDigest: intent.NADConfigDigest, ServiceAccount: intent.ServiceAccount}); err != nil {
+		return out, databaseFailure(err)
+	}
+	record, err := p.repository.queries.GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID})
+	if err != nil {
+		return out, databaseFailure(err)
+	}
+	failureScope := record
+	defer func() {
+		if result != nil {
+			_ = p.repository.queries.FailVMNamespacePreparation(ctx, sqlcgen.FailVMNamespacePreparationParams{TenantID: failureScope.TenantID, ClusterID: failureScope.ClusterID, ManagementID: failureScope.ManagementID, Reason: "VM_NETWORK_PREPARATION_FAILED"})
+		}
+	}()
+	if record.Namespace != s.Namespace || record.NamespaceUid != intent.NamespaceUID || record.TemplateID != vmNetworkTemplate || record.NadName != intent.NADName || record.NadConfigDigest != intent.NADConfigDigest || record.ServiceAccount != intent.ServiceAccount || (intent.NADUID != "" && record.NadUid != intent.NADUID) {
+		return out, biz.Fail(biz.AttachmentConflict, "managed VM namespace or frozen intent changed")
+	}
+	nad, err := p.ensureVMNetworkObject(ctx, record, vmNADs, "NetworkAttachmentDefinition", record.NadName, record.NadUid)
+	if err != nil {
+		return out, err
+	}
+	record, err = p.repository.queries.SaveVMNamespaceObjectIdentity(ctx, sqlcgen.SaveVMNamespaceObjectIdentityParams{TenantID: record.TenantID, ClusterID: record.ClusterID, ManagementID: record.ManagementID, ObjectKind: "nad", ObjectUid: string(nad.GetUID())})
+	if err != nil {
+		return out, databaseFailure(err)
+	}
+	sa, err := p.ensureVMNetworkObject(ctx, record, vmServiceAccounts, "ServiceAccount", record.ServiceAccount, record.ServiceAccountUid)
+	if err != nil {
+		return out, err
+	}
+	record, err = p.repository.queries.SaveVMNamespaceObjectIdentity(ctx, sqlcgen.SaveVMNamespaceObjectIdentityParams{TenantID: record.TenantID, ClusterID: record.ClusterID, ManagementID: record.ManagementID, ObjectKind: "service_account", ObjectUid: string(sa.GetUID())})
+	if err != nil {
+		return out, databaseFailure(err)
+	}
+	return vmNetworkFromRecord(s, record).ManagedVMNAD, nil
+}
+
+// ValidateTenantVMNetwork checks only the accepted network and the VM's own
+// original namespace/NAD/ServiceAccount identities. It never consults current
+// automatic configuration, Ready, preparation reason or catalog publication.
+func (p *KCProvider) ValidateTenantVMNetwork(ctx context.Context, s biz.ResolvedNetworkSelection, intent VMNetworkIntent) error {
+	if err := vmIntentMatches(s, intent, &biz.VMNetworkExpectation{NADName: intent.NADName, NADUID: intent.NADUID, NADConfigDigest: intent.NADConfigDigest}, intent.ServiceAccount); err != nil {
+		return err
+	}
+	if intent.NADUID == "" {
+		return biz.Fail(biz.AttachmentConflict, "accepted VM NAD identity is missing")
+	}
+	ns, err := p.tenantNamespace(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace})
+	if err != nil {
+		return err
+	}
+	if string(ns.GetUID()) != intent.NamespaceUID {
+		return biz.Fail(biz.AttachmentConflict, "VM namespace identity changed")
+	}
+	nad, err := p.client.Resource(vmNADs).Namespace(s.Namespace).Get(ctx, intent.NADName, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return biz.Fail(biz.ProviderOwnership, "accepted VM NAD no longer exists")
+		}
+		return readFailure(err)
+	}
+	raw, _, _ := unstructured.NestedString(nad.Object, "spec", "config")
+	digest, digestErr := VMNADConfigDigest(raw)
+	if nad.GetAPIVersion() != "k8s.cni.cncf.io/v1" || nad.GetKind() != "NetworkAttachmentDefinition" || string(nad.GetUID()) != intent.NADUID || nad.GetDeletionTimestamp() != nil || digestErr != nil || digest != intent.NADConfigDigest {
+		return biz.Fail(biz.AttachmentConflict, "accepted VM NAD identity or configuration changed")
+	}
+	record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: s.TenantID, ClusterID: s.ClusterID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return databaseFailure(err)
+	}
+	legacy, static := p.vmNetworks[vmNetworkPolicyKey(s.TenantID, s.SubnetID, s.Namespace)]
+	static = static && intent.NADName == legacy.NADName && intent.NADUID == legacy.NADUID && intent.NADConfigDigest == legacy.NADConfigDigest
+	if static {
+		return nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) || record.Namespace != s.Namespace || record.NamespaceUid != intent.NamespaceUID || record.NadName != intent.NADName || record.NadUid != intent.NADUID || record.NadConfigDigest != intent.NADConfigDigest || record.ServiceAccount != intent.ServiceAccount || record.ServiceAccountUid == "" {
+		return biz.Fail(biz.AttachmentConflict, "accepted VM preparation identity changed")
+	}
+	if err := verifyVMNetworkObject(nad, record, "NetworkAttachmentDefinition", record.NadName, record.NadUid); err != nil {
+		return err
+	}
+	sa, err := p.client.Resource(vmServiceAccounts).Namespace(s.Namespace).Get(ctx, record.ServiceAccount, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return biz.Fail(biz.ProviderOwnership, "accepted VM ServiceAccount no longer exists")
+		}
+		return readFailure(err)
+	}
+	return verifyVMNetworkObject(sa, record, "ServiceAccount", record.ServiceAccount, record.ServiceAccountUid)
+}
+
+// PrepareVMNetwork is the existing private Subnet preparation entry point. The
+// same owner helper is used by a first VM, without manufacturing Subnet work.
+func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTarget) error {
 	if p.vmAutoNetwork == nil || target.Kind != "subnet" {
 		return nil
 	}
@@ -64,57 +262,26 @@ func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTa
 	if err != nil {
 		return err
 	}
-	if binding.ResourceKind != "subnet" || binding.ProviderName == "" {
-		return biz.Fail(biz.PlacementMismatch, "VM Subnet declaration unavailable")
-	}
-	if err := p.verifyTenantNamespace(ctx, binding); err != nil {
-		return err
-	}
-	ns, err := p.client.Resource(namespaces).Get(ctx, binding.Namespace, metav1.GetOptions{})
-	if err != nil {
-		return readFailure(err)
-	}
-
-	raw := automaticVMNADConfig(*p.vmAutoNetwork)
-	digest, err := VMNADConfigDigest(raw)
+	selected, err := p.repository.ResolveAcceptedNetworkSelection(ctx, biz.NetworkSelection{TenantID: binding.TenantID, VPCID: target.VPCID, SubnetID: target.ResourceID, ClusterID: binding.ClusterID, Namespace: binding.Namespace})
 	if err != nil {
 		return err
 	}
-	if err = p.repository.queries.ReserveVMNamespace(ctx, sqlcgen.ReserveVMNamespaceParams{TenantID: binding.TenantID, ClusterID: binding.ClusterID, Namespace: binding.Namespace, NamespaceUid: string(ns.GetUID()), ManagementID: uuid.NewString(), NadName: vmManagedNADName, NadConfig: raw, NadConfigDigest: digest, ServiceAccount: p.vmAutoNetwork.ServiceAccount}); err != nil {
-		return databaseFailure(err)
-	}
-	record, err := p.repository.queries.GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: binding.TenantID, ClusterID: binding.ClusterID})
-	if err != nil {
-		return databaseFailure(err)
-	}
-	failureScope := record
-	defer func() {
-		if result != nil {
-			// A generic reason is enough for admission and avoids persisting any
-			// transport details. The next due Subnet work retries this same intent.
-			_ = p.repository.queries.FailVMNamespacePreparation(ctx, sqlcgen.FailVMNamespacePreparationParams{TenantID: failureScope.TenantID, ClusterID: failureScope.ClusterID, ManagementID: failureScope.ManagementID, Reason: "VM_NETWORK_PREPARATION_FAILED"})
+	record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: selected.TenantID, ClusterID: selected.ClusterID})
+	var intent VMNetworkIntent
+	if err == nil {
+		intent = vmNetworkFromRecord(selected, record)
+	} else if errors.Is(err, pgx.ErrNoRows) {
+		raw := automaticVMNADConfig(*p.vmAutoNetwork)
+		digest, digestErr := VMNADConfigDigest(raw)
+		if digestErr != nil {
+			return digestErr
 		}
-	}()
-	if record.Namespace != binding.Namespace || record.NamespaceUid == "" || record.NamespaceUid != string(ns.GetUID()) || record.TemplateID != vmNetworkTemplate || record.NadName != vmManagedNADName || record.NadConfigDigest != digest || record.ServiceAccount != p.vmAutoNetwork.ServiceAccount {
-		return biz.Fail(biz.AttachmentConflict, "managed VM namespace or template identity changed")
-	}
-	nad, err := p.ensureVMNetworkObject(ctx, record, vmNADs, "NetworkAttachmentDefinition", record.NadName, record.NadUid)
-	if err != nil {
-		return err
-	}
-	record, err = p.repository.queries.SaveVMNamespaceObjectIdentity(ctx, sqlcgen.SaveVMNamespaceObjectIdentityParams{TenantID: record.TenantID, ClusterID: record.ClusterID, ManagementID: record.ManagementID, ObjectKind: "nad", ObjectUid: string(nad.GetUID())})
-	if err != nil {
+		intent = VMNetworkIntent{ManagedVMNAD: ManagedVMNAD{TenantID: selected.TenantID, VPCID: selected.VPCID, SubnetID: selected.SubnetID, ClusterID: selected.ClusterID, Namespace: selected.Namespace, NamespaceUID: selected.NamespaceUID, NADName: vmManagedNADName, NADConfigDigest: digest, KCNSubnetRef: selected.NativeNamespace + "/" + selected.NativeName}, NADConfig: raw, ServiceAccount: p.vmAutoNetwork.ServiceAccount}
+	} else {
 		return databaseFailure(err)
 	}
-	sa, err := p.ensureVMNetworkObject(ctx, record, vmServiceAccounts, "ServiceAccount", record.ServiceAccount, record.ServiceAccountUid)
-	if err != nil {
-		return err
-	}
-	_, err = p.repository.queries.SaveVMNamespaceObjectIdentity(ctx, sqlcgen.SaveVMNamespaceObjectIdentityParams{TenantID: record.TenantID, ClusterID: record.ClusterID, ManagementID: record.ManagementID, ObjectKind: "service_account", ObjectUid: string(sa.GetUID())})
-	if err != nil {
-		return databaseFailure(err)
-	}
-	return nil
+	_, err = p.PrepareTenantVMNetwork(ctx, selected, intent)
+	return err
 }
 
 func (p *Postgres) RetryVMNetworkPreparation(ctx context.Context, w biz.Work, delay time.Duration) error {
@@ -154,6 +321,9 @@ func (p *KCProvider) ensureVMNetworkObject(ctx context.Context, record sqlcgen.N
 		}
 	}
 	if err != nil {
+		if apierrors.IsNotFound(err) && uid != "" {
+			return nil, biz.Fail(biz.ProviderOwnership, "managed VM network original object no longer exists")
+		}
 		return nil, readFailure(err)
 	}
 	if err = verifyVMNetworkObject(value, record, kind, name, uid); err != nil {
@@ -186,58 +356,48 @@ func verifyVMNetworkObject(value *unstructured.Unstructured, record sqlcgen.Netw
 	return nil
 }
 
-// LookupManagedVMNetwork is read-only. The caller must still run the existing
-// ResolveVMNetworkSelection checks before admitting a create specification.
+// LookupManagedVMNetwork preserves the read-only lookup entry point. A new VM
+// can freeze an empty NAD UID while its own create operation prepares the NAD.
 func (p *KCProvider) LookupManagedVMNetwork(ctx context.Context, tenant, vpc, subnet, cluster, namespace string) (ManagedVMNAD, error) {
-	return p.lookupManagedVMNetwork(ctx, tenant, vpc, subnet, cluster, namespace, true)
-}
-
-// Stopped/closing consumers still verify the pinned namespace/NAD identity and
-// real Subnet binding, but do not need today's auxiliary preparation to be ready.
-// This never creates a registration or promotes an observed object to trust.
-func (p *KCProvider) lookupManagedVMNetwork(ctx context.Context, tenant, vpc, subnet, cluster, namespace string, requireRunnable bool) (ManagedVMNAD, error) {
-	legacy, hasLegacy := p.vmNetworks[vmNetworkPolicyKey(tenant, subnet, namespace)]
-	if hasLegacy && (legacy.ClusterID != cluster || legacy.VPCID != vpc) {
-		return ManagedVMNAD{}, biz.Fail(biz.PlacementMismatch, "VM network placement differs")
-	}
-	if (requireRunnable && p.vmAutoNetwork == nil) || cluster != p.repository.placement.ClusterID {
-		if hasLegacy {
-			return legacy, nil
-		}
-		return ManagedVMNAD{}, biz.Fail(biz.NetworkNotReady, "managed VM network is unavailable")
-	}
-	s, err := p.repository.readQueries(ctx).GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: tenant, SubnetID: subnet})
+	s, err := p.repository.ResolveNewNetworkSelection(ctx, biz.NetworkSelection{TenantID: tenant, VPCID: vpc, SubnetID: subnet, ClusterID: cluster, Namespace: namespace})
 	if err != nil {
-		return ManagedVMNAD{}, databaseFailure(err)
-	}
-	b, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: tenant, ResourceID: subnet})
-	if err != nil {
-		return ManagedVMNAD{}, databaseFailure(err)
-	}
-	if err := p.verifyTenantNamespace(ctx, b); err != nil {
 		return ManagedVMNAD{}, err
 	}
-	if s.NetworkSubnet.VpcID != vpc || b.ClusterID != cluster || b.Namespace != namespace || b.ProviderName == "" || b.ResourceKind != "subnet" {
-		return ManagedVMNAD{}, biz.Fail(biz.PlacementMismatch, "VM network placement differs")
+	intent, err := p.LookupVMNetworkIntent(ctx, s, nil, "")
+	return intent.ManagedVMNAD, err
+}
+
+// Runtime selection uses the accepted binding and original preparation record.
+// requireRunnable controls the caller's own object checks, never current config
+// or the preparation record's cached ready/reason fields.
+func (p *KCProvider) lookupManagedVMNetwork(ctx context.Context, tenant, vpc, subnet, cluster, namespace string, requireRunnable bool, references ...biz.NetworkReference) (ManagedVMNAD, error) {
+	selection := biz.NetworkSelection{TenantID: tenant, VPCID: vpc, SubnetID: subnet, ClusterID: cluster, Namespace: namespace}
+	if len(references) > 0 {
+		selection.Reference = references[0]
+	}
+	s, err := p.repository.ResolveAcceptedNetworkSelection(ctx, selection)
+	if err != nil {
+		return ManagedVMNAD{}, err
+	}
+	if err := p.verifyTenantNamespace(ctx, sqlcgen.NetworkProviderBinding{TenantID: tenant, ClusterID: cluster, Namespace: namespace}); err != nil {
+		return ManagedVMNAD{}, err
 	}
 	record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: tenant, ClusterID: cluster})
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && ((requireRunnable && !record.Ready) || record.Namespace != namespace)) {
-		if hasLegacy {
+	if errors.Is(err, pgx.ErrNoRows) {
+		if legacy, ok := p.vmNetworks[vmNetworkPolicyKey(tenant, subnet, namespace)]; ok && legacy.ClusterID == cluster && legacy.VPCID == vpc && legacy.KCNSubnetRef == s.NativeNamespace+"/"+s.NativeName {
 			return legacy, nil
 		}
-		return ManagedVMNAD{}, biz.Fail(biz.NetworkNotReady, "managed VM network preparation is pending or failed")
+		return ManagedVMNAD{}, biz.Fail(biz.NetworkNotReady, "managed VM preparation has no original record")
 	}
 	if err != nil {
 		return ManagedVMNAD{}, databaseFailure(err)
 	}
-	if record.TemplateID != vmNetworkTemplate {
-		return ManagedVMNAD{}, biz.Fail(biz.NetworkNotReady, "managed VM network template differs from deployment policy")
+	if record.Namespace != namespace || record.NamespaceUid == "" || (s.NamespaceUID != "" && record.NamespaceUid != s.NamespaceUID) || record.TemplateID != vmNetworkTemplate || record.NadUid == "" {
+		return ManagedVMNAD{}, biz.Fail(biz.AttachmentConflict, "managed VM namespace identity changed")
 	}
-	if requireRunnable {
-		digest, _ := VMNADConfigDigest(automaticVMNADConfig(*p.vmAutoNetwork))
-		if record.NadConfigDigest != digest || record.ServiceAccount != p.vmAutoNetwork.ServiceAccount {
-			return ManagedVMNAD{}, biz.Fail(biz.NetworkNotReady, "managed VM network template differs from deployment policy")
-		}
+	intent := vmNetworkFromRecord(s, record)
+	if err := vmIntentMatches(s, intent, nil, record.ServiceAccount); err != nil {
+		return ManagedVMNAD{}, err
 	}
-	return ManagedVMNAD{TenantID: tenant, VPCID: vpc, SubnetID: subnet, ClusterID: cluster, Namespace: namespace, NamespaceUID: record.NamespaceUid, NADName: record.NadName, NADUID: record.NadUid, NADConfigDigest: record.NadConfigDigest, KCNSubnetRef: namespace + "/" + b.ProviderName}, nil
+	return intent.ManagedVMNAD, nil
 }

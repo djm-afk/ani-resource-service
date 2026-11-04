@@ -179,9 +179,16 @@ type GetTenantNamespaceIdentityParams struct {
 	ClusterID string
 }
 
-func (q *Queries) GetTenantNamespaceIdentity(ctx context.Context, arg GetTenantNamespaceIdentityParams) (NetworkTenantNamespace, error) {
+type GetTenantNamespaceIdentityRow struct {
+	TenantID     string
+	ClusterID    string
+	Namespace    string
+	NamespaceUid *string
+}
+
+func (q *Queries) GetTenantNamespaceIdentity(ctx context.Context, arg GetTenantNamespaceIdentityParams) (GetTenantNamespaceIdentityRow, error) {
 	row := q.db.QueryRow(ctx, getTenantNamespaceIdentity, arg.TenantID, arg.ClusterID)
-	var i NetworkTenantNamespace
+	var i GetTenantNamespaceIdentityRow
 	err := row.Scan(
 		&i.TenantID,
 		&i.ClusterID,
@@ -480,15 +487,22 @@ const listTenantNamespaceIdentities = `-- name: ListTenantNamespaceIdentities :m
 SELECT tenant_id,cluster_id,namespace,namespace_uid FROM network_tenant_namespaces ORDER BY tenant_id,cluster_id
 `
 
-func (q *Queries) ListTenantNamespaceIdentities(ctx context.Context) ([]NetworkTenantNamespace, error) {
+type ListTenantNamespaceIdentitiesRow struct {
+	TenantID     string
+	ClusterID    string
+	Namespace    string
+	NamespaceUid *string
+}
+
+func (q *Queries) ListTenantNamespaceIdentities(ctx context.Context) ([]ListTenantNamespaceIdentitiesRow, error) {
 	rows, err := q.db.Query(ctx, listTenantNamespaceIdentities)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NetworkTenantNamespace{}
+	items := []ListTenantNamespaceIdentitiesRow{}
 	for rows.Next() {
-		var i NetworkTenantNamespace
+		var i ListTenantNamespaceIdentitiesRow
 		if err := rows.Scan(
 			&i.TenantID,
 			&i.ClusterID,

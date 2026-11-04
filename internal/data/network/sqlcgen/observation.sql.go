@@ -31,6 +31,14 @@ WHERE p.cluster_id=$1::text AND p.state<>'deleted' AND p.provider_name=$3
  AND $2::text=CASE WHEN p.kind='public_pool' THEN 'kcn-system' ELSE '' END
  AND $5::text=CASE p.kind WHEN 'public_pool' THEN 'subnets' WHEN 'egress_gateway' THEN 'eipgateways' WHEN 'vlan_network' THEN 'vlannetworks' END
 UNION
+SELECT 'platform_network'::text,v.vpc_id,''::text FROM network_platform_vpcs v
+WHERE v.cluster_id=$1::text AND v.namespace=$2::text AND v.provider_name=$3
+ AND $4::text='networking.kubercloud.com' AND $5::text='vpcs'
+UNION
+SELECT 'platform_network'::text,s.subnet_id,''::text FROM network_platform_subnets s
+WHERE s.cluster_id=$1::text AND s.namespace=$2::text AND s.provider_name=$3
+ AND $4::text='networking.kubercloud.com' AND $5::text='subnets'
+UNION
 SELECT 'attachment'::text,a.attachment_id,a.tenant_id::text FROM network_attachments a
 WHERE a.cluster_id=$1::text AND a.state<>'released'
  AND (($4::text='' AND $5::text='pods' AND a.namespace=$2::text AND a.pod_name=$3)
@@ -230,6 +238,10 @@ WITH resources AS (
 ), platform AS (
  UPDATE network_platform_reconciliations q SET requested_generation=q.requested_generation+1,next_run_at=greatest(q.retry_not_before,least(q.next_run_at,clock_timestamp()))
  FROM network_platform_resources p WHERE p.resource_id=q.resource_id AND p.cluster_id=$1::text AND p.state<>'deleted' AND p.kind<>'device' RETURNING q.resource_id
+), platform_networks AS (
+ UPDATE network_platform_network_observations q SET requested_generation=q.requested_generation+1,next_run_at=greatest(q.retry_not_before,least(q.next_run_at,clock_timestamp()))
+ WHERE EXISTS(SELECT 1 FROM network_platform_vpcs v WHERE v.vpc_id=q.vpc_id AND v.cluster_id=$1::text)
+ OR EXISTS(SELECT 1 FROM network_platform_subnets s WHERE s.subnet_id=q.subnet_id AND s.cluster_id=$1::text) RETURNING q.resource_id
 ), attachments AS (
  UPDATE network_attachments SET requested_generation=requested_generation+1,next_check_at=greatest(retry_not_before,least(next_check_at,clock_timestamp()))
  WHERE cluster_id=$1::text AND state<>'released' RETURNING attachment_id

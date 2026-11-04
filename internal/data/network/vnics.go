@@ -12,13 +12,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 func vnicRow(r sqlcgen.NetworkVnic) biz.VNic {
-	return biz.VNic{ID: r.VnicID, TenantID: r.TenantID, Name: r.Name, Description: r.Description, VPCID: r.VpcID, SubnetID: r.SubnetID, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, MACAddress: r.MacAddress, PrimaryIP: r.PrimaryIp, RequestedIP: r.RequestedIp, RequestedMAC: r.RequestedMac, IPs: r.Ips, SecurityGroupIDs: r.SecurityGroupIds, ObservedAt: r.ObservedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, LastOperationID: r.LastOperationID, Bindings: []biz.VNicBinding{}}
+	reference := normalizeNetworkReference(r.VpcID, r.SubnetID, r.PlatformVpcID, r.PlatformSubnetID, "")
+	return biz.VNic{ID: r.VnicID, TenantID: r.TenantID, Name: r.Name, Description: r.Description, Reference: reference, VPCID: reference.VPCID, SubnetID: reference.SubnetID, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, MACAddress: r.MacAddress, PrimaryIP: r.PrimaryIp, RequestedIP: r.RequestedIp, RequestedMAC: r.RequestedMac, IPs: r.Ips, SecurityGroupIDs: r.SecurityGroupIds, ObservedAt: r.ObservedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, LastOperationID: r.LastOperationID, Bindings: []biz.VNicBinding{}}
 }
 func vnicWork(r sqlcgen.NetworkVnic) biz.ResourceWork {
-	return biz.ResourceWork{ID: r.VnicID, TenantID: r.TenantID, Kind: "vnic", VPCID: r.VpcID, SubnetID: r.SubnetID, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, LastOperationID: r.LastOperationID, RequestedIP: r.RequestedIp, RequestedMAC: r.RequestedMac}
+	reference := normalizeNetworkReference(r.VpcID, r.SubnetID, r.PlatformVpcID, r.PlatformSubnetID, "")
+	return biz.ResourceWork{ID: r.VnicID, TenantID: r.TenantID, Kind: "vnic", Reference: reference, VPCID: reference.VPCID, SubnetID: reference.SubnetID, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, LastOperationID: r.LastOperationID, RequestedIP: r.RequestedIp, RequestedMAC: r.RequestedMac}
 }
 func vnicReplay(ctx context.Context, tx interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
@@ -37,22 +40,17 @@ func vnicReplay(ctx context.Context, tx interface {
 	}
 	var v biz.VNic
 	err = json.Unmarshal(b, &v)
+	if err == nil && v.Reference.OwnerScope == "" {
+		v.Reference = biz.NetworkReference{OwnerScope: biz.OwnerScopeTenant, VPCID: v.VPCID, SubnetID: v.SubnetID}
+	}
 	return v, true, databaseFailure(err)
 }
 func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, error) {
 	if v, found, e := vnicReplay(ctx, p.pool, r); found || e != nil {
 		return v, e
 	}
-	// Subnet creation already registered this tenant placement. Acceptance uses
-	// that management identity; the declaration writer checks its own target.
-	identity, e := p.tenantNamespaceIdentity(ctx, r.TenantID)
-	if errors.Is(e, pgx.ErrNoRows) {
-		return biz.VNic{}, biz.Fail(biz.PlacementMismatch, "tenant namespace is not registered")
-	}
-	if e != nil {
-		return biz.VNic{}, e
-	}
-	initial, e := p.queries.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
+	// Identify the immutable FK branch, then preserve the private lock order.
+	platform, e := p.queries.IsPlatformNetwork(ctx, sqlcgen.IsPlatformNetworkParams{ResourceID: r.SubnetID})
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
@@ -63,45 +61,78 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
 	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
-	parent, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.NetworkSubnet.VpcID})
-	if e != nil {
-		return biz.VNic{}, databaseFailure(e)
-	}
-	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,28))`, r.TenantID+":"+r.IdempotencyKey); e != nil {
-		return biz.VNic{}, databaseFailure(e)
-	}
-	if v, found, e := vnicReplay(ctx, tx, r); found || e != nil {
-		return v, e
-	}
-	subnet, e := q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
-	if e != nil {
-		return biz.VNic{}, databaseFailure(e)
-	}
-	if !networkManagementOpen(parent.State, parent.Reason) || !networkManagementOpen(subnet.State, subnet.Reason) {
-		return biz.VNic{}, biz.Fail(biz.ParentNotReady, "VPC or Subnet management is closed")
-	}
-	if e = biz.ValidateVNicRequestedIP(r.RequestedIP, subnet.Cidr, subnet.Gateway); e != nil {
-		return biz.VNic{}, e
+	var reference biz.NetworkReference
+	var identity tenantnamespace.Identity
+	var privateVPC, privateSubnet, platformVPC, platformSubnet *string
+	if platform {
+		if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,28))`, r.TenantID+":"+r.IdempotencyKey); e != nil {
+			return biz.VNic{}, databaseFailure(e)
+		}
+		if v, found, e := vnicReplay(ctx, tx, r); found || e != nil {
+			return v, e
+		}
+		selection, e := p.ResolveNewNetworkSelection(ctx, biz.NetworkSelection{TenantID: r.TenantID, SubnetID: r.SubnetID})
+		if e != nil {
+			return biz.VNic{}, e
+		}
+		reference = selection.Reference
+		identity = tenantnamespace.Identity{TenantID: r.TenantID, ClusterID: selection.ClusterID, Name: selection.Namespace, UID: selection.NamespaceUID}
+		platformVPC, platformSubnet = &reference.VPCID, &reference.SubnetID
+	} else {
+		var err error
+		identity, err = p.tenantNamespaceIdentity(ctx, r.TenantID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return biz.VNic{}, biz.Fail(biz.PlacementMismatch, "tenant namespace is not registered")
+		}
+		if err != nil {
+			return biz.VNic{}, err
+		}
+		initial, err := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
+		if err != nil {
+			return biz.VNic{}, databaseFailure(err)
+		}
+		parent, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.NetworkSubnet.VpcID})
+		if err != nil {
+			return biz.VNic{}, databaseFailure(err)
+		}
+		if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,28))`, r.TenantID+":"+r.IdempotencyKey); e != nil {
+			return biz.VNic{}, databaseFailure(e)
+		}
+		if v, found, e := vnicReplay(ctx, tx, r); found || e != nil {
+			return v, e
+		}
+		subnet, err := q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
+		if err != nil {
+			return biz.VNic{}, databaseFailure(err)
+		}
+		if !networkManagementOpen(parent.State, parent.Reason) || !networkManagementOpen(subnet.State, subnet.Reason) {
+			return biz.VNic{}, biz.Fail(biz.ParentNotReady, "VPC or Subnet management is closed")
+		}
+		if err = biz.ValidateVNicRequestedIP(r.RequestedIP, subnet.Cidr, subnet.Gateway); err != nil {
+			return biz.VNic{}, err
+		}
+		sb, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.SubnetID})
+		if err != nil {
+			return biz.VNic{}, databaseFailure(err)
+		}
+		if sb.ProviderName == "" || sb.Namespace != identity.Name || sb.ClusterID != identity.ClusterID {
+			return biz.VNic{}, biz.Fail(biz.PlacementMismatch, "Subnet declaration placement differs")
+		}
+		reference = biz.NetworkReference{OwnerScope: biz.OwnerScopeTenant, VPCID: subnet.VpcID, SubnetID: subnet.SubnetID, SubnetBindingID: sb.BindingID}
+		privateVPC, privateSubnet = &reference.VPCID, &reference.SubnetID
 	}
 	if e = p.acceptTenantNamespace(ctx, q, identity); e != nil {
 		return biz.VNic{}, e
-	}
-	sb, e := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.SubnetID})
-	if e != nil {
-		return biz.VNic{}, databaseFailure(e)
-	}
-	if sb.ProviderName == "" || sb.Namespace != identity.Name || sb.ClusterID != identity.ClusterID {
-		return biz.VNic{}, biz.Fail(biz.PlacementMismatch, "Subnet declaration placement differs")
 	}
 	id, op := "vnic_"+strings.ReplaceAll(uuid.NewString(), "-", ""), uuid.NewString()
 	now, e := q.DatabaseTime(ctx)
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
-	_, e = tx.Exec(ctx, `INSERT INTO network_vnics(tenant_id,vnic_id,vpc_id,subnet_id,name,description,state,created_at,updated_at,last_operation_id,requested_ip,requested_mac) VALUES($1,$2,$3,$4,$5,$6,'provisioning',$7,$7,$8,$9,$10)`, r.TenantID, id, subnet.VpcID, r.SubnetID, r.Name, r.Description, now, op, r.RequestedIP, r.RequestedMAC)
+	_, e = tx.Exec(ctx, `INSERT INTO network_vnics(tenant_id,vnic_id,vpc_id,subnet_id,name,description,state,created_at,updated_at,last_operation_id,requested_ip,requested_mac,platform_vpc_id,platform_subnet_id) VALUES($1,$2,$3,$4,$5,$6,'provisioning',$7,$7,$8,$9,$10,$11,$12)`, r.TenantID, id, privateVPC, privateSubnet, r.Name, r.Description, now, op, r.RequestedIP, r.RequestedMAC, platformVPC, platformSubnet)
 	if e != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(e, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "network_vnics_manual_mac_unique" {
+		if errors.As(e, &pgErr) && pgErr.Code == "23505" && (pgErr.ConstraintName == "network_vnics_manual_mac_unique" || pgErr.ConstraintName == "network_vnics_platform_manual_mac_unique") {
 			return biz.VNic{}, biz.Fail(biz.AddressConflict, "MAC address is already reserved by a manual VNIC in this Subnet")
 		}
 		return biz.VNic{}, databaseFailure(e)
@@ -120,6 +151,7 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 		return biz.VNic{}, databaseFailure(e)
 	}
 	v := vnicRow(row)
+	v.Reference = reference
 	v.ObservationStale = true
 	b, e := json.Marshal(v)
 	if e != nil {
@@ -155,7 +187,7 @@ func (p *Postgres) GetVNic(ctx context.Context, tenant, id string) (biz.VNic, er
 	return v, e
 }
 
-const vnicListPredicate = ` WHERE v.tenant_id=$1 AND ($2='' OR v.name ILIKE '%'||$2||'%') AND ($3='' OR v.subnet_id=$3) AND (($4='' AND v.state<>'deleted') OR v.state=$4) AND ($5='' OR ($5='free' AND NOT EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL)) OR ($5='bound' AND EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL AND b.applied_revision>0)) OR ($5='reserved' AND EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL) AND NOT EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL AND b.applied_revision>0)))`
+const vnicListPredicate = ` WHERE v.tenant_id=$1 AND ($2='' OR v.name ILIKE '%'||$2||'%') AND ($3='' OR coalesce(v.subnet_id,v.platform_subnet_id)=$3) AND (($4='' AND v.state<>'deleted') OR v.state=$4) AND ($5='' OR ($5='free' AND NOT EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL)) OR ($5='bound' AND EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL AND b.applied_revision>0)) OR ($5='reserved' AND EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL) AND NOT EXISTS(SELECT 1 FROM network_vnic_bindings b WHERE b.tenant_id=v.tenant_id AND b.vnic_id=v.vnic_id AND b.released_at IS NULL AND b.applied_revision>0)))`
 
 func (p *Postgres) ListVNics(ctx context.Context, tenant string, f biz.VNicFilter) ([]biz.VNic, int64, error) {
 	scope := biz.VNicConsumerScope{}
@@ -238,8 +270,10 @@ func (p *Postgres) DeleteVNic(ctx context.Context, tenant, id string) (biz.VNic,
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	if _, e = q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: tenant, VpcID: initial.VpcID}); e != nil {
-		return biz.VNic{}, databaseFailure(e)
+	if initial.VpcID != nil {
+		if _, e = q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: tenant, VpcID: *initial.VpcID}); e != nil {
+			return biz.VNic{}, databaseFailure(e)
+		}
 	}
 	row, e := q.LockVNicRow(ctx, sqlcgen.LockVNicRowParams{TenantID: tenant, VnicID: id})
 	if e != nil {
@@ -317,13 +351,17 @@ func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
 	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
-	parent, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.VpcID})
-	if e != nil {
-		return biz.VNic{}, databaseFailure(e)
-	}
-	subnet, e := q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: initial.SubnetID})
-	if e != nil {
-		return biz.VNic{}, databaseFailure(e)
+	parentsOpen := true
+	if initial.VpcID != nil {
+		parent, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: *initial.VpcID})
+		if err != nil {
+			return biz.VNic{}, databaseFailure(err)
+		}
+		subnet, err := q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: textValue(initial.SubnetID)})
+		if err != nil {
+			return biz.VNic{}, databaseFailure(err)
+		}
+		parentsOpen = networkManagementOpen(parent.State, parent.Reason) && networkManagementOpen(subnet.State, subnet.Reason)
 	}
 	row, e := q.LockVNicRow(ctx, sqlcgen.LockVNicRowParams{TenantID: r.TenantID, VnicID: r.VNicID})
 	if e != nil {
@@ -342,10 +380,10 @@ func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.
 			return biz.VNic{}, biz.Fail(biz.InvalidArgument, "consumer and VNIC placement identity differ")
 		}
 	}
-	if row.SubnetID != r.SubnetID {
+	if normalizeNetworkReference(row.VpcID, row.SubnetID, row.PlatformVpcID, row.PlatformSubnetID, "").SubnetID != r.SubnetID {
 		return biz.VNic{}, biz.Fail(biz.InvalidArgument, "manual VNIC must use the instance Subnet")
 	}
-	if !networkManagementOpen(parent.State, parent.Reason) || !networkManagementOpen(subnet.State, subnet.Reason) || !networkManagementOpen(row.State, row.Reason) {
+	if !parentsOpen || !networkManagementOpen(row.State, row.Reason) {
 		return biz.VNic{}, biz.Fail(biz.ResourceBusy, "manual VNIC management is closed")
 	}
 	binding, e := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.VNicID})
@@ -415,7 +453,7 @@ func (p *Postgres) populateVNicBindings(ctx context.Context, db interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, v *biz.VNic) error {
-	e := db.QueryRow(ctx, `SELECT p.name,s.name,ARRAY(SELECT coalesce(g.payload->>'Name','') FROM unnest(v.security_group_ids) WITH ORDINALITY x(id,ord) JOIN network_security_groups g ON g.tenant_id=v.tenant_id AND g.security_group_id=x.id ORDER BY x.ord) FROM network_vnics v JOIN network_vpcs p ON p.tenant_id=v.tenant_id AND p.vpc_id=v.vpc_id JOIN network_subnets s ON s.tenant_id=v.tenant_id AND s.subnet_id=v.subnet_id WHERE v.tenant_id=$1 AND v.vnic_id=$2`, v.TenantID, v.ID).Scan(&v.VPCName, &v.SubnetName, &v.SecurityGroupNames)
+	e := db.QueryRow(ctx, `SELECT coalesce(p.name,pp.name,''),coalesce(s.name,ps.name,''),coalesce(pb.binding_id,ps.binding_id)::text,ARRAY(SELECT coalesce(g.payload->>'Name','') FROM unnest(v.security_group_ids) WITH ORDINALITY x(id,ord) JOIN network_security_groups g ON g.tenant_id=v.tenant_id AND g.security_group_id=x.id ORDER BY x.ord) FROM network_vnics v LEFT JOIN network_vpcs p ON p.tenant_id=v.tenant_id AND p.vpc_id=v.vpc_id LEFT JOIN network_subnets s ON s.tenant_id=v.tenant_id AND s.subnet_id=v.subnet_id LEFT JOIN network_provider_bindings pb ON pb.tenant_id=v.tenant_id AND pb.subnet_id=v.subnet_id LEFT JOIN network_platform_vpcs pp ON pp.vpc_id=v.platform_vpc_id LEFT JOIN network_platform_subnets ps ON ps.subnet_id=v.platform_subnet_id WHERE v.tenant_id=$1 AND v.vnic_id=$2`, v.TenantID, v.ID).Scan(&v.VPCName, &v.SubnetName, &v.Reference.SubnetBindingID, &v.SecurityGroupNames)
 	if e != nil {
 		return databaseFailure(e)
 	}

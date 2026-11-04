@@ -273,7 +273,7 @@ func ValidateCreateSpec(s *CreateSpec) error {
 		return ErrInvalidRequest
 	}
 	n := s.Network
-	if n.VpcId != s.Intent.Network.VpcId || n.SubnetId != s.Intent.Network.SubnetId || !validName(n.NadName) || n.NadUid == "" || !digestPattern.MatchString(n.NadConfigDigest) {
+	if n.VpcId != s.Intent.Network.VpcId || n.SubnetId != s.Intent.Network.SubnetId || !validName(n.NadName) || !digestPattern.MatchString(n.NadConfigDigest) {
 		return ErrInvalidRequest
 	}
 	if s.Media.Kind == "DISK_IMAGE" && (s.Intent.SystemDiskSizeGb*BytesPerGB < s.Media.VirtualCapacityBytes || (s.Media.VolumeMode == "Block" && s.Intent.SystemDiskSizeGb*BytesPerGB < s.Media.RequestedBytes)) {

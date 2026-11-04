@@ -10,6 +10,9 @@ metadata:
   name: ani-network-egress
 rules:
   - apiGroups: [networking.kubercloud.com]
+    resources: [basicnetworkisolations]
+    verbs: [get, create, patch, update]
+  - apiGroups: [networking.kubercloud.com]
     resources: [vnics]
     verbs: [create, patch, delete]
   - apiGroups: [networking.kubercloud.com]

@@ -10,39 +10,41 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
 var (
-	ErrOperationInProgress = errors.New("INSTANCE_OPERATION_IN_PROGRESS")
-	ErrState               = errors.New("INSTANCE_STATE_CONFLICT")
-	ErrRequiresStop        = errors.New("INSTANCE_REQUIRES_STOP")
-	ErrDeleting            = errors.New("INSTANCE_DELETING")
-	ErrMountPathInUse      = errors.New("INSTANCE_MOUNT_PATH_IN_USE")
-	ErrMountNotFound       = errors.New("INSTANCE_MOUNT_NOT_FOUND")
-	ErrWorkspaceDetach     = errors.New("INSTANCE_WORKSPACE_DETACH_FORBIDDEN")
-	ErrPVCDeleting         = errors.New("INSTANCE_PVC_DELETION_IN_PROGRESS")
-	ErrActionUnavailable   = errors.New("INSTANCE_ACTION_UNAVAILABLE")
-	ErrInvalid             = errors.New("INVALID_INSTANCE_REQUEST")
-	ErrDenied              = errors.New("INSTANCE_SCOPE_DENIED")
-	ErrNotFound            = errors.New("INSTANCE_NOT_FOUND")
-	ErrConflict            = errors.New("INSTANCE_IDEMPOTENCY_CONFLICT")
-	ErrVersion             = errors.New("INSTANCE_VERSION_CONFLICT")
-	ErrLease               = errors.New("INSTANCE_LEASE_LOST")
-	ErrUnknown             = errors.New("INSTANCE_EXTERNAL_RESULT_UNKNOWN")
-	ErrOwnership           = errors.New("INSTANCE_OBJECT_OWNERSHIP_CONFLICT")
-	ErrDiagnosticTarget    = errors.New("INSTANCE_DIAGNOSTIC_TARGET_UNAVAILABLE")
-	ErrPodChanged          = errors.New("INSTANCE_LOG_POD_CHANGED")
-	ErrLogLimit            = errors.New("INSTANCE_LOG_CONNECTION_LIMIT")
-	ErrLogSlow             = errors.New("INSTANCE_LOG_CLIENT_TOO_SLOW")
-	ErrSchedulingConflict  = errors.New("SCHEDULING_FIELD_CONFLICT")
-	ErrPVCNotFound         = errors.New("INSTANCE_PVC_NOT_FOUND")
-	ErrPVCReferenceChanged = errors.New("INSTANCE_PVC_REFERENCE_CHANGED")
-	ErrPVCCatalogLimit     = errors.New("INSTANCE_PVC_CATALOG_LIMIT")
-	ErrReservedConfig      = errors.New("INSTANCE_RESERVED_CONFIG")
-	ErrNetworkNotFound     = errors.New("INSTANCE_NETWORK_NOT_FOUND")
-	ErrNetworkConflict     = errors.New("INSTANCE_NETWORK_CONFLICT")
-	ErrNetworkUnavailable  = errors.New("INSTANCE_DEPENDENCY_UNAVAILABLE")
+	ErrOperationInProgress    = errors.New("INSTANCE_OPERATION_IN_PROGRESS")
+	ErrState                  = errors.New("INSTANCE_STATE_CONFLICT")
+	ErrRequiresStop           = errors.New("INSTANCE_REQUIRES_STOP")
+	ErrDeleting               = errors.New("INSTANCE_DELETING")
+	ErrMountPathInUse         = errors.New("INSTANCE_MOUNT_PATH_IN_USE")
+	ErrMountNotFound          = errors.New("INSTANCE_MOUNT_NOT_FOUND")
+	ErrWorkspaceDetach        = errors.New("INSTANCE_WORKSPACE_DETACH_FORBIDDEN")
+	ErrPVCDeleting            = errors.New("INSTANCE_PVC_DELETION_IN_PROGRESS")
+	ErrActionUnavailable      = errors.New("INSTANCE_ACTION_UNAVAILABLE")
+	ErrInvalid                = errors.New("INVALID_INSTANCE_REQUEST")
+	ErrDenied                 = errors.New("INSTANCE_SCOPE_DENIED")
+	ErrNotFound               = errors.New("INSTANCE_NOT_FOUND")
+	ErrConflict               = errors.New("INSTANCE_IDEMPOTENCY_CONFLICT")
+	ErrVersion                = errors.New("INSTANCE_VERSION_CONFLICT")
+	ErrLease                  = errors.New("INSTANCE_LEASE_LOST")
+	ErrUnknown                = errors.New("INSTANCE_EXTERNAL_RESULT_UNKNOWN")
+	ErrOwnership              = errors.New("INSTANCE_OBJECT_OWNERSHIP_CONFLICT")
+	ErrDiagnosticTarget       = errors.New("INSTANCE_DIAGNOSTIC_TARGET_UNAVAILABLE")
+	ErrPodChanged             = errors.New("INSTANCE_LOG_POD_CHANGED")
+	ErrLogLimit               = errors.New("INSTANCE_LOG_CONNECTION_LIMIT")
+	ErrLogSlow                = errors.New("INSTANCE_LOG_CLIENT_TOO_SLOW")
+	ErrSchedulingConflict     = errors.New("SCHEDULING_FIELD_CONFLICT")
+	ErrPVCNotFound            = errors.New("INSTANCE_PVC_NOT_FOUND")
+	ErrPVCReferenceChanged    = errors.New("INSTANCE_PVC_REFERENCE_CHANGED")
+	ErrPVCCatalogLimit        = errors.New("INSTANCE_PVC_CATALOG_LIMIT")
+	ErrReservedConfig         = errors.New("INSTANCE_RESERVED_CONFIG")
+	ErrNetworkNotFound        = errors.New("INSTANCE_NETWORK_NOT_FOUND")
+	ErrNetworkConflict        = errors.New("INSTANCE_NETWORK_CONFLICT")
+	ErrNetworkUnavailable     = errors.New("INSTANCE_DEPENDENCY_UNAVAILABLE")
+	ErrNetworkAdmissionClosed = errors.New("NETWORK_NEW_ADMISSION_CLOSED")
 )
 
 const Owner = "ani-resource-service"
@@ -120,7 +122,11 @@ type VolumeMount struct {
 	Ownership                                        string
 }
 type EnvVar struct{ Name, Value string }
-type NetworkSelection struct{ VPCID, SubnetID string }
+type NetworkSelection struct {
+	VPCID, SubnetID string
+	// Accepted product identity is internal snapshot data, not canonical input.
+	Reference network.NetworkReference
+}
 type MountablePVC struct {
 	PVCName, Phase, RequestedCapacity string
 	AccessModes                       []string

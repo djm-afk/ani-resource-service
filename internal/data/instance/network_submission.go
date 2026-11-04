@@ -93,9 +93,13 @@ func mergeNetworkResult(current *biz.NetworkRuntime, result *biz.NetworkRuntime)
 		current.AttachmentID = result.AttachmentID
 		current.BindingRevision = result.BindingRevision
 		current.PrimaryNetworkRef = result.PrimaryNetworkRef
+		current.BasicIsolationName = result.BasicIsolationName
 	}
 	if current.AttachmentID == result.AttachmentID && result.AttachmentVersion > current.AttachmentVersion {
 		current.AttachmentVersion = result.AttachmentVersion
+	}
+	if current.AttachmentID != "" && current.AttachmentID == result.AttachmentID && current.BasicIsolationName == "" {
+		current.BasicIsolationName = result.BasicIsolationName
 	}
 }
 

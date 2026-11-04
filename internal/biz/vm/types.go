@@ -10,22 +10,24 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
 
 var (
-	ErrInvalid     = errors.New("VM_INVALID_REQUEST")
-	ErrDenied      = errors.New("VM_SCOPE_DENIED")
-	ErrNotFound    = errors.New("VM_NOT_FOUND")
-	ErrIdempotency = errors.New("VM_IDEMPOTENCY_CONFLICT")
-	ErrVersion     = errors.New("VM_VERSION_CONFLICT")
-	ErrBusy        = errors.New("VM_OPERATION_CONFLICT")
-	ErrDependency  = errors.New("VM_DEPENDENCY_NOT_READY")
-	ErrChanged     = errors.New("VM_DEPENDENCY_CHANGED")
-	ErrOwnership   = errors.New("VM_OBJECT_OWNERSHIP_CONFLICT")
-	ErrUnknown     = errors.New("VM_EXTERNAL_RESULT_UNKNOWN")
-	ErrStartFailed = errors.New("VM_NATIVE_START_FAILED")
-	ErrLease       = errors.New("VM_LEASE_LOST")
-	ErrConsole     = errors.New("VM_CONSOLE_TARGET_CHANGED")
+	ErrInvalid                = errors.New("VM_INVALID_REQUEST")
+	ErrDenied                 = errors.New("VM_SCOPE_DENIED")
+	ErrNotFound               = errors.New("VM_NOT_FOUND")
+	ErrIdempotency            = errors.New("VM_IDEMPOTENCY_CONFLICT")
+	ErrVersion                = errors.New("VM_VERSION_CONFLICT")
+	ErrBusy                   = errors.New("VM_OPERATION_CONFLICT")
+	ErrDependency             = errors.New("VM_DEPENDENCY_NOT_READY")
+	ErrChanged                = errors.New("VM_DEPENDENCY_CHANGED")
+	ErrOwnership              = errors.New("VM_OBJECT_OWNERSHIP_CONFLICT")
+	ErrUnknown                = errors.New("VM_EXTERNAL_RESULT_UNKNOWN")
+	ErrStartFailed            = errors.New("VM_NATIVE_START_FAILED")
+	ErrLease                  = errors.New("VM_LEASE_LOST")
+	ErrConsole                = errors.New("VM_CONSOLE_TARGET_CHANGED")
+	ErrNetworkAdmissionClosed = errors.New("NETWORK_NEW_ADMISSION_CLOSED")
 )
 
 // NativeNotSubmittedError confirms that a native command did not reach its
@@ -69,7 +71,15 @@ type Disk struct {
 	Preparation, Reason                           string
 	Cleanup                                       []ObjectRef
 }
-type NetworkSelection struct{ VPCID, SubnetID, NADName, NADUID, NADDigest string }
+type NetworkSelection struct {
+	VPCID, SubnetID, NADName, NADUID, NADDigest string
+	// These values belong to the owner snapshot, never the public canonical spec.
+	Reference network.NetworkReference
+	NADConfig string
+	// Resolve returns the selected account through this transient field; the
+	// accepted value lives in Spec.ServiceAccount.
+	ServiceAccount string `json:"-"`
+}
 type DNS struct {
 	Mode        string
 	Nameservers []string
@@ -80,6 +90,7 @@ type NetworkPlan struct {
 	NotifiedSnapshotRevision                            int64
 	Consumer                                            *NetworkConsumerState
 	Namespace, NADName, NADUID, NADDigest, KCNSubnetRef string
+	BasicIsolationName                                  string
 	Labels                                              map[string]string
 }
 type Address struct {
@@ -254,4 +265,5 @@ type EnvironmentPort interface {
 	ResolveNamespace(context.Context, string, string) (ObjectRef, error)
 	ValidateStorage(context.Context, string, string) error
 	ValidateNetwork(context.Context, string, string, string, NetworkSelection) (NetworkSelection, error)
+	ValidateExistingNetwork(context.Context, VM) error
 }

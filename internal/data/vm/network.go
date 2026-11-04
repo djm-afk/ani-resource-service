@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -12,9 +13,10 @@ import (
 
 // Network uses public domain ports; it never reads Network tables or CRs.
 type Network struct {
-	attachments *network.Attachments
-	vnics       *network.Network
-	repo        biz.Repository
+	attachments   *network.Attachments
+	vnics         *network.Network
+	repo          biz.Repository
+	prepareTenant func(context.Context, biz.VM) (biz.NetworkPlan, error)
 }
 
 func NewNetwork(a *network.Attachments, r biz.Repository) (*Network, error) {
@@ -23,19 +25,69 @@ func NewNetwork(a *network.Attachments, r biz.Repository) (*Network, error) {
 	}
 	return &Network{attachments: a, repo: r}, nil
 }
+
+// UseTenantPreparation wires the first round from the explicit composition
+// root. Prepare itself still talks only to Network's use cases and domain ports.
+func (n *Network) UseTenantPreparation(prepare func(context.Context, biz.VM) (biz.NetworkPlan, error)) {
+	n.prepareTenant = prepare
+}
+
 func (n *Network) Prepare(ctx context.Context, v biz.VM) (biz.NetworkPlan, error) {
+	if v.Network.NADUID == "" {
+		if n.prepareTenant == nil {
+			return biz.NetworkPlan{}, biz.ErrDependency
+		}
+		// The worker saves this partial plan before issuing any Attachment.
+		return n.prepareTenant(ctx, v)
+	}
 	submission := uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-network/"+v.ID)).String()
-	r := network.PrepareAttachment{WorkloadMode: "vm_managed", ConsumerType: network.ConsumerVirtualMachine, TenantID: v.TenantID, InstanceID: v.ID, VPCID: v.Spec.Network.VPCID, SubnetID: v.Spec.Network.SubnetID, Slot: "primary", RequestKey: "vm-" + v.ID, SubmissionID: submission, Generation: 1, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, VMExpectation: &network.VMNetworkExpectation{NADName: v.Spec.Network.NADName, NADUID: v.Spec.Network.NADUID, NADConfigDigest: v.Spec.Network.NADDigest}}
-	a, e := n.attachments.Prepare(ctx, r)
-	if e != nil {
-		return biz.NetworkPlan{}, e
+	actual := v.Network
+	r := network.PrepareAttachment{AcceptedReference: v.Spec.Network.Reference, NamespaceUID: v.Spec.NamespaceUID, WorkloadMode: "vm_managed", ConsumerType: network.ConsumerVirtualMachine, TenantID: v.TenantID, InstanceID: v.ID, VPCID: v.Spec.Network.VPCID, SubnetID: v.Spec.Network.SubnetID, Slot: "primary", RequestKey: "vm-" + v.ID, SubmissionID: submission, Generation: 1, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, VMExpectation: &network.VMNetworkExpectation{NADName: actual.NADName, NADUID: actual.NADUID, NADConfigDigest: actual.NADDigest}}
+	// Permanent Attachment replay is the first I/O in this second round. Never
+	// reopen namespace, BNI, template or catalog admission before that replay.
+	a, err := n.attachments.PrepareAccepted(ctx, r)
+	if err != nil {
+		return biz.NetworkPlan{}, MapNetworkError(err)
 	}
 	p := a.VMPrimary
-	if a.WorkloadMode != "vm_managed" || a.TenantID != v.TenantID || a.InstanceID != v.ID || a.SubmissionID != submission || a.Generation != 1 || p == nil || p.Namespace != v.Spec.Namespace || p.NADUID != v.Spec.Network.NADUID || p.NADConfigDigest != v.Spec.Network.NADDigest {
+	// A replay from before binding simplification retains its opaque revision.
+	// Compare its binding ID with the first-round identity, then persist the
+	// original replay token below without treating its suffix as a new gate.
+	attachmentBindingID, _, _ := strings.Cut(a.BindingRevision, ":")
+	actualBindingID, _, _ := strings.Cut(actual.BindingRevision, ":")
+	if a.WorkloadMode != "vm_managed" || a.TenantID != v.TenantID || a.InstanceID != v.ID || a.SubmissionID != submission || a.Generation != 1 || attachmentBindingID != actualBindingID || p == nil || p.Namespace != v.Spec.Namespace || p.NADName != actual.NADName || p.NADUID != actual.NADUID || p.NADConfigDigest != actual.NADDigest || p.KCNSubnetRef != actual.KCNSubnetRef {
 		return biz.NetworkPlan{}, biz.ErrChanged
 	}
 	labels := map[string]string{"network.ani.io/tenant-id": v.TenantID, "network.ani.io/instance-id": v.ID, "network.ani.io/attachment-id": a.ID, "network.ani.io/submission-id": submission, "network.ani.io/generation": "1"}
-	return biz.NetworkPlan{SnapshotRevision: 1, Consumer: &biz.NetworkConsumerState{State: "open", DesiredRunState: strings.ToLower(v.Desired)}, AttachmentID: a.ID, SubmissionID: submission, Generation: 1, Version: a.Version, BindingRevision: a.BindingRevision, Namespace: p.Namespace, NADName: p.NADName, NADUID: p.NADUID, NADDigest: p.NADConfigDigest, KCNSubnetRef: p.KCNSubnetRef, Labels: labels}, nil
+	return biz.NetworkPlan{SnapshotRevision: 1, Consumer: &biz.NetworkConsumerState{State: "open", DesiredRunState: strings.ToLower(v.Desired)}, AttachmentID: a.ID, SubmissionID: submission, Generation: 1, Version: a.Version, BindingRevision: a.BindingRevision, Namespace: p.Namespace, NADName: p.NADName, NADUID: p.NADUID, NADDigest: p.NADConfigDigest, KCNSubnetRef: p.KCNSubnetRef, BasicIsolationName: actual.BasicIsolationName, Labels: labels}, nil
+}
+
+// MapNetworkError preserves the VM domain's public error vocabulary instead
+// of allowing an admission or original-identity error to become Unavailable.
+func MapNetworkError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var provider *network.ProviderError
+	if errors.As(err, &provider) && provider.Kind == network.ProviderConflict {
+		return biz.ErrOwnership
+	}
+	switch network.ReasonOf(err) {
+	case network.NetworkNewAdmissionClosed:
+		return biz.ErrNetworkAdmissionClosed
+	case network.ProviderOwnership:
+		return biz.ErrOwnership
+	case network.AttachmentConflict, network.AttachmentProtocol, network.PlacementMismatch:
+		return biz.ErrChanged
+	case network.ResourceNotFound:
+		return biz.ErrNotFound
+	case network.InvalidArgument:
+		return biz.ErrInvalid
+	case network.NetworkNotReady, network.DependencyUnavailable:
+		return biz.ErrDependency
+	default:
+		return err
+	}
 }
 func (n *Network) attachment(ctx context.Context, v biz.VM) (network.Attachment, error) {
 	if v.Network.AttachmentID == "" {

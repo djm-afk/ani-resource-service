@@ -12,6 +12,7 @@ type VMNetworkExpectation struct {
 }
 
 type VMNetworkSelection struct {
+	Reference                                                                      NetworkReference
 	TenantID, VPCID, SubnetID, ClusterID, Namespace, BindingRevision, KCNSubnetRef string
 }
 

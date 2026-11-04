@@ -130,8 +130,11 @@ func awaitAutoVMNetwork(t *testing.T, f attachmentFixture) data.ManagedVMNAD {
 			t.Fatal(err)
 		}
 		policy, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace)
-		if err == nil {
-			return policy
+		if err == nil && policy.NADUID != "" {
+			var accountUID string
+			if scanErr := f.owner.QueryRow(ctx, "SELECT service_account_uid FROM network_vm_namespaces WHERE tenant_id=$1 AND cluster_id=$2", f.r.TenantID, f.r.ClusterID).Scan(&accountUID); scanErr == nil && accountUID != "" {
+				return policy
+			}
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
@@ -302,8 +305,8 @@ func TestVMAutoNetworkPGRefusesForeignObjectsWithoutFailingSubnet(t *testing.T) 
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	if _, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace); err == nil {
-		t.Fatal("foreign existing NAD was adopted")
+	if intent, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace); err != nil || intent.NADUID != "" {
+		t.Fatal("read-only intent must retain an empty original UID, never adopt the foreign NAD", intent, err)
 	}
 	s, err := f.n.GetSubnet(ctx, f.r.TenantID, f.r.SubnetID)
 	if err != nil || s.State != biz.Available || s.Reason != "" {
@@ -346,8 +349,14 @@ func TestVMAutoNetworkPGPinsPartialReceiptAndRefusesUIDDrift(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	if _, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace); err == nil {
-		t.Fatal("same-name replacement after partial preparation was accepted")
+	intent, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace)
+	if err != nil || intent.NADUID != nadUID {
+		t.Fatal("read-only intent replaced the saved original UID", intent, err)
+	}
+	f.r.WorkloadMode = "vm_managed"
+	f.r.VMExpectation = &biz.VMNetworkExpectation{NADName: intent.NADName, NADUID: intent.NADUID, NADConfigDigest: intent.NADConfigDigest}
+	if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r); err == nil {
+		t.Fatal("execution accepted a same-name replacement after partial preparation")
 	}
 	api.mu.Lock()
 	creates := api.creates
@@ -389,8 +398,13 @@ func TestVMAutoNetworkPGStopAndClosureSurviveAuxiliaryPreparationFailure(t *test
 					t.Fatal(err)
 				}
 			}
-			if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r); err == nil {
-				t.Fatal("new/running VM admitted after auxiliary failure", fault)
+			_, resolveErr := f.p.ResolveVMNetworkSelection(ctx, f.r)
+			if fault == "sa-missing" || fault == "sa-replaced" {
+				if resolveErr == nil {
+					t.Fatal("own original ServiceAccount identity was not enforced", fault)
+				}
+			} else if resolveErr != nil {
+				t.Fatal("saved VM intent was blocked by current template or cached preparation state", fault, resolveErr)
 			}
 			c := vmConsumerFor(a)
 			c.DesiredRunState = "stopped"

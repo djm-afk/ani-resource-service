@@ -151,6 +151,9 @@ func RenderNotebook(i biz.Instance) (*unstructured.Unstructured, error) {
 	}
 	if s.Network != nil {
 		ann["networking.kubercloud.com/subnet"] = i.Network.PrimaryNetworkRef
+		if i.Network.BasicIsolationName != "" {
+			ann["networking.kubercloud.com/basic-network-isolation"] = i.Network.BasicIsolationName
+		}
 	}
 	for k, v := range s.GPU.Annotations {
 		ann[k] = v

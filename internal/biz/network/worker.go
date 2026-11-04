@@ -44,6 +44,9 @@ func (e *ProviderError) Unwrap() error { return e.Cause }
 // ProviderTarget contains only domain references and an opaque provider object
 // identity. The adapter resolves namespace/name/cluster from its persisted map.
 type ProviderTarget struct {
+	PlatformNetwork                                      *PlatformNetworkWorkSpec
+	Reference                                            NetworkReference
+	BasicIsolationName                                   string
 	SubnetOptions                                        *SubnetOptions
 	Deleting                                             bool
 	Egress                                               *EgressWorkSpec
@@ -56,14 +59,15 @@ type ProviderTarget struct {
 // Exists refers to the original object saved by Res, not any object that later
 // reuses its name. Ready and StatusReason are the target's native status.
 type ProviderObservation struct {
-	Ready          *bool
-	StatusReason   Reason
-	VNic           *VNicFacts
-	SubnetIPRanges SubnetIPRanges
-	Egress         *EgressAppliedFacts
-	NeedsUpdate    bool
-	Exists         bool
-	Identity       string
+	PlatformNetwork *PlatformNetworkFacts
+	Ready           *bool
+	StatusReason    Reason
+	VNic            *VNicFacts
+	SubnetIPRanges  SubnetIPRanges
+	Egress          *EgressAppliedFacts
+	NeedsUpdate     bool
+	Exists          bool
+	Identity        string
 }
 
 type ResourceProvider interface {
@@ -78,6 +82,7 @@ var ErrLeaseLost = errors.New("resource execution lease lost")
 // ResourceWork is the immutable resource snapshot used by the shared lifecycle
 // worker. Resource kinds are closed at the repository boundary.
 type ResourceWork struct {
+	Reference                                                 NetworkReference
 	SubnetOptions                                             *SubnetOptions
 	LoadBalancer                                              *LoadBalancerWork
 	SystemManaged                                             bool
@@ -93,6 +98,7 @@ type ResourceWork struct {
 }
 
 type Work struct {
+	PlatformNetwork *PlatformNetworkWorkSpec
 	// CleanupPending only orders deletion of Res-owned child products. It
 	// does not prevent reading this target or inspect lower-layer resources.
 	CleanupPending    bool
@@ -111,7 +117,8 @@ type Work struct {
 }
 
 type Progress struct {
-	VNic *VNicFacts
+	PlatformNetwork *PlatformNetworkFacts
+	VNic            *VNicFacts
 	// Diagnostic only; never persisted or returned in the public resource model.
 	ProviderError    error `json:"-"`
 	SubnetIPRanges   SubnetIPRanges
@@ -185,6 +192,9 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	if err != nil || !found {
 		return found, err
 	}
+	if work.PlatformNetwork != nil {
+		return true, w.stepPlatformNetwork(ctx, work)
+	}
 	if work.Resource.Kind == "load_balancer" {
 		return true, w.stepLoadBalancer(ctx, work)
 	}
@@ -208,7 +218,7 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 		progress.ClearPending = true
 		return true, w.finish(ctx, work, progress)
 	}
-	target := ProviderTarget{
+	target := ProviderTarget{Reference: work.Resource.Reference,
 		TenantID: work.Resource.TenantID, ResourceID: work.Resource.ID, BindingID: work.BindingID, Egress: work.Resource.Egress,
 		KnownIdentity: work.KnownIdentity, CIDR: work.Resource.CIDR,
 		Deleting: work.Resource.State == Deleting || work.Resource.State == Deleted,

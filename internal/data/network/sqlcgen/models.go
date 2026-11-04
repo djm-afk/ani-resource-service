@@ -13,8 +13,8 @@ import (
 type NetworkAttachment struct {
 	TenantID            string
 	AttachmentID        string
-	VpcID               string
-	SubnetID            string
+	VpcID               *string
+	SubnetID            *string
 	BindingID           string
 	InstanceID          string
 	Slot                string
@@ -50,6 +50,8 @@ type NetworkAttachment struct {
 	CurrentVnicUid      string
 	CurrentMacAddress   string
 	CurrentIps          []string
+	PlatformVpcID       *string
+	PlatformSubnetID    *string
 }
 
 type NetworkAttachmentConsumerSnapshot struct {
@@ -546,6 +548,21 @@ type NetworkPlatformIdempotency struct {
 	CreatedAt          time.Time
 }
 
+type NetworkPlatformNetworkObservation struct {
+	ResourceID          string
+	VpcID               *string
+	SubnetID            *string
+	NextRunAt           pgtype.Timestamptz
+	LeaseOwner          *string
+	LeaseUntil          *time.Time
+	LeaseEpoch          int64
+	RequestedGeneration int64
+	ProcessedGeneration int64
+	RetryNotBefore      time.Time
+	RetryAttempt        int32
+	ObservationError    string
+}
+
 type NetworkPlatformOperation struct {
 	OperationID    string
 	ResourceID     string
@@ -590,6 +607,53 @@ type NetworkPlatformResource struct {
 	BindingID       string
 	PendingAction   string
 	PendingSince    *time.Time
+}
+
+type NetworkPlatformSubnet struct {
+	SubnetID         string
+	VpcID            string
+	ClusterID        string
+	Namespace        string
+	ProviderName     string
+	ProviderUid      string
+	BindingID        string
+	Name             string
+	Description      string
+	Cidr             string
+	Gateway          string
+	ExcludeIps       []string
+	DnsServers       []string
+	EnableDhcp       bool
+	AvailableIpRange *string
+	UsedIpRange      *string
+	Published        bool
+	AcceptNew        bool
+	State            string
+	Reason           string
+	Version          int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	ObservedAt       *time.Time
+}
+
+type NetworkPlatformVpc struct {
+	VpcID        string
+	ClusterID    string
+	ClusterUid   string
+	Namespace    string
+	ProviderName string
+	ProviderUid  string
+	Name         string
+	Description  string
+	Cidr         string
+	Published    bool
+	AcceptNew    bool
+	State        string
+	Reason       string
+	Version      int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	ObservedAt   *time.Time
 }
 
 type NetworkProviderBinding struct {
@@ -778,10 +842,12 @@ type NetworkSubnet struct {
 }
 
 type NetworkTenantNamespace struct {
-	TenantID     string
-	ClusterID    string
-	Namespace    string
-	NamespaceUid *string
+	TenantID           string
+	ClusterID          string
+	Namespace          string
+	NamespaceUid       *string
+	BasicIsolationName string
+	BasicIsolationUid  string
 }
 
 type NetworkVirtualSwitch struct {
@@ -876,8 +942,8 @@ type NetworkVmNamespace struct {
 type NetworkVnic struct {
 	TenantID         string
 	VnicID           string
-	VpcID            string
-	SubnetID         string
+	VpcID            *string
+	SubnetID         *string
 	Name             string
 	Description      string
 	State            string
@@ -893,6 +959,8 @@ type NetworkVnic struct {
 	LastOperationID  string
 	RequestedIp      string
 	RequestedMac     string
+	PlatformVpcID    *string
+	PlatformSubnetID *string
 }
 
 type NetworkVnicBinding struct {

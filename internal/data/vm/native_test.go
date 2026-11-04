@@ -39,7 +39,7 @@ func TestNativeIndependentBlockVolumesAndUIDOwnership(t *testing.T) {
 		return false, nil, nil
 	})
 	n := NewNativeWithClients(client, nil)
-	v := biz.VM{TenantID: tenant, ID: id, Native: biz.ObjectRef{Kind: "VirtualMachine", Namespace: "tenant-test", Name: "vm-" + id}, Spec: biz.Spec{Digest: strings.Repeat("b", 64), Namespace: "tenant-test", NamespaceUID: nsUID, CPUMillis: 1500, MemoryMiB: 512, Cores: 2, ServiceAccount: "default", StorageClass: "ani-block", Media: biz.Source{Kind: "DISK_IMAGE", Namespace: "media", PVCName: "source", PVCUID: sourceUID, Checksum: digest, VolumeMode: "Block", RootBus: "virtio", NICModel: "virtio"}}, Network: biz.NetworkPlan{Namespace: "tenant-test", NADName: "main", KCNSubnetRef: "tenant-test/kcn-subnet"}}
+	v := biz.VM{TenantID: tenant, ID: id, Native: biz.ObjectRef{Kind: "VirtualMachine", Namespace: "tenant-test", Name: "vm-" + id}, Spec: biz.Spec{Digest: strings.Repeat("b", 64), Namespace: "tenant-test", NamespaceUID: nsUID, CPUMillis: 1500, MemoryMiB: 512, Cores: 2, ServiceAccount: "default", StorageClass: "ani-block", Media: biz.Source{Kind: "DISK_IMAGE", Namespace: "media", PVCName: "source", PVCUID: sourceUID, Checksum: digest, VolumeMode: "Block", RootBus: "virtio", NICModel: "virtio"}}, Network: biz.NetworkPlan{Namespace: "tenant-test", NADName: "main", KCNSubnetRef: "kcn-system/workloads", BasicIsolationName: "ani-tenant-" + tenant}}
 	v.Disks = []biz.Disk{biz.NewInitialDisk(id, "system", "system", "system", 8), biz.NewInitialDisk(id, "first", "data-a", "data", 2), biz.NewInitialDisk(id, "second", "data-b", "data", 3)}
 	v.Spec.DNS = &biz.DNS{Mode: "PLATFORM_DEFAULT", Nameservers: []string{"223.5.5.5"}}
 	ref, e := n.EnsureVM(ctx, v)
@@ -50,6 +50,10 @@ func TestNativeIndependentBlockVolumesAndUIDOwnership(t *testing.T) {
 	root, e := client.Resource(vmResource).Namespace(v.Spec.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
 	if e != nil {
 		t.Fatal(e)
+	}
+	annotations, _, _ := unstructured.NestedStringMap(root.Object, "spec", "template", "metadata", "annotations")
+	if annotations["networking.kubercloud.com/basic-network-isolation"] != v.Network.BasicIsolationName || annotations["networking.kubercloud.com/subnet"] != "kcn-system/workloads" {
+		t.Fatal("VM template lost consumer isolation or native shared Subnet reference", annotations)
 	}
 	if _, found, _ := unstructured.NestedSlice(root.Object, "spec", "dataVolumeTemplates"); found {
 		t.Fatal("embedded DV lifecycle used")

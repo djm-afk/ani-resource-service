@@ -19,21 +19,24 @@ func (p *Postgres) ClaimAttachment(ctx context.Context, owner string, lease time
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	v, e := q.LockDueAttachmentParent(ctx)
-	if errors.Is(e, pgx.ErrNoRows) {
-		return biz.AttachmentWork{}, false, nil
+	var a sqlcgen.NetworkAttachment
+	// Alternate shared own-row claims with the original private parent order.
+	sharedFirst := p.attachmentTurn.Add(1)%2 == 0
+	if sharedFirst {
+		a, e = q.LockDuePlatformAttachment(ctx)
+		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+			return biz.AttachmentWork{}, false, databaseFailure(e)
+		}
 	}
-	if e != nil {
-		return biz.AttachmentWork{}, false, databaseFailure(e)
+	if a.AttachmentID == "" {
+		a, e = lockDuePrivateAttachment(ctx, q)
+		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+			return biz.AttachmentWork{}, false, databaseFailure(e)
+		}
 	}
-	s, e := q.LockDueAttachmentSubnet(ctx, sqlcgen.LockDueAttachmentSubnetParams{TenantID: v.TenantID, VpcID: v.VpcID})
-	if errors.Is(e, pgx.ErrNoRows) {
-		return biz.AttachmentWork{}, false, nil
+	if a.AttachmentID == "" && !sharedFirst {
+		a, e = q.LockDuePlatformAttachment(ctx)
 	}
-	if e != nil {
-		return biz.AttachmentWork{}, false, databaseFailure(e)
-	}
-	a, e := q.LockDueAttachment(ctx, sqlcgen.LockDueAttachmentParams{TenantID: s.TenantID, SubnetID: s.SubnetID})
 	if errors.Is(e, pgx.ErrNoRows) {
 		return biz.AttachmentWork{}, false, nil
 	}
@@ -141,4 +144,16 @@ func (p *Postgres) FinishAttachment(ctx context.Context, w biz.AttachmentWork, p
 		}
 	}
 	return databaseFailure(tx.Commit(ctx))
+}
+
+func lockDuePrivateAttachment(ctx context.Context, q *sqlcgen.Queries) (sqlcgen.NetworkAttachment, error) {
+	v, e := q.LockDueAttachmentParent(ctx)
+	if e != nil {
+		return sqlcgen.NetworkAttachment{}, e
+	}
+	s, e := q.LockDueAttachmentSubnet(ctx, sqlcgen.LockDueAttachmentSubnetParams{TenantID: v.TenantID, VpcID: v.VpcID})
+	if e != nil {
+		return sqlcgen.NetworkAttachment{}, e
+	}
+	return q.LockDueAttachment(ctx, sqlcgen.LockDueAttachmentParams{TenantID: s.TenantID, SubnetID: s.SubnetID})
 }

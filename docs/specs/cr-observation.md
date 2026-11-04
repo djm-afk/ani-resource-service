@@ -93,3 +93,11 @@ LB 保存 desired_version/provider_target_version/applied_version、后端引用
 0032 为协调升级：停止旧 schema 的写入者，搬运已保存的当前地址输出，删除旧证明/关系列和 generated 表，收敛约束，清旧 lease 并增加执行 epoch；保留产品状态、历史 operation、原 UID、用户意图和幂等回执。生成源码、构建、必要数据库回归按 [远程执行约定](../remote-execution.md)在 Fedora 运行。
 
 验证重点是原生 Ready 的直接映射、读错保留、终态历史不可变、通知与 Finish 并发、未知 CREATE、原 UID 删除、管理生命周期与地址分离、安全组真实 applied 字段，以及旧 schema 升级后的账本/回执保留。详细用例及实际结果分别见实施方案和执行状态。
+
+## 9. 平台基础网络目录的只读观察
+
+导入的 VPC/Subnet 使用独立 `network_platform_network_observations` 队列，接入现有 Worker 的显式只读分支。任务固定 cluster、kind、namespace、name 和原 UID，只精确 Observe/Finish；不生成虚构 operation，不调用 Ensure/Delete、添加所有权标签或分配基础连接。
+
+原 UID 匹配的成功读取更新资源投影和 observed_at；Ready False/Unknown 同样是成功读取，完成后停放至下一条精确 Watch 通知。读取失败保留最后成功状态、原因和地址，记录 observation_error 并沿原重试策略退避。UID 冲突保留为新接入阻断，之后的普通读错不能清除它，只有成功读取原 UID 才清除。
+
+配置同步、进程恢复和精确 Watch 沿原持久 generation/lease/epoch 机制唤醒目录项；目录变化不扫描或扇出消费者。目录 published/accept_new 不参与已受理消费者的释放和删除。所有权、查询与配置合同见 [VPC/Subnet](vpc-subnet.md#平台基础网络租户接入)。

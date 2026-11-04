@@ -35,7 +35,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'available',$12);
 -- name: InsertLBConfigurationMember :exec
 INSERT INTO network_lb_configuration_members(tenant_id,cluster_id,namespace,lb_id,config_version,member_id,weight) VALUES($1,$2,$3,$4,$5,$6,$7);
 -- name: ListLBBackendAttachments :many
-SELECT * FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' ORDER BY attachment_id;
+SELECT * FROM network_attachments WHERE tenant_id=sqlc.arg(tenant_id) AND subnet_id=sqlc.arg(subnet_id)::text AND state='attached' ORDER BY attachment_id;
 -- name: ReserveLBSubnet :exec
 INSERT INTO network_lb_subnet_refs(tenant_id,cluster_id,namespace,lb_id,vpc_id,subnet_id) VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT (tenant_id,lb_id,subnet_id) DO UPDATE SET released_at=NULL;

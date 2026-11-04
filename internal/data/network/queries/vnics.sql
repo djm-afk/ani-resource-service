@@ -12,3 +12,6 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND vnic_id=sqlc.arg(vnic_id) AND version=sq
 
 -- name: GetVNic :one
 SELECT sqlc.embed(v),coalesce(r.observation_error,'')::text AS observation_error FROM network_vnics v LEFT JOIN network_reconciliations r ON r.tenant_id=v.tenant_id AND r.vnic_id=v.vnic_id WHERE v.tenant_id=$1 AND v.vnic_id=$2;
+
+-- name: TryLockWorkVNic :one
+SELECT * FROM network_vnics WHERE tenant_id=sqlc.arg(tenant_id) AND vnic_id=sqlc.arg(vnic_id) FOR UPDATE SKIP LOCKED;

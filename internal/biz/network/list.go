@@ -13,6 +13,7 @@ import (
 )
 
 type ListVPCs struct {
+	CanUse, CanManage             *bool
 	TenantID, Name, State, Cursor string
 	Limit                         int
 	Page, PageSize                *uint32
@@ -25,6 +26,7 @@ type VPCPage struct {
 }
 
 type VPCFilter struct {
+	CanUse, CanManage    *bool
 	Name, State, AfterID string
 	AfterCreatedAt       time.Time
 	Limit                int32
@@ -32,19 +34,24 @@ type VPCFilter struct {
 }
 
 type vpcCursor struct {
-	Version     int
-	Kind        string
-	TenantID    string
-	Name, State string
-	VPCID       string
-	ID          string
-	CreatedAt   time.Time
+	CanUse, CanManage *bool `json:",omitempty"`
+	Version           int
+	Kind              string
+	TenantID          string
+	Name, State       string
+	VPCID             string
+	ID                string
+	CreatedAt         time.Time
 }
 
 func (n *Network) ListVPCs(ctx context.Context, request ListVPCs) (VPCPage, error) {
 	tenant, err := ParseTenant(request.TenantID)
 	if err != nil {
 		return VPCPage{}, err
+	}
+	list := n.repository.ListVPCs
+	if visible, ok := n.repository.(VisibleNetworkRepository); ok {
+		list = visible.ListVisibleVPCs
 	}
 	if request.Page != nil || request.PageSize != nil {
 		if request.Limit != 0 || request.Cursor != "" {
@@ -59,7 +66,8 @@ func (n *Network) ListVPCs(ctx context.Context, request ListVPCs) (VPCPage, erro
 			return VPCPage{}, err
 		}
 		filter.Limit, filter.Offset = window.Limit, window.Offset
-		rows, total, err := n.repository.ListVPCs(ctx, tenant, filter)
+		filter.CanUse, filter.CanManage = request.CanUse, request.CanManage
+		rows, total, err := list(ctx, tenant, filter)
 		if err != nil {
 			return VPCPage{}, err
 		}
@@ -73,17 +81,18 @@ func (n *Network) ListVPCs(ctx context.Context, request ListVPCs) (VPCPage, erro
 	if err != nil {
 		return VPCPage{}, err
 	}
+	filter.CanUse, filter.CanManage = request.CanUse, request.CanManage
 	request.Name, request.Limit = filter.Name, int(filter.Limit)-1
 	if request.Cursor != "" {
 		cursor, err := n.decodeCursor(request.Cursor)
 		if err != nil || cursor.Version != 1 || cursor.Kind != "vpc" ||
-			cursor.TenantID != tenant || cursor.Name != request.Name || cursor.State != request.State ||
+			cursor.TenantID != tenant || cursor.Name != request.Name || cursor.State != request.State || !sameOptionalBool(cursor.CanUse, request.CanUse) || !sameOptionalBool(cursor.CanManage, request.CanManage) ||
 			!validVPCID(cursor.ID) || cursor.CreatedAt.IsZero() {
 			return VPCPage{}, Fail(InvalidCursor, "cursor does not match this query")
 		}
 		filter.AfterCreatedAt, filter.AfterID = cursor.CreatedAt, cursor.ID
 	}
-	rows, total, err := n.repository.ListVPCs(ctx, tenant, filter)
+	rows, total, err := list(ctx, tenant, filter)
 	if err != nil {
 		return VPCPage{}, err
 	}
@@ -92,7 +101,7 @@ func (n *Network) ListVPCs(ctx context.Context, request ListVPCs) (VPCPage, erro
 		if index == request.Limit {
 			last := rows[index-1]
 			page.NextCursor = n.encodeCursor(vpcCursor{
-				Version: 1, Kind: "vpc", TenantID: tenant, Name: request.Name, State: request.State,
+				Version: 1, Kind: "vpc", CanUse: request.CanUse, CanManage: request.CanManage, TenantID: tenant, Name: request.Name, State: request.State,
 				ID: last.ID, CreatedAt: last.CreatedAt,
 			})
 			break

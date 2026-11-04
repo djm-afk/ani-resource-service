@@ -37,6 +37,14 @@ func (e *preflightEnvironment) ValidateNetwork(_ context.Context, _, _, _ string
 	return selection, e.networkErr
 }
 
+func (e *preflightEnvironment) ValidateExistingNetwork(_ context.Context, _ biz.VM) error {
+	e.checks++
+	if e.changeNetwork {
+		return biz.ErrChanged
+	}
+	return e.networkErr
+}
+
 type preflightNative struct {
 	biz.NativePort
 	backendErr error

@@ -28,7 +28,7 @@ func (q *Queries) AttachmentVPCScopeExists(ctx context.Context, arg AttachmentVP
 
 const claimAttachment = `-- name: ClaimAttachment :one
 UPDATE network_attachments SET lease_owner=$1::uuid,lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond',epoch=epoch+1
-WHERE tenant_id=$3 AND attachment_id=$4 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips
+WHERE tenant_id=$3 AND attachment_id=$4 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id
 `
 
 type ClaimAttachmentParams struct {
@@ -86,6 +86,8 @@ func (q *Queries) ClaimAttachment(ctx context.Context, arg ClaimAttachmentParams
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
@@ -97,7 +99,7 @@ current_vnic_uid=CASE WHEN pod_uid=$4 THEN current_vnic_uid ELSE '' END,
 current_mac_address=CASE WHEN pod_uid=$4 THEN current_mac_address ELSE '' END,
 current_ips=CASE WHEN pod_uid=$4 THEN current_ips ELSE ARRAY[]::text[] END,
 version=version+1,updated_at=clock_timestamp(),next_check_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL,epoch=epoch+1
-WHERE tenant_id=$1 AND attachment_id=$2 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips
+WHERE tenant_id=$1 AND attachment_id=$2 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id
 `
 
 type ConfirmAttachmentParams struct {
@@ -155,6 +157,8 @@ func (q *Queries) ConfirmAttachment(ctx context.Context, arg ConfirmAttachmentPa
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
@@ -162,7 +166,8 @@ func (q *Queries) ConfirmAttachment(ctx context.Context, arg ConfirmAttachmentPa
 const countAttachmentConsumers = `-- name: CountAttachmentConsumers :one
 SELECT count(*)::bigint FROM network_attachments a
 WHERE a.tenant_id=$1
-  AND (a.subnet_id=$2::text OR a.vpc_id=$3::text)
+  AND ($2::text='' OR coalesce(a.subnet_id,a.platform_subnet_id)=$2::text)
+  AND ($3::text='' OR coalesce(a.vpc_id,a.platform_vpc_id)=$3::text)
   AND a.state<>'released'
 `
 
@@ -180,7 +185,7 @@ func (q *Queries) CountAttachmentConsumers(ctx context.Context, arg CountAttachm
 }
 
 const countAttachments = `-- name: CountAttachments :one
-SELECT count(*)::bigint FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state<>'released'
+SELECT count(*)::bigint FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2::text AND state<>'released'
 `
 
 type CountAttachmentsParams struct {
@@ -216,7 +221,7 @@ UPDATE network_attachments SET state=$1,reason=$2,
    WHEN $17::boolean THEN 'infinity'::timestamptz
    ELSE $11::timestamptz+$16::bigint*interval '1 microsecond' END,
  lease_owner=NULL,lease_until=NULL
-WHERE tenant_id=$18 AND attachment_id=$19 AND version=$20 AND epoch=$21 AND lease_owner=$22::uuid AND lease_until>clock_timestamp() RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips
+WHERE tenant_id=$18 AND attachment_id=$19 AND version=$20 AND epoch=$21 AND lease_owner=$22::uuid AND lease_until>clock_timestamp() RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id
 `
 
 type FinishAttachmentParams struct {
@@ -310,12 +315,14 @@ func (q *Queries) FinishAttachment(ctx context.Context, arg FinishAttachmentPara
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
 
 const getAttachment = `-- name: GetAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2
 `
 
 type GetAttachmentParams struct {
@@ -366,12 +373,14 @@ func (q *Queries) GetAttachment(ctx context.Context, arg GetAttachmentParams) (N
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
 
 const getAttachmentReplay = `-- name: GetAttachmentReplay :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2 AND slot=$3 AND request_key=$4
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2 AND slot=$3 AND request_key=$4
 `
 
 type GetAttachmentReplayParams struct {
@@ -429,6 +438,8 @@ func (q *Queries) GetAttachmentReplay(ctx context.Context, arg GetAttachmentRepl
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
@@ -452,7 +463,7 @@ func (q *Queries) HasAttachmentSlot(ctx context.Context, arg HasAttachmentSlotPa
 
 const insertAttachment = `-- name: InsertAttachment :one
 INSERT INTO network_attachments(tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,consumer_type,state)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'reserved') RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips
+VALUES($1,$2,$3::text,$4::text,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'reserved') RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id
 `
 
 type InsertAttachmentParams struct {
@@ -534,6 +545,8 @@ func (q *Queries) InsertAttachment(ctx context.Context, arg InsertAttachmentPara
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
@@ -570,17 +583,109 @@ func (q *Queries) InsertAttachmentHistory(ctx context.Context, arg InsertAttachm
 	return err
 }
 
+const insertPlatformAttachment = `-- name: InsertPlatformAttachment :one
+INSERT INTO network_attachments(tenant_id,attachment_id,platform_vpc_id,platform_subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,consumer_type,state)
+VALUES($1,$2,$3::text,$4::text,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'reserved') RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id
+`
+
+type InsertPlatformAttachmentParams struct {
+	TenantID         string
+	AttachmentID     string
+	PlatformVpcID    string
+	PlatformSubnetID string
+	BindingID        string
+	InstanceID       string
+	Slot             string
+	RequestKey       string
+	SubmissionID     string
+	Generation       int64
+	Fingerprint      string
+	ClusterID        string
+	Namespace        string
+	BindingRevision  string
+	Plan             []byte
+	ConsumerType     string
+}
+
+func (q *Queries) InsertPlatformAttachment(ctx context.Context, arg InsertPlatformAttachmentParams) (NetworkAttachment, error) {
+	row := q.db.QueryRow(ctx, insertPlatformAttachment,
+		arg.TenantID,
+		arg.AttachmentID,
+		arg.PlatformVpcID,
+		arg.PlatformSubnetID,
+		arg.BindingID,
+		arg.InstanceID,
+		arg.Slot,
+		arg.RequestKey,
+		arg.SubmissionID,
+		arg.Generation,
+		arg.Fingerprint,
+		arg.ClusterID,
+		arg.Namespace,
+		arg.BindingRevision,
+		arg.Plan,
+		arg.ConsumerType,
+	)
+	var i NetworkAttachment
+	err := row.Scan(
+		&i.TenantID,
+		&i.AttachmentID,
+		&i.VpcID,
+		&i.SubnetID,
+		&i.BindingID,
+		&i.InstanceID,
+		&i.Slot,
+		&i.RequestKey,
+		&i.SubmissionID,
+		&i.Generation,
+		&i.Fingerprint,
+		&i.ClusterID,
+		&i.Namespace,
+		&i.BindingRevision,
+		&i.Plan,
+		&i.State,
+		&i.Reason,
+		&i.Version,
+		&i.PodName,
+		&i.PodUid,
+		&i.ConfirmUid,
+		&i.FinalizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ObservedAt,
+		&i.ReleasedAt,
+		&i.NextCheckAt,
+		&i.LeaseOwner,
+		&i.LeaseUntil,
+		&i.Epoch,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
+		&i.ConsumerType,
+		&i.ObservationError,
+		&i.CurrentVnicName,
+		&i.CurrentVnicUid,
+		&i.CurrentMacAddress,
+		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
+	)
+	return i, err
+}
+
 const listAttachmentConsumers = `-- name: ListAttachmentConsumers :many
-SELECT a.tenant_id,a.attachment_id,a.vpc_id,a.subnet_id,a.slot,a.state,a.reason,a.observation_error,
+SELECT a.tenant_id,a.attachment_id,coalesce(a.vpc_id,a.platform_vpc_id)::text AS vpc_id,coalesce(a.subnet_id,a.platform_subnet_id)::text AS subnet_id,a.slot,a.state,a.reason,a.observation_error,
  a.instance_id,a.consumer_type,a.pod_uid,a.observed_at,a.created_at,a.current_vnic_name,a.current_vnic_uid,a.current_mac_address,a.current_ips,
  coalesce(a.plan->>'WorkloadMode','')::text AS workload_mode,
- coalesce(s.name,'')::text AS subnet_name,
+ coalesce(s.name,ps.name,'')::text AS subnet_name,
  cs.snapshot AS consumer_snapshot
 FROM network_attachments a
 LEFT JOIN network_subnets s ON s.tenant_id=a.tenant_id AND s.subnet_id=a.subnet_id
+LEFT JOIN network_platform_subnets ps ON ps.subnet_id=a.platform_subnet_id
 LEFT JOIN network_attachment_consumer_snapshots cs ON cs.tenant_id=a.tenant_id AND cs.attachment_id=a.attachment_id
 WHERE a.tenant_id=$1
-  AND (a.subnet_id=$2::text OR a.vpc_id=$3::text)
+  AND ($2::text='' OR coalesce(a.subnet_id,a.platform_subnet_id)=$2::text)
+  AND ($3::text='' OR coalesce(a.vpc_id,a.platform_vpc_id)=$3::text)
   AND a.state<>'released'
 ORDER BY a.created_at DESC,a.attachment_id DESC
 LIMIT $5::integer OFFSET $4::bigint
@@ -665,7 +770,7 @@ func (q *Queries) ListAttachmentConsumers(ctx context.Context, arg ListAttachmen
 }
 
 const lockAttachment = `-- name: LockAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2 FOR UPDATE
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2 FOR UPDATE
 `
 
 type LockAttachmentParams struct {
@@ -716,6 +821,8 @@ func (q *Queries) LockAttachment(ctx context.Context, arg LockAttachmentParams) 
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
@@ -736,7 +843,7 @@ func (q *Queries) LockAttachmentSlot(ctx context.Context, arg LockAttachmentSlot
 }
 
 const lockDueAttachment = `-- name: LockDueAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state<>'released' AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2::text AND state<>'released' AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
 ORDER BY next_check_at,attachment_id LIMIT 1 FOR UPDATE SKIP LOCKED
 `
 
@@ -788,6 +895,8 @@ func (q *Queries) LockDueAttachment(ctx context.Context, arg LockDueAttachmentPa
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }
@@ -857,6 +966,60 @@ func (q *Queries) LockDueAttachmentSubnet(ctx context.Context, arg LockDueAttach
 	return i, err
 }
 
+const lockDuePlatformAttachment = `-- name: LockDuePlatformAttachment :one
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE platform_subnet_id IS NOT NULL AND state<>'released' AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+ORDER BY next_check_at,attachment_id LIMIT 1 FOR UPDATE SKIP LOCKED
+`
+
+func (q *Queries) LockDuePlatformAttachment(ctx context.Context) (NetworkAttachment, error) {
+	row := q.db.QueryRow(ctx, lockDuePlatformAttachment)
+	var i NetworkAttachment
+	err := row.Scan(
+		&i.TenantID,
+		&i.AttachmentID,
+		&i.VpcID,
+		&i.SubnetID,
+		&i.BindingID,
+		&i.InstanceID,
+		&i.Slot,
+		&i.RequestKey,
+		&i.SubmissionID,
+		&i.Generation,
+		&i.Fingerprint,
+		&i.ClusterID,
+		&i.Namespace,
+		&i.BindingRevision,
+		&i.Plan,
+		&i.State,
+		&i.Reason,
+		&i.Version,
+		&i.PodName,
+		&i.PodUid,
+		&i.ConfirmUid,
+		&i.FinalizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ObservedAt,
+		&i.ReleasedAt,
+		&i.NextCheckAt,
+		&i.LeaseOwner,
+		&i.LeaseUntil,
+		&i.Epoch,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
+		&i.ConsumerType,
+		&i.ObservationError,
+		&i.CurrentVnicName,
+		&i.CurrentVnicUid,
+		&i.CurrentMacAddress,
+		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
+	)
+	return i, err
+}
+
 const releaseAttachment = `-- name: ReleaseAttachment :one
 UPDATE network_attachments SET finalization_id=$1,state=$2,reason='',
 current_vnic_name='',current_vnic_uid='',current_mac_address='',current_ips=ARRAY[]::text[],
@@ -864,7 +1027,7 @@ released_at=CASE WHEN $2::text='released' THEN coalesce(released_at,clock_timest
 version=version+1,updated_at=clock_timestamp(),
 next_check_at=CASE WHEN $2::text='released' THEN 'infinity'::timestamptz ELSE clock_timestamp() END,
 lease_owner=NULL,lease_until=NULL,epoch=epoch+1
-WHERE tenant_id=$3 AND attachment_id=$4 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips
+WHERE tenant_id=$3 AND attachment_id=$4 RETURNING tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id
 `
 
 type ReleaseAttachmentParams struct {
@@ -922,6 +1085,8 @@ func (q *Queries) ReleaseAttachment(ctx context.Context, arg ReleaseAttachmentPa
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }

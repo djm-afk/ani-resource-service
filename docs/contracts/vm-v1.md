@@ -239,9 +239,17 @@ Gov 当前动作授权后，若删除已持久受理，仅调用该只读查询�
 
 快照 `name` 来自原创建名称，`created_at` 来自校验归属后的原生 VirtualMachineSnapshot metadata.creationTimestamp，并随 owner 观察持久保存。旧记录未保存该值时保持空，不以 observed_at 或当前时间回填。
 
-### 2026-11-03 网络准入依据
+### C05 平台基础网络与两轮准备
 
-网络预检针对同一租户原 Namespace UID、VPC/Subnet binding UID、当前 CR 配置/代次/Ready，以及原 NAD/VM 网络策略完成核验；仅投影超过展示阈值不再拒绝动作。可选基础 EIP/SNAT 不阻断内网接入；管理侧删除、身份冲突或未知发送仍关闭准入。核验不续写投影时间，不触发全局依赖 LIST，沿用原事务/租约与幂等协议。
+网络所有权和首次受理规则统一见 [平台基础网络](../specs/vpc-subnet.md#平台基础网络租户接入)。VM Resolve 只读目录与租户 placement、已有准备记录或可信自动配置，不创建 Namespace/NAD/SA/BNI/Attachment。
+
+VM canonical 仍为 v1，network 仍固定原五个字段，`nad_uid` 可为空且空字符串必须保留；原非空 UID 的 bytes/digest 不变。新受理在永久重放检查之后、首次 owner 插入之前再次校验新接入，同时将 NetworkReference 与可信 NAD raw 配置保存到内部 Spec，不加入 canonical 或改写 Gov 原冻结值。VM 沿用既有删除受理规则，本功能不为 VM 新增 DELETE-first 墓碑流程。
+
+既有 prepare-network 分两轮保存：第一轮按已受理引用登记真实租户 Namespace/BNI，并按冻结 raw 配置准备原名 NAD/SA；返回含真实 NAD UID 的 partial plan，worker 先 Save。第二轮使用已保存的实际 UID 直接进入内部 PrepareAccepted，其永久 Attachment replay 必须先于目录/Namespace/BNI/新配置读取，再保存完整 Attachment/consumer plan。第一轮不建立 Attachment 或 consumer 快照。删除恢复仅在原 create 的 prepare-network 检查点说明第二轮可能已发送时重放，取回已受理 Attachment 后发布 closing/closed。
+
+自动准备复用既有 management_id 及冻结配置；每个对象 UID 立即保存，已存 UID 的对象缺失不重建、不接管同名异 UID。历史静态映射仍只读原 NAD，不能被当前自动模板替换。Start/Restart 校验原完整 plan、Namespace/NAD/SA 身份及冻结配置，不读取当前自动模板、published/accept_new、Ready、preparation reason 或地址作为动作门槛。
+
+平台组名写入 `spec.template.metadata.annotations["networking.kubercloud.com/basic-network-isolation"]`，Subnet 注解和 Multus NAD 引用继续取各自完整计划字段。网卡切换沿已有 desired/applied 及重启流程，原 VNIC/消费者租户与同子网关系保持。
 
 ### C05 手动主网卡选择增量
 
