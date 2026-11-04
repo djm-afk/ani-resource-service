@@ -2,10 +2,9 @@ package data_test
 
 import (
 	"context"
-	"testing"
-
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"testing"
 )
 
 func TestPlatformEIPInventoryAndOwnerRelease(t *testing.T) {

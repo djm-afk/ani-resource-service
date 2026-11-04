@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"strings"
-	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
@@ -44,12 +42,11 @@ func (p *KCProvider) ConfigureVMNetworks(values []ManagedVMNAD) error {
 	return nil
 }
 
-func (p *Postgres) SetVMNetworkResolver(resolver biz.VMNetworkResolver, freshness time.Duration) error {
-	if resolver == nil || freshness <= 0 {
-		return fmt.Errorf("VM network resolver and freshness required")
+func (p *Postgres) SetVMNetworkResolver(resolver biz.VMNetworkResolver) error {
+	if resolver == nil {
+		return fmt.Errorf("VM network resolver required")
 	}
 	p.vmNetworks = resolver
-	p.vmAddressFreshness = freshness
 	return nil
 }
 
@@ -59,9 +56,6 @@ func (p *KCProvider) ResolveVMNetwork(ctx context.Context, s biz.VMNetworkSelect
 	var err error
 	ctx, err = p.namespaceContext(ctx, sqlcgen.NetworkProviderBinding{TenantID: s.TenantID, ClusterID: s.ClusterID, Namespace: s.Namespace})
 	if err != nil {
-		return biz.VMPrimaryPlan{}, err
-	}
-	if err := p.verifyVMNetworkResources(ctx, s); err != nil {
 		return biz.VMPrimaryPlan{}, err
 	}
 	return p.resolveVMNetwork(ctx, s, e, true)
@@ -175,7 +169,7 @@ func VMNADConfigDigest(raw string) (string, error) {
 
 // ResolveVMNetworkSelection is a read-only preflight used by the VM resolver.
 // Prepare repeats these checks under its existing parent locks before saving.
-func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareAttachment, freshness time.Duration) (biz.VMPrimaryPlan, error) {
+func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareAttachment) (biz.VMPrimaryPlan, error) {
 	if r.WorkloadMode != "vm_managed" || !biz.ValidVMNetworkExpectation(r.VMExpectation) || p.vmNetworks == nil {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_preparation", biz.Fail(biz.NetworkNotReady, "managed VM network is unavailable"))
 	}
@@ -183,24 +177,24 @@ func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareA
 	if err != nil {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
 	}
-	v, err := p.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: r.TenantID, VpcID: s.VpcID})
+	v, err := p.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: r.TenantID, VpcID: s.NetworkSubnet.VpcID})
 	if err != nil {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
 	}
-	if !networkManagementOpen(v.NetworkVpc.State, v.NetworkVpc.Reason) || !networkManagementOpen(s.State, s.Reason) {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_management", biz.Fail(biz.NetworkNotReady, "VM network management has not completed or is closed"))
+	if !networkManagementOpen(v.NetworkVpc.State, v.NetworkVpc.Reason) || !networkManagementOpen(s.NetworkSubnet.State, s.NetworkSubnet.Reason) {
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_management", biz.Fail(biz.NetworkNotReady, "VM network management is closed"))
 	}
-	if r.VPCID != "" && r.VPCID != s.VpcID {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", biz.Fail(biz.NetworkNotReady, "fresh available VM network required"))
+	if r.VPCID != "" && r.VPCID != s.NetworkSubnet.VpcID {
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", biz.Fail(biz.NetworkNotReady, "VM network selection differs"))
 	}
 	b, err := p.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.SubnetID})
 	if err != nil {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_placement", databaseFailure(err))
 	}
-	if b.ClusterID != r.ClusterID || b.Namespace != r.Namespace || b.ProviderUid == "" {
+	if b.ClusterID != r.ClusterID || b.Namespace != r.Namespace || b.ProviderName == "" {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_placement", biz.Fail(biz.PlacementMismatch, "VM network placement or identity differs"))
 	}
-	plan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.VpcID, SubnetID: s.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID + ":" + b.ProviderUid, KCNSubnetRef: b.Namespace + "/" + b.ProviderName}, *r.VMExpectation)
+	plan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.NetworkSubnet.VpcID, SubnetID: s.NetworkSubnet.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID, KCNSubnetRef: b.Namespace + "/" + b.ProviderName}, *r.VMExpectation)
 	if err != nil {
 		return plan, vmNetworkPreflightFailure(ctx, r, "network_identity", err)
 	}
@@ -220,123 +214,20 @@ func vmNetworkPreflightFailure(ctx context.Context, r biz.PrepareAttachment, sta
 	return err
 }
 
-func (p *Postgres) vmCurrentAddresses(ctx context.Context, a biz.Attachment, raw []byte) []biz.VMCurrentAddress {
-	if !vmAddressIdentity(a) || p.vmAddressFreshness <= 0 {
-		return nil
-	}
-	now, err := p.queries.DatabaseTime(ctx)
-	if err != nil || now.Sub(*a.ObservedAt) > p.vmAddressFreshness {
-		return nil
-	}
-	return vmCurrentAddressRelations(a, raw)
-}
-
-// vmAddressIdentity is the frozen intent gate: an address is projected only for
-// a live attachment whose consumer is open and desired running, and that has an
-// observation at all. Staleness is a separate decision, made against database
-// time so a replayed request cannot age the row differently.
-func vmAddressIdentity(a biz.Attachment) bool {
-	return a.State == biz.Attached && a.Reason == "" && a.ObservedAt != nil && a.ConsumerSnapshot != nil && a.ConsumerSnapshot.State == "open" && a.ConsumerSnapshot.DesiredRunState == "running" && len(a.ConsumerSnapshot.CurrentPods) == 1
-}
-
-func vmCurrentAddressRelations(a biz.Attachment, raw []byte) []biz.VMCurrentAddress {
-	if !vmAddressIdentity(a) {
+// vmCurrentAddresses is a compatibility projection of the current management
+// reference and the last reported address values. It performs no I/O.
+func vmCurrentAddresses(a biz.Attachment) []biz.VMCurrentAddress {
+	if a.State != biz.Attached || a.ConsumerSnapshot == nil || a.ConsumerSnapshot.State != "open" || a.ConsumerSnapshot.DesiredRunState != "running" || len(a.ConsumerSnapshot.CurrentPods) != 1 {
 		return nil
 	}
 	pod := a.ConsumerSnapshot.CurrentPods[0]
-	if pod.Reference.UID != a.PodUID || pod.Owner.Kind != "VirtualMachineInstance" {
-		return nil
+	values := make([]biz.VMCurrentAddress, 0, len(a.CurrentIPs))
+	for _, address := range a.CurrentIPs {
+		values = append(values, biz.VMCurrentAddress{NICName: "default", Address: address, LauncherPodUID: pod.Reference.UID, VMIUID: pod.Owner.UID})
 	}
-	var out []biz.VMCurrentAddress
-	for _, relation := range attachmentRelations(raw) {
-		if relation.Kind == "VNicIP" && relation.Current && relation.AddressEligible {
-			if _, err := netip.ParseAddr(relation.Address); err != nil {
-				continue
-			}
-			out = append(out, biz.VMCurrentAddress{NICName: "default", Address: relation.Address, LauncherPodUID: pod.Reference.UID, VMIUID: pod.Owner.UID})
-		}
-	}
-	return out
-}
-
-// containerAddressRelations projects the primary Pod's current VNicIP facts. The
-// identity chain uses the Pod-owned VNic or an accepted manual VNic's exact UID,
-// followed by the VNicIP owner. Current was validated by the provider against
-// the live Pod, so a replaced Pod or recycled name never yields an old IP.
-func containerAddressRelations(a biz.Attachment, raw []byte) []biz.AttachmentAddress {
-	if a.State != biz.Attached || a.Reason != "" || a.ObservedAt == nil || a.PodUID == "" {
-		return nil
-	}
-	relations := attachmentRelations(raw)
-	podLive := false
-	for _, relation := range relations {
-		if relation.Kind == "Pod" && relation.UID == a.PodUID && relation.Current {
-			podLive = true
-			break
-		}
-	}
-	if !podLive {
-		return nil
-	}
-	nics := map[string]bool{}
-	for _, relation := range relations {
-		manual := false
-		if a.ConsumerSnapshot != nil {
-			for _, ref := range a.ConsumerSnapshot.ManualVNics {
-				if ref.ProviderName == relation.Name && ref.ProviderUID != "" && ref.ProviderUID == relation.UID {
-					manual = true
-					break
-				}
-			}
-		}
-		if relation.Kind == "VNic" && (relation.OwnerUID == a.PodUID || manual) && relation.Current && relation.UID != "" {
-			nics[relation.UID] = true
-		}
-	}
-	var out []biz.AttachmentAddress
-	for _, relation := range relations {
-		if relation.Kind != "VNicIP" || !relation.Current || !relation.AddressEligible || !nics[relation.OwnerUID] {
-			continue
-		}
-		if _, err := netip.ParseAddr(relation.Address); err != nil {
-			continue
-		}
-		out = append(out, biz.AttachmentAddress{NICName: "default", Address: relation.Address})
-	}
-	return out
-}
-
-func attachmentRelations(raw []byte) []attachmentRelation {
-	var relations []attachmentRelation
-	if json.Unmarshal(raw, &relations) != nil {
-		return nil
-	}
-	return relations
+	return values
 }
 
 func networkManagementOpen(state, reason string) bool {
-	return (state == "available" || state == "degraded" || state == "provisioning") && reason != string(biz.ProviderOwnership)
-}
-
-// Command admission verifies only the selected original CRs. A background
-// projection's age neither authorizes the command nor prevents this current read.
-func (p *KCProvider) verifyVMNetworkResources(ctx context.Context, s biz.VMNetworkSelection) error {
-	q := p.repository.readQueries(ctx)
-	subnet, err := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: s.TenantID, SubnetID: s.SubnetID})
-	if err != nil {
-		return databaseFailure(err)
-	}
-	b, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: s.TenantID, ResourceID: s.SubnetID})
-	if err != nil {
-		return databaseFailure(err)
-	}
-	if subnet.VpcID != s.VPCID || b.Namespace != s.Namespace || b.ClusterID != s.ClusterID || b.BindingID+":"+b.ProviderUid != s.BindingRevision || b.Namespace+"/"+b.ProviderName != s.KCNSubnetRef {
-		return biz.Fail(biz.AttachmentConflict, "VM selected network binding changed")
-	}
-	for _, id := range []string{s.VPCID, s.SubnetID} {
-		if _, err := p.currentNetworkResource(ctx, q, s.TenantID, id); err != nil {
-			return err
-		}
-	}
-	return nil
+	return state != "deleting" && state != "deleted"
 }

@@ -176,11 +176,7 @@ func (n *Network) GetVNic(ctx context.Context, tenant, id string) (VNic, error) 
 		return VNic{}, e
 	}
 	v, e := r.GetVNic(ctx, tenant, id)
-	return n.vnicObservation(v), e
-}
-func (n *Network) vnicObservation(v VNic) VNic {
-	v.ObservationStale = v.ObservedAt == nil || n.now().Sub(*v.ObservedAt) > n.freshness || v.ObservedAt.After(n.now())
-	return v
+	return v, e
 }
 func (n *Network) ListVNics(ctx context.Context, tenant string, f VNicFilter) ([]VNic, int64, error) {
 	switch ResourceState(f.State) {
@@ -204,9 +200,6 @@ func (n *Network) ListVNics(ctx context.Context, tenant string, f VNicFilter) ([
 		return nil, 0, e
 	}
 	vs, total, e := r.ListVNics(ctx, tenant, f)
-	for i := range vs {
-		vs[i] = n.vnicObservation(vs[i])
-	}
 	return vs, total, e
 }
 func (n *Network) DeleteVNic(ctx context.Context, tenant, id string) (VNic, error) {

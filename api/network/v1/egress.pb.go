@@ -72,21 +72,22 @@ func (PublicPoolMode) EnumDescriptor() ([]byte, []int) {
 }
 
 type EIP struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TenantId         string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description      string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	State            ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
-	Version          int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	LastOperationId  string                 `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
-	Address          string                 `protobuf:"bytes,14,opt,name=address,proto3" json:"address,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	State         ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	ReasonMessage string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	Version       int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	LastOperationId  string `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	Address          string `protobuf:"bytes,14,opt,name=address,proto3" json:"address,omitempty"`
 	// Compatibility field: SNAT binding ID only; empty for a load_balancer target.
 	// An empty value MUST NOT be interpreted as absence of an EIP claim.
 	BindingId string `protobuf:"bytes,15,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
@@ -337,23 +338,24 @@ func (x *EIPBindingTarget) GetVpcId() string {
 }
 
 type VPCSnatBinding struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TenantId         string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	VpcId            string                 `protobuf:"bytes,3,opt,name=vpc_id,json=vpcId,proto3" json:"vpc_id,omitempty"`
-	EipId            string                 `protobuf:"bytes,4,opt,name=eip_id,json=eipId,proto3" json:"eip_id,omitempty"`
-	State            ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
-	Version          int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	LastOperationId  string                 `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
-	EipAddress       string                 `protobuf:"bytes,14,opt,name=eip_address,json=eipAddress,proto3" json:"eip_address,omitempty"`
-	DesiredEnabled   bool                   `protobuf:"varint,15,opt,name=desired_enabled,json=desiredEnabled,proto3" json:"desired_enabled,omitempty"`
-	// Absence means unknown or stale; never filled from desired_enabled.
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	VpcId         string                 `protobuf:"bytes,3,opt,name=vpc_id,json=vpcId,proto3" json:"vpc_id,omitempty"`
+	EipId         string                 `protobuf:"bytes,4,opt,name=eip_id,json=eipId,proto3" json:"eip_id,omitempty"`
+	State         ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	ReasonMessage string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	Version       int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	LastOperationId  string `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	EipAddress       string `protobuf:"bytes,14,opt,name=eip_address,json=eipAddress,proto3" json:"eip_address,omitempty"`
+	DesiredEnabled   bool   `protobuf:"varint,15,opt,name=desired_enabled,json=desiredEnabled,proto3" json:"desired_enabled,omitempty"`
+	// Absence means KCN has not reported an applied value; read errors preserve the last value.
 	AppliedEnabled *bool `protobuf:"varint,16,opt,name=applied_enabled,json=appliedEnabled,proto3,oneof" json:"applied_enabled,omitempty"`
 	// Output only. All existing tenant SNAT APIs select public, never intranet.
 	Purpose       string `protobuf:"bytes,17,opt,name=purpose,proto3" json:"purpose,omitempty"`
@@ -1479,20 +1481,21 @@ func (x *DeleteVPCSnatBindingResponse) GetBinding() *VPCSnatBinding {
 }
 
 type PlatformResource struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ClusterId        string                 `protobuf:"bytes,2,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
-	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description      string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	State            ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
-	Version          int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	LastOperationId  string                 `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ClusterId     string                 `protobuf:"bytes,2,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	State         ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	ReasonMessage string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	Version       int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	LastOperationId  string `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
 	// Types that are valid to be assigned to Configuration:
 	//
 	//	*PlatformResource_Vlan
@@ -2444,20 +2447,22 @@ func (*EgressGateway) Descriptor() ([]byte, []int) {
 }
 
 type PublicAddressPool struct {
-	state                  protoimpl.MessageState  `protogen:"open.v1"`
-	Mode                   PublicPoolMode          `protobuf:"varint,1,opt,name=mode,proto3,enum=network.v1.PublicPoolMode" json:"mode,omitempty"`
-	GatewayId              string                  `protobuf:"bytes,2,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
-	Cidr                   string                  `protobuf:"bytes,3,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	OvnGatewayIp           string                  `protobuf:"bytes,4,opt,name=ovn_gateway_ip,json=ovnGatewayIp,proto3" json:"ovn_gateway_ip,omitempty"`
-	ExcludedIps            []string                `protobuf:"bytes,5,rep,name=excluded_ips,json=excludedIps,proto3" json:"excluded_ips,omitempty"`
-	VlanNetworkId          string                  `protobuf:"bytes,6,opt,name=vlan_network_id,json=vlanNetworkId,proto3" json:"vlan_network_id,omitempty"`
-	UpstreamGatewayIp      string                  `protobuf:"bytes,7,opt,name=upstream_gateway_ip,json=upstreamGatewayIp,proto3" json:"upstream_gateway_ip,omitempty"`
-	AllocationEnabled      bool                    `protobuf:"varint,8,opt,name=allocation_enabled,json=allocationEnabled,proto3" json:"allocation_enabled,omitempty"`
-	IsDefault              bool                    `protobuf:"varint,9,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
-	ConfigRevision         int64                   `protobuf:"varint,10,opt,name=config_revision,json=configRevision,proto3" json:"config_revision,omitempty"`
-	Verification           *PublicPoolVerification `protobuf:"bytes,11,opt,name=verification,proto3" json:"verification,omitempty"`
-	TopologyFingerprint    string                  `protobuf:"bytes,12,opt,name=topology_fingerprint,json=topologyFingerprint,proto3" json:"topology_fingerprint,omitempty"`
-	ObservedProviderImages []string                `protobuf:"bytes,13,rep,name=observed_provider_images,json=observedProviderImages,proto3" json:"observed_provider_images,omitempty"`
+	state             protoimpl.MessageState  `protogen:"open.v1"`
+	Mode              PublicPoolMode          `protobuf:"varint,1,opt,name=mode,proto3,enum=network.v1.PublicPoolMode" json:"mode,omitempty"`
+	GatewayId         string                  `protobuf:"bytes,2,opt,name=gateway_id,json=gatewayId,proto3" json:"gateway_id,omitempty"`
+	Cidr              string                  `protobuf:"bytes,3,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	OvnGatewayIp      string                  `protobuf:"bytes,4,opt,name=ovn_gateway_ip,json=ovnGatewayIp,proto3" json:"ovn_gateway_ip,omitempty"`
+	ExcludedIps       []string                `protobuf:"bytes,5,rep,name=excluded_ips,json=excludedIps,proto3" json:"excluded_ips,omitempty"`
+	VlanNetworkId     string                  `protobuf:"bytes,6,opt,name=vlan_network_id,json=vlanNetworkId,proto3" json:"vlan_network_id,omitempty"`
+	UpstreamGatewayIp string                  `protobuf:"bytes,7,opt,name=upstream_gateway_ip,json=upstreamGatewayIp,proto3" json:"upstream_gateway_ip,omitempty"`
+	AllocationEnabled bool                    `protobuf:"varint,8,opt,name=allocation_enabled,json=allocationEnabled,proto3" json:"allocation_enabled,omitempty"`
+	IsDefault         bool                    `protobuf:"varint,9,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	ConfigRevision    int64                   `protobuf:"varint,10,opt,name=config_revision,json=configRevision,proto3" json:"config_revision,omitempty"`
+	Verification      *PublicPoolVerification `protobuf:"bytes,11,opt,name=verification,proto3" json:"verification,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/egress.proto.
+	TopologyFingerprint string `protobuf:"bytes,12,opt,name=topology_fingerprint,json=topologyFingerprint,proto3" json:"topology_fingerprint,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/egress.proto.
+	ObservedProviderImages []string `protobuf:"bytes,13,rep,name=observed_provider_images,json=observedProviderImages,proto3" json:"observed_provider_images,omitempty"`
 	// Output only; always public. The legacy message/field meanings are preserved.
 	Scope         string `protobuf:"bytes,14,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2571,6 +2576,7 @@ func (x *PublicAddressPool) GetVerification() *PublicPoolVerification {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in network/v1/egress.proto.
 func (x *PublicAddressPool) GetTopologyFingerprint() string {
 	if x != nil {
 		return x.TopologyFingerprint
@@ -2578,6 +2584,7 @@ func (x *PublicAddressPool) GetTopologyFingerprint() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in network/v1/egress.proto.
 func (x *PublicAddressPool) GetObservedProviderImages() []string {
 	if x != nil {
 		return x.ObservedProviderImages
@@ -2595,19 +2602,21 @@ func (x *PublicAddressPool) GetScope() string {
 // A platform-owned pool backed by an Intranet Subnet and a verified default VPC
 // gateway. It is not a Public EIPGateway or a tenant workload subnet.
 type IntranetAddressPool struct {
-	state                  protoimpl.MessageState    `protogen:"open.v1"`
-	Cidr                   string                    `protobuf:"bytes,1,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	OvnGatewayIp           string                    `protobuf:"bytes,2,opt,name=ovn_gateway_ip,json=ovnGatewayIp,proto3" json:"ovn_gateway_ip,omitempty"`
-	ExcludedIps            []string                  `protobuf:"bytes,3,rep,name=excluded_ips,json=excludedIps,proto3" json:"excluded_ips,omitempty"`
-	DefaultVpcName         string                    `protobuf:"bytes,4,opt,name=default_vpc_name,json=defaultVpcName,proto3" json:"default_vpc_name,omitempty"`
-	DefaultVpcUid          string                    `protobuf:"bytes,5,opt,name=default_vpc_uid,json=defaultVpcUid,proto3" json:"default_vpc_uid,omitempty"`
-	IntranetNetworks       []string                  `protobuf:"bytes,6,rep,name=intranet_networks,json=intranetNetworks,proto3" json:"intranet_networks,omitempty"`
-	AllocationEnabled      bool                      `protobuf:"varint,7,opt,name=allocation_enabled,json=allocationEnabled,proto3" json:"allocation_enabled,omitempty"`
-	IsDefault              bool                      `protobuf:"varint,8,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
-	ConfigRevision         int64                     `protobuf:"varint,9,opt,name=config_revision,json=configRevision,proto3" json:"config_revision,omitempty"`
-	Verification           *IntranetPoolVerification `protobuf:"bytes,10,opt,name=verification,proto3" json:"verification,omitempty"`
-	TopologyFingerprint    string                    `protobuf:"bytes,11,opt,name=topology_fingerprint,json=topologyFingerprint,proto3" json:"topology_fingerprint,omitempty"`
-	ObservedProviderImages []string                  `protobuf:"bytes,12,rep,name=observed_provider_images,json=observedProviderImages,proto3" json:"observed_provider_images,omitempty"`
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	Cidr              string                    `protobuf:"bytes,1,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	OvnGatewayIp      string                    `protobuf:"bytes,2,opt,name=ovn_gateway_ip,json=ovnGatewayIp,proto3" json:"ovn_gateway_ip,omitempty"`
+	ExcludedIps       []string                  `protobuf:"bytes,3,rep,name=excluded_ips,json=excludedIps,proto3" json:"excluded_ips,omitempty"`
+	DefaultVpcName    string                    `protobuf:"bytes,4,opt,name=default_vpc_name,json=defaultVpcName,proto3" json:"default_vpc_name,omitempty"`
+	DefaultVpcUid     string                    `protobuf:"bytes,5,opt,name=default_vpc_uid,json=defaultVpcUid,proto3" json:"default_vpc_uid,omitempty"`
+	IntranetNetworks  []string                  `protobuf:"bytes,6,rep,name=intranet_networks,json=intranetNetworks,proto3" json:"intranet_networks,omitempty"`
+	AllocationEnabled bool                      `protobuf:"varint,7,opt,name=allocation_enabled,json=allocationEnabled,proto3" json:"allocation_enabled,omitempty"`
+	IsDefault         bool                      `protobuf:"varint,8,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	ConfigRevision    int64                     `protobuf:"varint,9,opt,name=config_revision,json=configRevision,proto3" json:"config_revision,omitempty"`
+	Verification      *IntranetPoolVerification `protobuf:"bytes,10,opt,name=verification,proto3" json:"verification,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/egress.proto.
+	TopologyFingerprint string `protobuf:"bytes,11,opt,name=topology_fingerprint,json=topologyFingerprint,proto3" json:"topology_fingerprint,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/egress.proto.
+	ObservedProviderImages []string `protobuf:"bytes,12,rep,name=observed_provider_images,json=observedProviderImages,proto3" json:"observed_provider_images,omitempty"`
 	// Output only; always intranet.
 	Scope string `protobuf:"bytes,13,opt,name=scope,proto3" json:"scope,omitempty"`
 	// Output only. True only for the default pool when automatic base EIP/SNAT
@@ -2717,6 +2726,7 @@ func (x *IntranetAddressPool) GetVerification() *IntranetPoolVerification {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in network/v1/egress.proto.
 func (x *IntranetAddressPool) GetTopologyFingerprint() string {
 	if x != nil {
 		return x.TopologyFingerprint
@@ -2724,6 +2734,7 @@ func (x *IntranetAddressPool) GetTopologyFingerprint() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in network/v1/egress.proto.
 func (x *IntranetAddressPool) GetObservedProviderImages() []string {
 	if x != nil {
 		return x.ObservedProviderImages
@@ -2840,11 +2851,12 @@ func (x *IntranetPoolVerification) GetExpiresAt() *timestamppb.Timestamp {
 }
 
 type CapabilityObservation struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Reason           string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,2,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,4,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	ReasonMessage string                 `protobuf:"bytes,2,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool `protobuf:"varint,4,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2907,8 +2919,8 @@ func (x *CapabilityObservation) GetObservationStale() bool {
 	return false
 }
 
-// Independent admission capabilities. Missing/stale/unknown evidence always
-// yields ready=false. LB unavailability does not block base-only VPC creation.
+// Capability diagnostics. Resource admission uses Res configuration and ledger
+// rules; a capability read error preserves the last reported readiness.
 type PlatformNetworkCapabilities struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	BaseConnectivityReady bool                   `protobuf:"varint,1,opt,name=base_connectivity_ready,json=baseConnectivityReady,proto3" json:"base_connectivity_ready,omitempty"`
@@ -6219,7 +6231,7 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"\x11virtual_switch_id\x18\x01 \x01(\tR\x0fvirtualSwitchId\"T\n" +
 	"\x1bDeleteVirtualSwitchResponse\x125\n" +
 	"\bresource\x18\x01 \x01(\v2\x19.network.v1.VirtualSwitchR\bresource\"\x0f\n" +
-	"\rEgressGateway\"\xd9\x04\n" +
+	"\rEgressGateway\"\xe1\x04\n" +
 	"\x11PublicAddressPool\x12.\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x1a.network.v1.PublicPoolModeR\x04mode\x12\x1d\n" +
 	"\n" +
@@ -6234,10 +6246,10 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"is_default\x18\t \x01(\bR\tisDefault\x12'\n" +
 	"\x0fconfig_revision\x18\n" +
 	" \x01(\x03R\x0econfigRevision\x12F\n" +
-	"\fverification\x18\v \x01(\v2\".network.v1.PublicPoolVerificationR\fverification\x121\n" +
-	"\x14topology_fingerprint\x18\f \x01(\tR\x13topologyFingerprint\x128\n" +
-	"\x18observed_provider_images\x18\r \x03(\tR\x16observedProviderImages\x12\x14\n" +
-	"\x05scope\x18\x0e \x01(\tR\x05scope\"\xdf\x04\n" +
+	"\fverification\x18\v \x01(\v2\".network.v1.PublicPoolVerificationR\fverification\x125\n" +
+	"\x14topology_fingerprint\x18\f \x01(\tB\x02\x18\x01R\x13topologyFingerprint\x12<\n" +
+	"\x18observed_provider_images\x18\r \x03(\tB\x02\x18\x01R\x16observedProviderImages\x12\x14\n" +
+	"\x05scope\x18\x0e \x01(\tR\x05scope\"\xe7\x04\n" +
 	"\x13IntranetAddressPool\x12\x12\n" +
 	"\x04cidr\x18\x01 \x01(\tR\x04cidr\x12$\n" +
 	"\x0eovn_gateway_ip\x18\x02 \x01(\tR\fovnGatewayIp\x12!\n" +
@@ -6250,9 +6262,9 @@ const file_network_v1_egress_proto_rawDesc = "" +
 	"is_default\x18\b \x01(\bR\tisDefault\x12'\n" +
 	"\x0fconfig_revision\x18\t \x01(\x03R\x0econfigRevision\x12H\n" +
 	"\fverification\x18\n" +
-	" \x01(\v2$.network.v1.IntranetPoolVerificationR\fverification\x121\n" +
-	"\x14topology_fingerprint\x18\v \x01(\tR\x13topologyFingerprint\x128\n" +
-	"\x18observed_provider_images\x18\f \x03(\tR\x16observedProviderImages\x12\x14\n" +
+	" \x01(\v2$.network.v1.IntranetPoolVerificationR\fverification\x125\n" +
+	"\x14topology_fingerprint\x18\v \x01(\tB\x02\x18\x01R\x13topologyFingerprint\x12<\n" +
+	"\x18observed_provider_images\x18\f \x03(\tB\x02\x18\x01R\x16observedProviderImages\x12\x14\n" +
 	"\x05scope\x18\r \x01(\tR\x05scope\x12(\n" +
 	"\x10new_vpcs_enabled\x18\x0e \x01(\bR\x0enewVpcsEnabled\"\xfa\x02\n" +
 	"\x18IntranetPoolVerification\x128\n" +

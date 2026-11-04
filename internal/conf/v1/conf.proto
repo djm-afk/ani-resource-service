@@ -104,19 +104,19 @@ message PlatformDefaultVPCEgress {
 
 message LoadBalancer {
   bool enable_isolated_api = 1;
-  string installation_fingerprint = 2;
-  string controller_image_id = 3;
-  string envoy_image_id = 4;
-  string shutdown_image_id = 5;
-  string kc_image_id = 6;
+  string installation_fingerprint = 2 [deprecated = true];
+  string controller_image_id = 3 [deprecated = true];
+  string envoy_image_id = 4 [deprecated = true];
+  string shutdown_image_id = 5 [deprecated = true];
+  string kc_image_id = 6 [deprecated = true];
 }
 
 message Observation {
-  google.protobuf.Duration audit_interval = 1;
-  google.protobuf.Duration audit_jitter = 2;
-  google.protobuf.Duration audit_timeout = 3;
-  google.protobuf.Duration flush_interval = 4;
-  uint32 queue_capacity = 5;
+  google.protobuf.Duration audit_interval = 1 [deprecated = true];
+  google.protobuf.Duration audit_jitter = 2 [deprecated = true];
+  google.protobuf.Duration audit_timeout = 3 [deprecated = true];
+  google.protobuf.Duration flush_interval = 4 [deprecated = true];
+  uint32 queue_capacity = 5 [deprecated = true];
   uint32 workers_per_kind = 6;
   uint32 request_qps = 7;
   uint32 request_burst = 8;
@@ -126,7 +126,7 @@ message Worker {
   google.protobuf.Duration lease = 1;
   google.protobuf.Duration request_timeout = 2;
   google.protobuf.Duration observe_every = 3;
-  google.protobuf.Duration stale_after = 4;
+  google.protobuf.Duration stale_after = 4 [deprecated = true];
   google.protobuf.Duration retry_min = 5;
   google.protobuf.Duration retry_max = 6;
   google.protobuf.Duration poll_interval = 7;

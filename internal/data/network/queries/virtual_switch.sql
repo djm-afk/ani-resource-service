@@ -21,7 +21,7 @@ INSERT INTO network_virtual_switch_history(history_id,resource_id,operation_id,e
  VALUES(sqlc.arg(history_id),sqlc.arg(resource_id),sqlc.narg(operation_id),sqlc.arg(event),sqlc.arg(actor_ref),sqlc.arg(caller_ref),sqlc.arg(detail),clock_timestamp());
 
 -- name: GetVirtualSwitch :one
-SELECT * FROM network_virtual_switches WHERE resource_id=sqlc.arg(resource_id);
+SELECT sqlc.embed(s),coalesce(r.observation_error,'')::text AS observation_error FROM network_virtual_switches s LEFT JOIN network_virtual_switch_reconciliations r USING(resource_id) WHERE s.resource_id=sqlc.arg(resource_id);
 
 -- name: GetVirtualSwitchOperation :one
 SELECT * FROM network_virtual_switch_operations WHERE operation_id=sqlc.arg(operation_id);
@@ -35,10 +35,10 @@ SELECT count(*) FROM network_virtual_switches WHERE
  AND ((sqlc.arg(state_filter)::text='' AND state<>'deleted') OR state=sqlc.arg(state_filter));
 
 -- name: ListVirtualSwitches :many
-SELECT * FROM network_virtual_switches WHERE
- (sqlc.arg(name_filter)::text='' OR position(lower(sqlc.arg(name_filter)) in lower(name))>0)
- AND ((sqlc.arg(state_filter)::text='' AND state<>'deleted') OR state=sqlc.arg(state_filter))
- ORDER BY created_at DESC,resource_id DESC LIMIT sqlc.arg(max_results)::integer OFFSET sqlc.arg(page_offset)::bigint;
+SELECT sqlc.embed(s),coalesce(r.observation_error,'')::text AS observation_error FROM network_virtual_switches s LEFT JOIN network_virtual_switch_reconciliations r USING(resource_id) WHERE
+ (sqlc.arg(name_filter)::text='' OR position(lower(sqlc.arg(name_filter)) in lower(s.name))>0)
+ AND ((sqlc.arg(state_filter)::text='' AND s.state<>'deleted') OR s.state=sqlc.arg(state_filter))
+ ORDER BY s.created_at DESC,s.resource_id DESC LIMIT sqlc.arg(max_results)::integer OFFSET sqlc.arg(page_offset)::bigint;
 
 -- name: BindVirtualSwitch :one
 UPDATE network_virtual_switches SET cluster_id=sqlc.arg(cluster_id),binding_id=sqlc.arg(binding_id),binding_version=1,
@@ -47,7 +47,7 @@ UPDATE network_virtual_switches SET cluster_id=sqlc.arg(cluster_id),binding_id=s
 
 -- name: ScheduleVirtualSwitch :exec
 INSERT INTO network_virtual_switch_reconciliations(resource_id,next_run_at) VALUES(sqlc.arg(resource_id),clock_timestamp())
- ON CONFLICT(resource_id) DO UPDATE SET next_run_at=least(network_virtual_switch_reconciliations.next_run_at,EXCLUDED.next_run_at);
+ ON CONFLICT(resource_id) DO UPDATE SET requested_generation=network_virtual_switch_reconciliations.requested_generation+1,next_run_at=least(network_virtual_switch_reconciliations.next_run_at,EXCLUDED.next_run_at);
 
 -- name: VirtualSwitchDependencies :one
 SELECT count(*)::bigint FROM (
@@ -92,5 +92,11 @@ UPDATE network_virtual_switch_operations SET state='succeeded',reason='',updated
 
 -- name: ReleaseVirtualSwitchLease :execrows
 UPDATE network_virtual_switch_reconciliations SET lease_owner=NULL,lease_until=NULL,
- next_run_at=clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond'
+ processed_generation=greatest(processed_generation,sqlc.arg(claimed_generation)::bigint),
+ observation_error=CASE WHEN sqlc.arg(observed)::boolean THEN '' WHEN sqlc.arg(observation_error)::text<>'' THEN sqlc.arg(observation_error)::text ELSE observation_error END,
+ retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN sqlc.arg(terminal)::boolean THEN 'infinity'::timestamptz
+   WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond'
+   WHEN requested_generation>sqlc.arg(claimed_generation)::bigint THEN sqlc.arg(now)::timestamptz
+   WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
  WHERE resource_id=sqlc.arg(resource_id) AND lease_owner=sqlc.arg(owner)::uuid AND lease_epoch=sqlc.arg(epoch) AND lease_until>clock_timestamp();

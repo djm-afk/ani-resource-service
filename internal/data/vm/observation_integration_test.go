@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -52,7 +51,7 @@ func observationRegisteredVM(t *testing.T) (*Postgres, *testenv.Database, biz.VM
 	}
 	v.Native.UID = uuid.NewString()
 	v.Observed, v.ObservedAt = "Running", time.Now().Add(-time.Second).UTC()
-	v.Network = biz.NetworkPlan{AttachmentID: uuid.NewString(), SnapshotRevision: 1, Consumer: []byte(`{"revision":1}`)}
+	v.Network = biz.NetworkPlan{AttachmentID: uuid.NewString(), SnapshotRevision: 1, Consumer: &biz.NetworkConsumerState{State: "open", DesiredRunState: "running"}}
 	v.Addresses = []biz.Address{{Address: "10.1.2.3"}}
 	o.State = "succeeded"
 	if err = p.Save(ctx, o, v); err != nil {
@@ -134,7 +133,7 @@ func TestVMObservationPreservesConcurrentNetworkAndNewerOperationFacts(t *testin
 	}
 	n := snapshot.Network
 	n.SnapshotRevision++
-	n.Consumer = []byte(`{"revision":2}`)
+	n.Consumer = &biz.NetworkConsumerState{State: "open", DesiredRunState: "running"}
 	if err = p.UpdateNetwork(ctx, snapshot, n); err != nil {
 		t.Fatal(err)
 	}
@@ -142,9 +141,7 @@ func TestVMObservationPreservesConcurrentNetworkAndNewerOperationFacts(t *testin
 		t.Fatal(err)
 	}
 	latest, err := p.Get(ctx, v.TenantID, v.ID)
-	var consumer struct{ Revision int }
-	consumerErr := json.Unmarshal(latest.Network.Consumer, &consumer)
-	if err != nil || latest.Network.SnapshotRevision != 2 || consumerErr != nil || consumer.Revision != 2 || latest.Observed != "Stopped" || len(latest.Addresses) != 0 || latest.Version != v.Version {
+	if err != nil || latest.Network.SnapshotRevision != 2 || latest.Network.Consumer == nil || latest.Network.Consumer.State != "open" || latest.Observed != "Stopped" || len(latest.Addresses) != 0 || latest.Version != v.Version {
 		t.Fatalf("observation replaced concurrent network: %+v %v", latest, err)
 	}
 	// A user operation claims older facts, then an independent observer sees a

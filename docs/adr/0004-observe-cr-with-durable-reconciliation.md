@@ -15,6 +15,12 @@ PG 继续保存产品意图、operation、幂等及恢复义务，Kubernetes 保
 
 配额接入明确推迟到 Core 重构及治理契约就绪之后，后续独立编排。NET-05A 不实现配额表、预留/确认/释放 RPC、配额 outbox/dispatcher 或临时账本，也不以这些能力作为退出门槛。现有 Attachment、地址范围和删除保护继续有效，不因配额延期而放松。
 
-## 2026-11-03：缩小运行期职责
+## 2026-11-03：缩小运行期职责（已由下节替代）
 
 普通观察仅消费共享事实，采集异常不覆写最后确认的可用/配置结果；动作核验当前直接依赖。已完成清理的任务退休，历史身份保留用于相关事件恢复。镜像、CRD、安装指纹和控制器权限检查迁至显式安装验收，不再决定已有 LB 的运行状态。KCN 负责分配重试和底层清理；没有等价完成合同的消费者释放、LB 规格/HA 及 SNAT 原 EIP 解绑检查仍保留。详见[持续观察规格](../specs/cr-observation.md)与[实施方案](../plans/network-management-simplification-20261103.md)。
+
+## 2026-11-04：以 KCN 状态为权威
+
+用户明确授权完全采信 KCN 当前状态，Res 专注管理端职责。当前实现使用普通 informer 提示、已有任务行、直接目标 GET 和本服务事务提交；删除关系索引、全量审计、Proof/Covers、TTL、父子 Ready 合取以及物理清场验收。原对象 UID 和自身租约只用于声明身份与并发。终态任务永久退休，计算侧当前管理快照决定 Attachment 关系，地址展示独立。
+
+本决定替代本 ADR 旧条款中的全链核验和已退休任务事件恢复要求。方法/字段清单见[实施方案](../plans/network-management-simplification.md)，当前规范见[网络状态消费规格 v3](../specs/cr-observation.md)，实现与验证只见[执行状态](../execution/status.md#network-management-simplification-20261104)。不以 KCN 团队先修改代码为实施前提。

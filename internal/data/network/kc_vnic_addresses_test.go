@@ -83,8 +83,8 @@ func TestKCVNicRequestedIPCreateReplayAndResponseLoss(t *testing.T) {
 				return false, nil, nil
 			})
 			p := &KCProvider{client: client}
-			observed, err := p.inspectVNicAddressFacts(context.Background(), parent, b, target)
-			if err != nil || observed.Ready || !observed.NeedsUpdate || observed.Identity != b.ProviderUid {
+			observed, err := p.inspectVNic(context.Background(), parent, b, target)
+			if err != nil || observed.Ready == nil || !*observed.Ready || !observed.NeedsUpdate || observed.Identity != b.ProviderUid {
 				t.Fatal("partial creation cannot resume through pure observation", observed, err)
 			}
 			for _, a := range client.Actions() {
@@ -139,74 +139,39 @@ func TestKCVNicRequestedIPParentVersionConflictIsRetryable(t *testing.T) {
 	}
 }
 
-func TestKCVNicRequestedIPObservationAndRejection(t *testing.T) {
-	for _, name := range []string{"ready", "implicit-ipv4", "address-conflict", "invalid-address", "invalid-vnic", "wrong-mac", "wrong-primary-ip", "replaced-ip", "foreign-owner", "foreign-tenant", "wrong-ip-spec", "missing-original-ip", "delete-invalid"} {
+func TestKCVNicStatusIsAuthoritativeWithoutChildReads(t *testing.T) {
+	for _, name := range []string{"ready", "missing-address", "different-address", "valid-false", "ready-false", "unreported"} {
 		t.Run(name, func(t *testing.T) {
-			b, target, parent, child := requestedVNicAddressFixture()
-			parent.SetAnnotations(map[string]string{requestedVNicIPUIDAnnotation: string(child.GetUID())})
-			wantRejection := biz.Reason("")
-			wantConflict := false
+			b, target, parent, _ := requestedVNicAddressFixture()
+			parent.SetAnnotations(map[string]string{requestedVNicIPUIDAnnotation: "declared-child"})
 			switch name {
-			case "implicit-ipv4":
-				// The deployed IPv4 CRD prunes this newer optional field.
-				unstructured.RemoveNestedField(child.Object, "spec", "ipVersion")
-			case "address-conflict", "invalid-address":
-				message := "AddressConflict"
-				wantRejection = biz.AddressConflict
-				if name == "invalid-address" {
-					message, wantRejection = "AddressOutOfRange", biz.ProviderRejected
-				}
-				child.Object["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Valid", "status": "False", "reason": "Error", "message": message}}}
-			case "invalid-vnic":
-				parent.Object["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Valid", "status": "False", "message": "Rejected Subnet access"}}}
-				wantRejection = biz.ProviderRejected
-			case "wrong-mac":
-				_ = unstructured.SetNestedField(parent.Object, "02:00:00:00:00:99", "spec", "macAddress")
-				wantRejection = biz.ProviderRejected
-			case "wrong-primary-ip":
+			case "missing-address":
+				unstructured.RemoveNestedField(parent.Object, "status", "primaryIP")
+				unstructured.RemoveNestedField(parent.Object, "status", "ips")
+			case "different-address":
 				_ = unstructured.SetNestedField(parent.Object, "10.42.1.99", "status", "primaryIP")
-				wantRejection = biz.ProviderRejected
-			case "replaced-ip":
-				child.SetUID("replacement-ip")
-				wantConflict = true
-			case "foreign-owner":
-				owners := child.GetOwnerReferences()
-				owners[0].UID = "foreign-vnic"
-				child.SetOwnerReferences(owners)
-				wantConflict = true
-			case "foreign-tenant":
-				labels := child.GetLabels()
-				labels[tenantLabel] = "other-tenant"
-				child.SetLabels(labels)
-				wantConflict = true
-			case "wrong-ip-spec":
-				_ = unstructured.SetNestedField(child.Object, "10.42.1.99", "spec", "ipAddress")
-				wantConflict = true
-			case "missing-original-ip":
-				wantConflict = true
-			case "delete-invalid":
-				target.Deleting = true
-				child.Object["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Valid", "status": "False", "message": "AddressConflict"}}}
+				_ = unstructured.SetNestedField(parent.Object, "02:00:00:00:00:99", "spec", "macAddress")
+			case "valid-false":
+				_ = unstructured.SetNestedSlice(parent.Object, []any{map[string]any{"type": "Ready", "status": "True"}, map[string]any{"type": "Valid", "status": "False"}}, "status", "conditions")
+			case "ready-false":
+				_ = unstructured.SetNestedSlice(parent.Object, []any{map[string]any{"type": "Ready", "status": "False", "reason": "Waiting"}}, "status", "conditions")
+			case "unreported":
+				unstructured.RemoveNestedField(parent.Object, "status", "conditions")
 			}
-			objects := []runtime.Object{child}
-			if name == "missing-original-ip" {
-				objects = nil
-			}
-			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), objects...)
+			client := fake.NewSimpleDynamicClient(runtime.NewScheme())
 			p := &KCProvider{client: client}
-			got, err := p.inspectVNicAddressFacts(context.Background(), parent, b, target)
-			if wantConflict {
-				var failure *biz.ProviderError
-				if !errors.As(err, &failure) || failure.Kind != biz.ProviderConflict || got.Ready {
-					t.Fatal("foreign/replaced address identity was accepted", got, err)
+			got, err := p.inspectVNic(context.Background(), parent, b, target)
+			if err != nil || !got.Exists || got.NeedsUpdate || len(client.Actions()) != 0 {
+				t.Fatal(got, err, client.Actions())
+			}
+			if name == "unreported" {
+				if got.Ready != nil {
+					t.Fatal(got)
 				}
 				return
 			}
-			if err != nil || got.Identity != b.ProviderUid || got.RejectionReason != wantRejection || got.Ready != (name == "ready" || name == "implicit-ipv4") {
-				t.Fatal("requested address validation/rejection was not reported honestly", got, err)
-			}
-			if name == "delete-invalid" && len(client.Actions()) != 0 {
-				t.Fatal("deletion was gated by the failed address child")
+			if got.Ready == nil || *got.Ready != (name != "ready-false") {
+				t.Fatal("Ready was reconstructed from child/address facts", got)
 			}
 		})
 	}

@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"time"
 )
 
 func (p *Postgres) ClaimVirtualSwitch(ctx context.Context, owner string, duration time.Duration) (biz.VirtualSwitchWork, bool, error) {
@@ -40,7 +39,7 @@ func (p *Postgres) ClaimVirtualSwitch(ctx context.Context, owner string, duratio
 	if err != nil {
 		return biz.VirtualSwitchWork{}, false, databaseFailure(err)
 	}
-	return biz.VirtualSwitchWork{Switch: v, Owner: owner, Epoch: l.LeaseEpoch, Now: now}, true, databaseFailure(tx.Commit(ctx))
+	return biz.VirtualSwitchWork{Switch: v, Owner: owner, Epoch: l.LeaseEpoch, ClaimedGeneration: l.RequestedGeneration, Now: now}, true, databaseFailure(tx.Commit(ctx))
 }
 
 func lockSwitchWork(ctx context.Context, q *sqlcgen.Queries, w biz.VirtualSwitchWork) (sqlcgen.NetworkVirtualSwitch, error) {
@@ -94,7 +93,7 @@ func (p *Postgres) SaveVirtualSwitchNode(ctx context.Context, w biz.VirtualSwitc
 	return databaseFailure(tx.Commit(ctx))
 }
 
-func (p *Postgres) FinishVirtualSwitch(ctx context.Context, w biz.VirtualSwitchWork, state string, reason biz.Reason, delay time.Duration) error {
+func (p *Postgres) FinishVirtualSwitch(ctx context.Context, w biz.VirtualSwitchWork, progress biz.VirtualSwitchProgress, delay time.Duration) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return databaseFailure(err)
@@ -105,7 +104,7 @@ func (p *Postgres) FinishVirtualSwitch(ctx context.Context, w biz.VirtualSwitchW
 	if err != nil {
 		return err
 	}
-	if state == "cleaned" {
+	if progress.BindingState == "cleaned" {
 		blocked, err := q.VirtualSwitchDependencies(ctx, sqlcgen.VirtualSwitchDependenciesParams{ResourceID: r.ResourceID})
 		if err != nil {
 			return databaseFailure(err)
@@ -120,10 +119,17 @@ func (p *Postgres) FinishVirtualSwitch(ctx context.Context, w biz.VirtualSwitchW
 			return databaseFailure(err)
 		}
 	}
-	if err = affected(q.AdvanceVirtualSwitch(ctx, sqlcgen.AdvanceVirtualSwitchParams{ResourceID: r.ResourceID, Version: r.Version, BindingState: state, Reason: string(reason)})); err != nil {
+	if err = affected(q.AdvanceVirtualSwitch(ctx, sqlcgen.AdvanceVirtualSwitchParams{ResourceID: r.ResourceID, Version: r.Version, BindingState: progress.BindingState, Reason: string(progress.Reason)})); err != nil {
 		return err
 	}
-	if err = affected(q.ReleaseVirtualSwitchLease(ctx, sqlcgen.ReleaseVirtualSwitchLeaseParams{ResourceID: r.ResourceID, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: delay.Microseconds()})); err != nil {
+	now, err := q.DatabaseTime(ctx)
+	if err != nil {
+		return databaseFailure(err)
+	}
+	terminal := progress.BindingState == "cleaned"
+	park := !progress.Backoff && progress.ObservationError == "" && progress.OperationReason == "" && (progress.BindingState == "configured" || r.BindingID == nil)
+
+	if err = affected(q.ReleaseVirtualSwitchLease(ctx, sqlcgen.ReleaseVirtualSwitchLeaseParams{ResourceID: r.ResourceID, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: delay.Microseconds(), Now: now, ClaimedGeneration: w.ClaimedGeneration, ObservationError: string(progress.ObservationError), Observed: progress.Observed, Backoff: progress.Backoff, Park: park, Terminal: terminal})); err != nil {
 		return err
 	}
 	return databaseFailure(tx.Commit(ctx))

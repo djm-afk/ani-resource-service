@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestTenantNamespaceConcurrentAdmissionRejectsUIDConflict(t *testing.T) {
@@ -26,7 +25,7 @@ func TestTenantNamespaceConcurrentAdmissionRejectsUIDConflict(t *testing.T) {
 		}
 		return tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: uid}, nil
 	})
-	n, err := biz.NewNetwork(repo, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	n, err := biz.NewNetwork(repo, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +85,7 @@ func TestTenantNamespaceBackfillIsExactAndNeverOverwritesUID(t *testing.T) {
 	if err := repo.ConfigureVPCCIDRPresets([]string{"10.42.0.0/16"}); err != nil {
 		t.Fatal(err)
 	}
-	n, err := biz.NewNetwork(repo, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	n, err := biz.NewNetwork(repo, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}

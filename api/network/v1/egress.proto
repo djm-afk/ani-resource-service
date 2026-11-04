@@ -68,6 +68,7 @@ message EIP {
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
   google.protobuf.Timestamp observed_at = 11;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 12;
   string last_operation_id = 13;
   string address = 14;
@@ -104,11 +105,12 @@ message VPCSnatBinding {
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
   google.protobuf.Timestamp observed_at = 11;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 12;
   string last_operation_id = 13;
   string eip_address = 14;
   bool desired_enabled = 15;
-  // Absence means unknown or stale; never filled from desired_enabled.
+  // Absence means KCN has not reported an applied value; read errors preserve the last value.
   optional bool applied_enabled = 16;
   // Output only. All existing tenant SNAT APIs select public, never intranet.
   string purpose = 17;
@@ -141,7 +143,9 @@ message PlatformResource {
   string id = 1; string cluster_id = 2; string name = 3; string description = 4;
   ResourceState state = 5; string reason = 6; string reason_message = 7; int64 version = 8;
   google.protobuf.Timestamp created_at = 9; google.protobuf.Timestamp updated_at = 10;
-  google.protobuf.Timestamp observed_at = 11; bool observation_stale = 12; string last_operation_id = 13;
+  google.protobuf.Timestamp observed_at = 11;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
+  bool observation_stale = 12; string last_operation_id = 13;
   oneof configuration {
     VlanNetwork vlan = 15;
     EgressGateway gateway = 16;
@@ -192,8 +196,8 @@ message PublicAddressPool {
   repeated string excluded_ips = 5; string vlan_network_id = 6; string upstream_gateway_ip = 7;
   bool allocation_enabled = 8; bool is_default = 9; int64 config_revision = 10;
   PublicPoolVerification verification = 11;
-  string topology_fingerprint = 12;
-  repeated string observed_provider_images = 13;
+  string topology_fingerprint = 12 [deprecated = true];
+  repeated string observed_provider_images = 13 [deprecated = true];
   // Output only; always public. The legacy message/field meanings are preserved.
   string scope = 14;
 }
@@ -210,8 +214,8 @@ message IntranetAddressPool {
   bool is_default = 8;
   int64 config_revision = 9;
   IntranetPoolVerification verification = 10;
-  string topology_fingerprint = 11;
-  repeated string observed_provider_images = 12;
+  string topology_fingerprint = 11 [deprecated = true];
+  repeated string observed_provider_images = 12 [deprecated = true];
   // Output only; always intranet.
   string scope = 13;
   // Output only. True only for the default pool when automatic base EIP/SNAT
@@ -233,10 +237,11 @@ message CapabilityObservation {
   string reason = 1;
   string reason_message = 2;
   google.protobuf.Timestamp observed_at = 3;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 4;
 }
-// Independent admission capabilities. Missing/stale/unknown evidence always
-// yields ready=false. LB unavailability does not block base-only VPC creation.
+// Capability diagnostics. Resource admission uses Res configuration and ledger
+// rules; a capability read error preserves the last reported readiness.
 message PlatformNetworkCapabilities {
   bool base_connectivity_ready = 1;
   bool public_address_ready = 2;

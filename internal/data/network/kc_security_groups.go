@@ -3,11 +3,12 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 
+	"github.com/jackc/pgx/v5"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	db "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,23 +21,30 @@ import (
 var kcSecurityGroups = schema.GroupVersionResource{Group: kcVPCs.Group, Version: "v1", Resource: "securitygroups"}
 var kcSecurityGroupVNics = schema.GroupVersionResource{Group: kcVPCs.Group, Version: "v1", Resource: "vnics"}
 
-// ApplySecurityGroup writes only the KCN v1 contract. Desired state and the
-// create token have already been committed before the worker calls this port.
-func (p *KCProvider) ApplySecurityGroup(ctx context.Context, w biz.SecurityGroupWork) (biz.SecurityGroupResult, error) {
-	if w.TenantID == "" || w.TargetID == "" {
+// ApplySecurityGroup reads only the current declaration or current bound target.
+// Database identity and user configuration remain owned by Res.
+func (p *KCProvider) ApplySecurityGroup(ctx context.Context, work biz.SecurityGroupWork) (biz.SecurityGroupResult, error) {
+	if work.TenantID == "" || work.TargetID == "" || p.repository == nil {
 		return biz.SecurityGroupResult{}, sgProviderConflict("missing durable work identity")
 	}
-	switch w.TargetType {
-	case "security_group":
-		if w.Group.TenantID != w.TenantID || w.Group.ID != w.TargetID || w.Group.Version != w.Version || p.repository == nil || w.Group.ClusterID != p.repository.placement.ClusterID {
+	if work.TargetType == "security_group" {
+		if work.Group.TenantID != work.TenantID || work.Group.ID != work.TargetID || work.Group.Version != work.Version || work.Group.ClusterID != p.repository.placement.ClusterID {
 			return biz.SecurityGroupResult{}, sgProviderConflict("security group work identity changed")
 		}
-		return p.applySecurityGroupResource(ctx, w.Group)
+		return p.applySecurityGroupResource(ctx, work)
+	}
+	binding := work.Binding
+	if binding.TenantID != work.TenantID || binding.TargetID != work.TargetID || binding.TargetType != work.TargetType || binding.Version != work.Version {
+		return biz.SecurityGroupResult{}, sgProviderConflict("security group target identity changed")
+	}
+	if binding.State == "released" || binding.State == "deleted" {
+		return biz.SecurityGroupResult{State: binding.State, Complete: true}, nil
+	}
+	switch work.TargetType {
 	case "eip":
-		if w.Binding.TenantID != w.TenantID || w.Binding.TargetID != w.TargetID || w.Binding.TargetType != "eip" || w.Binding.Version != w.Version {
-			return biz.SecurityGroupResult{}, sgProviderConflict("EIP security group work identity changed")
-		}
-		return p.applyEIPSecurityGroups(ctx, w.Binding)
+		return p.applyEIPSecurityGroups(ctx, work)
+	case "container", "vm", "vnic":
+		return p.observeTargetSecurityGroups(ctx, binding)
 	default:
 		return biz.SecurityGroupResult{}, &biz.ProviderError{Kind: biz.ProviderReject}
 	}
@@ -44,6 +52,10 @@ func (p *KCProvider) ApplySecurityGroup(ctx context.Context, w biz.SecurityGroup
 
 func sgProviderConflict(message string) error {
 	return &biz.ProviderError{Kind: biz.ProviderConflict, Cause: fmt.Errorf("%s", message)}
+}
+
+func securityGroupOperationActive(work biz.SecurityGroupWork) bool {
+	return work.Operation.ID != "" && work.Operation.CompletedAt == nil
 }
 
 func renderSecurityGroup(g biz.SecurityGroup) *unstructured.Unstructured {
@@ -109,500 +121,328 @@ func securityGroupSpecEqual(o, desired *unstructured.Unstructured) bool {
 	return true
 }
 
-func securityGroupReady(o *unstructured.Unstructured) bool {
-	return goodConditions(o, "Valid", "Ready") && crInt(o, "status", "observedGeneration") == o.GetGeneration() &&
-		hasField(o, "status", "allowSameGroupTraffic") && !crBool(o, "status", "allowSameGroupTraffic")
+func securityGroupReady(object *unstructured.Unstructured) (*bool, biz.Reason) {
+	return primaryCondition(object, "Ready")
 }
 
-func (p *KCProvider) applySecurityGroupResource(ctx context.Context, g biz.SecurityGroup) (biz.SecurityGroupResult, error) {
-	r := biz.SecurityGroupResult{ProviderUID: g.ProviderUID, State: "provisioning"}
+func securityGroupProjection(result biz.SecurityGroupResult, previous biz.ResourceState, object *unstructured.Unstructured) biz.SecurityGroupResult {
+	ready, reason := securityGroupReady(object)
+	result.Observed = true
+	result.ProviderUID = string(object.GetUID())
+	result.Reason = string(reason)
+	if ready == nil {
+		if result.Reason == "" {
+			result.Reason = string(biz.ProviderStatusUnreported)
+		}
+		return result
+	}
+	if *ready {
+		result.State, result.Reason, result.Complete = "available", "", true
+		return result
+	}
+	if previous == biz.Available || previous == biz.Degraded {
+		result.State = "degraded"
+	} else {
+		result.State = "provisioning"
+	}
+	if result.Reason == "" {
+		result.Reason = string(biz.ProviderNotReady)
+	}
+	return result
+}
+
+func (p *KCProvider) applySecurityGroupResource(ctx context.Context, work biz.SecurityGroupWork) (biz.SecurityGroupResult, error) {
+	g := work.Group
+	result := biz.SecurityGroupResult{ProviderUID: g.ProviderUID, State: string(g.State), Reason: string(g.Reason)}
+	if g.State == biz.Deleted {
+		result.Complete = true
+		return result, nil
+	}
 	if g.Namespace == "" || g.ProviderName == "" || g.BindingID == "" {
-		return r, sgProviderConflict("incomplete durable security group mapping")
-	}
-	if err := biz.ValidateSecurityGroupRules(g.Rules); err != nil {
-		return r, &biz.ProviderError{Kind: biz.ProviderReject, Cause: err}
-	}
-	if err := p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: g.TenantID, ClusterID: g.ClusterID, Namespace: g.Namespace}); err != nil {
-		return r, err
+		return result, sgProviderConflict("incomplete durable security group mapping")
 	}
 	endpoint := p.client.Resource(kcSecurityGroups).Namespace(g.Namespace)
-	o, err := endpoint.Get(ctx, g.ProviderName, metav1.GetOptions{})
-	deleting := g.State == biz.Deleting || g.State == biz.Deleted
+	object, err := endpoint.Get(ctx, g.ProviderName, metav1.GetOptions{})
+	deleting := g.State == biz.Deleting
 	if apierrors.IsNotFound(err) {
+		result.Observed = true
 		if deleting {
-			r.State, r.Complete = "deleted", true
-			return r, nil
+			result.State, result.Reason, result.Complete = "deleted", "", true
+			return result, nil
 		}
-		if g.ProviderUID != "" {
-			return r, sgProviderConflict("persisted security group provider object disappeared")
+		if g.ProviderUID != "" || !securityGroupOperationActive(work) || work.Operation.Kind != "create_security_group" {
+			if g.State == biz.Available || g.State == biz.Degraded {
+				result.State = "degraded"
+			}
+			result.Reason, result.OperationReason = string(biz.ProviderMissing), biz.ProviderMissing
+			return result, nil
 		}
-		if err = p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: g.TenantID, Namespace: g.Namespace}); err != nil {
-			return r, err
+		if err = p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: g.TenantID, ClusterID: g.ClusterID, Namespace: g.Namespace}); err != nil {
+			return result, err
 		}
-		o, err = endpoint.Create(ctx, renderSecurityGroup(g), metav1.CreateOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
+		object, err = endpoint.Create(ctx, renderSecurityGroup(g), metav1.CreateOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
 		if apierrors.IsAlreadyExists(err) {
-			o, err = endpoint.Get(ctx, g.ProviderName, metav1.GetOptions{})
-		}
-		if err != nil {
-			return r, mutationFailure(err)
+			object, err = endpoint.Get(ctx, g.ProviderName, metav1.GetOptions{})
+			if err != nil {
+				result.Observed, result.ObservationError = false, biz.ProviderUnavailable
+				return result, readFailure(err)
+			}
+		} else if err != nil {
+			failure := mutationFailure(err)
+			var provider *biz.ProviderError
+			if errors.As(failure, &provider) && provider.Kind == biz.ProviderReject {
+				result.State, result.Reason = "failed", string(biz.ProviderRejected)
+			}
+			return result, failure
 		}
 	} else if err != nil {
-		return r, readFailure(err)
+		result.ObservationError = biz.ProviderUnavailable
+		return result, readFailure(err)
 	}
-	if err = inspectSecurityGroupIdentity(o, g); err != nil {
-		return r, err
+	// A same-name replacement ends the original deletion, without touching it.
+	if deleting && g.ProviderUID != "" && string(object.GetUID()) != g.ProviderUID {
+		result.State, result.Reason, result.Complete, result.Observed = "deleted", "", true, true
+		return result, nil
 	}
-	r.ProviderUID = string(o.GetUID())
+	if err = inspectSecurityGroupIdentity(object, g); err != nil {
+		result.Observed = false
+		return result, err
+	}
+	result.Observed, result.ProviderUID = true, string(object.GetUID())
 	if deleting {
-		r.State = "deleting"
-		vnics, _, ve := unstructured.NestedStringSlice(o.Object, "status", "appliedVNics")
-		eips, _, ee := unstructured.NestedStringMap(o.Object, "status", "appliedEIPs")
-		if ve != nil || ee != nil {
-			return r, sgProviderConflict("malformed security group applied membership")
-		}
-		if len(vnics) > 0 || len(eips) > 0 {
-			return r, &biz.ProviderError{Kind: biz.ProviderInUse}
-		}
-		if o.GetDeletionTimestamp() == nil {
-			uid, rv := o.GetUID(), o.GetResourceVersion()
+		result.State = "deleting"
+		if object.GetDeletionTimestamp() == nil {
+			uid, rv := object.GetUID(), object.GetResourceVersion()
 			err = endpoint.Delete(ctx, g.ProviderName, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv}})
-			if err != nil && !apierrors.IsNotFound(err) {
-				return r, mutationFailure(err)
+			if apierrors.IsNotFound(err) {
+				result.State, result.Reason, result.Complete = "deleted", "", true
+			} else if err != nil {
+				return result, mutationFailure(err)
 			}
 		}
-		// Normal finalizers remain authoritative. Absence, rather than DELETE
-		// acceptance, completes the durable deletion operation.
-		_, err = endpoint.Get(ctx, g.ProviderName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			r.State, r.Complete = "deleted", true
-			return r, nil
-		}
-		if err != nil {
-			return r, readFailure(err)
-		}
-		return r, nil
+		return result, nil
 	}
-	if o.GetDeletionTimestamp() != nil {
-		return r, sgProviderConflict("security group is unexpectedly deleting")
-	}
+	result = securityGroupProjection(result, g.State, object)
 	desired := renderSecurityGroup(g)
-	if !securityGroupSpecEqual(o, desired) {
+	if securityGroupOperationActive(work) && object.GetDeletionTimestamp() == nil && !securityGroupSpecEqual(object, desired) {
 		spec, _, _ := unstructured.NestedMap(desired.Object, "spec")
 		patch, _ := json.Marshal([]map[string]any{
-			{"op": "test", "path": "/metadata/uid", "value": string(o.GetUID())},
-			{"op": "test", "path": "/metadata/resourceVersion", "value": o.GetResourceVersion()},
+			{"op": "test", "path": "/metadata/uid", "value": string(object.GetUID())},
+			{"op": "test", "path": "/metadata/resourceVersion", "value": object.GetResourceVersion()},
 			{"op": "add", "path": "/spec", "value": spec},
 		})
-		o, err = endpoint.Patch(ctx, g.ProviderName, types.JSONPatchType, patch, metav1.PatchOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
+		result.Complete = false
+		object, err = endpoint.Patch(ctx, g.ProviderName, types.JSONPatchType, patch, metav1.PatchOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
 		if err != nil {
-			return r, mutationFailure(err)
+			return result, mutationFailure(err)
 		}
-		if err = inspectSecurityGroupIdentity(o, g); err != nil {
-			return r, &biz.ProviderError{Kind: biz.ProviderUncertain, Cause: err}
+		if err = inspectSecurityGroupIdentity(object, g); err != nil {
+			return result, &biz.ProviderError{Kind: biz.ProviderUncertain, Cause: err}
 		}
+		result = securityGroupProjection(result, g.State, object)
 	}
-	if securityGroupReady(o) && securityGroupSpecEqual(o, desired) {
-		r.State, r.Complete = "available", true
+	if securityGroupOperationActive(work) && work.Operation.Kind == "update_security_group" {
+		// This only confirms Res's current submitted SG version. It does not
+		// change the resource projection from its primary Ready condition.
+		result.Complete = result.Complete && crInt(object, "status", "observedGeneration") == object.GetGeneration()
 	}
-	return r, nil
+	return result, nil
 }
 
-func (p *KCProvider) readMappedSecurityGroup(ctx context.Context, tenant, namespace, id string) (biz.SecurityGroup, *unstructured.Unstructured, error) {
-	row, err := p.repository.queries.GetSecurityGroupRow(ctx, db.GetSecurityGroupRowParams{TenantID: tenant, SecurityGroupID: id})
-	if err != nil {
-		return biz.SecurityGroup{}, nil, readFailure(err)
+// Only Res's persisted name mapping is needed to submit or display membership.
+func (p *KCProvider) securityGroupNames(ctx context.Context, binding biz.SecurityGroupBinding) ([]string, error) {
+	names := make([]string, 0, len(binding.SecurityGroupIDs))
+	for _, id := range binding.SecurityGroupIDs {
+		row, err := p.repository.queries.GetSecurityGroupRow(ctx, db.GetSecurityGroupRowParams{TenantID: binding.TenantID, SecurityGroupID: id})
+		if err != nil {
+			return nil, databaseFailure(err)
+		}
+		group, err := sgRead(row)
+		if err != nil {
+			return nil, err
+		}
+		if group.Namespace != binding.Namespace || group.ClusterID != p.repository.placement.ClusterID || group.ProviderName == "" {
+			return nil, sgProviderConflict("security group name mapping differs from target")
+		}
+		names = append(names, group.ProviderName)
 	}
-	g, err := sgRead(row)
-	if err != nil {
-		return g, nil, readFailure(err)
-	}
-	if g.Namespace != namespace || g.ProviderUID == "" {
-		return g, nil, sgProviderConflict("security group mapping differs from target namespace")
-	}
-	if err := p.verifyTenantNamespace(ctx, db.NetworkProviderBinding{TenantID: tenant, ClusterID: g.ClusterID, Namespace: namespace}); err != nil {
-		return g, nil, err
-	}
-	o, err := p.client.Resource(kcSecurityGroups).Namespace(namespace).Get(ctx, g.ProviderName, metav1.GetOptions{})
-	if err != nil {
-		return g, nil, readFailure(err)
-	}
-	return g, o, inspectSecurityGroupIdentity(o, g)
+	slices.Sort(names)
+	return names, nil
 }
 
-func (p *KCProvider) applyEIPSecurityGroups(ctx context.Context, binding biz.SecurityGroupBinding) (biz.SecurityGroupResult, error) {
-	r := biz.SecurityGroupResult{State: "applying"}
+func (p *KCProvider) securityGroupAppliedIDs(ctx context.Context, binding biz.SecurityGroupBinding, names []string) ([]string, error) {
+	ids, err := p.repository.queries.MapSecurityGroupProviderNames(ctx, db.MapSecurityGroupProviderNamesParams{
+		TenantID: binding.TenantID, ClusterID: p.repository.placement.ClusterID, Namespace: binding.Namespace, ProviderNames: names,
+	})
+	return ids, databaseFailure(err)
+}
+
+func (p *KCProvider) applyEIPSecurityGroups(ctx context.Context, work biz.SecurityGroupWork) (biz.SecurityGroupResult, error) {
+	binding := work.Binding
+	result := biz.SecurityGroupResult{State: binding.State, Reason: binding.Reason, AppliedIDs: slices.Clone(binding.AppliedSecurityGroupIDs)}
 	eip, err := p.repository.queries.GetEIPInternal(ctx, db.GetEIPInternalParams{TenantID: binding.TenantID, EipID: binding.TargetID})
 	if err != nil {
-		return r, readFailure(err)
+		result.OperationReason = biz.DependencyUnavailable
+		return result, databaseFailure(err)
 	}
 	b, err := p.repository.queries.GetBinding(ctx, db.GetBindingParams{TenantID: binding.TenantID, ResourceID: binding.TargetID})
 	if err != nil {
-		return r, readFailure(err)
+		result.OperationReason = biz.DependencyUnavailable
+		return result, databaseFailure(err)
 	}
-	if err := p.verifyTenantNamespace(ctx, b); err != nil {
-		return r, err
-	}
-
-	if b.ResourceKind != "eip" || b.TenantID != binding.TenantID || b.ClusterID != p.repository.placement.ClusterID || b.Namespace != binding.Namespace ||
-		b.Namespace != eip.Namespace || b.BindingID == "" || b.ProviderName == "" || eip.Scope != "public" || eip.ManagedBy != "tenant" {
-		return r, sgProviderConflict("EIP binding differs from persisted security group target")
+	if b.ResourceKind != "eip" || b.TenantID != binding.TenantID || b.ClusterID != p.repository.placement.ClusterID || b.Namespace != binding.Namespace || b.Namespace != eip.Namespace || b.BindingID == "" || b.ProviderName == "" || eip.Scope != "public" || eip.ManagedBy != "tenant" {
+		return result, sgProviderConflict("EIP binding differs from persisted target")
 	}
 	endpoint := p.client.Resource(kcEIPs).Namespace(b.Namespace)
-	o, err := endpoint.Get(ctx, b.ProviderName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) && (eip.State == "deleted" || eip.State == "deleting") {
-		clean, e := p.eipSecurityGroupMembershipsRemoved(ctx, binding.TenantID, binding.Namespace, b.ProviderName)
-		if e != nil {
-			return r, e
+	object, err := endpoint.Get(ctx, b.ProviderName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		if b.ProviderUid != "" || eip.State == "deleting" || eip.State == "deleted" {
+			return biz.SecurityGroupResult{State: "released", Complete: true, Observed: true, AppliedIDs: []string{}}, nil
 		}
-		if !clean {
-			r.Reason = "waiting_for_security_group_cleanup"
-			return r, nil
-		}
-		return biz.SecurityGroupResult{State: "released", Complete: true, AppliedIDs: []string{}}, nil
+		return biz.SecurityGroupResult{State: "configured", Reason: string(biz.ProviderMissing), OperationReason: biz.ProviderMissing, Observed: true, AppliedIDs: []string{}}, nil
+	}
+	if err == nil && b.ProviderUid != "" && string(object.GetUID()) != b.ProviderUid {
+		return biz.SecurityGroupResult{State: "released", Complete: true, Observed: true, AppliedIDs: []string{}}, nil
 	}
 	if err != nil {
-		return r, readFailure(err)
+		result.ObservationError = biz.ProviderUnavailable
+		return result, readFailure(err)
 	}
-	if b.ProviderUid == "" {
-		r.Reason = "waiting_for_eip_identity"
-		return r, nil
+	if err = inspectEgressIdentity(object, b, binding.TargetID, b.ProviderUid); err != nil {
+		return result, err
 	}
-	if err = inspectEgressIdentity(o, b, binding.TargetID, b.ProviderUid); err != nil {
-		return r, err
+	names, err := p.securityGroupNames(ctx, binding)
+	if err != nil {
+		result.OperationReason = biz.DependencyUnavailable
+		return result, err
 	}
-	if o.GetDeletionTimestamp() != nil || eip.State == "deleted" || eip.State == "deleting" {
-		r.Reason = "waiting_for_eip_deletion"
-		return r, nil
+	applied, found, err := unstructured.NestedStringSlice(object.Object, "status", "appliedSecurityGroups")
+	if err != nil {
+		result.ObservationError = biz.ProviderUnavailable
+		return result, readFailure(err)
 	}
-	groups := map[string]*unstructured.Unstructured{}
-	names := make([]string, 0, len(binding.SecurityGroupIDs))
-	allIDs := slices.Clone(binding.SecurityGroupIDs)
-	for _, id := range binding.AppliedSecurityGroupIDs {
-		if !slices.Contains(allIDs, id) {
-			allIDs = append(allIDs, id)
-		}
+	ids, err := p.securityGroupAppliedIDs(ctx, binding, applied)
+	if err != nil {
+		result.OperationReason = biz.DependencyUnavailable
+		return result, err
 	}
-	for _, id := range allIDs {
-		g, object, e := p.readMappedSecurityGroup(ctx, binding.TenantID, binding.Namespace, id)
-		if e != nil {
-			return r, e
-		}
-		groups[id] = object
-		if slices.Contains(binding.SecurityGroupIDs, id) {
-			if g.State != biz.Available || !securityGroupReady(object) || !securityGroupSpecEqual(object, renderSecurityGroup(g)) {
-				r.Reason = "waiting_for_security_group"
-				return r, nil
-			}
-			names = append(names, g.ProviderName)
-		}
+	result.Observed, result.AppliedIDs, result.State, result.Reason = true, ids, "configured", ""
+	if !found {
+		result.Reason = string(biz.ProviderStatusUnreported)
+	} else if sameStrings(applied, names) {
+		result.State, result.Complete = "applied", true
 	}
-	slices.Sort(names)
-	actual, found, readErr := unstructured.NestedStringSlice(o.Object, "spec", "securityGroups")
-	if readErr != nil {
-		return r, sgProviderConflict("invalid EIP securityGroups field")
-	}
-	if !sameStrings(actual, names) || !found && len(names) > 0 {
+	actual, _, _ := unstructured.NestedStringSlice(object.Object, "spec", "securityGroups")
+	if securityGroupOperationActive(work) && object.GetDeletionTimestamp() == nil && eip.State != "deleting" && eip.State != "deleted" && !sameStrings(actual, names) {
 		values := make([]any, 0, len(names))
 		for _, name := range names {
 			values = append(values, name)
 		}
 		patch, _ := json.Marshal([]map[string]any{
-			{"op": "test", "path": "/metadata/uid", "value": string(o.GetUID())},
-			{"op": "test", "path": "/metadata/resourceVersion", "value": o.GetResourceVersion()},
+			{"op": "test", "path": "/metadata/uid", "value": string(object.GetUID())},
+			{"op": "test", "path": "/metadata/resourceVersion", "value": object.GetResourceVersion()},
 			{"op": "add", "path": "/spec/securityGroups", "value": values},
 		})
-		o, err = endpoint.Patch(ctx, b.ProviderName, types.JSONPatchType, patch, metav1.PatchOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
+		_, err = endpoint.Patch(ctx, b.ProviderName, types.JSONPatchType, patch, metav1.PatchOptions{FieldManager: "ani-network-service", FieldValidation: "Strict"})
+		result.Complete = false
 		if err != nil {
-			return r, mutationFailure(err)
-		}
-		if err = inspectEgressIdentity(o, b, binding.TargetID, b.ProviderUid); err != nil {
-			return r, &biz.ProviderError{Kind: biz.ProviderUncertain, Cause: err}
-		}
-		// Membership read before a mutation cannot prove that mutation applied.
-		r.Reason = "waiting_for_security_group_application"
-		return r, nil
-	}
-	if len(names) > 0 && !eipReadyForSecurityGroups(o) {
-		r.State, r.Reason = "waiting_for_binding", "waiting_for_binding"
-		return r, nil
-	}
-	for id, group := range groups {
-		applied, _, e := unstructured.NestedStringMap(group.Object, "status", "appliedEIPs")
-		if e != nil {
-			return r, readFailure(e)
-		}
-		_, present := applied[b.ProviderName]
-		want := slices.Contains(binding.SecurityGroupIDs, id)
-		if !securityGroupReady(group) || (want && applied[b.ProviderName] == "") || (!want && present) {
-			r.Reason = "waiting_for_security_group_application"
-			return r, nil
+			return result, mutationFailure(err)
 		}
 	}
-	// An earlier accepted configuration may have reached KCN before its worker
-	// response was persisted. Check all our SGs so that replacing that intent
-	// cannot release references while an intermediate membership still exists.
-	list, err := p.client.Resource(kcSecurityGroups).Namespace(binding.Namespace).List(ctx, metav1.ListOptions{LabelSelector: ownerLabel + "=ani-network-service," + tenantLabel + "=" + binding.TenantID})
-	if err != nil {
-		return r, readFailure(err)
-	}
-	for _, group := range list.Items {
-		if slices.Contains(names, group.GetName()) {
-			continue
-		}
-		applied, _, e := unstructured.NestedStringMap(group.Object, "status", "appliedEIPs")
-		if e != nil {
-			return r, readFailure(e)
-		}
-		if _, present := applied[b.ProviderName]; present {
-			r.Reason = "waiting_for_security_group_application"
-			return r, nil
-		}
-	}
-	r.State, r.Complete, r.AppliedIDs = "applied", true, slices.Clone(binding.SecurityGroupIDs)
-	return r, nil
+	return result, nil
 }
 
-func eipReadyForSecurityGroups(o *unstructured.Unstructured) bool {
-	return goodConditions(o, "Valid", "Ready") && crString(o, "status", "phase") == "Bound" &&
-		crString(o, "status", "gateway") != "" && crString(o, "status", "boundResource", "vpc") != "" &&
-		crString(o, "status", "boundResource", "nodeName") != "" && !crBool(o, "status", "boundResource", "disabled")
-}
-
-func (p *KCProvider) eipSecurityGroupMembershipsRemoved(ctx context.Context, tenant, namespace, name string) (bool, error) {
-	groups, err := p.listScoped(ctx, kcSecurityGroups, namespace, ownerLabel+"=ani-network-service,"+tenantLabel+"="+tenant)
-	if err != nil {
-		return false, err
-	}
-	for _, group := range groups {
-		applied, _, e := unstructured.NestedStringMap(group.Object, "status", "appliedEIPs")
-		if e != nil {
-			return false, readFailure(e)
-		}
-		if _, present := applied[name]; present {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-// ObserveSecurityGroupConsumer proves application on the auto VNic belonging
-// to the selected Pod UID. A stopped workload has a configuration, but cannot
-// be reported as having a live data-plane application.
-func (p *KCProvider) ObserveSecurityGroupConsumer(ctx context.Context, binding biz.SecurityGroupBinding) (bool, error) {
-	if binding.TenantID == "" || binding.Namespace == "" || binding.TargetID == "" || (binding.TargetType != "container" && binding.TargetType != "vm") {
-		return false, sgProviderConflict("incomplete security group consumer identity")
-	}
-	names := make([]string, 0, len(binding.SecurityGroupIDs))
-	for _, id := range binding.SecurityGroupIDs {
-		g, _, err := p.readMappedSecurityGroup(ctx, binding.TenantID, binding.Namespace, id)
+func (p *KCProvider) observeTargetSecurityGroups(ctx context.Context, binding biz.SecurityGroupBinding) (biz.SecurityGroupResult, error) {
+	result := biz.SecurityGroupResult{State: binding.State, Reason: binding.Reason, AppliedIDs: slices.Clone(binding.AppliedSecurityGroupIDs)}
+	namespace, name, uid := binding.Namespace, "", ""
+	var manual db.NetworkProviderBinding
+	if binding.TargetType == "vnic" {
+		row, err := p.repository.queries.GetVNicRow(ctx, db.GetVNicRowParams{TenantID: binding.TenantID, VnicID: binding.TargetID})
 		if err != nil {
-			return false, err
+			result.OperationReason = biz.DependencyUnavailable
+			return result, databaseFailure(err)
 		}
-		names = append(names, g.ProviderName)
-	}
-	return p.observeSecurityGroupConsumerPods(ctx, binding, names)
-}
-
-func (p *KCProvider) observeSecurityGroupConsumerPods(ctx context.Context, binding biz.SecurityGroupBinding, names []string) (bool, error) {
-	objects, err := p.listScoped(ctx, pods, binding.Namespace, tenantLabel+"="+binding.TenantID+","+instanceLabel+"="+binding.TargetID)
-	if err != nil {
-		return false, err
-	}
-	vnicNames := []string{}
-	active := 0
-	for _, pod := range objects {
-		if binding.TargetType == "vm" && pod.GetLabels()["kubevirt.io"] == "hotplug-disk" {
-			continue
+		if row.State == "deleted" {
+			return biz.SecurityGroupResult{State: "released", Complete: true, AppliedIDs: []string{}}, nil
 		}
-		if pod.GetKind() != "Pod" || pod.GetAPIVersion() != "v1" || pod.GetNamespace() != binding.Namespace || pod.GetUID() == "" || pod.GetResourceVersion() == "" ||
-			pod.GetLabels()[tenantLabel] != binding.TenantID || pod.GetLabels()[instanceLabel] != binding.TargetID ||
-			(binding.TargetType == "vm" && pod.GetLabels()["kubevirt.io"] != "virt-launcher") {
-			return false, sgProviderConflict("consumer Pod differs from tenant and instance selection")
-		}
-		ref := pod.GetAnnotations()["networking.kubercloud.com/vnic"]
-		if pod.GetDeletionTimestamp() != nil {
-			if ref != "" {
-				name := strings.TrimPrefix(ref, binding.Namespace+"/")
-				if strings.Contains(name, "/") || name == "" {
-					return false, sgProviderConflict("retiring Pod VNic is in another namespace")
-				}
-				_, e := p.client.Resource(kcSecurityGroupVNics).Namespace(binding.Namespace).Get(ctx, name, metav1.GetOptions{})
-				if e == nil {
-					return false, &biz.ProviderError{Kind: biz.ProviderTemporary}
-				}
-				if !apierrors.IsNotFound(e) {
-					return false, readFailure(e)
-				}
-			}
-			continue
-		}
-		active++
-		if active > 1 {
-			return false, &biz.ProviderError{Kind: biz.ProviderTemporary}
-		}
-		annotation := pod.GetAnnotations()["networking.kubercloud.com/security_groups"]
-		declared := []string{}
-		if annotation != "" {
-			declared = strings.Split(annotation, ",")
-			for i := range declared {
-				declared[i] = strings.TrimSpace(declared[i])
-			}
-		}
-		if !sameStrings(declared, names) || ref == "" {
-			return false, &biz.ProviderError{Kind: biz.ProviderTemporary}
-		}
-		name := strings.TrimPrefix(ref, binding.Namespace+"/")
-		if name == "" || strings.Contains(name, "/") {
-			return false, sgProviderConflict("consumer VNic is in another namespace")
-		}
-		vnic, e := p.client.Resource(kcSecurityGroupVNics).Namespace(binding.Namespace).Get(ctx, name, metav1.GetOptions{})
-		if e != nil {
-			return false, readFailure(e)
-		}
-		owner, owned := ownerUID(*vnic, "Pod", map[string]bool{string(pod.GetUID()): true})
-		manual, e := p.manualVNicIdentity(ctx, binding.TenantID, binding.TargetID, binding.Namespace, "", *vnic, true)
-		if e != nil {
-			return false, e
-		}
-		if manual {
-			owner, owned = string(pod.GetUID()), true
-		}
-
-		if !owned || owner != string(pod.GetUID()) || vnic.GetAPIVersion() != "networking.kubercloud.com/v1" || vnic.GetKind() != "VNic" || vnic.GetNamespace() != binding.Namespace ||
-			vnic.GetName() != name || vnic.GetUID() == "" || vnic.GetResourceVersion() == "" {
-			return false, sgProviderConflict("VNic owner does not match the current Pod UID")
-		}
-		if vnic.GetDeletionTimestamp() != nil {
-			return false, &biz.ProviderError{Kind: biz.ProviderTemporary}
-		}
-		vnicNames = append(vnicNames, name)
-	}
-	if active == 0 {
-		relations, e := p.repository.queries.ListSecurityGroupConsumerRelations(ctx, db.ListSecurityGroupConsumerRelationsParams{TenantID: binding.TenantID, InstanceID: binding.TargetID})
-		if e != nil {
-			return false, readFailure(e)
-		}
-		if e = p.observeRetiredSecurityGroupVNics(ctx, binding, relations); e != nil {
-			return false, e
-		}
-		return false, nil
-	}
-	if err = p.ObserveConsumerSecurityGroups(ctx, binding.TenantID, binding.Namespace, binding.SecurityGroupIDs, vnicNames); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (p *KCProvider) observeRetiredSecurityGroupVNics(ctx context.Context, binding biz.SecurityGroupBinding, history [][]byte) error {
-	seen := map[string]bool{}
-	for _, encoded := range history {
-		var relations []attachmentRelation
-		if err := json.Unmarshal(encoded, &relations); err != nil {
-			return readFailure(err)
-		}
-		for _, relation := range relations {
-			if relation.Kind != "VNic" {
-				continue
-			}
-			if relation.Namespace != binding.Namespace || relation.Name == "" || relation.UID == "" {
-				return sgProviderConflict("historical consumer VNic has an invalid identity")
-			}
-			key := relation.Namespace + "/" + relation.Name + "/" + relation.UID
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			o, err := p.client.Resource(kcSecurityGroupVNics).Namespace(relation.Namespace).Get(ctx, relation.Name, metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			if err != nil {
-				return readFailure(err)
-			}
-			if o.GetAPIVersion() != "networking.kubercloud.com/v1" || o.GetKind() != "VNic" || o.GetNamespace() != relation.Namespace ||
-				o.GetName() != relation.Name || string(o.GetUID()) != relation.UID || o.GetResourceVersion() == "" {
-				return sgProviderConflict("historical consumer VNic was replaced")
-			}
-			manual, e := p.manualVNicIdentity(ctx, binding.TenantID, binding.TargetID, binding.Namespace, "", *o, false)
-			if e != nil {
-				return e
-			}
-			if manual {
-				continue
-			}
-			// A terminating object still owns its SG membership until KCN removes
-			// it. Never release the database reference merely because its Pod left.
-			return &biz.ProviderError{Kind: biz.ProviderTemporary}
-		}
-	}
-	return nil
-}
-
-// ObserveConsumerSecurityGroups receives VNic names whose attachment identity
-// has already been checked by the attachment adapter. It checks the declaration
-// and controller application separately, including stale membership on unbind.
-func (p *KCProvider) ObserveConsumerSecurityGroups(ctx context.Context, tenant, namespace string, ids, vnicNames []string) error {
-	if len(ids) > 0 && len(vnicNames) == 0 {
-		return &biz.ProviderError{Kind: biz.ProviderTemporary}
-	}
-	names := make([]string, 0, len(ids))
-	expected := map[string]biz.SecurityGroup{}
-	for _, id := range ids {
-		g, o, err := p.readMappedSecurityGroup(ctx, tenant, namespace, id)
+		manual, err = p.repository.queries.GetBinding(ctx, db.GetBindingParams{TenantID: binding.TenantID, ResourceID: binding.TargetID})
 		if err != nil {
-			return err
+			result.OperationReason = biz.DependencyUnavailable
+			return result, databaseFailure(err)
 		}
-		if g.State != biz.Available || !securityGroupReady(o) || !securityGroupSpecEqual(o, renderSecurityGroup(g)) {
-			return &biz.ProviderError{Kind: biz.ProviderTemporary}
+		if manual.ResourceKind != "vnic" || manual.ClusterID != p.repository.placement.ClusterID || manual.Namespace != binding.Namespace {
+			return result, sgProviderConflict("manual VNic mapping differs from target")
 		}
-		names = append(names, g.ProviderName)
-		expected[g.ProviderName] = g
-	}
-	localNames := make([]string, 0, len(vnicNames))
-	for _, ref := range vnicNames {
-		name := strings.TrimPrefix(ref, namespace+"/")
-		if name == "" || strings.Contains(name, "/") {
-			return sgProviderConflict("VNic namespace differs from consumer")
+		namespace, name, uid = manual.Namespace, manual.ProviderName, manual.ProviderUid
+	} else {
+		consumerType := "container_instance"
+		if binding.TargetType == "vm" {
+			consumerType = "virtual_machine"
 		}
-		o, err := p.client.Resource(kcSecurityGroupVNics).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		row, err := p.repository.queries.GetSecurityGroupConsumerAttachment(ctx, db.GetSecurityGroupConsumerAttachmentParams{
+			TenantID: binding.TenantID, ClusterID: p.repository.placement.ClusterID, Namespace: binding.Namespace,
+			InstanceID: binding.TargetID, ConsumerType: consumerType,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return biz.SecurityGroupResult{State: "configured", Complete: true, AppliedIDs: []string{}}, nil
+		}
 		if err != nil {
-			return readFailure(err)
+			result.OperationReason = biz.DependencyUnavailable
+			return result, databaseFailure(err)
 		}
-		actual, _, e := unstructured.NestedStringSlice(o.Object, "spec", "securityGroups")
-		if e != nil || o.GetDeletionTimestamp() != nil || !sameStrings(actual, names) {
-			return &biz.ProviderError{Kind: biz.ProviderTemporary}
-		}
-		localNames = append(localNames, name)
+		a := biz.Attachment{Namespace: row.Namespace, CurrentVNicName: row.CurrentVnicName}
+		namespace, name = currentVNicReference(a)
+		uid = row.CurrentVnicUid
 	}
-	list, err := p.client.Resource(kcSecurityGroups).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: ownerLabel + "=ani-network-service," + tenantLabel + "=" + tenant})
+	if name == "" {
+		return biz.SecurityGroupResult{State: "configured", Complete: true, AppliedIDs: []string{}}, nil
+	}
+	if namespace != binding.Namespace {
+		return result, sgProviderConflict("current VNic belongs to another namespace")
+	}
+	object, err := p.client.Resource(kcSecurityGroupVNics).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return biz.SecurityGroupResult{State: "configured", Reason: string(biz.ProviderMissing), Observed: true, AppliedIDs: []string{}}, nil
+	}
 	if err != nil {
-		return readFailure(err)
+		result.ObservationError = biz.ProviderUnavailable
+		return result, readFailure(err)
 	}
-	seen := map[string]bool{}
-	for _, group := range list.Items {
-		applied, _, e := unstructured.NestedStringSlice(group.Object, "status", "appliedVNics")
-		if e != nil {
-			return readFailure(e)
-		}
-		want := slices.Contains(names, group.GetName())
-		if want {
-			if err = inspectSecurityGroupIdentity(&group, expected[group.GetName()]); err != nil {
-				return err
-			}
-			seen[group.GetName()] = true
-		}
-		for _, name := range localNames {
-			if slices.Contains(applied, name) != want || want && !securityGroupReady(&group) {
-				return &biz.ProviderError{Kind: biz.ProviderTemporary}
-			}
+	if uid != "" && string(object.GetUID()) != uid {
+		return result, sgProviderConflict("current VNic UID differs from persisted target")
+	}
+	if binding.TargetType == "vnic" {
+		_, err = managedObjectExists(object, manual, biz.ProviderTarget{ResourceID: binding.TargetID, TenantID: binding.TenantID, KnownIdentity: uid}, "VNic")
+		if err != nil {
+			return result, err
 		}
 	}
-	for _, name := range names {
-		if !seen[name] {
-			return &biz.ProviderError{Kind: biz.ProviderTemporary}
-		}
+	names, err := p.securityGroupNames(ctx, binding)
+	if err != nil {
+		result.OperationReason = biz.DependencyUnavailable
+		return result, err
 	}
-	return nil
+	members, found, err := unstructured.NestedMap(object.Object, "status", "appliedSecurityGroups")
+	if err != nil {
+		result.ObservationError = biz.ProviderUnavailable
+		return result, readFailure(err)
+	}
+	applied := make([]string, 0, len(members))
+	for name := range members {
+		applied = append(applied, name)
+	}
+	ids, err := p.securityGroupAppliedIDs(ctx, binding, applied)
+	if err != nil {
+		result.OperationReason = biz.DependencyUnavailable
+		return result, err
+	}
+	result.Observed, result.AppliedIDs, result.State, result.Reason = true, ids, "configured", ""
+	if !found {
+		result.Reason = string(biz.ProviderStatusUnreported)
+	} else if sameStrings(applied, names) {
+		result.State, result.Complete = "applied", true
+	}
+	return result, nil
 }
 
 var _ biz.SecurityGroupProvider = (*KCProvider)(nil)

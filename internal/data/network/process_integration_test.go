@@ -142,7 +142,6 @@ func TestServiceProcessesRecoverT1AndProviderSuccessWithoutCaller(t *testing.T) 
 			}
 			api.mu.Lock()
 			creates := api.creates
-			saved, _ := json.Marshal(api.object)
 			api.mu.Unlock()
 			if creates != 1 {
 				t.Fatalf("provider success replay created %d objects", creates)
@@ -180,42 +179,12 @@ func TestServiceProcessesRecoverT1AndProviderSuccessWithoutCaller(t *testing.T) 
 			if deleted.LastOperationId != deleting.Vpc.LastOperationId {
 				t.Fatal("delete recovery changed operation identity")
 			}
-			if !exerciseDeleteRecovery {
-				deletionProcess.stop(t)
-				t.Logf("%s: VPC=%s create_op=%s create_count_before_crash=%d final_creates=%d delete_op=%s; three distinct service processes (including two concurrent replicas) recovered creation and completed normal deletion", fault, current.Id, accepted.Vpc.LastOperationId, createCountBefore, creates, deleting.Vpc.LastOperationId)
-				return
+			var parked bool
+			if err = fixture.Owner.QueryRow(context.Background(), `SELECT retired AND next_run_at='infinity'::timestamptz FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`, tenant, current.Id).Scan(&parked); err != nil || !parked {
+				t.Fatal("completed deletion did not retire its durable task", parked, err)
 			}
-			// A controlled stale/late same-UID object verifies retained tombstone
-			// handling. Real Kubernetes UID/visibility semantics remain unverified here.
-			deletionProcess.kill(t)
-			api.mu.Lock()
-			_ = json.Unmarshal(saved, &api.object)
-			api.mu.Unlock()
-			fourth := start()
-			tombstone, closeTombstone := fourth.client(t, tenant)
-			defer closeTombstone()
-			deadline := time.Now().Add(6 * time.Second)
-			cleaned := false
-			for time.Now().Before(deadline) {
-				api.mu.Lock()
-				cleaned = api.object == nil && api.deletes == 2
-				api.mu.Unlock()
-				if cleaned {
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			if !cleaned {
-				t.Fatal("tombstone did not clean late owned object without caller")
-			}
-			ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
-			historic, err := tombstone.GetOperation(ctx, &networkv1.GetOperationRequest{TenantId: tenant, OperationId: deleting.Vpc.LastOperationId})
-			cancel()
-			if err != nil || !historic.Operation.CompletedAt.AsTime().Equal(completed.Operation.CompletedAt.AsTime()) {
-				t.Fatalf("tombstone rewrote historic operation: %v %v", historic, err)
-			}
-			fourth.stop(t)
-			t.Logf("%s: VPC=%s create_op=%s create_count_before_crash=%d final_creates=%d delete_op=%s; five distinct service processes (including two concurrent replicas) used the same database and API state", fault, current.Id, accepted.Vpc.LastOperationId, createCountBefore, creates, deleting.Vpc.LastOperationId)
+			deletionProcess.stop(t)
+			t.Logf("%s: VPC=%s create_op=%s create_count_before_crash=%d final_creates=%d delete_op=%s; independent service processes recovered creation and deletion using the same durable identities", fault, current.Id, accepted.Vpc.LastOperationId, createCountBefore, creates, deleting.Vpc.LastOperationId)
 		})
 	}
 }
@@ -344,9 +313,8 @@ func startNetworkProcess(t *testing.T, root, binary, dsn, kubeconfig, signingKey
 			"ANI_NETWORK_TLS_KEY="+fixture.KeyFile)
 	}
 	if dependentResources {
-		// The Subnet adapter reads multiple dependent resource lists per deletion.
-		// This fixture budgets for client-go's default rate limiter without changing
-		// production QPS, bypassing checks, or removing dependency assertions.
+		// Multi-resource fixtures allow their own declaration requests a longer
+		// budget while preserving the production lease/request timing contract.
 		for i, entry := range command.Env {
 			if strings.HasPrefix(entry, "ANI_WORKER_LEASE=") {
 				command.Env[i] = "ANI_WORKER_LEASE=6s"

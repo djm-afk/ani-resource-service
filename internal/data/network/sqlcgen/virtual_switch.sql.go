@@ -82,7 +82,7 @@ func (q *Queries) BindVirtualSwitch(ctx context.Context, arg BindVirtualSwitchPa
 }
 
 const checkVirtualSwitchLease = `-- name: CheckVirtualSwitchLease :one
-SELECT resource_id, next_run_at, lease_owner, lease_until, lease_epoch FROM network_virtual_switch_reconciliations WHERE resource_id=$1
+SELECT resource_id, next_run_at, lease_owner, lease_until, lease_epoch, observation_error, requested_generation, processed_generation, retry_not_before FROM network_virtual_switch_reconciliations WHERE resource_id=$1
  AND lease_owner=$2::uuid AND lease_epoch=$3 AND lease_until>clock_timestamp() FOR UPDATE
 `
 
@@ -101,6 +101,10 @@ func (q *Queries) CheckVirtualSwitchLease(ctx context.Context, arg CheckVirtualS
 		&i.LeaseOwner,
 		&i.LeaseUntil,
 		&i.LeaseEpoch,
+		&i.ObservationError,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
 	)
 	return i, err
 }
@@ -208,31 +212,37 @@ func (q *Queries) DeleteVirtualSwitchMetadata(ctx context.Context, arg DeleteVir
 }
 
 const getVirtualSwitch = `-- name: GetVirtualSwitch :one
-SELECT resource_id, name, state, reason, version, created_at, updated_at, last_operation_id, cluster_id, binding_id, binding_version, binding_state, membership_fingerprint, nodes FROM network_virtual_switches WHERE resource_id=$1
+SELECT s.resource_id, s.name, s.state, s.reason, s.version, s.created_at, s.updated_at, s.last_operation_id, s.cluster_id, s.binding_id, s.binding_version, s.binding_state, s.membership_fingerprint, s.nodes,coalesce(r.observation_error,'')::text AS observation_error FROM network_virtual_switches s LEFT JOIN network_virtual_switch_reconciliations r USING(resource_id) WHERE s.resource_id=$1
 `
 
 type GetVirtualSwitchParams struct {
 	ResourceID string
 }
 
-func (q *Queries) GetVirtualSwitch(ctx context.Context, arg GetVirtualSwitchParams) (NetworkVirtualSwitch, error) {
+type GetVirtualSwitchRow struct {
+	NetworkVirtualSwitch NetworkVirtualSwitch
+	ObservationError     string
+}
+
+func (q *Queries) GetVirtualSwitch(ctx context.Context, arg GetVirtualSwitchParams) (GetVirtualSwitchRow, error) {
 	row := q.db.QueryRow(ctx, getVirtualSwitch, arg.ResourceID)
-	var i NetworkVirtualSwitch
+	var i GetVirtualSwitchRow
 	err := row.Scan(
-		&i.ResourceID,
-		&i.Name,
-		&i.State,
-		&i.Reason,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastOperationID,
-		&i.ClusterID,
-		&i.BindingID,
-		&i.BindingVersion,
-		&i.BindingState,
-		&i.MembershipFingerprint,
-		&i.Nodes,
+		&i.NetworkVirtualSwitch.ResourceID,
+		&i.NetworkVirtualSwitch.Name,
+		&i.NetworkVirtualSwitch.State,
+		&i.NetworkVirtualSwitch.Reason,
+		&i.NetworkVirtualSwitch.Version,
+		&i.NetworkVirtualSwitch.CreatedAt,
+		&i.NetworkVirtualSwitch.UpdatedAt,
+		&i.NetworkVirtualSwitch.LastOperationID,
+		&i.NetworkVirtualSwitch.ClusterID,
+		&i.NetworkVirtualSwitch.BindingID,
+		&i.NetworkVirtualSwitch.BindingVersion,
+		&i.NetworkVirtualSwitch.BindingState,
+		&i.NetworkVirtualSwitch.MembershipFingerprint,
+		&i.NetworkVirtualSwitch.Nodes,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -405,7 +415,7 @@ func (q *Queries) InsertVirtualSwitchReplay(ctx context.Context, arg InsertVirtu
 
 const leaseVirtualSwitch = `-- name: LeaseVirtualSwitch :one
 UPDATE network_virtual_switch_reconciliations SET lease_owner=$1::uuid,lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond',lease_epoch=lease_epoch+1
- WHERE resource_id=$3 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) RETURNING resource_id, next_run_at, lease_owner, lease_until, lease_epoch
+ WHERE resource_id=$3 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) RETURNING resource_id, next_run_at, lease_owner, lease_until, lease_epoch, observation_error, requested_generation, processed_generation, retry_not_before
 `
 
 type LeaseVirtualSwitchParams struct {
@@ -423,15 +433,19 @@ func (q *Queries) LeaseVirtualSwitch(ctx context.Context, arg LeaseVirtualSwitch
 		&i.LeaseOwner,
 		&i.LeaseUntil,
 		&i.LeaseEpoch,
+		&i.ObservationError,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
 	)
 	return i, err
 }
 
 const listVirtualSwitches = `-- name: ListVirtualSwitches :many
-SELECT resource_id, name, state, reason, version, created_at, updated_at, last_operation_id, cluster_id, binding_id, binding_version, binding_state, membership_fingerprint, nodes FROM network_virtual_switches WHERE
- ($1::text='' OR position(lower($1) in lower(name))>0)
- AND (($2::text='' AND state<>'deleted') OR state=$2)
- ORDER BY created_at DESC,resource_id DESC LIMIT $4::integer OFFSET $3::bigint
+SELECT s.resource_id, s.name, s.state, s.reason, s.version, s.created_at, s.updated_at, s.last_operation_id, s.cluster_id, s.binding_id, s.binding_version, s.binding_state, s.membership_fingerprint, s.nodes,coalesce(r.observation_error,'')::text AS observation_error FROM network_virtual_switches s LEFT JOIN network_virtual_switch_reconciliations r USING(resource_id) WHERE
+ ($1::text='' OR position(lower($1) in lower(s.name))>0)
+ AND (($2::text='' AND s.state<>'deleted') OR s.state=$2)
+ ORDER BY s.created_at DESC,s.resource_id DESC LIMIT $4::integer OFFSET $3::bigint
 `
 
 type ListVirtualSwitchesParams struct {
@@ -441,7 +455,12 @@ type ListVirtualSwitchesParams struct {
 	MaxResults  int32
 }
 
-func (q *Queries) ListVirtualSwitches(ctx context.Context, arg ListVirtualSwitchesParams) ([]NetworkVirtualSwitch, error) {
+type ListVirtualSwitchesRow struct {
+	NetworkVirtualSwitch NetworkVirtualSwitch
+	ObservationError     string
+}
+
+func (q *Queries) ListVirtualSwitches(ctx context.Context, arg ListVirtualSwitchesParams) ([]ListVirtualSwitchesRow, error) {
 	rows, err := q.db.Query(ctx, listVirtualSwitches,
 		arg.NameFilter,
 		arg.StateFilter,
@@ -452,24 +471,25 @@ func (q *Queries) ListVirtualSwitches(ctx context.Context, arg ListVirtualSwitch
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NetworkVirtualSwitch{}
+	items := []ListVirtualSwitchesRow{}
 	for rows.Next() {
-		var i NetworkVirtualSwitch
+		var i ListVirtualSwitchesRow
 		if err := rows.Scan(
-			&i.ResourceID,
-			&i.Name,
-			&i.State,
-			&i.Reason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.LastOperationID,
-			&i.ClusterID,
-			&i.BindingID,
-			&i.BindingVersion,
-			&i.BindingState,
-			&i.MembershipFingerprint,
-			&i.Nodes,
+			&i.NetworkVirtualSwitch.ResourceID,
+			&i.NetworkVirtualSwitch.Name,
+			&i.NetworkVirtualSwitch.State,
+			&i.NetworkVirtualSwitch.Reason,
+			&i.NetworkVirtualSwitch.Version,
+			&i.NetworkVirtualSwitch.CreatedAt,
+			&i.NetworkVirtualSwitch.UpdatedAt,
+			&i.NetworkVirtualSwitch.LastOperationID,
+			&i.NetworkVirtualSwitch.ClusterID,
+			&i.NetworkVirtualSwitch.BindingID,
+			&i.NetworkVirtualSwitch.BindingVersion,
+			&i.NetworkVirtualSwitch.BindingState,
+			&i.NetworkVirtualSwitch.MembershipFingerprint,
+			&i.NetworkVirtualSwitch.Nodes,
+			&i.ObservationError,
 		); err != nil {
 			return nil, err
 		}
@@ -526,20 +546,40 @@ func (q *Queries) LockVirtualSwitchKey(ctx context.Context, arg LockVirtualSwitc
 
 const releaseVirtualSwitchLease = `-- name: ReleaseVirtualSwitchLease :execrows
 UPDATE network_virtual_switch_reconciliations SET lease_owner=NULL,lease_until=NULL,
- next_run_at=clock_timestamp()+$1::bigint*interval '1 microsecond'
- WHERE resource_id=$2 AND lease_owner=$3::uuid AND lease_epoch=$4 AND lease_until>clock_timestamp()
+ processed_generation=greatest(processed_generation,$1::bigint),
+ observation_error=CASE WHEN $2::boolean THEN '' WHEN $3::text<>'' THEN $3::text ELSE observation_error END,
+ retry_not_before=CASE WHEN $4::boolean THEN $5::timestamptz+$6::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN $7::boolean THEN 'infinity'::timestamptz
+   WHEN $4::boolean THEN $5::timestamptz+$6::bigint*interval '1 microsecond'
+   WHEN requested_generation>$1::bigint THEN $5::timestamptz
+   WHEN $8::boolean THEN 'infinity'::timestamptz ELSE $5::timestamptz+$6::bigint*interval '1 microsecond' END
+ WHERE resource_id=$9 AND lease_owner=$10::uuid AND lease_epoch=$11 AND lease_until>clock_timestamp()
 `
 
 type ReleaseVirtualSwitchLeaseParams struct {
-	DelayMicros int64
-	ResourceID  string
-	Owner       string
-	Epoch       int64
+	ClaimedGeneration int64
+	Observed          bool
+	ObservationError  string
+	Backoff           bool
+	Now               time.Time
+	DelayMicros       int64
+	Terminal          bool
+	Park              bool
+	ResourceID        string
+	Owner             string
+	Epoch             int64
 }
 
 func (q *Queries) ReleaseVirtualSwitchLease(ctx context.Context, arg ReleaseVirtualSwitchLeaseParams) (int64, error) {
 	result, err := q.db.Exec(ctx, releaseVirtualSwitchLease,
+		arg.ClaimedGeneration,
+		arg.Observed,
+		arg.ObservationError,
+		arg.Backoff,
+		arg.Now,
 		arg.DelayMicros,
+		arg.Terminal,
+		arg.Park,
 		arg.ResourceID,
 		arg.Owner,
 		arg.Epoch,
@@ -577,7 +617,7 @@ func (q *Queries) SaveVirtualSwitchNodes(ctx context.Context, arg SaveVirtualSwi
 
 const scheduleVirtualSwitch = `-- name: ScheduleVirtualSwitch :exec
 INSERT INTO network_virtual_switch_reconciliations(resource_id,next_run_at) VALUES($1,clock_timestamp())
- ON CONFLICT(resource_id) DO UPDATE SET next_run_at=least(network_virtual_switch_reconciliations.next_run_at,EXCLUDED.next_run_at)
+ ON CONFLICT(resource_id) DO UPDATE SET requested_generation=network_virtual_switch_reconciliations.requested_generation+1,next_run_at=least(network_virtual_switch_reconciliations.next_run_at,EXCLUDED.next_run_at)
 `
 
 type ScheduleVirtualSwitchParams struct {

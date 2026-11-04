@@ -26,7 +26,9 @@ func (r *platformOperationRepositoryStub) GetPlatformOperation(_ context.Context
 	return r.operation, nil
 }
 
-type unusedOperationInfrastructure struct{ biz.EgressInfrastructure }
+type unusedOperationInfrastructure struct {
+	biz.IntranetPoolDefaultsInfrastructure
+}
 
 func TestGetPlatformOperationPreservesPlatformKinds(t *testing.T) {
 	for _, tc := range []struct {
@@ -47,7 +49,7 @@ func TestGetPlatformOperationPreservesPlatformKinds(t *testing.T) {
 				ID: "16aec409-b221-417f-b056-d505b679ae11", ResourceID: "pool_11111111111111111111111111111111",
 				Kind: tc.kind, State: biz.Succeeded, CreatedAt: now, UpdatedAt: now, CompletedAt: &now,
 			}}
-			egress, err := biz.NewEgress(repository, unusedOperationInfrastructure{}, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Minute, func() time.Time { return now })
+			egress, err := biz.NewEgress(repository, unusedOperationInfrastructure{}, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), func() time.Time { return now })
 			if err != nil {
 				t.Fatal(err)
 			}

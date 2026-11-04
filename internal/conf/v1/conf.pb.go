@@ -740,15 +740,20 @@ func (x *PlatformDefaultVPCEgress) GetUid() string {
 }
 
 type LoadBalancer struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	EnableIsolatedApi       bool                   `protobuf:"varint,1,opt,name=enable_isolated_api,json=enableIsolatedApi,proto3" json:"enable_isolated_api,omitempty"`
-	InstallationFingerprint string                 `protobuf:"bytes,2,opt,name=installation_fingerprint,json=installationFingerprint,proto3" json:"installation_fingerprint,omitempty"`
-	ControllerImageId       string                 `protobuf:"bytes,3,opt,name=controller_image_id,json=controllerImageId,proto3" json:"controller_image_id,omitempty"`
-	EnvoyImageId            string                 `protobuf:"bytes,4,opt,name=envoy_image_id,json=envoyImageId,proto3" json:"envoy_image_id,omitempty"`
-	ShutdownImageId         string                 `protobuf:"bytes,5,opt,name=shutdown_image_id,json=shutdownImageId,proto3" json:"shutdown_image_id,omitempty"`
-	KcImageId               string                 `protobuf:"bytes,6,opt,name=kc_image_id,json=kcImageId,proto3" json:"kc_image_id,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	EnableIsolatedApi bool                   `protobuf:"varint,1,opt,name=enable_isolated_api,json=enableIsolatedApi,proto3" json:"enable_isolated_api,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	InstallationFingerprint string `protobuf:"bytes,2,opt,name=installation_fingerprint,json=installationFingerprint,proto3" json:"installation_fingerprint,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	ControllerImageId string `protobuf:"bytes,3,opt,name=controller_image_id,json=controllerImageId,proto3" json:"controller_image_id,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	EnvoyImageId string `protobuf:"bytes,4,opt,name=envoy_image_id,json=envoyImageId,proto3" json:"envoy_image_id,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	ShutdownImageId string `protobuf:"bytes,5,opt,name=shutdown_image_id,json=shutdownImageId,proto3" json:"shutdown_image_id,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	KcImageId     string `protobuf:"bytes,6,opt,name=kc_image_id,json=kcImageId,proto3" json:"kc_image_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoadBalancer) Reset() {
@@ -788,6 +793,7 @@ func (x *LoadBalancer) GetEnableIsolatedApi() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *LoadBalancer) GetInstallationFingerprint() string {
 	if x != nil {
 		return x.InstallationFingerprint
@@ -795,6 +801,7 @@ func (x *LoadBalancer) GetInstallationFingerprint() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *LoadBalancer) GetControllerImageId() string {
 	if x != nil {
 		return x.ControllerImageId
@@ -802,6 +809,7 @@ func (x *LoadBalancer) GetControllerImageId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *LoadBalancer) GetEnvoyImageId() string {
 	if x != nil {
 		return x.EnvoyImageId
@@ -809,6 +817,7 @@ func (x *LoadBalancer) GetEnvoyImageId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *LoadBalancer) GetShutdownImageId() string {
 	if x != nil {
 		return x.ShutdownImageId
@@ -816,6 +825,7 @@ func (x *LoadBalancer) GetShutdownImageId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *LoadBalancer) GetKcImageId() string {
 	if x != nil {
 		return x.KcImageId
@@ -824,15 +834,20 @@ func (x *LoadBalancer) GetKcImageId() string {
 }
 
 type Observation struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	AuditInterval  *durationpb.Duration   `protobuf:"bytes,1,opt,name=audit_interval,json=auditInterval,proto3" json:"audit_interval,omitempty"`
-	AuditJitter    *durationpb.Duration   `protobuf:"bytes,2,opt,name=audit_jitter,json=auditJitter,proto3" json:"audit_jitter,omitempty"`
-	AuditTimeout   *durationpb.Duration   `protobuf:"bytes,3,opt,name=audit_timeout,json=auditTimeout,proto3" json:"audit_timeout,omitempty"`
-	FlushInterval  *durationpb.Duration   `protobuf:"bytes,4,opt,name=flush_interval,json=flushInterval,proto3" json:"flush_interval,omitempty"`
-	QueueCapacity  uint32                 `protobuf:"varint,5,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
-	WorkersPerKind uint32                 `protobuf:"varint,6,opt,name=workers_per_kind,json=workersPerKind,proto3" json:"workers_per_kind,omitempty"`
-	RequestQps     uint32                 `protobuf:"varint,7,opt,name=request_qps,json=requestQps,proto3" json:"request_qps,omitempty"`
-	RequestBurst   uint32                 `protobuf:"varint,8,opt,name=request_burst,json=requestBurst,proto3" json:"request_burst,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	AuditInterval *durationpb.Duration `protobuf:"bytes,1,opt,name=audit_interval,json=auditInterval,proto3" json:"audit_interval,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	AuditJitter *durationpb.Duration `protobuf:"bytes,2,opt,name=audit_jitter,json=auditJitter,proto3" json:"audit_jitter,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	AuditTimeout *durationpb.Duration `protobuf:"bytes,3,opt,name=audit_timeout,json=auditTimeout,proto3" json:"audit_timeout,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	FlushInterval *durationpb.Duration `protobuf:"bytes,4,opt,name=flush_interval,json=flushInterval,proto3" json:"flush_interval,omitempty"`
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	QueueCapacity  uint32 `protobuf:"varint,5,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
+	WorkersPerKind uint32 `protobuf:"varint,6,opt,name=workers_per_kind,json=workersPerKind,proto3" json:"workers_per_kind,omitempty"`
+	RequestQps     uint32 `protobuf:"varint,7,opt,name=request_qps,json=requestQps,proto3" json:"request_qps,omitempty"`
+	RequestBurst   uint32 `protobuf:"varint,8,opt,name=request_burst,json=requestBurst,proto3" json:"request_burst,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -867,6 +882,7 @@ func (*Observation) Descriptor() ([]byte, []int) {
 	return file_conf_v1_conf_proto_rawDescGZIP(), []int{8}
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *Observation) GetAuditInterval() *durationpb.Duration {
 	if x != nil {
 		return x.AuditInterval
@@ -874,6 +890,7 @@ func (x *Observation) GetAuditInterval() *durationpb.Duration {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *Observation) GetAuditJitter() *durationpb.Duration {
 	if x != nil {
 		return x.AuditJitter
@@ -881,6 +898,7 @@ func (x *Observation) GetAuditJitter() *durationpb.Duration {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *Observation) GetAuditTimeout() *durationpb.Duration {
 	if x != nil {
 		return x.AuditTimeout
@@ -888,6 +906,7 @@ func (x *Observation) GetAuditTimeout() *durationpb.Duration {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *Observation) GetFlushInterval() *durationpb.Duration {
 	if x != nil {
 		return x.FlushInterval
@@ -895,6 +914,7 @@ func (x *Observation) GetFlushInterval() *durationpb.Duration {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *Observation) GetQueueCapacity() uint32 {
 	if x != nil {
 		return x.QueueCapacity
@@ -928,12 +948,13 @@ type Worker struct {
 	Lease          *durationpb.Duration   `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
 	RequestTimeout *durationpb.Duration   `protobuf:"bytes,2,opt,name=request_timeout,json=requestTimeout,proto3" json:"request_timeout,omitempty"`
 	ObserveEvery   *durationpb.Duration   `protobuf:"bytes,3,opt,name=observe_every,json=observeEvery,proto3" json:"observe_every,omitempty"`
-	StaleAfter     *durationpb.Duration   `protobuf:"bytes,4,opt,name=stale_after,json=staleAfter,proto3" json:"stale_after,omitempty"`
-	RetryMin       *durationpb.Duration   `protobuf:"bytes,5,opt,name=retry_min,json=retryMin,proto3" json:"retry_min,omitempty"`
-	RetryMax       *durationpb.Duration   `protobuf:"bytes,6,opt,name=retry_max,json=retryMax,proto3" json:"retry_max,omitempty"`
-	PollInterval   *durationpb.Duration   `protobuf:"bytes,7,opt,name=poll_interval,json=pollInterval,proto3" json:"poll_interval,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Deprecated: Marked as deprecated in conf/v1/conf.proto.
+	StaleAfter    *durationpb.Duration `protobuf:"bytes,4,opt,name=stale_after,json=staleAfter,proto3" json:"stale_after,omitempty"`
+	RetryMin      *durationpb.Duration `protobuf:"bytes,5,opt,name=retry_min,json=retryMin,proto3" json:"retry_min,omitempty"`
+	RetryMax      *durationpb.Duration `protobuf:"bytes,6,opt,name=retry_max,json=retryMax,proto3" json:"retry_max,omitempty"`
+	PollInterval  *durationpb.Duration `protobuf:"bytes,7,opt,name=poll_interval,json=pollInterval,proto3" json:"poll_interval,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Worker) Reset() {
@@ -987,6 +1008,7 @@ func (x *Worker) GetObserveEvery() *durationpb.Duration {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in conf/v1/conf.proto.
 func (x *Worker) GetStaleAfter() *durationpb.Duration {
 	if x != nil {
 		return x.StaleAfter
@@ -1275,29 +1297,29 @@ const file_conf_v1_conf_proto_rawDesc = "" +
 	"clusterUid\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x10\n" +
-	"\x03uid\x18\x04 \x01(\tR\x03uid\"\x9b\x02\n" +
+	"\x03uid\x18\x04 \x01(\tR\x03uid\"\xaf\x02\n" +
 	"\fLoadBalancer\x12.\n" +
-	"\x13enable_isolated_api\x18\x01 \x01(\bR\x11enableIsolatedApi\x129\n" +
-	"\x18installation_fingerprint\x18\x02 \x01(\tR\x17installationFingerprint\x12.\n" +
-	"\x13controller_image_id\x18\x03 \x01(\tR\x11controllerImageId\x12$\n" +
-	"\x0eenvoy_image_id\x18\x04 \x01(\tR\fenvoyImageId\x12*\n" +
-	"\x11shutdown_image_id\x18\x05 \x01(\tR\x0fshutdownImageId\x12\x1e\n" +
-	"\vkc_image_id\x18\x06 \x01(\tR\tkcImageId\"\xa6\x03\n" +
-	"\vObservation\x12@\n" +
-	"\x0eaudit_interval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\rauditInterval\x12<\n" +
-	"\faudit_jitter\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\vauditJitter\x12>\n" +
-	"\raudit_timeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\fauditTimeout\x12@\n" +
-	"\x0eflush_interval\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\rflushInterval\x12%\n" +
-	"\x0equeue_capacity\x18\x05 \x01(\rR\rqueueCapacity\x12(\n" +
+	"\x13enable_isolated_api\x18\x01 \x01(\bR\x11enableIsolatedApi\x12=\n" +
+	"\x18installation_fingerprint\x18\x02 \x01(\tB\x02\x18\x01R\x17installationFingerprint\x122\n" +
+	"\x13controller_image_id\x18\x03 \x01(\tB\x02\x18\x01R\x11controllerImageId\x12(\n" +
+	"\x0eenvoy_image_id\x18\x04 \x01(\tB\x02\x18\x01R\fenvoyImageId\x12.\n" +
+	"\x11shutdown_image_id\x18\x05 \x01(\tB\x02\x18\x01R\x0fshutdownImageId\x12\"\n" +
+	"\vkc_image_id\x18\x06 \x01(\tB\x02\x18\x01R\tkcImageId\"\xba\x03\n" +
+	"\vObservation\x12D\n" +
+	"\x0eaudit_interval\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\x02\x18\x01R\rauditInterval\x12@\n" +
+	"\faudit_jitter\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\x02\x18\x01R\vauditJitter\x12B\n" +
+	"\raudit_timeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\x02\x18\x01R\fauditTimeout\x12D\n" +
+	"\x0eflush_interval\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\x02\x18\x01R\rflushInterval\x12)\n" +
+	"\x0equeue_capacity\x18\x05 \x01(\rB\x02\x18\x01R\rqueueCapacity\x12(\n" +
 	"\x10workers_per_kind\x18\x06 \x01(\rR\x0eworkersPerKind\x12\x1f\n" +
 	"\vrequest_qps\x18\a \x01(\rR\n" +
 	"requestQps\x12#\n" +
-	"\rrequest_burst\x18\b \x01(\rR\frequestBurst\"\xa9\x03\n" +
+	"\rrequest_burst\x18\b \x01(\rR\frequestBurst\"\xad\x03\n" +
 	"\x06Worker\x12/\n" +
 	"\x05lease\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\x05lease\x12B\n" +
 	"\x0frequest_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x0erequestTimeout\x12>\n" +
-	"\robserve_every\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\fobserveEvery\x12:\n" +
-	"\vstale_after\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\n" +
+	"\robserve_every\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\fobserveEvery\x12>\n" +
+	"\vstale_after\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\x02\x18\x01R\n" +
 	"staleAfter\x126\n" +
 	"\tretry_min\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\bretryMin\x126\n" +
 	"\tretry_max\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\bretryMax\x12>\n" +

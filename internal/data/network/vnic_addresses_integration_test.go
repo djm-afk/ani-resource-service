@@ -61,11 +61,11 @@ func TestManualVNicPGRequestedAddressesAndMACReservation(t *testing.T) {
 	}
 }
 
-func TestManualVNicPGObservedMACAlsoReserved(t *testing.T) {
+func TestManualVNicPGProviderAllocatedMACIsNotAUserReservation(t *testing.T) {
 	f := newAttachmentFixture(t)
 	v := manualVNic(t, f, "auto-mac")
 	_, err := f.n.CreateVNic(context.Background(), biz.CreateVNic{TenantID: v.TenantID, SubnetID: v.SubnetID, Name: "custom-mac", IdempotencyKey: "custom-mac", RequestedMAC: v.MACAddress})
-	if biz.ReasonOf(err) != biz.AddressConflict {
-		t.Fatal("automatic MAC of a manual product VNIC was not reserved", err)
+	if err != nil {
+		t.Fatal("provider allocated output became an input reservation", err)
 	}
 }

@@ -66,7 +66,7 @@ func (q *Queries) AssertDefaultEgressLease(ctx context.Context, arg AssertDefaul
 const beginDefaultEgressMutation = `-- name: BeginDefaultEgressMutation :execrows
 UPDATE network_default_vpc_egresses SET pending_action=$1,pending_unknown=true,pending_since=coalesce(pending_since,clock_timestamp())
 WHERE cluster_id=$2 AND resource_id=$3 AND version=$4 AND last_operation_id=$5 AND lease_owner=$6::uuid AND lease_epoch=$7 AND lease_until>clock_timestamp()
-AND (pending_action='' OR (pending_action=$1 AND pending_action IN('delete_snat','delete_eip')))
+AND (pending_action='' OR pending_action=$1)
 `
 
 type BeginDefaultEgressMutationParams struct {
@@ -96,7 +96,7 @@ func (q *Queries) BeginDefaultEgressMutation(ctx context.Context, arg BeginDefau
 }
 
 const claimDefaultEgressLease = `-- name: ClaimDefaultEgressLease :one
-UPDATE network_default_vpc_egresses SET lease_owner=$1::uuid,lease_until=clock_timestamp()+$2::bigint*interval '1 second',lease_epoch=lease_epoch+1 WHERE cluster_id=$3 AND resource_id=$4 RETURNING lease_epoch
+UPDATE network_default_vpc_egresses SET lease_owner=$1::uuid,lease_until=clock_timestamp()+$2::bigint*interval '1 second',lease_epoch=lease_epoch+1 WHERE cluster_id=$3 AND resource_id=$4 RETURNING lease_epoch,requested_generation
 `
 
 type ClaimDefaultEgressLeaseParams struct {
@@ -106,16 +106,21 @@ type ClaimDefaultEgressLeaseParams struct {
 	ResourceID   string
 }
 
-func (q *Queries) ClaimDefaultEgressLease(ctx context.Context, arg ClaimDefaultEgressLeaseParams) (int64, error) {
+type ClaimDefaultEgressLeaseRow struct {
+	LeaseEpoch          int64
+	RequestedGeneration int64
+}
+
+func (q *Queries) ClaimDefaultEgressLease(ctx context.Context, arg ClaimDefaultEgressLeaseParams) (ClaimDefaultEgressLeaseRow, error) {
 	row := q.db.QueryRow(ctx, claimDefaultEgressLease,
 		arg.Owner,
 		arg.LeaseSeconds,
 		arg.ClusterID,
 		arg.ResourceID,
 	)
-	var lease_epoch int64
-	err := row.Scan(&lease_epoch)
-	return lease_epoch, err
+	var i ClaimDefaultEgressLeaseRow
+	err := row.Scan(&i.LeaseEpoch, &i.RequestedGeneration)
+	return i, err
 }
 
 const countDefaultEgressPoolReferences = `-- name: CountDefaultEgressPoolReferences :one
@@ -136,7 +141,7 @@ func (q *Queries) CountDefaultEgressPoolReferences(ctx context.Context, arg Coun
 }
 
 const dueDefaultEgress = `-- name: DueDefaultEgress :one
-SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.pool_provider_uid, r.admission_hash, r.admitted_at, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.target_generation, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id,o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
+SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
 WHERE r.cluster_id=$1 AND r.retired_at IS NULL AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp()) ORDER BY r.next_run_at,r.resource_id FOR UPDATE OF r SKIP LOCKED LIMIT 1
 `
 
@@ -162,9 +167,6 @@ func (q *Queries) DueDefaultEgress(ctx context.Context, arg DueDefaultEgressPara
 		&i.NetworkDefaultVpcEgress.Name,
 		&i.NetworkDefaultVpcEgress.PoolID,
 		&i.NetworkDefaultVpcEgress.PoolRevision,
-		&i.NetworkDefaultVpcEgress.PoolProviderUid,
-		&i.NetworkDefaultVpcEgress.AdmissionHash,
-		&i.NetworkDefaultVpcEgress.AdmittedAt,
 		&i.NetworkDefaultVpcEgress.State,
 		&i.NetworkDefaultVpcEgress.Phase,
 		&i.NetworkDefaultVpcEgress.Reason,
@@ -178,7 +180,6 @@ func (q *Queries) DueDefaultEgress(ctx context.Context, arg DueDefaultEgressPara
 		&i.NetworkDefaultVpcEgress.SnatBindingID,
 		&i.NetworkDefaultVpcEgress.Address,
 		&i.NetworkDefaultVpcEgress.AppliedEnabled,
-		&i.NetworkDefaultVpcEgress.TargetGeneration,
 		&i.NetworkDefaultVpcEgress.PendingAction,
 		&i.NetworkDefaultVpcEgress.PendingUnknown,
 		&i.NetworkDefaultVpcEgress.PendingSince,
@@ -191,6 +192,10 @@ func (q *Queries) DueDefaultEgress(ctx context.Context, arg DueDefaultEgressPara
 		&i.NetworkDefaultVpcEgress.ObservedAt,
 		&i.NetworkDefaultVpcEgress.RetiredAt,
 		&i.NetworkDefaultVpcEgress.EipID,
+		&i.NetworkDefaultVpcEgress.ObservationError,
+		&i.NetworkDefaultVpcEgress.RequestedGeneration,
+		&i.NetworkDefaultVpcEgress.ProcessedGeneration,
+		&i.NetworkDefaultVpcEgress.RetryNotBefore,
 		&i.OperationState,
 	)
 	return i, err
@@ -200,38 +205,49 @@ const finishDefaultEgress = `-- name: FinishDefaultEgress :execrows
 UPDATE network_default_vpc_egresses SET state=$1,phase=$2,reason=$3,version=version+1,
  eip_provider_uid=CASE WHEN eip_provider_uid='' THEN $4 ELSE eip_provider_uid END,
  snat_provider_uid=CASE WHEN snat_provider_uid='' THEN $5 ELSE snat_provider_uid END,
- address=CASE WHEN $6::text<>'' THEN $6 ELSE address END,
- applied_enabled=$7::boolean,target_generation=greatest(target_generation,$8::bigint),
- observed_at=CASE WHEN $9::boolean THEN $10::timestamptz ELSE observed_at END,
- pending_action=CASE WHEN $11::boolean THEN '' ELSE pending_action END,
- pending_since=CASE WHEN $11::boolean THEN NULL ELSE pending_since END,
- pending_unknown=CASE WHEN $11::boolean THEN false ELSE $12::boolean END,
- lease_owner=NULL,lease_until=NULL,next_run_at=clock_timestamp()+$13::bigint*interval '1 millisecond',updated_at=clock_timestamp(),
+ address=CASE WHEN $6::boolean THEN $7::text ELSE address END,
+ applied_enabled=CASE WHEN $6::boolean THEN $8::boolean ELSE applied_enabled END,
+ observed_at=CASE WHEN $6::boolean THEN $9::timestamptz ELSE observed_at END,
+ pending_action=CASE WHEN $10::boolean THEN '' ELSE pending_action END,
+ pending_since=CASE WHEN $10::boolean THEN NULL ELSE pending_since END,
+ pending_unknown=CASE WHEN $10::boolean THEN false ELSE $11::boolean END,
+ lease_owner=NULL,lease_until=NULL,
+ processed_generation=greatest(processed_generation,$12::bigint),
+ observation_error=CASE WHEN $6::boolean THEN '' WHEN $13::text<>'' THEN $13::text ELSE observation_error END,
+ retry_not_before=CASE WHEN $14::boolean THEN $9::timestamptz+$15::bigint*interval '1 millisecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN $16::boolean THEN 'infinity'::timestamptz
+   WHEN $14::boolean THEN $9::timestamptz+$15::bigint*interval '1 millisecond'
+   WHEN requested_generation>$12::bigint THEN $9::timestamptz
+   WHEN $17::boolean THEN 'infinity'::timestamptz ELSE $9::timestamptz+$15::bigint*interval '1 millisecond' END,updated_at=$9::timestamptz,
  retired_at=CASE WHEN $1='deleted' THEN clock_timestamp() ELSE retired_at END
-WHERE cluster_id=$14 AND resource_id=$15 AND version=$16 AND last_operation_id=$17 AND lease_owner=$18::uuid AND lease_epoch=$19 AND lease_until>clock_timestamp()
+WHERE cluster_id=$18 AND resource_id=$19 AND version=$20 AND last_operation_id=$21 AND lease_owner=$22::uuid AND lease_epoch=$23 AND lease_until>clock_timestamp()
  AND (eip_provider_uid='' OR $4::text='' OR eip_provider_uid=$4) AND (snat_provider_uid='' OR $5::text='' OR snat_provider_uid=$5)
 `
 
 type FinishDefaultEgressParams struct {
-	State            string
-	Phase            string
-	Reason           string
-	EipUid           string
-	SnatUid          string
-	Address          string
-	AppliedEnabled   pgtype.Bool
-	TargetGeneration int64
-	Observed         bool
-	ObservedAt       *time.Time
-	ClearPending     bool
-	PendingUnknown   bool
-	DelayMs          int64
-	ClusterID        string
-	ResourceID       string
-	Version          int64
-	OperationID      string
-	Owner            string
-	Epoch            int64
+	State             string
+	Phase             string
+	Reason            string
+	EipUid            string
+	SnatUid           string
+	Observed          bool
+	Address           string
+	AppliedEnabled    pgtype.Bool
+	Now               time.Time
+	ClearPending      bool
+	PendingUnknown    bool
+	ClaimedGeneration int64
+	ObservationError  string
+	Backoff           bool
+	DelayMs           int64
+	Terminal          bool
+	Park              bool
+	ClusterID         string
+	ResourceID        string
+	Version           int64
+	OperationID       string
+	Owner             string
+	Epoch             int64
 }
 
 func (q *Queries) FinishDefaultEgress(ctx context.Context, arg FinishDefaultEgressParams) (int64, error) {
@@ -241,14 +257,18 @@ func (q *Queries) FinishDefaultEgress(ctx context.Context, arg FinishDefaultEgre
 		arg.Reason,
 		arg.EipUid,
 		arg.SnatUid,
+		arg.Observed,
 		arg.Address,
 		arg.AppliedEnabled,
-		arg.TargetGeneration,
-		arg.Observed,
-		arg.ObservedAt,
+		arg.Now,
 		arg.ClearPending,
 		arg.PendingUnknown,
+		arg.ClaimedGeneration,
+		arg.ObservationError,
+		arg.Backoff,
 		arg.DelayMs,
+		arg.Terminal,
+		arg.Park,
 		arg.ClusterID,
 		arg.ResourceID,
 		arg.Version,
@@ -284,7 +304,7 @@ func (q *Queries) FinishDefaultEgressOperation(ctx context.Context, arg FinishDe
 }
 
 const getCurrentDefaultEgress = `-- name: GetCurrentDefaultEgress :one
-SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.pool_provider_uid, r.admission_hash, r.admitted_at, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.target_generation, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id,o.state AS operation_state FROM network_default_vpc_egresses r
+SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,o.state AS operation_state FROM network_default_vpc_egresses r
 JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
 WHERE r.cluster_id=$1 AND r.default_vpc_namespace=$2 AND r.default_vpc_name=$3 AND r.retired_at IS NULL
 `
@@ -313,9 +333,6 @@ func (q *Queries) GetCurrentDefaultEgress(ctx context.Context, arg GetCurrentDef
 		&i.NetworkDefaultVpcEgress.Name,
 		&i.NetworkDefaultVpcEgress.PoolID,
 		&i.NetworkDefaultVpcEgress.PoolRevision,
-		&i.NetworkDefaultVpcEgress.PoolProviderUid,
-		&i.NetworkDefaultVpcEgress.AdmissionHash,
-		&i.NetworkDefaultVpcEgress.AdmittedAt,
 		&i.NetworkDefaultVpcEgress.State,
 		&i.NetworkDefaultVpcEgress.Phase,
 		&i.NetworkDefaultVpcEgress.Reason,
@@ -329,7 +346,6 @@ func (q *Queries) GetCurrentDefaultEgress(ctx context.Context, arg GetCurrentDef
 		&i.NetworkDefaultVpcEgress.SnatBindingID,
 		&i.NetworkDefaultVpcEgress.Address,
 		&i.NetworkDefaultVpcEgress.AppliedEnabled,
-		&i.NetworkDefaultVpcEgress.TargetGeneration,
 		&i.NetworkDefaultVpcEgress.PendingAction,
 		&i.NetworkDefaultVpcEgress.PendingUnknown,
 		&i.NetworkDefaultVpcEgress.PendingSince,
@@ -342,13 +358,17 @@ func (q *Queries) GetCurrentDefaultEgress(ctx context.Context, arg GetCurrentDef
 		&i.NetworkDefaultVpcEgress.ObservedAt,
 		&i.NetworkDefaultVpcEgress.RetiredAt,
 		&i.NetworkDefaultVpcEgress.EipID,
+		&i.NetworkDefaultVpcEgress.ObservationError,
+		&i.NetworkDefaultVpcEgress.RequestedGeneration,
+		&i.NetworkDefaultVpcEgress.ProcessedGeneration,
+		&i.NetworkDefaultVpcEgress.RetryNotBefore,
 		&i.OperationState,
 	)
 	return i, err
 }
 
 const getDefaultEgress = `-- name: GetDefaultEgress :one
-SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.pool_provider_uid, r.admission_hash, r.admitted_at, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.target_generation, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id,o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id WHERE r.cluster_id=$1 AND r.resource_id=$2
+SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id WHERE r.cluster_id=$1 AND r.resource_id=$2
 `
 
 type GetDefaultEgressParams struct {
@@ -374,9 +394,6 @@ func (q *Queries) GetDefaultEgress(ctx context.Context, arg GetDefaultEgressPara
 		&i.NetworkDefaultVpcEgress.Name,
 		&i.NetworkDefaultVpcEgress.PoolID,
 		&i.NetworkDefaultVpcEgress.PoolRevision,
-		&i.NetworkDefaultVpcEgress.PoolProviderUid,
-		&i.NetworkDefaultVpcEgress.AdmissionHash,
-		&i.NetworkDefaultVpcEgress.AdmittedAt,
 		&i.NetworkDefaultVpcEgress.State,
 		&i.NetworkDefaultVpcEgress.Phase,
 		&i.NetworkDefaultVpcEgress.Reason,
@@ -390,7 +407,6 @@ func (q *Queries) GetDefaultEgress(ctx context.Context, arg GetDefaultEgressPara
 		&i.NetworkDefaultVpcEgress.SnatBindingID,
 		&i.NetworkDefaultVpcEgress.Address,
 		&i.NetworkDefaultVpcEgress.AppliedEnabled,
-		&i.NetworkDefaultVpcEgress.TargetGeneration,
 		&i.NetworkDefaultVpcEgress.PendingAction,
 		&i.NetworkDefaultVpcEgress.PendingUnknown,
 		&i.NetworkDefaultVpcEgress.PendingSince,
@@ -403,6 +419,10 @@ func (q *Queries) GetDefaultEgress(ctx context.Context, arg GetDefaultEgressPara
 		&i.NetworkDefaultVpcEgress.ObservedAt,
 		&i.NetworkDefaultVpcEgress.RetiredAt,
 		&i.NetworkDefaultVpcEgress.EipID,
+		&i.NetworkDefaultVpcEgress.ObservationError,
+		&i.NetworkDefaultVpcEgress.RequestedGeneration,
+		&i.NetworkDefaultVpcEgress.ProcessedGeneration,
+		&i.NetworkDefaultVpcEgress.RetryNotBefore,
 		&i.OperationState,
 	)
 	return i, err
@@ -433,8 +453,8 @@ func (q *Queries) GetDefaultEgressReplay(ctx context.Context, arg GetDefaultEgre
 }
 
 const insertDefaultEgress = `-- name: InsertDefaultEgress :exec
-INSERT INTO network_default_vpc_egresses(resource_id,cluster_id,cluster_uid,default_vpc_namespace,default_vpc_name,default_vpc_uid,name,pool_id,pool_revision,pool_provider_uid,admission_hash,admitted_at,last_operation_id,eip_provider_name,eip_binding_id,snat_provider_name,snat_binding_id,next_run_at,created_at,updated_at,eip_id)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$12,$12,$12,$18)
+INSERT INTO network_default_vpc_egresses(resource_id,cluster_id,cluster_uid,default_vpc_namespace,default_vpc_name,default_vpc_uid,name,pool_id,pool_revision,last_operation_id,eip_provider_name,eip_binding_id,snat_provider_name,snat_binding_id,created_at,updated_at,eip_id)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16)
 `
 
 type InsertDefaultEgressParams struct {
@@ -447,14 +467,12 @@ type InsertDefaultEgressParams struct {
 	Name                string
 	PoolID              string
 	PoolRevision        int64
-	PoolProviderUid     string
-	AdmissionHash       string
-	AdmittedAt          time.Time
 	LastOperationID     string
 	EipProviderName     string
 	EipBindingID        string
 	SnatProviderName    string
 	SnatBindingID       string
+	CreatedAt           time.Time
 	EipID               string
 }
 
@@ -469,14 +487,12 @@ func (q *Queries) InsertDefaultEgress(ctx context.Context, arg InsertDefaultEgre
 		arg.Name,
 		arg.PoolID,
 		arg.PoolRevision,
-		arg.PoolProviderUid,
-		arg.AdmissionHash,
-		arg.AdmittedAt,
 		arg.LastOperationID,
 		arg.EipProviderName,
 		arg.EipBindingID,
 		arg.SnatProviderName,
 		arg.SnatBindingID,
+		arg.CreatedAt,
 		arg.EipID,
 	)
 	return err
@@ -558,7 +574,7 @@ func (q *Queries) InsertDefaultEgressReplay(ctx context.Context, arg InsertDefau
 }
 
 const lockDefaultEgress = `-- name: LockDefaultEgress :one
-SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.pool_provider_uid, r.admission_hash, r.admitted_at, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.target_generation, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id,o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id WHERE r.cluster_id=$1 AND r.resource_id=$2 FOR UPDATE OF r
+SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id WHERE r.cluster_id=$1 AND r.resource_id=$2 FOR UPDATE OF r
 `
 
 type LockDefaultEgressParams struct {
@@ -584,9 +600,6 @@ func (q *Queries) LockDefaultEgress(ctx context.Context, arg LockDefaultEgressPa
 		&i.NetworkDefaultVpcEgress.Name,
 		&i.NetworkDefaultVpcEgress.PoolID,
 		&i.NetworkDefaultVpcEgress.PoolRevision,
-		&i.NetworkDefaultVpcEgress.PoolProviderUid,
-		&i.NetworkDefaultVpcEgress.AdmissionHash,
-		&i.NetworkDefaultVpcEgress.AdmittedAt,
 		&i.NetworkDefaultVpcEgress.State,
 		&i.NetworkDefaultVpcEgress.Phase,
 		&i.NetworkDefaultVpcEgress.Reason,
@@ -600,7 +613,6 @@ func (q *Queries) LockDefaultEgress(ctx context.Context, arg LockDefaultEgressPa
 		&i.NetworkDefaultVpcEgress.SnatBindingID,
 		&i.NetworkDefaultVpcEgress.Address,
 		&i.NetworkDefaultVpcEgress.AppliedEnabled,
-		&i.NetworkDefaultVpcEgress.TargetGeneration,
 		&i.NetworkDefaultVpcEgress.PendingAction,
 		&i.NetworkDefaultVpcEgress.PendingUnknown,
 		&i.NetworkDefaultVpcEgress.PendingSince,
@@ -613,6 +625,10 @@ func (q *Queries) LockDefaultEgress(ctx context.Context, arg LockDefaultEgressPa
 		&i.NetworkDefaultVpcEgress.ObservedAt,
 		&i.NetworkDefaultVpcEgress.RetiredAt,
 		&i.NetworkDefaultVpcEgress.EipID,
+		&i.NetworkDefaultVpcEgress.ObservationError,
+		&i.NetworkDefaultVpcEgress.RequestedGeneration,
+		&i.NetworkDefaultVpcEgress.ProcessedGeneration,
+		&i.NetworkDefaultVpcEgress.RetryNotBefore,
 		&i.OperationState,
 	)
 	return i, err

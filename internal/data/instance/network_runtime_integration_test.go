@@ -24,6 +24,83 @@ func networkCreate() biz.Create {
 	c.Spec.Network = &biz.NetworkSelection{VPCID: "vpc_" + strings.Repeat("a", 32), SubnetID: "subnet_" + strings.Repeat("b", 32)}
 	return c
 }
+
+func TestInstanceCurrentSnapshotNotificationRetriesAndAcknowledgesOnlySentRevision(t *testing.T) {
+	f := database(t)
+	ctx := context.Background()
+	c := networkCreate()
+	if _, err := f.repo.AcceptCreate(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	work, err := f.repo.Claim(ctx, "notify-owner", time.Minute)
+	if err != nil || work == nil {
+		t.Fatal(err)
+	}
+	work.Instance.Network.AttachmentID = "att_" + strings.Repeat("a", 32)
+	failure := errors.New("Network notification unavailable")
+	f.repo.UseNetworkNotifier(func(context.Context, string, string) error { return failure })
+	if err = f.repo.Finish(ctx, *work, biz.Progress{Instance: work.Instance}); !errors.Is(err, failure) {
+		t.Fatal(err)
+	}
+	i, err := f.repo.Get(ctx, c.TenantID, c.ID)
+	if err != nil || i.Network.NotifiedSnapshotRevision != 0 || i.Network.AttachmentID == "" {
+		t.Fatal(i.Network, err)
+	}
+	var retry bool
+	if err = f.runtime.QueryRow(ctx, `SELECT due_at<=clock_timestamp()+interval '2 seconds' FROM instance.instance_work WHERE tenant_id=$1 AND instance_id=$2`, c.TenantID, c.ID).Scan(&retry); err != nil || !retry {
+		t.Fatal("stable owner lost notification retry", err)
+	}
+	// Simulate a newer committed management snapshot while revision 1 is sent.
+	f.repo.UseNetworkNotifier(func(call context.Context, tenant, attachment string) error {
+		if tenant != c.TenantID || attachment != i.Network.AttachmentID {
+			t.Fatal(tenant, attachment)
+		}
+		tx, e := f.runtime.Begin(call)
+		if e != nil {
+			return e
+		}
+		defer tx.Rollback(call)
+		if _, e = tx.Exec(call, `UPDATE instance.instances SET snapshot=jsonb_set(snapshot,'{Network,SnapshotRevision}','2'::jsonb) WHERE tenant_id=$1 AND instance_id=$2`, c.TenantID, c.ID); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(call, `UPDATE instance.network_submissions SET snapshot_revision=2,snapshot=jsonb_set(snapshot,'{SnapshotRevision}','2'::jsonb) WHERE tenant_id=$1 AND instance_id=$2`, c.TenantID, c.ID); e != nil {
+			return e
+		}
+		return tx.Commit(call)
+	})
+	wake := func() *biz.Work {
+		t.Helper()
+		if _, e := f.runtime.Exec(ctx, `UPDATE instance.instance_work SET due_at=clock_timestamp() WHERE tenant_id=$1 AND instance_id=$2`, c.TenantID, c.ID); e != nil {
+			t.Fatal(e)
+		}
+		w, e := f.repo.Claim(ctx, "notify-owner", time.Minute)
+		if e != nil || w == nil {
+			t.Fatal(e)
+		}
+		return w
+	}
+	work = wake()
+	if err = f.repo.Finish(ctx, *work, biz.Progress{Instance: work.Instance}); err != nil {
+		t.Fatal(err)
+	}
+	i, err = f.repo.Get(ctx, c.TenantID, c.ID)
+	if err != nil || i.Network.SnapshotRevision != 2 || i.Network.NotifiedSnapshotRevision != 0 {
+		t.Fatal("old delivery acknowledged newer snapshot", i.Network, err)
+	}
+	f.repo.UseNetworkNotifier(func(context.Context, string, string) error { return nil })
+	work = wake()
+	if err = f.repo.Finish(ctx, *work, biz.Progress{Instance: work.Instance}); err != nil {
+		t.Fatal(err)
+	}
+	i, err = f.repo.Get(ctx, c.TenantID, c.ID)
+	if err != nil || i.Network.NotifiedSnapshotRevision != 2 {
+		t.Fatal(i.Network, err)
+	}
+	var ack int64
+	if err = f.runtime.QueryRow(ctx, `SELECT (snapshot->>'NotifiedSnapshotRevision')::bigint FROM instance.network_submissions WHERE tenant_id=$1 AND instance_id=$2`, c.TenantID, c.ID).Scan(&ack); err != nil || ack != 2 {
+		t.Fatal("submission copy lost delivery ACK", ack, err)
+	}
+}
 func TestInstanceNetworkSubmissionAdmissionAndIntentAreAtomic(t *testing.T) {
 	f := database(t)
 	ctx := context.Background()
@@ -42,6 +119,14 @@ func TestInstanceNetworkSubmissionAdmissionAndIntentAreAtomic(t *testing.T) {
 	submission, key := i.Network.SubmissionID, i.Network.RequestKey
 	if _, err = f.repo.AcceptCreate(ctx, c); err != nil {
 		t.Fatal(err)
+	}
+	work, err := f.repo.Claim(ctx, "admission-owner", time.Minute)
+	if err != nil || work == nil || work.Operation == nil {
+		t.Fatal("claim create", err)
+	}
+	work.Operation.State = "succeeded"
+	if err := f.repo.Finish(ctx, *work, biz.Progress{Instance: work.Instance, Operation: work.Operation}); err != nil {
+		t.Fatal("finish create", err)
 	}
 	command(t, f, c, i, "stop")
 	i, err = f.repo.Get(ctx, c.TenantID, c.ID)
@@ -157,7 +242,7 @@ func TestInstanceNetworkSubmissionTrustedServiceAcceptsFrozenSelectionAfterWrite
 	f := database(t)
 	c := networkCreate()
 	s := c.Spec
-	intake, err := service.NewService(f.repo, computeResolver(t, f, s.ClusterID), frozenNetworkIntakeBoundary{}, frozenNetworkIntakeBoundary{}, service.Config{NamespacePrefix: "tenant-", ClusterID: s.ClusterID, ServiceAccount: s.ServiceAccount, StorageClass: s.StorageClass, WorkspaceSize: s.WorkspaceSize, Shell: s.Shell, UID: s.UID, GID: s.GID})
+	intake, err := service.NewService(f.repo, computeResolver(t, f, s.ClusterID), frozenNetworkIntakeBoundary{}, frozenNetworkIntakeBoundary{}, service.Config{NewIntentsEnabled: true, NamespacePrefix: "tenant-", ClusterID: s.ClusterID, ServiceAccount: s.ServiceAccount, StorageClass: s.StorageClass, WorkspaceSize: s.WorkspaceSize, Shell: s.Shell, UID: s.UID, GID: s.GID})
 	if err != nil {
 		t.Fatal(err)
 	}

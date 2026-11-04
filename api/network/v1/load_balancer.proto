@@ -137,6 +137,7 @@ message LoadBalancerBackendMember {
   string state = 7;
   string reason = 8;
   google.protobuf.Timestamp observed_at = 9;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 10;
 }
 // TCP/HTTP active health checks (UDP uses a TCP EnvoyPatchPolicy).
@@ -179,18 +180,19 @@ message LoadBalancer {
   // provider_target_version until that projection or its cleanup is verified.
   int64 applied_version = 20;
   LoadBalancerConfigurationState configuration_state = 21;
-  // unknown without a suitable fresh health source. Gateway/Route/Policy
+  // deprecated and always UNKNOWN. Gateway/Route/Policy
   // Accepted, Pod Running and operation success cannot imply healthy.
-  LoadBalancerDataPlaneState data_plane_state = 22;
+  LoadBalancerDataPlaneState data_plane_state = 22 [deprecated = true];
   google.protobuf.Timestamp observed_at = 23;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 24;
   google.protobuf.Timestamp created_at = 25;
   google.protobuf.Timestamp updated_at = 26;
   string last_operation_id = 27;
   string public_address = 28;
   // Timestamp of actual data-plane health evidence, independent of configured
-  // resources. Absent when unknown; stale evidence forces data_plane_state=unknown.
-  google.protobuf.Timestamp data_plane_observed_at = 29;
+  // resources. Deprecated: Res returns UNKNOWN and no data-plane timestamp.
+  google.protobuf.Timestamp data_plane_observed_at = 29 [deprecated = true];
   repeated LoadBalancerListener listeners = 30;
   // Read-only version of the latest configuration that changed the Provider
   // projection. Zero means no projection has ever been targeted.

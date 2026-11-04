@@ -4,12 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net/netip"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
@@ -18,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"strconv"
 )
 
 var lbGateways = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gateways"}
@@ -27,12 +22,7 @@ var lbTCPRoutes = schema.GroupVersionResource{Group: lbRoutes.Group, Version: "v
 var lbUDPRoutes = schema.GroupVersionResource{Group: lbRoutes.Group, Version: "v1alpha2", Resource: "udproutes"}
 var lbClientPolicies = schema.GroupVersionResource{Group: lbBackends.Group, Version: "v1alpha1", Resource: "clienttrafficpolicies"}
 var lbPatchPolicies = schema.GroupVersionResource{Group: lbBackends.Group, Version: "v1alpha1", Resource: "envoypatchpolicies"}
-var lbSecrets = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}
-var lbExtendedObservationGVRs = []schema.GroupVersionResource{lbTCPRoutes, lbUDPRoutes, lbClientPolicies, lbPatchPolicies}
 var lbPolicies = schema.GroupVersionResource{Group: "gateway.envoyproxy.io", Version: "v1alpha1", Resource: "backendtrafficpolicies"}
-var lbDeployments = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
-var lbReplicaSets = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}
-var lbEndpointSlices = schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}
 var lbGatewayClasses = schema.GroupVersionResource{Group: lbGateways.Group, Version: "v1", Resource: "gatewayclasses"}
 var lbEnvoyProxies = schema.GroupVersionResource{Group: lbBackends.Group, Version: "v1alpha1", Resource: "envoyproxies"}
 
@@ -89,12 +79,10 @@ func lbKind(kind string) string {
 type lbResolved struct {
 	work                      biz.Work
 	binding, vpc, subnet, eip sqlcgen.NetworkProviderBinding
-	objects                   map[schema.GroupVersionResource][]unstructured.Unstructured
-	dependencies              bool
 }
 
 func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, error) {
-	r := lbResolved{work: w, objects: map[schema.GroupVersionResource][]unstructured.Unstructured{}}
+	r := lbResolved{work: w}
 	if w.Resource.LoadBalancer == nil {
 		return r, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
@@ -111,7 +99,7 @@ func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, err
 		if err != nil {
 			return r, readFailure(err)
 		}
-		if out.ClusterID != r.binding.ClusterID || out.Namespace != r.binding.Namespace || out.ProviderUid == "" {
+		if out.ClusterID != r.binding.ClusterID || out.Namespace != r.binding.Namespace {
 			return r, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 	}
@@ -120,18 +108,10 @@ func (p *KCProvider) resolveLB(ctx context.Context, w biz.Work) (lbResolved, err
 		if err != nil {
 			return r, readFailure(err)
 		}
-		if r.eip.Namespace != r.binding.Namespace || r.eip.ClusterID != r.binding.ClusterID || r.eip.ProviderUid == "" {
+		if r.eip.Namespace != r.binding.Namespace || r.eip.ClusterID != r.binding.ClusterID {
 			return r, &biz.ProviderError{Kind: biz.ProviderConflict}
 		}
 	}
-	// Actual readiness is read from the original VPC/Subnet in this observation.
-	// The management record closes admission but its projection age is not a
-	// second runtime readiness authority.
-	parent, err := p.repository.readQueries(ctx).GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: w.Resource.TenantID, VpcID: w.Resource.VPCID})
-	if err != nil {
-		return r, readFailure(err)
-	}
-	r.dependencies = parent.NetworkVpc.State != "deleting" && parent.NetworkVpc.State != "deleted" && parent.NetworkVpc.State != "failed" && r.vpc.PendingAction == "" && r.subnet.PendingAction == ""
 	return r, nil
 }
 func lbComponentName(w biz.Work, kind string) string {
@@ -223,66 +203,89 @@ func lbDesiredObject(r lbResolved, c biz.LoadBalancerComponent, o biz.LoadBalanc
 	gvr := lbGVR(c.Kind)
 	return &unstructured.Unstructured{Object: map[string]any{"apiVersion": gvr.Group + "/" + gvr.Version, "kind": lbKind(c.Kind), "metadata": map[string]any{"name": c.Name, "namespace": r.binding.Namespace, "labels": map[string]any{ownerLabel: "ani-network-service", tenantLabel: r.work.Resource.TenantID, resourceLabel: r.work.Resource.ID, bindingLabel: c.ID}, "annotations": map[string]any{lbVersionAnnotation: strconv.FormatInt(version, 10)}}, "spec": spec}}
 }
-func lbConditions(raw []any, generation int64, kinds ...string) bool {
-	if generation <= 0 {
-		return false
-	}
-	good := map[string]bool{}
-	for _, item := range raw {
-		c, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		g, _, _ := unstructured.NestedInt64(c, "observedGeneration")
-		kind, _ := c["type"].(string)
-		good[kind] = c["status"] == "True" && g == generation
-	}
+func lbConditions(raw []any, generation int64, kinds ...string) (*bool, biz.Reason) {
+	var missing bool
 	for _, kind := range kinds {
-		if !good[kind] {
-			return false
-		}
-	}
-	return true
-}
-func lbObjectReady(obj *unstructured.Unstructured, c biz.LoadBalancerComponent, gateway, namespace string) bool {
-	if obj.GetDeletionTimestamp() != nil {
-		return false
-	}
-	// EnvoyProxy has no Accepted/parents status contract. Its fenced spec is
-	// checked by lbInspect; merged runtime output is checked by lbGenerated.
-	if c.Kind == "envoy_proxy" {
-		return true
-	}
-	if c.Kind == "gateway" || c.Kind == "backend" {
-		conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
-		if c.Kind == "backend" {
-			return lbConditions(conditions, obj.GetGeneration(), "Accepted")
-		}
-		listeners, _, _ := unstructured.NestedSlice(obj.Object, "status", "listeners")
-		wanted, _, _ := unstructured.NestedSlice(obj.Object, "spec", "listeners")
-		if len(listeners) != len(wanted) || len(wanted) == 0 {
-			return false
-		}
-		names := map[string]bool{}
-		for _, raw := range wanted {
-			l, _ := raw.(map[string]any)
-			name, _ := l["name"].(string)
-			names[name] = true
-		}
-		for _, raw := range listeners {
-			l, _ := raw.(map[string]any)
-			name, _ := l["name"].(string)
-			lc, _, _ := unstructured.NestedSlice(l, "conditions")
-			if !names[name] || !lbConditions(lc, obj.GetGeneration(), "Accepted", "Programmed", "ResolvedRefs") {
-				return false
+		var found bool
+		for _, item := range raw {
+			c, ok := item.(map[string]any)
+			if !ok || c["type"] != kind {
+				continue
 			}
-			delete(names, name)
+			found = true
+			reason, _ := c["reason"].(string)
+			// Gateway API publishes the generation acknowledged for this declaration.
+			// Missing generations remain consumable; an explicitly old result is pending.
+			if g, present, _ := unstructured.NestedInt64(c, "observedGeneration"); present && g < generation {
+				missing = true
+				break
+			}
+			switch c["status"] {
+			case "False":
+				value := false
+				return &value, biz.Reason(reason)
+			case "True":
+			default:
+				missing = true
+			}
+			break
 		}
-		return len(names) == 0 && lbConditions(conditions, obj.GetGeneration(), "Accepted", "Programmed")
+		if !found {
+			missing = true
+		}
 	}
-	if c.Kind == "patch_policy" {
-		conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	if missing {
+		return nil, ""
+	}
+	value := true
+	return &value, ""
+}
+func lbObjectReady(obj, desired *unstructured.Unstructured, c biz.LoadBalancerComponent, gateway, namespace string) (*bool, biz.Reason) {
+	if obj.GetDeletionTimestamp() != nil {
+		return nil, ""
+	}
+	if c.Kind == "envoy_proxy" {
+		value := true
+		return &value, ""
+	}
+	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	switch c.Kind {
+	case "backend":
+		return lbConditions(conditions, obj.GetGeneration(), "Accepted")
+	case "patch_policy":
 		return lbConditions(conditions, obj.GetGeneration(), "Accepted", "Programmed")
+	case "gateway":
+		ready, reason := lbConditions(conditions, obj.GetGeneration(), "Accepted", "Programmed")
+		if ready != nil && !*ready {
+			return ready, reason
+		}
+		missing := ready == nil
+		listeners, _, _ := unstructured.NestedSlice(obj.Object, "status", "listeners")
+		wanted, _, _ := unstructured.NestedSlice(desired.Object, "spec", "listeners")
+		for _, raw := range wanted {
+			want, _ := raw.(map[string]any)
+			found := false
+			for _, item := range listeners {
+				listener, _ := item.(map[string]any)
+				if listener["name"] != want["name"] {
+					continue
+				}
+				found = true
+				lc, _, _ := unstructured.NestedSlice(listener, "conditions")
+				state, why := lbConditions(lc, obj.GetGeneration(), "Accepted", "Programmed", "ResolvedRefs")
+				if state != nil && !*state {
+					return state, why
+				}
+				missing = missing || state == nil
+				break
+			}
+			missing = missing || !found
+		}
+		if missing {
+			return nil, ""
+		}
+		value := true
+		return &value, ""
 	}
 	field, refField := "parents", "parentRef"
 	if c.Kind == "policy" || c.Kind == "client_policy" {
@@ -299,7 +302,15 @@ func lbObjectReady(obj *unstructured.Unstructured, c biz.LoadBalancerComponent, 
 		if ns == "" {
 			ns = namespace
 		}
-		if ref["name"] != gateway || ns != namespace || ref["kind"] != "Gateway" || ref["group"] != lbGateways.Group {
+		kind, _ := ref["kind"].(string)
+		if kind == "" {
+			kind = "Gateway"
+		}
+		group, _ := ref["group"].(string)
+		if group == "" {
+			group = lbGateways.Group
+		}
+		if ref["name"] != gateway || ns != namespace || kind != "Gateway" || group != lbGateways.Group {
 			continue
 		}
 		if biz.LoadBalancerIsRoute(c.Kind) && c.ListenerName != "" && ref["sectionName"] != c.ListenerName {
@@ -311,199 +322,41 @@ func lbObjectReady(obj *unstructured.Unstructured, c biz.LoadBalancerComponent, 
 		}
 		return lbConditions(conditions, obj.GetGeneration(), "Accepted", "ResolvedRefs")
 	}
-	return false
+	return nil, ""
 }
 func lbInspect(obj, desired *unstructured.Unstructured, c biz.LoadBalancerComponent, r lbResolved) (biz.LoadBalancerComponentObservation, error) {
 	v := biz.LoadBalancerComponentObservation{ID: c.ID}
 	if obj == nil {
 		return v, nil
 	}
-	l := obj.GetLabels()
-	if obj.GetName() != c.Name || obj.GetNamespace() != r.binding.Namespace || obj.GetUID() == "" || obj.GetResourceVersion() == "" || obj.GetAPIVersion() != desired.GetAPIVersion() || obj.GetKind() != desired.GetKind() || l[ownerLabel] != "ani-network-service" || l[tenantLabel] != r.work.Resource.TenantID || l[resourceLabel] != r.work.Resource.ID || l[bindingLabel] != c.ID || (c.Identity != "" && c.Identity != string(obj.GetUID())) {
+	v.Exists, v.Identity, v.Deleting = true, string(obj.GetUID()), obj.GetDeletionTimestamp() != nil
+	labels := obj.GetLabels()
+	if desired == nil || obj.GetName() != c.Name || obj.GetNamespace() != r.binding.Namespace || obj.GetUID() == "" || obj.GetAPIVersion() != desired.GetAPIVersion() || obj.GetKind() != desired.GetKind() || labels[ownerLabel] != "ani-network-service" || labels[tenantLabel] != r.work.Resource.TenantID || labels[resourceLabel] != r.work.Resource.ID || labels[bindingLabel] != c.ID || (c.Identity != "" && c.Identity != v.Identity) {
+		v.Conflict = true
 		return v, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	if c.Kind == "gateway" {
-		actual, _, _ := unstructured.NestedMap(obj.Object, "spec")
-		expected, _, _ := unstructured.NestedMap(desired.Object, "spec")
-		delete(actual, "listeners")
-		delete(expected, "listeners")
-		if contentHash(actual) != contentHash(expected) {
-			return v, &biz.ProviderError{Kind: biz.ProviderConflict}
-		}
-	}
-	v.Exists, v.Identity, v.Deleting = true, string(obj.GetUID()), obj.GetDeletionTimestamp() != nil
-	actualSpec, desiredSpec := obj.Object["spec"], desired.Object["spec"]
-	if c.Kind == "envoy_proxy" {
-		actualSpec, desiredSpec = lbProxyComparableSpec(obj), lbProxyComparableSpec(desired)
-	}
-	v.Matches = contentHash(actualSpec) == contentHash(desiredSpec) && obj.GetAnnotations()[lbVersionAnnotation] == desired.GetAnnotations()[lbVersionAnnotation]
-	v.Ready = v.Matches && lbObjectReady(obj, c, r.binding.ProviderName, r.binding.Namespace)
+	v.Matches = lbManagedSpecMatches(obj.Object["spec"], desired.Object["spec"], c.Kind) && obj.GetAnnotations()[lbVersionAnnotation] == desired.GetAnnotations()[lbVersionAnnotation]
+	v.Ready, v.StatusReason = lbObjectReady(obj, desired, c, r.binding.ProviderName, r.binding.Namespace)
 	return v, nil
 }
 
-// The v1.8.3 CRD materializes these defaults even on dedicated Proxies that
-// intentionally inherit all other fields. Normalize only those exact defaults;
-// extra images, patches, telemetry or other overrides still fail spec matching.
-func lbProxyComparableSpec(obj *unstructured.Unstructured) map[string]any {
-	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
-	logging, found, _ := unstructured.NestedMap(spec, "logging")
-	if found && contentHash(logging) == contentHash(map[string]any{"level": map[string]any{"default": "warn"}}) {
-		delete(spec, "logging")
-	}
-	if policy, _, _ := unstructured.NestedString(spec, "provider", "kubernetes", "envoyService", "externalTrafficPolicy"); policy == "Local" {
-		unstructured.RemoveNestedField(spec, "provider", "kubernetes", "envoyService", "externalTrafficPolicy")
-	}
-	return spec
-}
-
-var errLBAuditInvalid = errors.New("LB audit needs a fresh collection")
-
-func loadBalancerCriticalObservation(w biz.Work) bool {
-	if w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleting {
-		return true
-	}
-	if w.Resource.LoadBalancer != nil {
-		for _, component := range w.Resource.LoadBalancer.Components {
-			if component.PendingAction != "" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (p *KCProvider) ObserveLoadBalancer(ctx context.Context, w biz.Work) (biz.LoadBalancerObservation, error) {
-	refresh := false
-	critical := loadBalancerCriticalObservation(w)
-	for {
-		if err := ctx.Err(); err != nil {
-			return biz.LoadBalancerObservation{}, readFailure(err)
-		}
-		o, err := p.observeLoadBalancerOnce(ctx, w, refresh)
-		if err != errLBAuditInvalid {
-			if ctx.Err() != nil {
-				return biz.LoadBalancerObservation{}, readFailure(ctx.Err())
-			}
-			return o, err
-		}
-		if !critical {
-			return biz.LoadBalancerObservation{}, readFailure(err)
-		}
-		// A relist invalidates the audit, not the Provider facts. Each
-		// retry collects after a new database boundary within the original
-		// deadline. Actual read errors and identity conflicts are not retried.
-		// Unbounded callers retain only one fresh-collection fallback.
-		if refresh {
-			if _, bounded := ctx.Deadline(); !bounded {
-				return biz.LoadBalancerObservation{}, readFailure(err)
-			}
-		}
-		refresh = true
-	}
-}
-
-func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, refresh bool) (biz.LoadBalancerObservation, error) {
 	o := biz.LoadBalancerObservation{}
 	r, err := p.resolveLB(ctx, w)
 	if err != nil {
 		return o, err
 	}
-	now, err := p.repository.readQueries(ctx).DatabaseTime(ctx)
-	if err != nil {
-		return o, readFailure(err)
-	}
-	resources := []schema.GroupVersionResource{kcVPCs, kcSubnets, pods, observationGVRs[3], observationGVRs[4], kcEIPs, kcSnats, kcNats, kcServices, lbGateways, lbBackends, lbRoutes, lbPolicies, lbDeployments, lbReplicaSets, lbEndpointSlices}
-	for _, c := range w.Resource.LoadBalancer.Components {
-		gvr := lbGVR(c.Kind)
-		known := false
-		for _, existing := range resources {
-			known = known || existing == gvr
-		}
-		if !known {
-			resources = append(resources, gvr)
-		}
-	}
-	for _, listener := range biz.ProjectLoadBalancerListeners(biz.EffectiveLoadBalancerListeners(w.Resource.LoadBalancer.LoadBalancer)) {
-		if w.Resource.State != biz.Deleting && w.Resource.State != biz.Deleted && listener.Parameters.Certificate != nil {
-			if err := p.validateLBCertificate(ctx, r, listener); err != nil {
-				return o, err
-			}
-		}
-	}
-	var view *auditView
-	keys := []string{"load-balancer:" + r.binding.Namespace + "/" + w.Resource.ID, "uid:" + r.binding.ProviderUid, "lb-source"}
-	if p.observation != nil && p.loadBalancerInstallation != nil {
-		after := time.Time{}
-		if refresh || loadBalancerCriticalObservation(w) {
-			after = now
-		}
-		if after.IsZero() {
-			view, err = p.observation.cachedSnapshot(now)
-		} else {
-			view, err = p.observation.snapshot(ctx, after)
-		}
-		if err != nil {
-			return o, readFailure(err)
-		}
-		for key, targets := range view.targets {
-			for _, target := range targets {
-				if target.tenant == w.Resource.TenantID && target.id == w.Resource.ID && target.kind == "load_balancer" {
-					keys = append(keys, key)
-					break
-				}
-			}
-		}
-	}
-	for _, gvr := range resources {
-		if view != nil {
-			index := view.indices[gvr]
-			if index == nil {
-				return o, readFailure(fmt.Errorf("LB audit source unavailable"))
-			}
-			for _, item := range index.List() {
-				r.objects[gvr] = append(r.objects[gvr], *item.(*unstructured.Unstructured))
-			}
-		} else {
-			items, err := p.listAll(ctx, gvr)
-			if err != nil {
-				return o, readFailure(err)
-			}
-			r.objects[gvr] = items
-		}
-	}
-	o.Proof = biz.ObservationProof{CollectedAt: now, Hash: contentHash(candidatesForHash(r.objects)), CoveredGeneration: w.Requirement.RequestedGeneration}
-	if view != nil {
-		o.Proof.CollectedAt = view.collected
-		o.Proof.CoveredGeneration = view.generations[observationTarget{w.Resource.TenantID, w.Resource.ID, "load_balancer"}.key()]
-		if !refresh && !loadBalancerCriticalObservation(w) && p.observation.valid(view, keys) {
-			// A management hint does not invalidate unchanged Provider facts.
-			// Keep the source timestamp and the object/source continuity fence.
-			o.Proof.CoveredGeneration = w.Requirement.RequestedGeneration
-		}
-		if !o.Proof.Covers(w.Requirement) || !p.observation.valid(view, keys) {
-			return biz.LoadBalancerObservation{}, errLBAuditInvalid
-		}
-	}
-	o.DependenciesReady = r.dependencies
-	for _, parent := range []sqlcgen.NetworkProviderBinding{r.vpc, r.subnet} {
-		obj := lbFind(r.objects[kcResource(parent)], parent.Namespace, parent.ProviderName)
-		if obj == nil || string(obj.GetUID()) != parent.ProviderUid || !goodConditions(obj, "Valid", "Initialized", "Ready") || crInt(obj, "status", "observedGeneration") != obj.GetGeneration() {
-			o.DependenciesReady = false
-		}
-	}
 	for _, m := range w.Resource.LoadBalancer.Members {
 		desired := false
 		for _, b := range w.Resource.LoadBalancer.LoadBalancer.Backends {
-			if b.ID == m.ID {
-				desired = true
-			}
+			desired = desired || b.ID == m.ID
 		}
 		if !desired {
 			continue
 		}
-		eligible, identityErr := p.lbMemberIdentity(ctx, r, m)
-		if identityErr != nil {
-			return biz.LoadBalancerObservation{}, identityErr
+		eligible, err := p.lbMemberIdentity(ctx, r, m)
+		if err != nil {
+			return biz.LoadBalancerObservation{}, err
 		}
 		reason := biz.Reason("")
 		if !eligible {
@@ -512,107 +365,39 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 		o.Members = append(o.Members, biz.LoadBalancerMemberObservation{ID: m.ID, Eligible: eligible, Reason: reason})
 	}
 	for _, c := range w.Resource.LoadBalancer.Components {
-		obj := lbFind(r.objects[lbGVR(c.Kind)], r.binding.Namespace, c.Name)
+		obj, err := p.client.Resource(lbGVR(c.Kind)).Namespace(r.binding.Namespace).Get(ctx, c.Name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			obj, err = nil, nil
+		}
+		if err != nil {
+			return biz.LoadBalancerObservation{}, readFailure(err)
+		}
 		v, err := lbInspect(obj, lbDesiredObject(r, c, o), c, r)
 		if err != nil {
-			// Preserve the other observations so the domain worker can first
-			// withdraw an invalid backend from an independently owned Route.
-			v = biz.LoadBalancerComponentObservation{ID: c.ID, Identity: c.Identity, Conflict: true}
+			v.Conflict = true
 		}
 		o.Components = append(o.Components, v)
 	}
-	if err = p.lbGenerated(ctx, r, &o); err != nil {
-		if providerErr, ok := err.(*biz.ProviderError); ok && providerErr.Kind == biz.ProviderConflict {
-			o.GeneratedConflict = true
-			o.DependenciesReady, o.GeneratedReady, o.GeneratedReleased, o.AddressReleased = false, false, false, false
-		} else {
-			return o, err
-		}
-	}
-	if view != nil && !p.observation.valid(view, keys) {
-		return biz.LoadBalancerObservation{}, errLBAuditInvalid
-	}
 	return o, nil
 }
-func lbFind(items []unstructured.Unstructured, namespace, name string) *unstructured.Unstructured {
-	for i := range items {
-		if items[i].GetNamespace() == namespace && items[i].GetName() == name {
-			return &items[i]
-		}
-	}
-	return nil
-}
-func lbOwnedBy(o *unstructured.Unstructured, kind, name, uid string) bool {
-	if o == nil || uid == "" {
-		return false
-	}
-	for _, ref := range o.GetOwnerReferences() {
-		if ref.Kind == kind && ref.Name == name && string(ref.UID) == uid && ref.APIVersion == lbOwnerAPIVersion(kind) {
-			return true
-		}
-	}
-	return false
-}
-func lbOwnerAPIVersion(kind string) string {
-	switch kind {
-	case "Gateway":
-		return "gateway.networking.k8s.io/v1"
-	case "Pod", "Service":
-		return "v1"
-	case "Deployment", "ReplicaSet":
-		return "apps/v1"
-	case "VNic":
-		return "networking.kubercloud.com/v1"
-	}
-	return ""
-}
+
 func (p *KCProvider) lbMemberIdentity(ctx context.Context, r lbResolved, m biz.LoadBalancerMemberIdentity) (bool, error) {
 	a, err := p.repository.readQueries(ctx).GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: r.work.Resource.TenantID, AttachmentID: m.AttachmentID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
+		return false, readFailure(err)
+	}
+	if a.State != "attached" || a.PodUid != m.PodUID || a.SubnetID != m.SubnetID || a.VpcID != r.work.Resource.VPCID || a.Namespace != r.binding.Namespace || a.ClusterID != r.binding.ClusterID {
+		return false, nil
+	}
+	for _, address := range a.CurrentIps {
+		if address == m.Address {
+			return true, nil
 		}
-		return false, readFailure(err)
 	}
-	// Attachment observation can advance while this LB waits for its audit.
-	// Read database time after the row, rather than treating a renewal after
-	// work claim as a future timestamp. Stale and truly future facts still fail.
-	now, err := p.repository.readQueries(ctx).DatabaseTime(ctx)
-	if err != nil {
-		return false, readFailure(err)
-	}
-	if a.State != "attached" || a.ProtocolBlocked || (a.Reason != "" && a.Reason != string(biz.ProviderUnavailable)) || a.PodUid != m.PodUID || a.SubnetID != m.SubnetID || a.VpcID != r.work.Resource.VPCID || a.Namespace != r.binding.Namespace || a.ClusterID != r.binding.ClusterID {
-		return false, nil
-	}
-	parent, err := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: a.TenantID, ResourceID: m.SubnetID})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return false, readFailure(err)
-	}
-	if err != nil || parent.ClusterID != r.binding.ClusterID || parent.Namespace != r.binding.Namespace || parent.ProviderUid == "" {
-		return false, nil
-	}
-	subnet := lbFind(r.objects[kcSubnets], a.Namespace, parent.ProviderName)
-	if subnet == nil || string(subnet.GetUID()) != parent.ProviderUid || subnet.GetDeletionTimestamp() != nil {
-		return false, nil
-	}
-	ref := parent.Namespace + "/" + parent.ProviderName
-	pod := lbFind(r.objects[pods], a.Namespace, m.PodName)
-	nic := lbFind(r.objects[observationGVRs[3]], a.Namespace, m.VNicName)
-	ip := lbFind(r.objects[observationGVRs[4]], a.Namespace, m.VNicIPName)
-	if pod == nil || nic == nil || ip == nil || string(pod.GetUID()) != m.PodUID || string(nic.GetUID()) != m.VNicUID || string(ip.GetUID()) != m.VNicIPUID || pod.GetDeletionTimestamp() != nil || nic.GetDeletionTimestamp() != nil || ip.GetDeletionTimestamp() != nil {
-		return false, nil
-	}
-	matches := pod.GetLabels()[attachmentLabel] == a.AttachmentID && crString(pod, "status", "podIP") == m.Address && lbOwnedBy(nic, "Pod", m.PodName, m.PodUID) && lbOwnedBy(ip, "VNic", m.VNicName, m.VNicUID) && kcRef(crString(nic, "spec", "subnet"), a.Namespace) == ref && kcRef(crString(ip, "spec", "subnet"), a.Namespace) == ref && kcRef(crString(ip, "spec", "vNic"), a.Namespace) == a.Namespace+"/"+m.VNicName && kcRef(crString(ip, "status", "vNic"), a.Namespace) == a.Namespace+"/"+m.VNicName && crString(ip, "spec", "ipAddress") == m.Address
-	if !matches {
-		return false, nil
-	}
-	// An old projection does not establish an identity mismatch. Current
-	// mismatches above still fence the backend; missing freshness reports
-	// observation uncertainty without withdrawing a verified live backend.
-	if !freshTime(a.ObservedAt, now, p.repository.baseFreshnessLimit()) {
-		return false, readFailure(fmt.Errorf("backend attachment observation is pending"))
-	}
-	return true, nil
+	return false, nil
 }
 
 func (p *KCProvider) MutateLoadBalancer(ctx context.Context, w biz.Work, c biz.LoadBalancerComponent, action string, observed biz.LoadBalancerObservation) (biz.LoadBalancerComponentObservation, error) {
@@ -648,6 +433,9 @@ func (p *KCProvider) MutateLoadBalancer(ctx context.Context, w biz.Work, c biz.L
 		if err != nil {
 			return v, readFailure(err)
 		}
+		if action == "delete" && c.Identity != "" && c.Identity != string(obj.GetUID()) {
+			return v, nil
+		}
 		v, err = lbInspect(obj, desired, c, r)
 		if err != nil {
 			return v, err
@@ -658,8 +446,7 @@ func (p *KCProvider) MutateLoadBalancer(ctx context.Context, w biz.Work, c biz.L
 		if action == "delete" {
 			uid := obj.GetUID()
 			rv := obj.GetResourceVersion()
-			foreground := metav1.DeletePropagationForeground
-			err = endpoint.Delete(ctx, c.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv}, PropagationPolicy: &foreground})
+			err = endpoint.Delete(ctx, c.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv}})
 			if apierrors.IsNotFound(err) {
 				err = nil
 			}
@@ -690,32 +477,6 @@ func (p *KCProvider) MutateLoadBalancer(ctx context.Context, w biz.Work, c biz.L
 	return v, nil
 }
 
-// kc publishes address ranges from its own IPAM. Counts or absence of the
-// Service alone are insufficient to prove a particular VIP was released.
-func lbIPInRange(address, ranges string) (bool, bool) {
-	ip, err := netip.ParseAddr(address)
-	if err != nil {
-		return false, false
-	}
-	if ranges == "" {
-		return false, true
-	}
-	contains := false
-	for _, part := range strings.Split(ranges, ",") {
-		lo, hi, rangeValue := strings.Cut(strings.TrimSpace(part), "-")
-		if !rangeValue {
-			hi = lo
-		}
-		a, ea := netip.ParseAddr(lo)
-		b, eb := netip.ParseAddr(hi)
-		if ea != nil || eb != nil || !a.Is4() || !b.Is4() || a.Compare(b) > 0 {
-			return false, false
-		}
-		contains = contains || (ip.Compare(a) >= 0 && ip.Compare(b) <= 0)
-	}
-	return contains, true
-}
-
 func lbComponentListener(w biz.Work, c biz.LoadBalancerComponent) biz.LoadBalancerListener {
 	for _, l := range biz.EffectiveLoadBalancerListeners(w.Resource.LoadBalancer.LoadBalancer) {
 		if l.ID == c.ListenerID || c.ListenerID == "" {
@@ -731,4 +492,70 @@ func lbListenerRouteName(w biz.Work, id string) string {
 		}
 	}
 	return ""
+}
+
+// Optional fields written by Res must also disappear when removed from the
+// desired configuration. Provider defaults outside these fields are ignored.
+func lbManagedSpecMatches(actual, desired any, kind string) bool {
+	if !managedFieldsMatch(actual, desired) {
+		return false
+	}
+	got, _ := actual.(map[string]any)
+	want, _ := desired.(map[string]any)
+	optional := func(a, b map[string]any, fields ...string) bool {
+		_, wanted, _ := unstructured.NestedFieldNoCopy(b, fields...)
+		if wanted {
+			return true
+		}
+		value, present, _ := unstructured.NestedFieldNoCopy(a, fields...)
+		if !present || value == nil {
+			return true
+		}
+		switch v := value.(type) {
+		case []any:
+			return len(v) == 0
+		case map[string]any:
+			return len(v) == 0
+		case string:
+			return v == ""
+		case bool:
+			return !v
+		}
+		return false
+	}
+	if biz.LoadBalancerIsRoute(kind) {
+		ar, _, _ := unstructured.NestedSlice(got, "rules")
+		br, _, _ := unstructured.NestedSlice(want, "rules")
+		for i := range br {
+			a, _ := ar[i].(map[string]any)
+			b, _ := br[i].(map[string]any)
+			for _, field := range []string{"backendRefs", "filters", "sessionPersistence"} {
+				if !optional(a, b, field) {
+					return false
+				}
+			}
+			if !optional(a, b, "sessionPersistence", "absoluteTimeout") {
+				return false
+			}
+		}
+	}
+	if kind == "gateway" {
+		al, _, _ := unstructured.NestedSlice(got, "listeners")
+		bl, _, _ := unstructured.NestedSlice(want, "listeners")
+		for i := range bl {
+			a, _ := al[i].(map[string]any)
+			b, _ := bl[i].(map[string]any)
+			if !optional(a, b, "tls") {
+				return false
+			}
+		}
+	}
+	if kind == "policy" {
+		for _, fields := range [][]string{{"compressor"}, {"healthCheck", "active", "overrides"}, {"healthCheck", "active", "http", "hostname"}} {
+			if !optional(got, want, fields...) {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -51,6 +51,7 @@ sql:
       - migrations/0029_manual_vnics.sql
       - migrations/0030_vnic_requested_addresses.sql
       - migrations/0031_subnet_creation_options.sql
+      - migrations/0032_network_management_simplification.sql
     queries: internal/data/network/queries
     gen:
       go:
@@ -60,6 +61,14 @@ sql:
         emit_empty_slices: true
         query_parameter_limit: 0
         overrides:
+          - column: network_security_group_reconciliations.next_run_at
+            go_type:
+              import: github.com/jackc/pgx/v5/pgtype
+              type: Timestamptz
+          - column: network_default_vpc_egresses.next_run_at
+            go_type:
+              import: github.com/jackc/pgx/v5/pgtype
+              type: Timestamptz
           - column: network_attachments.next_check_at
             go_type:
               import: github.com/jackc/pgx/v5/pgtype

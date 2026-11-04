@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -53,8 +54,8 @@ func automaticVMNADConfig(config VMAutoNetworkConfig) string {
 	return string(raw)
 }
 
-// PrepareVMNetwork is called only by Network's durable worker after a healthy
-// Subnet observation. It never creates VM/Pod resources or adopts existing NADs.
+// PrepareVMNetwork declares Res's NAD and ServiceAccount independently of KCN
+// readiness. It never creates VM/Pod resources or adopts existing NADs.
 func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTarget) (result error) {
 	if p.vmAutoNetwork == nil || target.Kind != "subnet" {
 		return nil
@@ -63,8 +64,8 @@ func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTa
 	if err != nil {
 		return err
 	}
-	if binding.ResourceKind != "subnet" || binding.ProviderUid == "" {
-		return biz.Fail(biz.NetworkNotReady, "VM Subnet identity unavailable")
+	if binding.ResourceKind != "subnet" || binding.ProviderName == "" {
+		return biz.Fail(biz.PlacementMismatch, "VM Subnet declaration unavailable")
 	}
 	if err := p.verifyTenantNamespace(ctx, binding); err != nil {
 		return err
@@ -112,6 +113,26 @@ func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTa
 	_, err = p.repository.queries.SaveVMNamespaceObjectIdentity(ctx, sqlcgen.SaveVMNamespaceObjectIdentityParams{TenantID: record.TenantID, ClusterID: record.ClusterID, ManagementID: record.ManagementID, ObjectKind: "service_account", ObjectUid: string(sa.GetUID())})
 	if err != nil {
 		return databaseFailure(err)
+	}
+	return nil
+}
+
+func (p *Postgres) RetryVMNetworkPreparation(ctx context.Context, w biz.Work, delay time.Duration) error {
+	// Finish already advanced the resource version once and released this lease.
+	// Match that completed version; any later mutation or lease rejects the retry.
+	result, err := p.pool.Exec(ctx, `UPDATE network_reconciliations q SET
+ requested_generation=q.requested_generation+1,
+ retry_not_before=greatest(q.retry_not_before,clock_timestamp()+$6::bigint*interval '1 microsecond'),
+ next_run_at=greatest(q.retry_not_before,clock_timestamp()+$6::bigint*interval '1 microsecond')
+ FROM network_provider_bindings b JOIN network_subnets s USING(tenant_id,subnet_id)
+ WHERE q.tenant_id=$1 AND q.subnet_id=$2 AND b.tenant_id=q.tenant_id AND b.subnet_id=q.subnet_id
+ AND b.binding_id=$3 AND s.version=($4::bigint+1) AND q.lease_epoch=$5 AND q.lease_owner IS NULL
+ AND NOT q.retired AND s.state NOT IN ('deleting','deleted')`, w.Resource.TenantID, w.Resource.ID, w.BindingID, w.Resource.Version, w.Epoch, delay.Microseconds())
+	if err != nil {
+		return databaseFailure(err)
+	}
+	if result.RowsAffected() != 1 {
+		return biz.ErrLeaseLost
 	}
 	return nil
 }
@@ -196,7 +217,7 @@ func (p *KCProvider) lookupManagedVMNetwork(ctx context.Context, tenant, vpc, su
 	if err := p.verifyTenantNamespace(ctx, b); err != nil {
 		return ManagedVMNAD{}, err
 	}
-	if s.VpcID != vpc || b.ClusterID != cluster || b.Namespace != namespace || b.ProviderUid == "" || b.ResourceKind != "subnet" {
+	if s.NetworkSubnet.VpcID != vpc || b.ClusterID != cluster || b.Namespace != namespace || b.ProviderName == "" || b.ResourceKind != "subnet" {
 		return ManagedVMNAD{}, biz.Fail(biz.PlacementMismatch, "VM network placement differs")
 	}
 	record, err := p.repository.readQueries(ctx).GetVMNamespace(ctx, sqlcgen.GetVMNamespaceParams{TenantID: tenant, ClusterID: cluster})

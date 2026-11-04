@@ -8,17 +8,16 @@ import (
 )
 
 type consumerRepositoryFake struct {
-	rows      []AttachmentConsumerRow
-	total     int64
-	err       error
-	tenant    string
-	filter    AttachmentConsumerFilter
-	freshness time.Duration
-	calls     int
-	prepared  PrepareAttachment
+	rows     []AttachmentConsumerRow
+	total    int64
+	err      error
+	tenant   string
+	filter   AttachmentConsumerFilter
+	calls    int
+	prepared PrepareAttachment
 }
 
-func (f *consumerRepositoryFake) PrepareAttachment(_ context.Context, v PrepareAttachment, _ time.Duration) (Attachment, error) {
+func (f *consumerRepositoryFake) PrepareAttachment(_ context.Context, v PrepareAttachment) (Attachment, error) {
 	f.prepared = v
 	return Attachment{ID: "att_" + strings.Repeat("a", 32), TenantID: v.TenantID, InstanceID: v.InstanceID, ConsumerType: v.ConsumerType, State: Reserved}, nil
 }
@@ -31,9 +30,9 @@ func (f *consumerRepositoryFake) ConfirmAttachment(context.Context, ConfirmAttac
 func (f *consumerRepositoryFake) ReleaseAttachment(context.Context, ReleaseAttachment) (Attachment, error) {
 	return Attachment{}, nil
 }
-func (f *consumerRepositoryFake) ListAttachmentConsumers(_ context.Context, tenant string, filter AttachmentConsumerFilter, freshness time.Duration) ([]AttachmentConsumerRow, int64, error) {
+func (f *consumerRepositoryFake) ListAttachmentConsumers(_ context.Context, tenant string, filter AttachmentConsumerFilter) ([]AttachmentConsumerRow, int64, error) {
 	f.calls++
-	f.tenant, f.filter, f.freshness = tenant, filter, freshness
+	f.tenant, f.filter = tenant, filter
 	if f.err != nil {
 		return nil, 0, f.err
 	}
@@ -72,7 +71,7 @@ const (
 )
 
 func newConsumerQuery(repository AttachmentRepository, directory ConsumerDirectory) *Attachments {
-	a := NewAttachments(repository, time.Minute)
+	a := NewAttachments(repository)
 	if directory != nil {
 		a.UseConsumerDirectory(directory)
 	}
@@ -115,8 +114,8 @@ func TestListInstancesUsesStablePageWindowAndScopePredicate(t *testing.T) {
 	if repository.filter.Limit != 25 || repository.filter.Offset != 50 || repository.filter.VPCID != consumerVPC || repository.filter.SubnetID != "" {
 		t.Fatalf("filter = %+v", repository.filter)
 	}
-	if repository.tenant != consumerTenant || repository.freshness != time.Minute {
-		t.Fatalf("tenant = %q freshness = %v", repository.tenant, repository.freshness)
+	if repository.tenant != consumerTenant {
+		t.Fatalf("tenant = %q", repository.tenant)
 	}
 }
 
@@ -150,7 +149,7 @@ func TestListInstancesKeepsRowsAndNormalizesStates(t *testing.T) {
 	blocked := AttachmentConsumerRow{
 		AttachmentID: "att_" + strings.Repeat("d", 32), VPCID: consumerVPC, SubnetID: consumerSubnet,
 		Slot: "primary", ConsumerType: ConsumerContainerInstance, ConsumerID: containerOne, State: "released",
-		Reason: "ATTACHMENT_PROTOCOL_VIOLATION", ProtocolBlocked: true,
+		Reason: "ATTACHMENT_PROTOCOL_VIOLATION",
 	}
 	gone := AttachmentConsumerRow{
 		AttachmentID: "att_" + strings.Repeat("e", 32), VPCID: consumerVPC, SubnetID: consumerSubnet,
@@ -187,7 +186,7 @@ func TestListInstancesKeepsRowsAndNormalizesStates(t *testing.T) {
 	if third := page.Items[2]; third.ConsumerType != ConsumerUnknown || third.ConsumerState != ConsumerUnknown || third.ConsumerName != "" || !third.ObservationStale {
 		t.Fatalf("untyped legacy row = %+v", third)
 	}
-	if fourth := page.Items[3]; fourth.AttachmentState != "released" || fourth.AttachmentReason != "ATTACHMENT_PROTOCOL_VIOLATION" || !fourth.ProtocolBlocked {
+	if fourth := page.Items[3]; fourth.AttachmentState != "released" || fourth.AttachmentReason != "ATTACHMENT_PROTOCOL_VIOLATION" {
 		t.Fatalf("blocked release row = %+v", fourth)
 	}
 	// The deleted machine keeps its releasing row with unknown identity.
@@ -307,7 +306,7 @@ func TestPrepareFingerprintIgnoresConsumerType(t *testing.T) {
 func TestPrepareValidatesConsumerTypeWithWorkloadMode(t *testing.T) {
 	valid := PrepareAttachment{TenantID: consumerTenant, InstanceID: "instance-1", SubnetID: consumerSubnet, Slot: "primary", RequestKey: "key-1", SubmissionID: "22222222-2222-4222-8222-222222222222", Generation: 1, ClusterID: consumerTenant, Namespace: "tenant-1", WorkloadMode: "controller_managed", ConsumerType: ConsumerContainerInstance}
 	repository := &consumerRepositoryFake{}
-	a := NewAttachments(repository, time.Minute)
+	a := NewAttachments(repository)
 	if _, err := a.Prepare(context.Background(), valid); err != nil {
 		t.Fatalf("controller managed prepare rejected: %v", err)
 	}

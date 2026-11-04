@@ -99,6 +99,37 @@ func (s *KC) egressPatch(w http.ResponseWriter, r *http.Request, key, kind strin
 		fail(404, "NotFound")
 		return
 	}
+	if kind == "vnics" {
+		var patch []struct {
+			Op, Path string
+			Value    any
+		}
+		if json.NewDecoder(r.Body).Decode(&patch) != nil || len(patch) != 4 || patch[0].Op != "test" || patch[0].Path != "/metadata/uid" || patch[1].Op != "test" || patch[1].Path != "/metadata/resourceVersion" || patch[2].Op != "add" || patch[2].Path != "/metadata/annotations" || patch[3].Op != "add" || patch[3].Path != "/spec/securityGroups" {
+			fail(422, "Invalid")
+			return
+		}
+		m := o["metadata"].(map[string]any)
+		if patch[0].Value != m["uid"] || patch[1].Value != m["resourceVersion"] {
+			fail(409, "Conflict")
+			return
+		}
+		annotations, ok := patch[2].Value.(map[string]any)
+		if !ok {
+			fail(422, "Invalid")
+			return
+		}
+		groups, ok := patch[3].Value.([]any)
+		if !ok {
+			fail(422, "Invalid")
+			return
+		}
+		m["annotations"] = annotations
+		o["spec"].(map[string]any)["securityGroups"] = groups
+		rv, _ := strconv.Atoi(fmt.Sprint(m["resourceVersion"]))
+		m["resourceVersion"] = strconv.Itoa(rv + 1)
+		_ = json.NewEncoder(w).Encode(o)
+		return
+	}
 	if kind != "snats" {
 		fail(405, "MethodNotAllowed")
 		return

@@ -18,6 +18,8 @@ type ActivateLegacyBaseAggregationParams struct {
 	ClusterID string
 }
 
+// Activate only the Res rollout setting after its registered product intents
+// have been checked under the same management lock.
 func (q *Queries) ActivateLegacyBaseAggregation(ctx context.Context, arg ActivateLegacyBaseAggregationParams) (int64, error) {
 	result, err := q.db.Exec(ctx, activateLegacyBaseAggregation, arg.ClusterID)
 	if err != nil {
@@ -29,7 +31,7 @@ func (q *Queries) ActivateLegacyBaseAggregation(ctx context.Context, arg Activat
 const admitBaseBackfillVPC = `-- name: AdmitBaseBackfillVPC :execrows
 UPDATE network_vpcs SET last_operation_id=$1,version=version+1,updated_at=clock_timestamp()
 WHERE tenant_id=$2 AND vpc_id=$3 AND version=$4
- AND state IN ('available','degraded') AND NOT base_connectivity_required
+ AND state NOT IN ('deleting','deleted') AND NOT base_connectivity_required
 `
 
 type AdmitBaseBackfillVPCParams struct {
@@ -71,34 +73,6 @@ func (q *Queries) AdvanceBaseBackfillAdmission(ctx context.Context, arg AdvanceB
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const countStaleLegacyBaseEvidence = `-- name: CountStaleLegacyBaseEvidence :one
-SELECT count(*)::bigint FROM network_vpcs v
-JOIN network_tenant_namespaces ns ON ns.tenant_id=v.tenant_id AND ns.cluster_id=$1
-LEFT JOIN network_provider_bindings placement ON placement.tenant_id=v.tenant_id AND placement.vpc_id=v.vpc_id
-LEFT JOIN network_vpc_base_connectivity b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id
-LEFT JOIN network_eips e ON e.tenant_id=b.tenant_id AND e.eip_id=b.eip_id
-LEFT JOIN network_snat_bindings s ON s.tenant_id=b.tenant_id AND s.snat_id=b.snat_id
-WHERE (placement.cluster_id=$1 OR placement.binding_id IS NULL)
- AND v.state NOT IN ('deleting','deleted')
- AND (b.observed_at IS NULL OR b.provider_observed_at IS NULL OR e.observed_at IS NULL OR s.observed_at IS NULL
- OR least(b.observed_at,b.provider_observed_at,e.observed_at,s.observed_at)<clock_timestamp()-$2::bigint*interval '1 microsecond'
- OR greatest(b.observed_at,b.provider_observed_at,e.observed_at,s.observed_at)>clock_timestamp())
-`
-
-type CountStaleLegacyBaseEvidenceParams struct {
-	ClusterID       string
-	FreshnessMicros int64
-}
-
-// Recheck wall-clock freshness after the per-resource verification loop. A long
-// activation cannot accept facts that expired while earlier VPC rows were locked.
-func (q *Queries) CountStaleLegacyBaseEvidence(ctx context.Context, arg CountStaleLegacyBaseEvidenceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countStaleLegacyBaseEvidence, arg.ClusterID, arg.FreshnessMicros)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
 }
 
 const ensureConnectivityRollout = `-- name: EnsureConnectivityRollout :exec

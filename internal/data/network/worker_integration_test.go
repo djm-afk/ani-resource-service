@@ -30,7 +30,7 @@ func (p *memoryProvider) EnsureVPC(_ context.Context, target biz.ProviderTarget)
 	}
 	value, exists := p.objects[target.ResourceID]
 	if !exists {
-		value = biz.ProviderObservation{Exists: true, Ready: true, Generation: 1, ObservedGeneration: 1, Identity: uuid.NewString()}
+		value = biz.ProviderObservation{Exists: true, Ready: egressReportedReady(true), Identity: uuid.NewString()}
 		p.objects[target.ResourceID] = value
 	}
 	return value, nil
@@ -49,7 +49,7 @@ func (p *memoryProvider) Delete(_ context.Context, target biz.ProviderTarget) er
 
 func TestNetworkWorkerOwnsVPCCreationAndConfirmedDeletion(t *testing.T) {
 	repository, _ := database(t)
-	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestNetworkWorkerOwnsVPCCreationAndConfirmedDeletion(t *testing.T) {
 	}
 	available := drive(biz.Available)
 	if available.ObservationStale || available.ObservedAt == nil {
-		t.Fatal("available has no fresh provider evidence")
+		t.Fatal("successful read did not record its timestamp and clear read errors")
 	}
 	deleting, err := network.DeleteVPC(ctx, input.TenantID, accepted.ID)
 	if err != nil || deleting.State != biz.Deleting || deleting.LastOperationID == accepted.LastOperationID {

@@ -3,12 +3,11 @@ package data_test
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
 
 type egressBaseFixture struct{ EIPID, SnatID string }
@@ -50,8 +49,8 @@ func seedEgressBaseConnectivity(t *testing.T, f *egressFixture, v biz.VPC) egres
 	exec(`INSERT INTO network_eips(tenant_id,eip_id,cluster_id,namespace,name,pool_id,pool_revision,address,state,created_at,updated_at,observed_at,last_operation_id,scope,managed_by,system_owner_vpc)
  SELECT tenant_id,$2,cluster_id,namespace,'System base fixture',$3,1,'198.18.0.10','available',clock_timestamp(),clock_timestamp(),clock_timestamp(),$4,'intranet','system',vpc_id
  FROM network_provider_bindings WHERE tenant_id=$1 AND vpc_id=$5`, f.tenant, ids.EIPID, poolID, eipOp, v.ID)
-	exec(`INSERT INTO network_snat_bindings(tenant_id,snat_id,cluster_id,namespace,name,vpc_id,eip_id,desired_enabled,applied_enabled,target_generation,state,created_at,updated_at,observed_at,last_operation_id,purpose)
- SELECT tenant_id,$2,cluster_id,namespace,'System base fixture',vpc_id,$3,true,true,1,'available',clock_timestamp(),clock_timestamp(),clock_timestamp(),$4,'intranet'
+	exec(`INSERT INTO network_snat_bindings(tenant_id,snat_id,cluster_id,namespace,name,vpc_id,eip_id,desired_enabled,applied_enabled,state,created_at,updated_at,observed_at,last_operation_id,purpose)
+ SELECT tenant_id,$2,cluster_id,namespace,'System base fixture',vpc_id,$3,true,true,'available',clock_timestamp(),clock_timestamp(),clock_timestamp(),$4,'intranet'
  FROM network_provider_bindings WHERE tenant_id=$1 AND vpc_id=$5`, f.tenant, ids.SnatID, ids.EIPID, snatOp, v.ID)
 	for _, child := range []struct{ kind, id, op, operation string }{{"eip", ids.EIPID, eipOp, "create_eip"}, {"snat", ids.SnatID, snatOp, "bind_snat"}} {
 		exec(`INSERT INTO network_operations(tenant_id,operation_id,`+child.kind+`_id,kind,state,created_at,updated_at,completed_at)
@@ -61,8 +60,8 @@ func seedEgressBaseConnectivity(t *testing.T, f *egressFixture, v biz.VPC) egres
 	}
 	exec(`INSERT INTO network_eip_claims(tenant_id,cluster_id,namespace,eip_id,target_kind,snat_id,state)
  SELECT tenant_id,cluster_id,namespace,eip_id,'vpc_snat',$2,'bound' FROM network_eips WHERE tenant_id=$1 AND eip_id=$3`, f.tenant, ids.SnatID, ids.EIPID)
-	exec(`INSERT INTO network_vpc_base_connectivity(tenant_id,vpc_id,cluster_id,namespace,pool_id,pool_revision,eip_id,snat_id,operation_id,state,provider_ready,provider_observed_at,observed_at)
- SELECT tenant_id,vpc_id,cluster_id,namespace,$2,1,$3,$4,$5,'ready',true,clock_timestamp(),clock_timestamp()
+	exec(`INSERT INTO network_vpc_base_connectivity(tenant_id,vpc_id,cluster_id,namespace,pool_id,pool_revision,eip_id,snat_id,operation_id,state,observed_at)
+ SELECT tenant_id,vpc_id,cluster_id,namespace,$2,1,$3,$4,$5,'ready',clock_timestamp()
  FROM network_provider_bindings WHERE tenant_id=$1 AND vpc_id=$6`, f.tenant, poolID, ids.EIPID, ids.SnatID, v.LastOperationID, v.ID)
 	if err = tx.Commit(f.ctx); err != nil {
 		t.Fatal(err)
@@ -152,28 +151,26 @@ func TestPublicTenantInterfacesHideSystemResourcesAndPreserveBaseIdentity(t *tes
 	}
 }
 
-func TestPublicBindAndEnableRequireFreshBaseButDisableCanProceed(t *testing.T) {
+func TestPublicBindingAndEnableIgnoreBaseReadAge(t *testing.T) {
 	f := newEgressFixture(t)
-	v := availableVPC(t, f.n, f.w, f.tenant, "base-prerequisite")
-	e := f.eip(t, "base-prerequisite-eip")
-	if _, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: v.ID, EIPID: e.ID, IdempotencyKey: "before-base"}); biz.ReasonOf(err) != biz.BaseConnectivityNotReady {
-		t.Fatal("accepted Public binding before base ready", err)
-	}
-	seedEgressBaseConnectivity(t, f, v)
-	b, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: v.ID, EIPID: e.ID, IdempotencyKey: "after-base"})
+	v := availableVPC(t, f.n, f.w, f.tenant, "base-independent")
+	e := f.eip(t, "base-independent-eip")
+	b, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: v.ID, EIPID: e.ID, IdempotencyKey: "before-base"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("missing base gated public binding", err)
 	}
 	on := true
 	b = f.binding(t, b.ID, biz.Available, &on)
+	seedEgressBaseConnectivity(t, f, v)
 	if _, err = f.owner.Exec(f.ctx, `UPDATE network_vpc_base_connectivity SET observed_at=clock_timestamp()-interval '2 minutes' WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, v.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.e.SetVPCSnatEnabled(f.ctx, biz.EgressIntent{ID: b.ID, ExpectedVersion: b.Version, Enabled: true, IdempotencyKey: "stale-enable"}); biz.ReasonOf(err) != biz.BaseConnectivityNotReady {
-		t.Fatal("enabled Public binding with stale base", err)
-	}
-	if _, err = f.e.SetVPCSnatEnabled(f.ctx, biz.EgressIntent{ID: b.ID, ExpectedVersion: b.Version, Enabled: false, IdempotencyKey: "stale-disable"}); err != nil {
-		t.Fatal("degraded base blocked safe Public disable", err)
+	for _, enabled := range []bool{false, true} {
+		b, err = f.e.SetVPCSnatEnabled(f.ctx, biz.EgressIntent{ID: b.ID, ExpectedVersion: b.Version, Enabled: enabled, IdempotencyKey: fmt.Sprintf("with-old-base-%t", enabled)})
+		if err != nil {
+			t.Fatal("base read age gated public update", err)
+		}
+		b = f.binding(t, b.ID, biz.Available, &enabled)
 	}
 }
 

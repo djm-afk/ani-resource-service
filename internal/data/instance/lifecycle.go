@@ -155,7 +155,7 @@ func saveProgressOperation(ctx context.Context, tx pgx.Tx, w biz.Work, p biz.Pro
 				return biz.ErrState
 			}
 			if n := p.Instance.Network; n != nil {
-				if n.NetworkState != "attached" || n.Reason != "" || n.SnapshotRevision != n.ConfirmedSnapshotRevision || n.SnapshotRevision != e.NetworkSnapshotRevision || len(n.CurrentPods) != 1 || n.CurrentPods[0].Reference.UID != e.VerifiedPodUID {
+				if n.NetworkState != "attached" || n.SnapshotRevision != n.ConfirmedSnapshotRevision || n.SnapshotRevision != e.NetworkSnapshotRevision || len(n.CurrentPods) != 1 || n.CurrentPods[0].Reference.UID != e.VerifiedPodUID {
 					return biz.ErrState
 				}
 			}

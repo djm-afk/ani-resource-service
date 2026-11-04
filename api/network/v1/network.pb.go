@@ -484,20 +484,21 @@ func (SubmissionState) EnumDescriptor() ([]byte, []int) {
 }
 
 type VPC struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TenantId         string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description      string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	Cidr             string                 `protobuf:"bytes,5,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	State            ResourceState          `protobuf:"varint,6,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Version          int64                  `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	LastOperationId  string                 `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId    string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Cidr        string                 `protobuf:"bytes,5,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	State       ResourceState          `protobuf:"varint,6,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Reason      string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Version     int64                  `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`
+	ObservedAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	LastOperationId  string `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
 	// Non-deleted subnets counted in the same query snapshot.
 	SubnetCount      int64                `protobuf:"varint,14,opt,name=subnet_count,json=subnetCount,proto3" json:"subnet_count,omitempty"`
 	ReasonMessage    string               `protobuf:"bytes,15,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
@@ -660,20 +661,21 @@ func (x *VPC) GetPublicEgress() *VPCPublicEgress {
 // Read-only projection of the existing public SNAT and exclusive EIP claim.
 // Disabled egress remains bound. Stale evidence never implies an unbound EIP.
 type VPCPublicEgress struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	BindingId        string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
-	EipId            string                 `protobuf:"bytes,2,opt,name=eip_id,json=eipId,proto3" json:"eip_id,omitempty"`
-	EipAddress       string                 `protobuf:"bytes,3,opt,name=eip_address,json=eipAddress,proto3" json:"eip_address,omitempty"`
-	BindingState     string                 `protobuf:"bytes,4,opt,name=binding_state,json=bindingState,proto3" json:"binding_state,omitempty"`
-	State            ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
-	DesiredEnabled   bool                   `protobuf:"varint,8,opt,name=desired_enabled,json=desiredEnabled,proto3" json:"desired_enabled,omitempty"`
-	AppliedEnabled   *bool                  `protobuf:"varint,9,opt,name=applied_enabled,json=appliedEnabled,proto3,oneof" json:"applied_enabled,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,11,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	Version          int64                  `protobuf:"varint,12,opt,name=version,proto3" json:"version,omitempty"`
-	LastOperationId  string                 `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BindingId      string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	EipId          string                 `protobuf:"bytes,2,opt,name=eip_id,json=eipId,proto3" json:"eip_id,omitempty"`
+	EipAddress     string                 `protobuf:"bytes,3,opt,name=eip_address,json=eipAddress,proto3" json:"eip_address,omitempty"`
+	BindingState   string                 `protobuf:"bytes,4,opt,name=binding_state,json=bindingState,proto3" json:"binding_state,omitempty"`
+	State          ResourceState          `protobuf:"varint,5,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Reason         string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	ReasonMessage  string                 `protobuf:"bytes,7,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	DesiredEnabled bool                   `protobuf:"varint,8,opt,name=desired_enabled,json=desiredEnabled,proto3" json:"desired_enabled,omitempty"`
+	AppliedEnabled *bool                  `protobuf:"varint,9,opt,name=applied_enabled,json=appliedEnabled,proto3,oneof" json:"applied_enabled,omitempty"`
+	ObservedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,11,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	Version          int64  `protobuf:"varint,12,opt,name=version,proto3" json:"version,omitempty"`
+	LastOperationId  string `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -804,12 +806,13 @@ func (x *VPCPublicEgress) GetLastOperationId() string {
 type VPCBaseConnectivity struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// missing, pending, ready, degraded, deleting, deleted or unknown.
-	// ready means fresh configuration evidence, not traffic health.
-	State            string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,4,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,5,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	// Configuration state reported by KCN; the timestamp is diagnostic only.
+	State      string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Reason     string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	ObservedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,4,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	ReasonMessage    string `protobuf:"bytes,5,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1647,28 +1650,29 @@ func (x *GetOperationResponse) GetOperation() *Operation {
 }
 
 type Subnet struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TenantId         string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description      string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	Cidr             string                 `protobuf:"bytes,5,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	State            ResourceState          `protobuf:"varint,6,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Version          int64                  `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	LastOperationId  string                 `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
-	VpcId            string                 `protobuf:"bytes,14,opt,name=vpc_id,json=vpcId,proto3" json:"vpc_id,omitempty"`
-	ReasonMessage    string                 `protobuf:"bytes,15,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
-	Gateway          string                 `protobuf:"bytes,16,opt,name=gateway,proto3" json:"gateway,omitempty"`
-	AvailableIpRange *string                `protobuf:"bytes,19,opt,name=available_ip_range,json=availableIpRange,proto3,oneof" json:"available_ip_range,omitempty"`
-	UsedIpRange      *string                `protobuf:"bytes,20,opt,name=used_ip_range,json=usedIpRange,proto3,oneof" json:"used_ip_range,omitempty"`
-	ExcludeIps       []string               `protobuf:"bytes,21,rep,name=exclude_ips,json=excludeIps,proto3" json:"exclude_ips,omitempty"`
-	EnableDhcp       bool                   `protobuf:"varint,22,opt,name=enable_dhcp,json=enableDhcp,proto3" json:"enable_dhcp,omitempty"`
-	DnsServers       []string               `protobuf:"bytes,23,rep,name=dns_servers,json=dnsServers,proto3" json:"dns_servers,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId    string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Cidr        string                 `protobuf:"bytes,5,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	State       ResourceState          `protobuf:"varint,6,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	Reason      string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Version     int64                  `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`
+	ObservedAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool     `protobuf:"varint,12,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	LastOperationId  string   `protobuf:"bytes,13,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	VpcId            string   `protobuf:"bytes,14,opt,name=vpc_id,json=vpcId,proto3" json:"vpc_id,omitempty"`
+	ReasonMessage    string   `protobuf:"bytes,15,opt,name=reason_message,json=reasonMessage,proto3" json:"reason_message,omitempty"`
+	Gateway          string   `protobuf:"bytes,16,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	AvailableIpRange *string  `protobuf:"bytes,19,opt,name=available_ip_range,json=availableIpRange,proto3,oneof" json:"available_ip_range,omitempty"`
+	UsedIpRange      *string  `protobuf:"bytes,20,opt,name=used_ip_range,json=usedIpRange,proto3,oneof" json:"used_ip_range,omitempty"`
+	ExcludeIps       []string `protobuf:"bytes,21,rep,name=exclude_ips,json=excludeIps,proto3" json:"exclude_ips,omitempty"`
+	EnableDhcp       bool     `protobuf:"varint,22,opt,name=enable_dhcp,json=enableDhcp,proto3" json:"enable_dhcp,omitempty"`
+	DnsServers       []string `protobuf:"bytes,23,rep,name=dns_servers,json=dnsServers,proto3" json:"dns_servers,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2926,11 +2930,12 @@ type Attachment struct {
 	ReleasedAt             *timestamppb.Timestamp `protobuf:"bytes,22,opt,name=released_at,json=releasedAt,proto3" json:"released_at,omitempty"`
 	WorkloadMode           string                 `protobuf:"bytes,23,opt,name=workload_mode,json=workloadMode,proto3" json:"workload_mode,omitempty"`
 	SnapshotRevision       int64                  `protobuf:"varint,24,opt,name=snapshot_revision,json=snapshotRevision,proto3" json:"snapshot_revision,omitempty"`
-	RootController         *WorkloadReference     `protobuf:"bytes,25,opt,name=root_controller,json=rootController,proto3" json:"root_controller,omitempty"`
-	VmPrimary              *VMPrimaryPlan         `protobuf:"bytes,26,opt,name=vm_primary,json=vmPrimary,proto3" json:"vm_primary,omitempty"`
-	VmCurrentAddresses     []*VMCurrentAddress    `protobuf:"bytes,27,rep,name=vm_current_addresses,json=vmCurrentAddresses,proto3" json:"vm_current_addresses,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// Deprecated: Marked as deprecated in network/v1/network.proto.
+	RootController     *WorkloadReference  `protobuf:"bytes,25,opt,name=root_controller,json=rootController,proto3" json:"root_controller,omitempty"`
+	VmPrimary          *VMPrimaryPlan      `protobuf:"bytes,26,opt,name=vm_primary,json=vmPrimary,proto3" json:"vm_primary,omitempty"`
+	VmCurrentAddresses []*VMCurrentAddress `protobuf:"bytes,27,rep,name=vm_current_addresses,json=vmCurrentAddresses,proto3" json:"vm_current_addresses,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Attachment) Reset() {
@@ -3131,6 +3136,7 @@ func (x *Attachment) GetSnapshotRevision() int64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in network/v1/network.proto.
 func (x *Attachment) GetRootController() *WorkloadReference {
 	if x != nil {
 		return x.RootController
@@ -3681,7 +3687,7 @@ func (x *ReleaseAttachmentResponse) GetAttachment() *Attachment {
 }
 
 // One current address observed by Network for a consumer. Empty always means
-// Network has no eligible observation, never "not attached to the network".
+// Network has no current address output; the management attachment remains independent.
 type NetworkAddress struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NicName       string                 `protobuf:"bytes,1,opt,name=nic_name,json=nicName,proto3" json:"nic_name,omitempty"`
@@ -3749,6 +3755,7 @@ type AssociatedInstance struct {
 	AttachmentId     string                 `protobuf:"bytes,8,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
 	AttachmentState  string                 `protobuf:"bytes,9,opt,name=attachment_state,json=attachmentState,proto3" json:"attachment_state,omitempty"`
 	AttachmentReason string                 `protobuf:"bytes,10,opt,name=attachment_reason,json=attachmentReason,proto3" json:"attachment_reason,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
 	ObservationStale bool                   `protobuf:"varint,11,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
 	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
 	Addresses        []*NetworkAddress      `protobuf:"bytes,13,rep,name=addresses,proto3" json:"addresses,omitempty"`
@@ -4110,28 +4117,32 @@ func (x *GetSubmissionRequest) GetExpectedFinalizationId() string {
 }
 
 type GetSubmissionResponse struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	ProtocolVersion  int32                  `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
-	TenantId         string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	InstanceId       string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	SubmissionId     string                 `protobuf:"bytes,4,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
-	Generation       int64                  `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
-	AttachmentId     string                 `protobuf:"bytes,6,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
-	ClusterId        string                 `protobuf:"bytes,7,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
-	Namespace        string                 `protobuf:"bytes,8,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	State            SubmissionState        `protobuf:"varint,9,opt,name=state,proto3,enum=network.v1.SubmissionState" json:"state,omitempty"`
-	FinalizationId   string                 `protobuf:"bytes,10,opt,name=finalization_id,json=finalizationId,proto3" json:"finalization_id,omitempty"`
-	PodUids          []string               `protobuf:"bytes,11,rep,name=pod_uids,json=podUids,proto3" json:"pod_uids,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProtocolVersion int32                  `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	TenantId        string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	InstanceId      string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	SubmissionId    string                 `protobuf:"bytes,4,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
+	Generation      int64                  `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
+	AttachmentId    string                 `protobuf:"bytes,6,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	ClusterId       string                 `protobuf:"bytes,7,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	Namespace       string                 `protobuf:"bytes,8,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	State           SubmissionState        `protobuf:"varint,9,opt,name=state,proto3,enum=network.v1.SubmissionState" json:"state,omitempty"`
+	FinalizationId  string                 `protobuf:"bytes,10,opt,name=finalization_id,json=finalizationId,proto3" json:"finalization_id,omitempty"`
+	PodUids         []string               `protobuf:"bytes,11,rep,name=pod_uids,json=podUids,proto3" json:"pod_uids,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/network.proto.
 	ControllerUids   []string               `protobuf:"bytes,12,rep,name=controller_uids,json=controllerUids,proto3" json:"controller_uids,omitempty"`
 	ClosedAt         *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
 	SnapshotRevision int64                  `protobuf:"varint,14,opt,name=snapshot_revision,json=snapshotRevision,proto3" json:"snapshot_revision,omitempty"`
 	DesiredRunState  string                 `protobuf:"bytes,15,opt,name=desired_run_state,json=desiredRunState,proto3" json:"desired_run_state,omitempty"`
-	RootController   *WorkloadReference     `protobuf:"bytes,16,opt,name=root_controller,json=rootController,proto3" json:"root_controller,omitempty"`
-	Controllers      []*ControllerReference `protobuf:"bytes,17,rep,name=controllers,proto3" json:"controllers,omitempty"`
-	CurrentPods      []*PodReference        `protobuf:"bytes,18,rep,name=current_pods,json=currentPods,proto3" json:"current_pods,omitempty"`
-	RetiredPods      []*PodReference        `protobuf:"bytes,19,rep,name=retired_pods,json=retiredPods,proto3" json:"retired_pods,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Deprecated: Marked as deprecated in network/v1/network.proto.
+	RootController *WorkloadReference `protobuf:"bytes,16,opt,name=root_controller,json=rootController,proto3" json:"root_controller,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/network.proto.
+	Controllers []*ControllerReference `protobuf:"bytes,17,rep,name=controllers,proto3" json:"controllers,omitempty"`
+	CurrentPods []*PodReference        `protobuf:"bytes,18,rep,name=current_pods,json=currentPods,proto3" json:"current_pods,omitempty"`
+	// Deprecated: Marked as deprecated in network/v1/network.proto.
+	RetiredPods   []*PodReference `protobuf:"bytes,19,rep,name=retired_pods,json=retiredPods,proto3" json:"retired_pods,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetSubmissionResponse) Reset() {
@@ -4241,6 +4252,7 @@ func (x *GetSubmissionResponse) GetPodUids() []string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in network/v1/network.proto.
 func (x *GetSubmissionResponse) GetControllerUids() []string {
 	if x != nil {
 		return x.ControllerUids
@@ -4269,6 +4281,7 @@ func (x *GetSubmissionResponse) GetDesiredRunState() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in network/v1/network.proto.
 func (x *GetSubmissionResponse) GetRootController() *WorkloadReference {
 	if x != nil {
 		return x.RootController
@@ -4276,6 +4289,7 @@ func (x *GetSubmissionResponse) GetRootController() *WorkloadReference {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in network/v1/network.proto.
 func (x *GetSubmissionResponse) GetControllers() []*ControllerReference {
 	if x != nil {
 		return x.Controllers
@@ -4290,6 +4304,7 @@ func (x *GetSubmissionResponse) GetCurrentPods() []*PodReference {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in network/v1/network.proto.
 func (x *GetSubmissionResponse) GetRetiredPods() []*PodReference {
 	if x != nil {
 		return x.RetiredPods
@@ -5685,7 +5700,7 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x05owner\x18\x02 \x01(\v2\x1d.network.v1.WorkloadReferenceR\x05owner\"\x80\x01\n" +
 	"\fPodReference\x12;\n" +
 	"\treference\x18\x01 \x01(\v2\x1d.network.v1.WorkloadReferenceR\treference\x123\n" +
-	"\x05owner\x18\x02 \x01(\v2\x1d.network.v1.WorkloadReferenceR\x05owner\"\xf3\b\n" +
+	"\x05owner\x18\x02 \x01(\v2\x1d.network.v1.WorkloadReferenceR\x05owner\"\xf7\b\n" +
 	"\n" +
 	"Attachment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
@@ -5721,8 +5736,8 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\vreleased_at\x18\x16 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"releasedAt\x12#\n" +
 	"\rworkload_mode\x18\x17 \x01(\tR\fworkloadMode\x12+\n" +
-	"\x11snapshot_revision\x18\x18 \x01(\x03R\x10snapshotRevision\x12F\n" +
-	"\x0froot_controller\x18\x19 \x01(\v2\x1d.network.v1.WorkloadReferenceR\x0erootController\x128\n" +
+	"\x11snapshot_revision\x18\x18 \x01(\x03R\x10snapshotRevision\x12J\n" +
+	"\x0froot_controller\x18\x19 \x01(\v2\x1d.network.v1.WorkloadReferenceB\x02\x18\x01R\x0erootController\x128\n" +
 	"\n" +
 	"vm_primary\x18\x1a \x01(\v2\x19.network.v1.VMPrimaryPlanR\tvmPrimary\x12N\n" +
 	"\x14vm_current_addresses\x18\x1b \x03(\v2\x1c.network.v1.VMCurrentAddressR\x12vmCurrentAddresses\"\xb1\x03\n" +
@@ -5823,7 +5838,7 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"generation\x18\x05 \x01(\x03R\n" +
 	"generation\x12#\n" +
 	"\rattachment_id\x18\x06 \x01(\tR\fattachmentId\x128\n" +
-	"\x18expected_finalization_id\x18\a \x01(\tR\x16expectedFinalizationId\"\xde\x06\n" +
+	"\x18expected_finalization_id\x18\a \x01(\tR\x16expectedFinalizationId\"\xee\x06\n" +
 	"\x15GetSubmissionResponse\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\x05R\x0fprotocolVersion\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1f\n" +
@@ -5840,15 +5855,15 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\x05state\x18\t \x01(\x0e2\x1b.network.v1.SubmissionStateR\x05state\x12'\n" +
 	"\x0ffinalization_id\x18\n" +
 	" \x01(\tR\x0efinalizationId\x12\x19\n" +
-	"\bpod_uids\x18\v \x03(\tR\apodUids\x12'\n" +
-	"\x0fcontroller_uids\x18\f \x03(\tR\x0econtrollerUids\x127\n" +
+	"\bpod_uids\x18\v \x03(\tR\apodUids\x12+\n" +
+	"\x0fcontroller_uids\x18\f \x03(\tB\x02\x18\x01R\x0econtrollerUids\x127\n" +
 	"\tclosed_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bclosedAt\x12+\n" +
 	"\x11snapshot_revision\x18\x0e \x01(\x03R\x10snapshotRevision\x12*\n" +
-	"\x11desired_run_state\x18\x0f \x01(\tR\x0fdesiredRunState\x12F\n" +
-	"\x0froot_controller\x18\x10 \x01(\v2\x1d.network.v1.WorkloadReferenceR\x0erootController\x12A\n" +
-	"\vcontrollers\x18\x11 \x03(\v2\x1f.network.v1.ControllerReferenceR\vcontrollers\x12;\n" +
-	"\fcurrent_pods\x18\x12 \x03(\v2\x18.network.v1.PodReferenceR\vcurrentPods\x12;\n" +
-	"\fretired_pods\x18\x13 \x03(\v2\x18.network.v1.PodReferenceR\vretiredPods\"8\n" +
+	"\x11desired_run_state\x18\x0f \x01(\tR\x0fdesiredRunState\x12J\n" +
+	"\x0froot_controller\x18\x10 \x01(\v2\x1d.network.v1.WorkloadReferenceB\x02\x18\x01R\x0erootController\x12E\n" +
+	"\vcontrollers\x18\x11 \x03(\v2\x1f.network.v1.ControllerReferenceB\x02\x18\x01R\vcontrollers\x12;\n" +
+	"\fcurrent_pods\x18\x12 \x03(\v2\x18.network.v1.PodReferenceR\vcurrentPods\x12?\n" +
+	"\fretired_pods\x18\x13 \x03(\v2\x18.network.v1.PodReferenceB\x02\x18\x01R\vretiredPods\"8\n" +
 	"\x19ListVPCCIDRPresetsRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"2\n" +
 	"\x1aListVPCCIDRPresetsResponse\x12\x14\n" +

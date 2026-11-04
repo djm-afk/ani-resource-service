@@ -27,7 +27,7 @@ func (n *InstanceNetwork) ReserveNetworkInterface(ctx context.Context, i biz.Ins
 	if err != nil {
 		return biz.NetworkInterfaceChoice{}, instanceNetworkError(err)
 	}
-	if x.ClusterID != i.Spec.ClusterID || x.Namespace != i.Spec.Namespace || x.ProviderUID == "" {
+	if x.ClusterID != i.Spec.ClusterID || x.Namespace != i.Spec.Namespace {
 		return biz.NetworkInterfaceChoice{}, biz.ErrNetworkConflict
 	}
 	return biz.NetworkInterfaceChoice{Mode: "manual", Name: x.Name, VNicID: x.ID, ProviderName: x.ProviderName, ProviderUID: x.ProviderUID, MACAddress: x.MACAddress, IPs: append([]string{}, x.IPs...)}, nil
@@ -71,7 +71,7 @@ func (n *Notebook) SetNetworkInterface(ctx context.Context, i biz.Instance, c bi
 	}
 	value := ""
 	if c.Mode == "manual" {
-		if c.ProviderName == "" || c.ProviderUID == "" {
+		if c.ProviderName == "" {
 			return biz.ErrNetworkConflict
 		}
 		value = c.ProviderName
@@ -159,7 +159,7 @@ func (n *InstanceNetwork) ResolveNetworkInterfaceChoice(ctx context.Context, i b
 	if err != nil {
 		return c, instanceNetworkError(err)
 	}
-	if x.ProviderUID != c.ProviderUID || x.ProviderName != c.ProviderName {
+	if (c.ProviderUID != "" && x.ProviderUID != "" && x.ProviderUID != c.ProviderUID) || x.ProviderName != c.ProviderName {
 		return c, biz.ErrNetworkConflict
 	}
 	c.Name = x.Name

@@ -90,7 +90,6 @@ func wireSecurityGroups(repository *networkdata.Postgres, provider *networkdata.
 	if repository == nil || provider == nil {
 		return nil, nil, fmt.Errorf("security groups require Network repository and provider")
 	}
-	repository.UseSecurityGroupObserver(provider)
 	if instances != nil {
 		port := ownerSecurityGroups{store: repository, mapError: instanceSecurityGroupError}
 		if err := instances.service.UseSecurityGroups(port); err != nil {

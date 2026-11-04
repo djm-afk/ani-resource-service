@@ -90,7 +90,7 @@ func (s *PlatformNetworkService) GetPlatformNetworkCapabilities(ctx context.Cont
 	wire := func(o biz.CapabilityObservation) *networkv1.CapabilityObservation {
 		message := o.Reason.Message()
 		if o.Reason == "CAPABILITY_UNKNOWN" {
-			message = "capability is not configured or verified"
+			message = "capability has not been reported"
 		}
 		return &networkv1.CapabilityObservation{Reason: string(o.Reason), ReasonMessage: message, ObservedAt: optionalTime(o.ObservedAt), ObservationStale: o.ObservationStale}
 	}

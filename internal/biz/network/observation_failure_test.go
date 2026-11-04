@@ -27,7 +27,7 @@ func TestLBObservationFailurePreservesLastConfirmedState(t *testing.T) {
 	}{
 		{"timeout", context.DeadlineExceeded, Available},
 		{"read failure", &ProviderError{Kind: ProviderTemporary, Cause: errors.New("API unavailable")}, Available},
-		{"wrong owner", &ProviderError{Kind: ProviderConflict}, Degraded},
+		{"wrong owner", &ProviderError{Kind: ProviderConflict}, Available},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			work, repository, _, worker := deferredLBWorkerFixture()
@@ -46,11 +46,11 @@ func TestLBObservationFailurePreservesLastConfirmedState(t *testing.T) {
 	}
 }
 
-func TestLBObservationErrorIsVisibleBeforeFreshnessExpires(t *testing.T) {
-	now := time.Now()
-	l := &LoadBalancers{now: func() time.Time { return now }, freshness: time.Minute}
-	v := l.observation(LoadBalancer{EgressMetadata: EgressMetadata{State: Available, Reason: ProviderUnavailable, ObservedAt: &now}, DataPlaneState: "ready", DataPlaneObservedAt: &now})
-	if v.State != Available || !v.ObservationStale || v.DataPlaneState != "unknown" || v.ObservedAt == nil || !v.ObservedAt.Equal(now) {
-		t.Fatalf("observation failure hidden behind fresh green state: %+v", v)
+func TestLBObservationErrorIsProjectedWithoutAnAgeThreshold(t *testing.T) {
+	old := time.Now().Add(-365 * 24 * time.Hour)
+	l := &LoadBalancers{}
+	v := l.observation(LoadBalancer{EgressMetadata: EgressMetadata{State: Available, ObservedAt: &old, ObservationStale: true}})
+	if v.State != Available || !v.ObservationStale || v.ObservedAt == nil || !v.ObservedAt.Equal(old) {
+		t.Fatal(v)
 	}
 }

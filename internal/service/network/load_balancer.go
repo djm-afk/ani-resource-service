@@ -67,14 +67,6 @@ func wireLoadBalancer(v biz.LoadBalancer) *networkv1.LoadBalancer {
 		"unknown":              networkv1.LoadBalancerConfigurationState_LOAD_BALANCER_CONFIGURATION_STATE_UNKNOWN,
 	}
 	data := networkv1.LoadBalancerDataPlaneState_LOAD_BALANCER_DATA_PLANE_STATE_UNKNOWN
-	if v.DataPlaneObservedAt != nil {
-		switch v.DataPlaneState {
-		case "healthy":
-			data = networkv1.LoadBalancerDataPlaneState_LOAD_BALANCER_DATA_PLANE_STATE_HEALTHY
-		case "unhealthy":
-			data = networkv1.LoadBalancerDataPlaneState_LOAD_BALANCER_DATA_PLANE_STATE_UNHEALTHY
-		}
-	}
 	state, ok := cfg[v.ConfigurationState]
 	if !ok {
 		state = networkv1.LoadBalancerConfigurationState_LOAD_BALANCER_CONFIGURATION_STATE_UNKNOWN
@@ -82,7 +74,7 @@ func wireLoadBalancer(v biz.LoadBalancer) *networkv1.LoadBalancer {
 	r := &networkv1.LoadBalancer{Id: v.ID, TenantId: v.TenantID, VpcId: v.VPCID, SubnetId: v.SubnetID, Name: v.Name, Description: v.Description, Exposure: lbExposureToWire[v.Exposure], Flavor: v.Flavor, PublicEipId: v.PublicEIPID, PrivateIp: v.PrivateIP,
 		Listener:    &networkv1.LoadBalancerListener{Id: v.Listener.ID, Protocol: networkv1.LoadBalancerListenerProtocol_LOAD_BALANCER_LISTENER_PROTOCOL_HTTP, Port: v.Listener.Port},
 		HealthCheck: &networkv1.LoadBalancerHealthCheck{Protocol: networkv1.LoadBalancerHealthCheckProtocol_LOAD_BALANCER_HEALTH_CHECK_PROTOCOL_TCP, IntervalSeconds: &v.Health.IntervalSeconds, TimeoutSeconds: &v.Health.TimeoutSeconds, UnhealthyThreshold: &v.Health.UnhealthyThreshold, HealthyThreshold: &v.Health.HealthyThreshold},
-		Algorithm:   networkv1.LoadBalancerAlgorithm_LOAD_BALANCER_ALGORITHM_ROUND_ROBIN, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), Version: v.Version, DesiredVersion: v.DesiredVersion, ProviderTargetVersion: v.ProviderTargetVersion, AppliedVersion: v.AppliedVersion, ConfigurationState: state, DataPlaneState: data, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), LastOperationId: v.LastOperationID, PublicAddress: v.PublicAddress, DataPlaneObservedAt: optionalTime(v.DataPlaneObservedAt)}
+		Algorithm:   networkv1.LoadBalancerAlgorithm_LOAD_BALANCER_ALGORITHM_ROUND_ROBIN, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), Version: v.Version, DesiredVersion: v.DesiredVersion, ProviderTargetVersion: v.ProviderTargetVersion, AppliedVersion: v.AppliedVersion, ConfigurationState: state, DataPlaneState: data, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), LastOperationId: v.LastOperationID, PublicAddress: v.PublicAddress}
 	if v.Health.Port != 0 {
 		r.HealthCheck.Port = &v.Health.Port
 	}

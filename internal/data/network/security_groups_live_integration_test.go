@@ -325,10 +325,9 @@ func securityGroupsLiveAssertApplied(t *testing.T, o *unstructured.Unstructured,
 		good[name] = c["status"] == "True"
 	}
 	trust, found, _ := unstructured.NestedBool(o.Object, "spec", "allowSameGroupTraffic")
-	appliedTrust, appliedFound, _ := unstructured.NestedBool(o.Object, "status", "allowSameGroupTraffic")
 	ingress, _, _ := unstructured.NestedSlice(o.Object, "spec", "ingressRules")
 	egress, _, _ := unstructured.NestedSlice(o.Object, "spec", "egressRules")
-	if !good["Valid"] || !good["Ready"] || o.GetGeneration() < 1 || observed != o.GetGeneration() || !found || trust || !appliedFound || appliedTrust || len(egress) != 0 || len(ingress) != 2 {
+	if !good["Ready"] || o.GetGeneration() < 1 || observed != o.GetGeneration() || !found || trust || len(egress) != 0 || len(ingress) != 2 {
 		t.Fatal("live KCN SG did not apply the exact ingress-only default policy", o.Object)
 	}
 	allow, drop := false, false

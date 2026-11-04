@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -28,20 +27,17 @@ type Placement struct {
 }
 
 type Postgres struct {
-	vnicConsumerResolver  biz.VNicConsumerResolver
-	sharedObservation     bool
-	networkProvider       *KCProvider
-	namespaceResolver     func(context.Context, string) (tenantnamespace.Identity, error)
-	securityGroupObserver biz.SecurityGroupConsumerObserver
-	vmNetworks            biz.VMNetworkResolver
-	vmAddressFreshness    time.Duration
-	vpcCIDRPresets        *biz.VPCCIDRPresets
-	baseFreshness         time.Duration
-	workTurn              atomic.Uint64
-	egressInfrastructure  biz.EgressInfrastructure
-	pool                  *pgxpool.Pool
-	queries               *sqlcgen.Queries
-	placement             Placement
+	vnicConsumerResolver        biz.VNicConsumerResolver
+	networkProvider             *KCProvider
+	namespaceResolver           func(context.Context, string) (tenantnamespace.Identity, error)
+	vmNetworks                  biz.VMNetworkResolver
+	vpcCIDRPresets              *biz.VPCCIDRPresets
+	workTurn                    atomic.Uint64
+	virtualSwitchInfrastructure biz.VirtualSwitchInfrastructure
+	lbCapabilityReader          LoadBalancerCapabilityReader
+	pool                        *pgxpool.Pool
+	queries                     *sqlcgen.Queries
+	placement                   Placement
 }
 
 // Provider reads invoked by admission must use its transaction connection.
@@ -250,7 +246,8 @@ func (p *Postgres) GetVPC(ctx context.Context, tenant, id string) (biz.VPC, erro
 	row, err := p.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: tenant, VpcID: id})
 	value := vpc(row.NetworkVpc)
 	value.SubnetCount = row.SubnetCount
-	value.BaseConnectivity = &biz.BaseConnectivity{State: row.BaseState, Reason: biz.Reason(row.BaseReason), ObservedAt: row.BaseObservedAt}
+	value.ObservationStale = row.NetworkVpc.ObservedAt == nil || row.ObservationError != ""
+	value.BaseConnectivity = &biz.BaseConnectivity{State: row.BaseState, Reason: biz.Reason(row.BaseReason), ObservedAt: row.BaseObservedAt, ObservationStale: row.BaseObservedAt == nil || row.BaseObservationError != ""}
 	if err == nil {
 		value.PublicEgress, err = publicEgress(row.PublicEgress)
 	}
@@ -315,7 +312,8 @@ func (p *Postgres) ListVPCs(ctx context.Context, tenant string, filter biz.VPCFi
 	for _, row := range rows {
 		value := vpc(row.NetworkVpc)
 		value.SubnetCount = row.SubnetCount
-		value.BaseConnectivity = &biz.BaseConnectivity{State: row.BaseState, Reason: biz.Reason(row.BaseReason), ObservedAt: row.BaseObservedAt}
+		value.ObservationStale = row.NetworkVpc.ObservedAt == nil || row.ObservationError != ""
+		value.BaseConnectivity = &biz.BaseConnectivity{State: row.BaseState, Reason: biz.Reason(row.BaseReason), ObservedAt: row.BaseObservedAt, ObservationStale: row.BaseObservedAt == nil || row.BaseObservationError != ""}
 		value.PublicEgress, err = publicEgress(row.PublicEgress)
 		if err != nil {
 			return nil, 0, databaseFailure(err)

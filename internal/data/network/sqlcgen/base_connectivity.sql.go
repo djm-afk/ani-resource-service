@@ -58,7 +58,7 @@ func (q *Queries) ConfirmSnatClaim(ctx context.Context, arg ConfirmSnatClaimPara
 }
 
 const getBaseConnectivity = `-- name: GetBaseConnectivity :one
-SELECT tenant_id, vpc_id, cluster_id, namespace, pool_id, pool_revision, purpose, eip_id, snat_id, operation_id, state, reason, provider_ready, provider_observed_at, observed_at, terminating, version, created_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2
+SELECT tenant_id, vpc_id, cluster_id, namespace, pool_id, pool_revision, purpose, eip_id, snat_id, operation_id, state, reason, observed_at, terminating, version, created_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2
 `
 
 type GetBaseConnectivityParams struct {
@@ -82,8 +82,6 @@ func (q *Queries) GetBaseConnectivity(ctx context.Context, arg GetBaseConnectivi
 		&i.OperationID,
 		&i.State,
 		&i.Reason,
-		&i.ProviderReady,
-		&i.ProviderObservedAt,
 		&i.ObservedAt,
 		&i.Terminating,
 		&i.Version,
@@ -93,7 +91,7 @@ func (q *Queries) GetBaseConnectivity(ctx context.Context, arg GetBaseConnectivi
 }
 
 const getBaseForEIP = `-- name: GetBaseForEIP :one
-SELECT tenant_id, vpc_id, cluster_id, namespace, pool_id, pool_revision, purpose, eip_id, snat_id, operation_id, state, reason, provider_ready, provider_observed_at, observed_at, terminating, version, created_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND eip_id=$2
+SELECT tenant_id, vpc_id, cluster_id, namespace, pool_id, pool_revision, purpose, eip_id, snat_id, operation_id, state, reason, observed_at, terminating, version, created_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND eip_id=$2
 `
 
 type GetBaseForEIPParams struct {
@@ -117,8 +115,6 @@ func (q *Queries) GetBaseForEIP(ctx context.Context, arg GetBaseForEIPParams) (N
 		&i.OperationID,
 		&i.State,
 		&i.Reason,
-		&i.ProviderReady,
-		&i.ProviderObservedAt,
 		&i.ObservedAt,
 		&i.Terminating,
 		&i.Version,
@@ -128,7 +124,7 @@ func (q *Queries) GetBaseForEIP(ctx context.Context, arg GetBaseForEIPParams) (N
 }
 
 const getBaseForSnat = `-- name: GetBaseForSnat :one
-SELECT tenant_id, vpc_id, cluster_id, namespace, pool_id, pool_revision, purpose, eip_id, snat_id, operation_id, state, reason, provider_ready, provider_observed_at, observed_at, terminating, version, created_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND snat_id=$2
+SELECT tenant_id, vpc_id, cluster_id, namespace, pool_id, pool_revision, purpose, eip_id, snat_id, operation_id, state, reason, observed_at, terminating, version, created_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND snat_id=$2
 `
 
 type GetBaseForSnatParams struct {
@@ -152,8 +148,6 @@ func (q *Queries) GetBaseForSnat(ctx context.Context, arg GetBaseForSnatParams) 
 		&i.OperationID,
 		&i.State,
 		&i.Reason,
-		&i.ProviderReady,
-		&i.ProviderObservedAt,
 		&i.ObservedAt,
 		&i.Terminating,
 		&i.Version,
@@ -270,7 +264,7 @@ func (q *Queries) InsertBaseEIP(ctx context.Context, arg InsertBaseEIPParams) (N
 
 const insertBaseSnat = `-- name: InsertBaseSnat :one
 INSERT INTO network_snat_bindings(tenant_id,snat_id,cluster_id,namespace,name,description,vpc_id,eip_id,purpose,desired_enabled,state,created_at,updated_at,last_operation_id)
-VALUES($1,$2,$3,$4,'VPC base connectivity','',$5,$6,'intranet',true,'provisioning',$7,$7,$8) RETURNING tenant_id, snat_id, cluster_id, namespace, name, description, vpc_id, eip_id, desired_enabled, applied_enabled, target_generation, state, reason, version, created_at, updated_at, observed_at, last_operation_id, purpose, system_owner_vpc
+VALUES($1,$2,$3,$4,'VPC base connectivity','',$5,$6,'intranet',true,'provisioning',$7,$7,$8) RETURNING tenant_id, snat_id, cluster_id, namespace, name, description, vpc_id, eip_id, desired_enabled, applied_enabled, state, reason, version, created_at, updated_at, observed_at, last_operation_id, purpose, system_owner_vpc
 `
 
 type InsertBaseSnatParams struct {
@@ -307,7 +301,6 @@ func (q *Queries) InsertBaseSnat(ctx context.Context, arg InsertBaseSnatParams) 
 		&i.EipID,
 		&i.DesiredEnabled,
 		&i.AppliedEnabled,
-		&i.TargetGeneration,
 		&i.State,
 		&i.Reason,
 		&i.Version,
@@ -427,26 +420,22 @@ func (q *Queries) RetireCancelledResource(ctx context.Context, arg RetireCancell
 
 const setBaseObservation = `-- name: SetBaseObservation :exec
 UPDATE network_vpc_base_connectivity SET state=$1,reason=$2,
- provider_ready=$3,provider_observed_at=$4,observed_at=$5,version=version+1
-WHERE tenant_id=$6 AND vpc_id=$7
+ observed_at=$3,version=version+1
+WHERE tenant_id=$4 AND vpc_id=$5
 `
 
 type SetBaseObservationParams struct {
-	State              string
-	Reason             string
-	ProviderReady      bool
-	ProviderObservedAt *time.Time
-	ObservedAt         *time.Time
-	TenantID           string
-	VpcID              string
+	State      string
+	Reason     string
+	ObservedAt *time.Time
+	TenantID   string
+	VpcID      string
 }
 
 func (q *Queries) SetBaseObservation(ctx context.Context, arg SetBaseObservationParams) error {
 	_, err := q.db.Exec(ctx, setBaseObservation,
 		arg.State,
 		arg.Reason,
-		arg.ProviderReady,
-		arg.ProviderObservedAt,
 		arg.ObservedAt,
 		arg.TenantID,
 		arg.VpcID,

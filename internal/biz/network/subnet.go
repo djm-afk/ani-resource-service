@@ -160,11 +160,7 @@ func (n *Network) CreateSubnet(ctx context.Context, request CreateSubnet) (Subne
 	if err := validateAttribution(request.Attribution); err != nil {
 		return Subnet{}, err
 	}
-	intent.NamespaceIdentity, err = n.repository.ResolveTenantNamespace(ctx, intent.TenantID)
-	if err != nil {
-		return Subnet{}, err
-	}
-	return n.repository.AcceptSubnet(ctx, intent, request.Attribution, n.freshness)
+	return n.repository.AcceptSubnet(ctx, intent, request.Attribution)
 }
 func (n *Network) GetSubnet(ctx context.Context, tenant, id string) (Subnet, error) {
 	tenant, err := ParseTenant(tenant)
@@ -175,7 +171,7 @@ func (n *Network) GetSubnet(ctx context.Context, tenant, id string) (Subnet, err
 		return Subnet{}, Fail(ResourceNotFound, "subnet not found")
 	}
 	value, err := n.repository.GetSubnet(ctx, tenant, id)
-	return n.subnetObservation(value), err
+	return value, err
 }
 func (n *Network) DeleteSubnet(ctx context.Context, tenant, id string) (Subnet, error) {
 	tenant, err := ParseTenant(tenant)
@@ -186,11 +182,7 @@ func (n *Network) DeleteSubnet(ctx context.Context, tenant, id string) (Subnet, 
 		return Subnet{}, Fail(ResourceNotFound, "subnet not found")
 	}
 	value, err := n.repository.DeleteSubnet(ctx, tenant, id)
-	return n.subnetObservation(value), err
-}
-func (n *Network) subnetObservation(value Subnet) Subnet {
-	value.ObservationStale = value.Reason == ProviderUnavailable || value.ObservedAt == nil || value.ObservedAt.After(n.now()) || n.now().Sub(*value.ObservedAt) > n.freshness
-	return value
+	return value, err
 }
 func validSubnetID(id string) bool {
 	if len(id) != 39 || !strings.HasPrefix(id, "subnet_") {
@@ -250,7 +242,7 @@ func (n *Network) ListSubnets(ctx context.Context, r ListSubnets) (SubnetPage, e
 			page.NextCursor = n.encodeCursor(vpcCursor{Version: 1, Kind: "subnet", TenantID: tenant, VPCID: r.VPCID, Name: filter.Name, State: r.State, ID: last.ID, CreatedAt: last.CreatedAt})
 			break
 		}
-		page.Items = append(page.Items, n.subnetObservation(value))
+		page.Items = append(page.Items, value)
 	}
 	return page, nil
 }

@@ -49,6 +49,10 @@ func PrimaryNetworkInterface(v VM) NetworkInterface {
 	return NetworkInterface{Slot: "primary", Desired: NetworkInterfaceChoice{Mode: "automatic"}, Applied: NetworkInterfaceChoice{Mode: "automatic"}}
 }
 func SetPrimaryNetworkInterface(v *VM, c NetworkInterface) {
+	old := PrimaryNetworkInterface(*v)
+	if v.Network.AttachmentID != "" && (old.Desired.VNicID != c.Desired.VNicID || old.Applied.VNicID != c.Applied.VNicID || old.Desired.ProviderUID != c.Desired.ProviderUID || old.Applied.ProviderUID != c.Applied.ProviderUID) {
+		v.Network.SnapshotRevision++
+	}
 	v.NetworkInterfaces = []NetworkInterface{c}
 }
 func (c NetworkInterface) PendingRestart() bool {
@@ -150,31 +154,13 @@ func (w *Worker) applyNetworkTemplate(ctx context.Context, o *Operation, v *VM) 
 	o.Pending = nil
 	return nil
 }
-func (w *Worker) confirmNetworkInterface(ctx context.Context, v *VM, x Observation, addresses []Address) error {
+func (w *Worker) confirmNetworkInterface(ctx context.Context, v *VM, x Observation) error {
 	cfg := PrimaryNetworkInterface(*v)
 	if cfg.RequestedRevision == 0 {
 		return nil
 	}
-	if cfg.PendingRestart() || x.Launcher == nil || x.VMI == nil || !x.Running || len(addresses) == 0 {
+	if cfg.PendingRestart() || x.Launcher == nil || x.VMI == nil || !x.Running {
 		return ErrDependency
-	}
-	for _, a := range addresses {
-		if a.LauncherUID != x.Launcher.UID || a.VMIUID != x.VMI.UID {
-			return ErrDependency
-		}
-	}
-	if cfg.Applied.Mode == "manual" {
-		found := false
-		for _, a := range addresses {
-			for _, ip := range cfg.Applied.IPs {
-				if a.Address == ip {
-					found = true
-				}
-			}
-		}
-		if !found {
-			return ErrDependency
-		}
 	}
 	cfg.VerifiedPodUID = x.Launcher.UID
 	SetPrimaryNetworkInterface(v, cfg)

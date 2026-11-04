@@ -13,7 +13,7 @@ INSERT INTO network_idempotency (tenant_id,operation_kind,idempotency_key,finger
 VALUES (sqlc.arg(tenant_id),'create_subnet',sqlc.arg(idempotency_key),sqlc.arg(fingerprint),1,sqlc.arg(subnet_id)::text,sqlc.arg(operation_id),sqlc.arg(response),sqlc.arg(created_at));
 
 -- name: GetSubnet :one
-SELECT * FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2;
+SELECT sqlc.embed(s),coalesce(r.observation_error,'')::text AS observation_error FROM network_subnets s LEFT JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id WHERE s.tenant_id=$1 AND s.subnet_id=$2;
 
 -- name: LockSubnet :one
 SELECT * FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2 FOR UPDATE;
@@ -23,20 +23,20 @@ SELECT count(*)::bigint FROM network_subnets WHERE tenant_id=$1 AND vpc_id=$2 AN
 
 -- name: CountBlockingSubnets :one
 SELECT count(*)::bigint FROM network_subnets s WHERE s.tenant_id=$1 AND s.vpc_id=$2
- AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND (a.state<>'released' OR a.protocol_blocked)));
+ AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND a.state<>'released'));
 
 -- name: SubnetOverlaps :one
 SELECT EXISTS(SELECT 1 FROM network_subnets s WHERE s.tenant_id=sqlc.arg(tenant_id) AND s.vpc_id=sqlc.arg(vpc_id)
- AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND (a.state<>'released' OR a.protocol_blocked)))
+ AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND a.state<>'released'))
  AND s.cidr::cidr && sqlc.arg(cidr)::cidr)::boolean;
 
 -- name: ListSubnets :many
-SELECT * FROM network_subnets WHERE tenant_id=sqlc.arg(tenant_id)
- AND (sqlc.arg(vpc_filter)::text='' OR vpc_id=sqlc.arg(vpc_filter))
- AND (sqlc.arg(name_filter)::text='' OR name=sqlc.arg(name_filter))
- AND ((sqlc.arg(state_filter)::text='' AND state<>'deleted') OR state=sqlc.arg(state_filter))
- AND (sqlc.arg(after_id)::text='' OR (created_at,subnet_id)<(sqlc.arg(after_created_at)::timestamptz,sqlc.arg(after_id)::text))
-ORDER BY created_at DESC,subnet_id DESC LIMIT sqlc.arg(max_results)::integer;
+SELECT sqlc.embed(s),coalesce(r.observation_error,'')::text AS observation_error FROM network_subnets s LEFT JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id WHERE s.tenant_id=sqlc.arg(tenant_id)
+ AND (sqlc.arg(vpc_filter)::text='' OR s.vpc_id=sqlc.arg(vpc_filter))
+ AND (sqlc.arg(name_filter)::text='' OR s.name=sqlc.arg(name_filter))
+ AND ((sqlc.arg(state_filter)::text='' AND s.state<>'deleted') OR s.state=sqlc.arg(state_filter))
+ AND (sqlc.arg(after_id)::text='' OR (s.created_at,s.subnet_id)<(sqlc.arg(after_created_at)::timestamptz,sqlc.arg(after_id)::text))
+ORDER BY s.created_at DESC,s.subnet_id DESC LIMIT sqlc.arg(max_results)::integer;
 
 -- name: LockDueSubnet :one
 SELECT s.* FROM network_subnets s JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id

@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"testing"
+	"time"
 )
 
 func managedPoolIntent(key string) biz.PlatformIntent {
@@ -24,7 +23,7 @@ type heldGatewayProvider struct {
 func (p *heldGatewayProvider) Observe(ctx context.Context, t biz.ProviderTarget) (biz.ProviderObservation, error) {
 	v, err := p.egressProvider.Observe(ctx, t)
 	if t.Kind == "egress_gateway" && p.hold {
-		v.Ready = false
+		v.Ready = egressReportedReady(false)
 	}
 	return v, err
 }
@@ -34,7 +33,7 @@ func (p *heldGatewayProvider) EnsureEgress(ctx context.Context, t biz.ProviderTa
 	}
 	v, err := p.egressProvider.EnsureEgress(ctx, t)
 	if t.Kind == "egress_gateway" && p.hold {
-		v.Ready = false
+		v.Ready = egressReportedReady(false)
 	}
 	return v, err
 }
@@ -70,10 +69,10 @@ func TestManagedPoolGatewayAtomicReplayReadyAndCleanup(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	f.provider.mu.Lock()
-	_, premature := f.provider.objects[accepted.ID]
+	_, submitted := f.provider.objects[accepted.ID]
 	f.provider.mu.Unlock()
-	if premature {
-		t.Fatal("pool created before owned gateway readiness")
+	if !submitted {
+		t.Fatal("gateway readiness blocked the pool declaration")
 	}
 	restartManagedWorker(t, f, provider)
 	replay, err := f.e.CreatePlatform(f.ctx, input)
@@ -143,7 +142,7 @@ func TestManagedPoolGatewayCancelPendingAndRejectedCreate(t *testing.T) {
 			}
 			if reject {
 				f.drive(t, func() bool {
-					v, e := f.e.GetPlatform(f.ctx, "public_pool", pool.ID)
+					v, e := f.e.GetPlatform(f.ctx, "egress_gateway", pool.Pool.GatewayID)
 					return e == nil && v.State == biz.Failed
 				})
 			}

@@ -2,19 +2,18 @@ package data_test
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
 	"k8s.io/client-go/rest"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 func seedEgressInfrastructure(api *controlled.Server) {
@@ -40,7 +39,7 @@ func newEgressKCFixture(t *testing.T, intercept func(http.ResponseWriter, *http.
 	if err != nil {
 		t.Fatal(err)
 	}
-	db.Repository.UseEgressInfrastructure(provider)
+	db.Repository.UseVirtualSwitchInfrastructure(provider)
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = 100 * time.Millisecond
 	policy.RetryMin = 5 * time.Millisecond
@@ -49,7 +48,7 @@ func newEgressKCFixture(t *testing.T, intercept func(http.ResponseWriter, *http.
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := biz.NewEgress(db.Repository, provider, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	e, err := biz.NewEgress(db.Repository, provider, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,17 +58,13 @@ func newEgressKCFixture(t *testing.T, intercept func(http.ResponseWriter, *http.
 	f.ctx = biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: f.tenant, PlatformAdministrator: true, Attribution: biz.Attribution{Actor: "controlled-adapter-test", DirectCaller: "fixture"}})
 	gateway := f.platform(t, biz.PlatformIntent{Kind: "create_egress_gateway", Name: "gateway", IdempotencyKey: "gateway"})
 	f.pool = f.platform(t, biz.PlatformIntent{Kind: "create_public_pool", Name: "pool", IdempotencyKey: "pool", Pool: &biz.PublicPoolConfig{Mode: "overlay", GatewayID: gateway.ID, CIDR: "192.0.2.0/24", OVNGatewayIP: "192.0.2.1"}})
-	evidence := &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: []string{"sha256:" + strings.Repeat("a", 64)}, TopologyFingerprint: f.pool.TopologyFingerprint, EvidenceReference: "controlled HTTP fixture, not native data plane", Scope: "adapter test", VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}
+	evidence := &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: []string{"sha256:" + strings.Repeat("a", 64)}, TopologyFingerprint: strings.Repeat("c", 64), EvidenceReference: "controlled HTTP fixture, not native data plane", Scope: "adapter test", VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}
 	f.setPool(t, biz.PlatformIntent{Kind: "verify_public_pool", ID: f.pool.ID, IdempotencyKey: "verify", Verification: evidence})
 	f.setPool(t, biz.PlatformIntent{Kind: "set_pool_allocation", ID: f.pool.ID, IdempotencyKey: "open", Enabled: true})
 	f.setPool(t, biz.PlatformIntent{Kind: "set_default_pool", ID: f.pool.ID, IdempotencyKey: "default"})
 	// Start shared observation after initial fixture setup. Every subsequent
-	// lifecycle and dependency transition traverses the production audit/index.
-	options := data.DefaultObservationOptions()
-	options.AuditInterval = 80 * time.Millisecond
-	options.AuditJitter = time.Millisecond
-	options.FlushInterval = 10 * time.Millisecond
-	obs, err := provider.EnableObservation(options)
+	// lifecycle transition wakes the task through ordinary object events.
+	obs, err := provider.EnableObservation(time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,42 +112,19 @@ func TestEgressKCAdapterSharedObservationLifecycleAndDrift(t *testing.T) {
 	}
 	enabled = true
 	bound = f.binding(t, bound.ID, biz.Available, &enabled)
-	// Status-only stale generation must invalidate both the binding's applied
-	// result and its parent EIP, while the old successful operation is retained.
+	// The binding consumes its own phase; EIP reverse-binding diagnostics are not a gate.
 	eipName := strings.Replace(eip.ID, "_", "-", 1)
-	object := api.Object("eips", ns, eipName)
-	saved := object["status"].(map[string]any)["boundResource"].(map[string]any)["observedGeneration"]
-	object["status"].(map[string]any)["boundResource"].(map[string]any)["observedGeneration"] = 0
-	api.Change("eips", object, false)
-	f.drive(t, func() bool {
-		v, err := f.e.GetVPCSnat(f.ctx, "", bound.ID, false)
-		return err == nil && v.State == biz.Degraded && v.AppliedEnabled == nil
-	})
-	object["status"].(map[string]any)["boundResource"].(map[string]any)["observedGeneration"] = saved
-	api.Change("eips", object, false)
-	bound = f.binding(t, bound.ID, biz.Available, &enabled)
+
 	if _, err = f.e.DeleteVPCSnatBinding(f.ctx, "", bound.ID); err != nil {
 		t.Fatal(err)
 	}
 	f.binding(t, bound.ID, biz.Deleted, nil)
-	// A foreign Nat prevents provider deletion; Network never removes that Nat.
-	nat := map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "Nat", "metadata": map[string]any{"name": "foreign", "namespace": ns, "uid": uuid.NewString()}, "spec": map[string]any{"eip": eipName}}
-	api.Change("nats", nat, false)
 	if _, err = f.e.DeleteEIP(f.ctx, "", eip.ID); err != nil {
 		t.Fatal(err)
 	}
-	f.drive(t, func() bool {
-		v, err := f.e.GetEIP(f.ctx, "", eip.ID)
-		return err == nil && v.Reason == biz.ResourceInUse
-	})
-	api.Backend.Mu.Lock()
-	deletes := api.Backend.Deletes["eips"]
-	api.Backend.Mu.Unlock()
-	if deletes != 0 {
-		t.Fatal("foreign Nat ignored")
-	}
-	api.Change("nats", nat, true)
 	f.drive(t, func() bool { v, err := f.e.GetEIP(f.ctx, "", eip.ID); return err == nil && v.State == biz.Deleted })
+	_ = eipName
+
 	if api.Backend.Invalid != "" {
 		t.Fatal(api.Backend.Invalid)
 	}

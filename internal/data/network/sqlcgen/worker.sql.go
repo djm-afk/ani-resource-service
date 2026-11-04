@@ -16,7 +16,7 @@ SET lease_owner=$1::uuid, lease_epoch=lease_epoch+1,
     lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond'
 WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$4::text
   AND (lease_until IS NULL OR lease_until <= clock_timestamp())
-RETURNING tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, eip_id, snat_id, retired, lb_id, vnic_id
+RETURNING tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, eip_id, snat_id, retired, lb_id, vnic_id, observation_error
 `
 
 type AcquireLeaseParams struct {
@@ -46,13 +46,12 @@ func (q *Queries) AcquireLease(ctx context.Context, arg AcquireLeaseParams) (Net
 		&i.RequestedGeneration,
 		&i.ProcessedGeneration,
 		&i.RetryNotBefore,
-		&i.EvidenceHash,
-		&i.EvidenceAppliedAt,
 		&i.EipID,
 		&i.SnatID,
 		&i.Retired,
 		&i.LbID,
 		&i.VnicID,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -151,7 +150,7 @@ SET pending_action=$1, pending_since=clock_timestamp(),
     provider_uid=CASE WHEN provider_uid='' THEN $2::text ELSE provider_uid END
 WHERE tenant_id=$3 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$4::text AND binding_id=$5
   AND (provider_uid='' OR provider_uid=$2)
-  AND (($1::text='create' AND pending_action='')
+  AND (($1::text='create' AND (pending_action='' OR (pending_action='create' AND provider_uid='')))
        OR ($1='update' AND provider_uid<>'' AND pending_action IN ('','update'))
        OR ($1='delete' AND (pending_action IN ('','delete') OR $2::text<>'')))
 `
@@ -179,7 +178,7 @@ func (q *Queries) BeginProviderMutation(ctx context.Context, arg BeginProviderMu
 }
 
 const checkLease = `-- name: CheckLease :one
-SELECT tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, eip_id, snat_id, retired, lb_id, vnic_id FROM network_reconciliations
+SELECT tenant_id, vpc_id, next_run_at, lease_owner, lease_until, lease_epoch, subnet_id, reconciliation_id, requested_generation, processed_generation, retry_not_before, eip_id, snat_id, retired, lb_id, vnic_id, observation_error FROM network_reconciliations
 WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$2::text AND lease_owner=$3 AND lease_epoch=$4
   AND lease_until > clock_timestamp()
 FOR UPDATE
@@ -212,13 +211,12 @@ func (q *Queries) CheckLease(ctx context.Context, arg CheckLeaseParams) (Network
 		&i.RequestedGeneration,
 		&i.ProcessedGeneration,
 		&i.RetryNotBefore,
-		&i.EvidenceHash,
-		&i.EvidenceAppliedAt,
 		&i.EipID,
 		&i.SnatID,
 		&i.Retired,
 		&i.LbID,
 		&i.VnicID,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -261,7 +259,7 @@ func (q *Queries) CompleteAttempt(ctx context.Context, arg CompleteAttemptParams
 }
 
 const getBinding = `-- name: GetBinding :one
-SELECT tenant_id, vpc_id, binding_id, cluster_id, namespace, provider_name, provider_uid, pending_action, pending_since, subnet_id, resource_kind, eip_id, snat_id, create_dispatched, lb_id, provider_ready, provider_observed_at, provider_observed_uid, provider_generation, provider_observed_generation, vnic_id FROM network_provider_bindings WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$2::text
+SELECT tenant_id, vpc_id, binding_id, cluster_id, namespace, provider_name, provider_uid, pending_action, pending_since, subnet_id, resource_kind, eip_id, snat_id, create_dispatched, lb_id, vnic_id FROM network_provider_bindings WHERE tenant_id=$1 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$2::text
 `
 
 type GetBindingParams struct {
@@ -288,44 +286,7 @@ func (q *Queries) GetBinding(ctx context.Context, arg GetBindingParams) (Network
 		&i.SnatID,
 		&i.CreateDispatched,
 		&i.LbID,
-		&i.ProviderReady,
-		&i.ProviderObservedAt,
-		&i.ProviderObservedUid,
-		&i.ProviderGeneration,
-		&i.ProviderObservedGeneration,
 		&i.VnicID,
-	)
-	return i, err
-}
-
-const getVPCProviderReadiness = `-- name: GetVPCProviderReadiness :one
-SELECT b.provider_ready,b.provider_observed_at,b.provider_observed_uid,b.provider_generation,b.provider_observed_generation
-FROM network_provider_bindings b
-WHERE b.tenant_id=$1 AND b.vpc_id=$2
-`
-
-type GetVPCProviderReadinessParams struct {
-	TenantID string
-	VpcID    *string
-}
-
-type GetVPCProviderReadinessRow struct {
-	ProviderReady              bool
-	ProviderObservedAt         *time.Time
-	ProviderObservedUid        string
-	ProviderGeneration         int64
-	ProviderObservedGeneration int64
-}
-
-func (q *Queries) GetVPCProviderReadiness(ctx context.Context, arg GetVPCProviderReadinessParams) (GetVPCProviderReadinessRow, error) {
-	row := q.db.QueryRow(ctx, getVPCProviderReadiness, arg.TenantID, arg.VpcID)
-	var i GetVPCProviderReadinessRow
-	err := row.Scan(
-		&i.ProviderReady,
-		&i.ProviderObservedAt,
-		&i.ProviderObservedUid,
-		&i.ProviderGeneration,
-		&i.ProviderObservedGeneration,
 	)
 	return i, err
 }
@@ -424,19 +385,25 @@ const releaseLease = `-- name: ReleaseLease :execrows
 UPDATE network_reconciliations
 SET lease_owner=NULL, lease_until=NULL,
     processed_generation=greatest(processed_generation,$1::bigint),
-    evidence_hash=CASE WHEN $2::boolean THEN $3::text ELSE evidence_hash END,
-    evidence_applied_at=CASE WHEN $2::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
-    retry_not_before=CASE WHEN $4::boolean THEN clock_timestamp()+$5::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
-    next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() WHEN $6::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
-WHERE tenant_id=$7 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$8::text
-  AND lease_owner=$9 AND lease_epoch=$10 AND lease_until>clock_timestamp()
+    observation_error=CASE WHEN $2::boolean THEN '' WHEN $3::text<>'' THEN $3::text ELSE observation_error END,
+    retired=retired OR $4::boolean,
+    retry_not_before=CASE WHEN $5::boolean THEN $6::timestamptz+$7::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+    next_run_at=CASE WHEN $4::boolean THEN 'infinity'::timestamptz
+      WHEN $5::boolean THEN $6::timestamptz+$7::bigint*interval '1 microsecond'
+      WHEN requested_generation>$1::bigint THEN $6::timestamptz
+      WHEN $8::boolean THEN 'infinity'::timestamptz
+      ELSE $6::timestamptz+$7::bigint*interval '1 microsecond' END
+WHERE tenant_id=$9 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$10::text
+  AND lease_owner=$11 AND lease_epoch=$12 AND lease_until>clock_timestamp()
 `
 
 type ReleaseLeaseParams struct {
-	CoveredGeneration int64
+	ClaimedGeneration int64
 	Observed          bool
-	EvidenceHash      string
+	ObservationError  string
+	Terminal          bool
 	Backoff           bool
+	Now               time.Time
 	DelayMicros       int64
 	Park              bool
 	TenantID          string
@@ -447,10 +414,12 @@ type ReleaseLeaseParams struct {
 
 func (q *Queries) ReleaseLease(ctx context.Context, arg ReleaseLeaseParams) (int64, error) {
 	result, err := q.db.Exec(ctx, releaseLease,
-		arg.CoveredGeneration,
+		arg.ClaimedGeneration,
 		arg.Observed,
-		arg.EvidenceHash,
+		arg.ObservationError,
+		arg.Terminal,
 		arg.Backoff,
+		arg.Now,
 		arg.DelayMicros,
 		arg.Park,
 		arg.TenantID,
@@ -532,42 +501,6 @@ func (q *Queries) SaveBindingObservation(ctx context.Context, arg SaveBindingObs
 		arg.ClearPending,
 		arg.TenantID,
 		arg.ResourceID,
-		arg.BindingID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const saveVPCProviderReadiness = `-- name: SaveVPCProviderReadiness :execrows
-UPDATE network_provider_bindings SET provider_ready=$1,
- provider_observed_at=$2::timestamptz,
- provider_observed_uid=$3,provider_generation=$4,provider_observed_generation=$5
-WHERE tenant_id=$6 AND vpc_id=$7::text AND binding_id=$8
- AND (provider_uid='' OR provider_uid=$3)
-`
-
-type SaveVPCProviderReadinessParams struct {
-	Ready              bool
-	ObservedAt         *time.Time
-	Identity           string
-	Generation         int64
-	ObservedGeneration int64
-	TenantID           string
-	VpcID              string
-	BindingID          string
-}
-
-func (q *Queries) SaveVPCProviderReadiness(ctx context.Context, arg SaveVPCProviderReadinessParams) (int64, error) {
-	result, err := q.db.Exec(ctx, saveVPCProviderReadiness,
-		arg.Ready,
-		arg.ObservedAt,
-		arg.Identity,
-		arg.Generation,
-		arg.ObservedGeneration,
-		arg.TenantID,
-		arg.VpcID,
 		arg.BindingID,
 	)
 	if err != nil {

@@ -35,7 +35,7 @@ type adapterAttachmentRepository struct {
 	release networkbiz.ReleaseAttachment
 }
 
-func (r *adapterAttachmentRepository) PrepareAttachment(_ context.Context, v networkbiz.PrepareAttachment, _ time.Duration) (networkbiz.Attachment, error) {
+func (r *adapterAttachmentRepository) PrepareAttachment(_ context.Context, v networkbiz.PrepareAttachment) (networkbiz.Attachment, error) {
 	r.prepare = v
 	return r.value, r.err
 }
@@ -50,7 +50,7 @@ func (r *adapterAttachmentRepository) ReleaseAttachment(_ context.Context, v net
 	r.release = v
 	return r.value, r.err
 }
-func (r *adapterAttachmentRepository) ListAttachmentConsumers(context.Context, string, networkbiz.AttachmentConsumerFilter, time.Duration) ([]networkbiz.AttachmentConsumerRow, int64, error) {
+func (r *adapterAttachmentRepository) ListAttachmentConsumers(context.Context, string, networkbiz.AttachmentConsumerFilter) ([]networkbiz.AttachmentConsumerRow, int64, error) {
 	return nil, 0, r.err
 }
 func instanceNetworkFixture(t *testing.T) (*InstanceNetwork, biz.Instance, *adapterNetworkRepository, *adapterAttachmentRepository) {
@@ -62,13 +62,13 @@ func instanceNetworkFixture(t *testing.T) (*InstanceNetwork, biz.Instance, *adap
 	i.PodUID = "pod-current"
 	now := time.Now().UTC()
 	repo := &adapterNetworkRepository{subnet: networkbiz.Subnet{ID: i.Spec.Network.SubnetID, TenantID: i.TenantID, VPCID: i.Spec.Network.VPCID, State: networkbiz.Available, ObservedAt: &now}, vpc: networkbiz.VPC{ID: i.Spec.Network.VPCID, TenantID: i.TenantID, State: networkbiz.Available, ObservedAt: &now}}
-	uc, err := networkbiz.NewNetwork(repo, make([]byte, 32), time.Minute, time.Now)
+	uc, err := networkbiz.NewNetwork(repo, make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
 	attachments := &adapterAttachmentRepository{value: networkbiz.Attachment{ID: i.Network.AttachmentID, TenantID: i.TenantID, InstanceID: i.ID, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, SubmissionID: i.Network.SubmissionID, Generation: 1, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, WorkloadMode: "controller_managed", State: networkbiz.Attached, Version: 7, SnapshotRevision: 4, PodName: i.PodName, PodUID: i.PodUID, BindingRevision: i.Network.BindingRevision, ObservedAt: &now}}
 	attachments.value.Plan = &networkbiz.PodPrimaryPlan{FormatVersion: 1, WorkloadMode: "controller_managed", Namespace: i.Spec.Namespace, PrimaryNetworkRef: i.Network.PrimaryNetworkRef, TenantID: i.TenantID, InstanceID: i.ID, AttachmentID: i.Network.AttachmentID, SubmissionID: i.Network.SubmissionID, Generation: 1}
-	adapter, err := NewInstanceNetwork(uc, networkbiz.NewAttachments(attachments, time.Minute), i.Spec.ClusterID, "tenant-")
+	adapter, err := NewInstanceNetwork(uc, networkbiz.NewAttachments(attachments), i.Spec.ClusterID, "tenant-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestInstanceNetworkAdapterUsesStableSubmissionAndSnapshotFences(t *testing.
 	}
 	i.Network.FinalizationID = "33333333-3333-4333-8333-333333333333"
 	i.Network.State = "closed"
-	if err := adapter.Release(ctx, i); err != nil {
+	if done, err := adapter.Release(ctx, i); err != nil || done {
 		t.Fatal(err)
 	}
 	if repo.release.FinalizationID != i.Network.FinalizationID || repo.release.ExpectedVersion != 7 {
@@ -117,13 +117,13 @@ func TestInstanceNetworkAdapterRejectsScopeAndMapsDomainErrors(t *testing.T) {
 		t.Fatal("placement error queried network resources")
 	}
 	network.subnet.ObservedAt = nil
-	if err := adapter.ValidateSelection(ctx, i.TenantID, i.Spec.ClusterID, i.Spec.Namespace, *i.Spec.Network); !errors.Is(err, biz.ErrNetworkUnavailable) {
-		t.Fatal("stale availability accepted", err)
+	if err := adapter.ValidateSelection(ctx, i.TenantID, i.Spec.ClusterID, i.Spec.Namespace, *i.Spec.Network); err != nil {
+		t.Fatal("management selection depends on observation age", err)
 	}
 	old := time.Now().Add(-time.Hour)
 	attachments.value.ObservedAt = &old
-	if _, err := adapter.Observe(ctx, i); !errors.Is(err, biz.ErrNetworkUnavailable) {
-		t.Fatal("stale attached retained running eligibility", err)
+	if _, err := adapter.Observe(ctx, i); err != nil {
+		t.Fatal("stored management result depends on observation age", err)
 	}
 	attachments.err = networkbiz.Fail(networkbiz.ResourceNotFound, "private other tenant detail")
 	if _, err := adapter.Observe(ctx, i); !errors.Is(err, biz.ErrNetworkNotFound) || strings.Contains(err.Error(), "private other tenant detail") {
@@ -152,10 +152,7 @@ func (f *fallbackNetworkConsumer) GetSubmission(context.Context, networkbiz.Atta
 }
 func TestInstanceNetworkConsumerRoutesOnlyDurableManagedIdentity(t *testing.T) {
 	_, i, _, attachments := instanceNetworkFixture(t)
-	root := biz.WorkloadReference{APIVersion: "kubeflow.org/v1", Kind: "Notebook", Namespace: i.Spec.Namespace, Name: i.Spec.NotebookName, UID: "notebook-uid"}
 	set := biz.WorkloadReference{APIVersion: "apps/v1", Kind: "StatefulSet", Namespace: i.Spec.Namespace, Name: i.Spec.NotebookName, UID: "set-uid"}
-	i.Network.RootController = root
-	i.Network.Controllers = []biz.ControllerReference{{Reference: set, Owner: root}}
 	i.Network.CurrentPods = []biz.PodReference{{Reference: biz.WorkloadReference{APIVersion: "v1", Kind: "Pod", Namespace: i.Spec.Namespace, Name: i.PodName, UID: i.PodUID}, Owner: set}}
 	fallback := &fallbackNetworkConsumer{}
 	consumer, err := NewInstanceNetworkConsumer(instanceNetworkReader{value: i}, fallback)
@@ -164,7 +161,7 @@ func TestInstanceNetworkConsumerRoutesOnlyDurableManagedIdentity(t *testing.T) {
 	}
 	a := attachments.value
 	c, err := consumer.GetSubmission(context.Background(), a)
-	if err != nil || c.ProtocolVersion != 2 || c.SnapshotRevision != 4 || len(c.CurrentPods) != 1 || c.CurrentPods[0].Reference.UID != i.PodUID || c.RootController.UID != "notebook-uid" || fallback.calls != 0 {
+	if err != nil || c.ProtocolVersion != 2 || c.SnapshotRevision != 4 || len(c.CurrentPods) != 1 || c.CurrentPods[0].Reference.UID != i.PodUID || fallback.calls != 0 {
 		t.Fatal("managed snapshot did not come from Instance persistence", c, err)
 	}
 	a.WorkloadMode = "single_pod"

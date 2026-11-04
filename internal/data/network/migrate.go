@@ -35,7 +35,7 @@ func Migrate(ctx context.Context, owner *pgxpool.Pool, runtimeRole string) error
 	}
 	var foreignTables int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
- WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>ALL($1::text[])`, append(append([]string{}, networkTables...), "network_schema_version")).Scan(&foreignTables); err != nil {
+ WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>ALL($1::text[])`, append(append([]string{}, networkTables...), "network_schema_version", "network_lb_generated_resources")).Scan(&foreignTables); err != nil {
 		return err
 	}
 	if foreignTables > 0 {
@@ -55,7 +55,7 @@ func Migrate(ctx context.Context, owner *pgxpool.Pool, runtimeRole string) error
 	if !present {
 		var residue int
 		if err := tx.QueryRow(ctx, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname = ANY($1::text[])",
-			networkTables).Scan(&residue); err != nil {
+			append(append([]string{}, networkTables...), "network_lb_generated_resources")).Scan(&residue); err != nil {
 			return err
 		}
 		if residue != 0 {
@@ -126,7 +126,7 @@ var networkTables = []string{
 	"network_legacy_device_retirements", "network_legacy_device_retirement_idempotency", "network_legacy_device_retirement_history",
 	"network_virtual_switches", "network_virtual_switch_operations", "network_virtual_switch_idempotency", "network_virtual_switch_reconciliations", "network_virtual_switch_history",
 	"network_lb_retired_bindings", "network_lb_configuration_listeners", "network_lb_listener_members",
-	"network_lb_listeners", "network_lb_configurations", "network_lb_members", "network_lb_configuration_members", "network_lb_subnet_refs", "network_lb_components", "network_lb_generated_resources", "network_lb_capabilities",
+	"network_lb_listeners", "network_lb_configurations", "network_lb_members", "network_lb_configuration_members", "network_lb_subnet_refs", "network_lb_components", "network_lb_capabilities",
 	"network_default_intranet_pools", "network_load_balancers", "network_eip_claims", "network_lb_vip_intents", "network_vpc_base_connectivity", "network_connectivity_rollout", "network_base_backfill_runs", "network_base_backfill_candidates",
 	"network_tenant_namespaces", "network_platform_resources", "network_device_adoptions", "network_vlan_networks", "network_egress_gateways", "network_public_pools", "network_default_public_pools", "network_platform_operations", "network_platform_idempotency", "network_platform_reconciliations", "network_platform_history", "network_eips", "network_snat_bindings",
 	"network_attachment_consumer_snapshots", "network_subnets", "network_attachments", "network_attachment_history", "network_vpcs", "network_operations", "network_reconciliations",

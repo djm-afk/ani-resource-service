@@ -94,7 +94,7 @@ func waitBaseProcessState(t *testing.T, f *egressFixture, id string, state biz.R
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		current, lastErr = f.n.GetVPC(f.ctx, f.tenant, id)
-		if lastErr == nil && current.State == state {
+		if lastErr == nil && baseFixtureProductsSettled(current, state) {
 			return current
 		}
 		time.Sleep(20 * time.Millisecond)

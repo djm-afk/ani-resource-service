@@ -162,7 +162,7 @@ func confirmNetworkInterface(i *Instance, obs Observation) error {
 	if cfg.RequestedRevision == 0 {
 		return nil
 	}
-	if cfg.PendingRestart() || obs.PodUID == "" || !obs.PodReady || i.Network == nil || i.Network.NetworkState != "attached" || i.Network.Reason != "" || i.Network.ConfirmedSnapshotRevision != i.Network.SnapshotRevision {
+	if cfg.PendingRestart() || obs.PodUID == "" || !obs.PodReady || i.Network == nil || i.Network.NetworkState != "attached" || i.Network.ConfirmedSnapshotRevision != i.Network.SnapshotRevision {
 		return ErrNetworkUnavailable
 	}
 	cfg.VerifiedPodUID = obs.PodUID

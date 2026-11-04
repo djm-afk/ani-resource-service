@@ -30,6 +30,19 @@ func TestSubnetMigrationUpgradesNET01WithoutChangingDurableFacts(t *testing.T) {
 	ctx := context.Background()
 	before := map[string]string{}
 	tables := []string{"network_vpcs", "network_operations", "network_reconciliations", "network_idempotency", "network_provider_bindings", "network_resource_history"}
+	// Compare the durable NET-01 contract on both schemas. Task notification
+	// columns may be added or retired, and old execution leases are invalidated.
+	columns := map[string]string{
+		"network_vpcs":              "tenant_id,vpc_id,name,description,cidr,state,reason,version,created_at,updated_at,observed_at,last_operation_id",
+		"network_operations":        "tenant_id,operation_id,vpc_id,kind,state,reason,attempt,execution_epoch,created_at,updated_at,completed_at,next_attempt_at",
+		"network_reconciliations":   "tenant_id,vpc_id",
+		"network_idempotency":       "tenant_id,operation_kind,idempotency_key,fingerprint,fingerprint_version,vpc_id,operation_id,response,created_at",
+		"network_provider_bindings": "tenant_id,vpc_id,binding_id,cluster_id,namespace,provider_name,provider_uid,pending_action,pending_since",
+		"network_resource_history":  "tenant_id,history_id,vpc_id,operation_id,event,resource_state,operation_state,reason,actor_ref,caller_ref,correlation_id,identity_verified,created_at",
+	}
+	stableRow := func(table string) string {
+		return "SELECT to_jsonb(t)::text FROM (SELECT " + columns[table] + " FROM " + table + " WHERE tenant_id=$1) t"
+	}
 	fixture := testenv.NewDatabase(t, func(owner *pgxpool.Pool, _ string) {
 		body, err := migrations.Files.ReadFile("0001_vpc.sql")
 		if err != nil {
@@ -56,13 +69,13 @@ func TestSubnetMigrationUpgradesNET01WithoutChangingDurableFacts(t *testing.T) {
 		if _, err := tx.Exec(ctx, `INSERT INTO network_operations(tenant_id,vpc_id,operation_id,kind,state,created_at,updated_at,next_attempt_at) VALUES($1,$2,$3,'create_vpc','queued',$4,$4,$4)`, tenant, vpcID, opID, now); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO network_reconciliations(tenant_id,vpc_id,next_run_at) VALUES($1,$2,$3)`, tenant, vpcID, now); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO network_reconciliations(tenant_id,vpc_id,next_run_at,lease_owner,lease_until,lease_epoch) VALUES($1,$2,$3,$4,$5,7)`, tenant, vpcID, now, uuid.NewString(), now.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO network_idempotency(tenant_id,operation_kind,idempotency_key,fingerprint,fingerprint_version,vpc_id,operation_id,response,created_at) VALUES($1,'create_vpc','legacy-key',$2,1,$3,$4,$5,$6)`, tenant, intent.Fingerprint(), vpcID, opID, snapshot, now); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO network_provider_bindings(tenant_id,vpc_id,binding_id,cluster_id,namespace,provider_name) VALUES($1,$2,$3,'test-cluster','legacy-namespace','legacy-vpc')`, tenant, vpcID, bindingID); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO network_provider_bindings(tenant_id,vpc_id,binding_id,cluster_id,namespace,provider_name,provider_uid) VALUES($1,$2,$3,'test-cluster','legacy-namespace','legacy-vpc','legacy-provider-uid')`, tenant, vpcID, bindingID); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO network_resource_history(tenant_id,history_id,vpc_id,operation_id,event,resource_state,created_at) VALUES($1,$2,$3,$4,'create_accepted','provisioning',$5)`, tenant, historyID, vpcID, opID, now); err != nil {
@@ -73,7 +86,7 @@ func TestSubnetMigrationUpgradesNET01WithoutChangingDurableFacts(t *testing.T) {
 		}
 		for _, table := range tables {
 			var row string
-			if err := owner.QueryRow(ctx, "SELECT to_jsonb(t)::text FROM "+table+" t WHERE tenant_id=$1", tenant).Scan(&row); err != nil {
+			if err := owner.QueryRow(ctx, stableRow(table), tenant).Scan(&row); err != nil {
 				t.Fatal(err)
 			}
 			before[table] = row
@@ -81,7 +94,7 @@ func TestSubnetMigrationUpgradesNET01WithoutChangingDurableFacts(t *testing.T) {
 	})
 	for _, table := range tables {
 		var row string
-		if err := fixture.Owner.QueryRow(ctx, "SELECT (to_jsonb(t)-'eip_id'-'snat_id'-'lb_id'-'subnet_id'-'resource_kind'-'reconciliation_id'-'requested_generation'-'processed_generation'-'retry_not_before'-'evidence_hash'-'evidence_applied_at'-'base_connectivity_required'-'create_dispatched'-'retired'-'provider_ready'-'provider_observed_at'-'provider_observed_uid'-'provider_generation'-'provider_observed_generation')::text FROM "+table+" t WHERE tenant_id=$1", tenant).Scan(&row); err != nil {
+		if err := fixture.Owner.QueryRow(ctx, stableRow(table), tenant).Scan(&row); err != nil {
 			t.Fatal(err)
 		}
 		if row != before[table] {
@@ -93,6 +106,10 @@ func TestSubnetMigrationUpgradesNET01WithoutChangingDurableFacts(t *testing.T) {
 				t.Fatalf("upgrade invented LB references in %s: %d %v", table, lbReferences, err)
 			}
 		}
+	}
+	var retiredLease bool
+	if err := fixture.Owner.QueryRow(ctx, `SELECT lease_owner IS NULL AND lease_until IS NULL AND lease_epoch=8 AND next_run_at<=clock_timestamp() AND NOT retired FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`, tenant, vpcID).Scan(&retiredLease); err != nil || !retiredLease {
+		t.Fatalf("old execution lease was not retired and requeued: %v %v", retiredLease, err)
 	}
 	n := newNetwork(t, fixture.Repository, time.Minute)
 	replay, err := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: intent.Name, CIDR: intent.CIDR, Description: intent.Description, IdempotencyKey: intent.IdempotencyKey})

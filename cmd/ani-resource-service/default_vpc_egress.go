@@ -19,7 +19,7 @@ func wireDefaultVPCEgress(repository *data.Postgres, provider *data.KCProvider, 
 	if err != nil {
 		return nil, nil, err
 	}
-	repo, err := data.NewDefaultVPCEgressRepository(repository, identity, adapter, policy.StaleAfter)
+	repo, err := data.NewDefaultVPCEgressRepository(repository, identity)
 	if err != nil {
 		return nil, nil, err
 	}

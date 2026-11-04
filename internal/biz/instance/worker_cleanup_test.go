@@ -58,7 +58,7 @@ func TestDeleteWaitsForNetworkReleaseBeforeOwnerCleanup(t *testing.T) {
 	repo := &cleanupWorkerRepo{instance: Instance{
 		Spec: Spec{ComputeType: TypeGPU, NotebookName: "notebook"}, RuntimeDesired: Deleted, Desired: Deleted,
 		ComputeCleaned: true, WorkspaceCleaned: true, VolumeReferencesReleased: true,
-		Network: &NetworkRuntime{State: "closed", DesiredRunState: Deleted, AttachmentID: "attachment", ReleaseStarted: true},
+		Network: &NetworkRuntime{State: "closed", DesiredRunState: Deleted, AttachmentID: "attachment"},
 	}}
 	provider := &cleanupWorkerProvider{}
 	network := &cleanupWorkerNetwork{state: "attached"}
@@ -249,7 +249,7 @@ type cleanupWorkerNetwork struct {
 func (n *cleanupWorkerNetwork) Observe(context.Context, Instance) (NetworkObservation, error) {
 	return NetworkObservation{State: n.state}, nil
 }
-func (n *cleanupWorkerNetwork) Release(context.Context, Instance) error {
+func (n *cleanupWorkerNetwork) Release(context.Context, Instance) (bool, error) {
 	n.releases++
-	return nil
+	return n.state == "released", nil
 }

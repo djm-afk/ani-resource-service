@@ -20,7 +20,7 @@ func subnetOptionsFixture(options *biz.SubnetOptions) (*unstructured.Unstructure
 
 func TestKCSubnetOptionsCreationAndObservation(t *testing.T) {
 	options := &biz.SubnetOptions{ExcludeIPs: []string{"10.42.1.5", "10.42.1.20..10.42.1.30"}, EnableDHCP: true, DNSServers: []string{"10.96.0.10", "1.1.1.1"}}
-	o, b, target, parent := subnetOptionsFixture(options)
+	o, b, target, _ := subnetOptionsFixture(options)
 	exclusions, _, err := unstructured.NestedStringSlice(o.Object, "spec", "excludeIPs")
 	if err != nil || !slices.Equal(exclusions, options.ExcludeIPs) {
 		t.Fatal("accepted excluded addresses were not sent as KCN JSON strings", exclusions, err)
@@ -30,12 +30,12 @@ func TestKCSubnetOptionsCreationAndObservation(t *testing.T) {
 	if !dhcp || err != nil || !slices.Equal(dns, options.DNSServers) {
 		t.Fatal("accepted DHCP/DNS were not sent to KCN", dhcp, dns, err)
 	}
-	observed, err := inspectResource(o, b, target, parent)
-	if err != nil || !observed.Ready || observed.Identity != b.ProviderUid {
+	observed, err := inspectResource(o, b, target)
+	if err != nil || (observed.Ready == nil || !*observed.Ready) || observed.Identity != b.ProviderUid {
 		t.Fatal("matching nonempty options were treated as an ownership conflict", observed, err)
 	}
 	_ = unstructured.SetNestedStringSlice(o.Object, []string{options.ExcludeIPs[1], options.ExcludeIPs[0]}, "spec", "excludeIPs")
-	if observed, err = inspectResource(o, b, target, parent); err != nil || !observed.Ready {
+	if observed, err = inspectResource(o, b, target); err != nil || (observed.Ready == nil || !*observed.Ready) {
 		t.Fatal("exclude address ordering changed the accepted set", observed, err)
 	}
 }
@@ -50,7 +50,7 @@ func TestKCSubnetOptionsDefaultAndFences(t *testing.T) {
 			if name == "dns-order" {
 				options.DNSServers = []string{"10.96.0.10", "1.1.1.1"}
 			}
-			o, b, target, parent := subnetOptionsFixture(options)
+			o, b, target, _ := subnetOptionsFixture(options)
 			switch name {
 			case "legacy-default":
 				for _, field := range []string{"excludeIPs", "enableDHCP", "dnsServers"} {
@@ -81,21 +81,14 @@ func TestKCSubnetOptionsDefaultAndFences(t *testing.T) {
 			case "stale-generation":
 				o.SetGeneration(2)
 			}
-			observed, err := inspectResource(o, b, target, parent)
-			switch name {
-			case "legacy-default", "explicit-default":
-				if err != nil || !observed.Ready {
-					t.Fatal("accepted empty defaults were changed", observed, err)
-				}
-			case "stale-generation":
-				if err != nil || observed.Ready {
-					t.Fatal("options bypassed the existing readiness generation fence", observed, err)
-				}
-			default:
+			observed, err := inspectResource(o, b, target)
+			if name == "replaced-uid" || name == "foreign-tenant" {
 				var failure *biz.ProviderError
-				if !errors.As(err, &failure) || failure.Kind != biz.ProviderConflict || observed.Ready {
-					t.Fatal("unaccepted options or identity were adopted", observed, err)
+				if !errors.As(err, &failure) || failure.Kind != biz.ProviderConflict {
+					t.Fatal("management identity was adopted", observed, err)
 				}
+			} else if err != nil || observed.Ready == nil || !*observed.Ready {
+				t.Fatal("controller Ready was rechecked against default spec/generation", observed, err)
 			}
 		})
 	}

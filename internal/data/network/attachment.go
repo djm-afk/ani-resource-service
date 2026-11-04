@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
-	"strings"
-	"time"
 )
 
 func attachment(row sqlcgen.NetworkAttachment) (biz.Attachment, error) {
@@ -17,7 +17,7 @@ func attachment(row sqlcgen.NetworkAttachment) (biz.Attachment, error) {
 	if err := json.Unmarshal(row.Plan, &plan); err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
-	a := biz.Attachment{ID: row.AttachmentID, TenantID: row.TenantID, VPCID: row.VpcID, SubnetID: row.SubnetID, InstanceID: row.InstanceID, ConsumerType: row.ConsumerType, Slot: row.Slot, SubmissionID: row.SubmissionID, Generation: row.Generation, ClusterID: row.ClusterID, Namespace: row.Namespace, BindingRevision: row.BindingRevision, State: biz.AttachmentState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, PodName: row.PodName, PodUID: row.PodUid, ConfirmUID: row.ConfirmUid, FinalizationID: textValue(row.FinalizationID), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, ReleasedAt: row.ReleasedAt}
+	a := biz.Attachment{CurrentVNicName: row.CurrentVnicName, CurrentVNicUID: row.CurrentVnicUid, CurrentMACAddress: row.CurrentMacAddress, CurrentIPs: append([]string{}, row.CurrentIps...), ID: row.AttachmentID, TenantID: row.TenantID, VPCID: row.VpcID, SubnetID: row.SubnetID, InstanceID: row.InstanceID, ConsumerType: row.ConsumerType, Slot: row.Slot, SubmissionID: row.SubmissionID, Generation: row.Generation, ClusterID: row.ClusterID, Namespace: row.Namespace, BindingRevision: row.BindingRevision, State: biz.AttachmentState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, PodName: row.PodName, PodUID: row.PodUid, ConfirmUID: row.ConfirmUid, FinalizationID: textValue(row.FinalizationID), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, ReleasedAt: row.ReleasedAt}
 	a.WorkloadMode = plan.WorkloadMode
 	if a.WorkloadMode == "" {
 		a.WorkloadMode = "single_pod"
@@ -48,7 +48,7 @@ func attachmentReplay(ctx context.Context, q *sqlcgen.Queries, db attachmentSnap
 func attachmentHistory(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.NetworkAttachment, event string) error {
 	return q.InsertAttachmentHistory(ctx, sqlcgen.InsertAttachmentHistoryParams{TenantID: row.TenantID, HistoryID: uuid.NewString(), AttachmentID: row.AttachmentID, Version: row.Version, Event: event, State: row.State, Reason: row.Reason, PodUid: row.PodUid, FinalizationID: row.FinalizationID})
 }
-func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachment, freshness time.Duration) (biz.Attachment, error) {
+func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachment) (biz.Attachment, error) {
 	if a, found, e := attachmentReplay(ctx, p.queries, p.pool, r); found || e != nil {
 		return a, e
 	}
@@ -63,7 +63,7 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	v, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.VpcID})
+	v, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.NetworkSubnet.VpcID})
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
@@ -84,12 +84,8 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if occupied {
 		return biz.Attachment{}, biz.Fail(biz.AttachmentConflict, "instance primary slot is occupied")
 	}
-	now, e := q.DatabaseTime(ctx)
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
-	}
-	if ((r.WorkloadMode == "vm_managed" || p.networkProvider != nil) && (!networkManagementOpen(v.State, v.Reason) || !networkManagementOpen(s.State, s.Reason))) || (r.WorkloadMode != "vm_managed" && p.networkProvider == nil && (v.State != "available" || s.State != "available" || v.ObservedAt == nil || s.ObservedAt == nil || now.Sub(*v.ObservedAt) > freshness || now.Sub(*s.ObservedAt) > freshness)) {
-		return biz.Attachment{}, biz.Fail(biz.NetworkNotReady, "fresh available VPC and subnet required")
+	if !networkManagementOpen(v.State, v.Reason) || !networkManagementOpen(s.State, s.Reason) {
+		return biz.Attachment{}, biz.Fail(biz.NetworkNotReady, "VPC or Subnet management is closed")
 	}
 	if r.VPCID != "" && r.VPCID != s.VpcID {
 		return biz.Attachment{}, biz.Fail(biz.InvalidArgument, "subnet does not belong to requested VPC")
@@ -101,19 +97,8 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if b.ClusterID != r.ClusterID || b.Namespace != r.Namespace {
 		return biz.Attachment{}, biz.Fail(biz.PlacementMismatch, "consumer placement differs from network binding")
 	}
-	if b.ProviderUid == "" {
-		return biz.Attachment{}, biz.Fail(biz.NetworkNotReady, "subnet binding identity is unavailable")
-	}
-	if r.WorkloadMode != "vm_managed" && p.networkProvider != nil {
-		currentCtx, err := p.networkProvider.namespaceContext(ctx, b)
-		if err != nil {
-			return biz.Attachment{}, err
-		}
-		for _, id := range []string{s.VpcID, s.SubnetID} {
-			if _, err = p.networkProvider.currentNetworkResource(currentCtx, q, r.TenantID, id); err != nil {
-				return biz.Attachment{}, err
-			}
-		}
+	if b.ProviderName == "" {
+		return biz.Attachment{}, biz.Fail(biz.PlacementMismatch, "Subnet declaration name is missing")
 	}
 	id := "att_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	delivery := biz.PodPrimaryPlan{FormatVersion: 1, WorkloadMode: r.WorkloadMode, Namespace: b.Namespace, PrimaryNetworkRef: b.Namespace + "/" + b.ProviderName, TenantID: r.TenantID, InstanceID: r.InstanceID, AttachmentID: id, SubmissionID: r.SubmissionID, Generation: r.Generation}
@@ -121,7 +106,7 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 		if p.vmNetworks == nil || r.VMExpectation == nil {
 			return biz.Attachment{}, biz.Fail(biz.DependencyUnavailable, "managed VM network is not configured")
 		}
-		vmPlan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.VpcID, SubnetID: s.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID + ":" + b.ProviderUid, KCNSubnetRef: delivery.PrimaryNetworkRef}, *r.VMExpectation)
+		vmPlan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.VpcID, SubnetID: s.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID, KCNSubnetRef: delivery.PrimaryNetworkRef}, *r.VMExpectation)
 		if err != nil {
 			return biz.Attachment{}, err
 		}
@@ -140,7 +125,7 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	row, e := q.InsertAttachment(ctx, sqlcgen.InsertAttachmentParams{TenantID: r.TenantID, AttachmentID: id, VpcID: s.VpcID, SubnetID: s.SubnetID, BindingID: b.BindingID, InstanceID: r.InstanceID, ConsumerType: r.ConsumerType, Slot: r.Slot, RequestKey: r.RequestKey, SubmissionID: r.SubmissionID, Generation: r.Generation, Fingerprint: r.Fingerprint(), ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID + ":" + b.ProviderUid, Plan: plan})
+	row, e := q.InsertAttachment(ctx, sqlcgen.InsertAttachmentParams{TenantID: r.TenantID, AttachmentID: id, VpcID: s.VpcID, SubnetID: s.SubnetID, BindingID: b.BindingID, InstanceID: r.InstanceID, ConsumerType: r.ConsumerType, Slot: r.Slot, RequestKey: r.RequestKey, SubmissionID: r.SubmissionID, Generation: r.Generation, Fingerprint: r.Fingerprint(), ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID, Plan: plan})
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
@@ -157,52 +142,12 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	}
 	return managedAttachment(ctx, p.pool, row)
 }
-func (p *Postgres) GetAttachment(ctx context.Context, t, id string) (biz.Attachment, error) {
-	row, e := p.queries.GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: t, AttachmentID: id})
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
-	}
-	a, err := managedAttachment(ctx, p.pool, row)
+func (p *Postgres) GetAttachment(ctx context.Context, tenant, id string) (biz.Attachment, error) {
+	row, err := p.queries.GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: tenant, AttachmentID: id})
 	if err != nil {
-		return biz.Attachment{}, err
+		return biz.Attachment{}, databaseFailure(err)
 	}
-	if a.State == biz.Attached && a.PodUID != "" {
-		var relations []attachmentRelation
-		if err = json.Unmarshal(row.ProviderRelations, &relations); err != nil {
-			return biz.Attachment{}, databaseFailure(err)
-		}
-		current := map[string]bool{}
-		for _, r := range relations {
-
-			manual := false
-			if a.ConsumerSnapshot != nil {
-				for _, ref := range a.ConsumerSnapshot.ManualVNics {
-					if ref.ProviderName == r.Name && ref.ProviderUID != "" && ref.ProviderUID == r.UID {
-						manual = true
-						break
-					}
-				}
-			}
-			if r.Kind == "VNic" && r.Current && (r.OwnerUID == a.PodUID || manual) {
-				current[r.UID] = true
-				a.CurrentVNicName = r.Name
-				a.CurrentVNicUID = r.UID
-				a.CurrentMACAddress = r.MACAddress
-			}
-		}
-		for _, r := range relations {
-			if r.Kind == "VNicIP" && r.Current && r.AddressEligible && current[r.OwnerUID] && r.Address != "" {
-				a.CurrentIPs = append(a.CurrentIPs, r.Address)
-			}
-		}
-	}
-	if a.WorkloadMode == "vm_managed" {
-		a.VMCurrentAddresses = p.vmCurrentAddresses(ctx, a, row.ProviderRelations)
-		if a.State == biz.Attached && a.Reason == "" && len(a.VMCurrentAddresses) == 0 {
-			a.Reason = biz.Reason("VM_NETWORK_ADDRESS_NOT_CURRENT")
-		}
-	}
-	return a, nil
+	return managedAttachment(ctx, p.pool, row)
 }
 func lockAttachmentParents(ctx context.Context, q *sqlcgen.Queries, t, id string) (sqlcgen.NetworkAttachment, error) {
 	initial, e := q.GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: t, AttachmentID: id})
@@ -265,34 +210,42 @@ func (p *Postgres) ConfirmAttachment(ctx context.Context, r biz.ConfirmAttachmen
 	return attachment(row)
 }
 func (p *Postgres) ReleaseAttachment(ctx context.Context, r biz.ReleaseAttachment) (biz.Attachment, error) {
-	tx, e := p.pool.Begin(ctx)
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return biz.Attachment{}, databaseFailure(err)
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	row, e := lockAttachmentParents(ctx, q, r.TenantID, r.AttachmentID)
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	row, err := lockAttachmentParents(ctx, q, r.TenantID, r.AttachmentID)
+	if err != nil {
+		return biz.Attachment{}, databaseFailure(err)
 	}
-	if row.FinalizationID != nil {
-		if *row.FinalizationID != r.FinalizationID {
-			return biz.Attachment{}, biz.Fail(biz.AttachmentConflict, "attachment has another finalization identity")
-		}
-		return managedAttachment(ctx, tx, row)
+	if row.FinalizationID != nil && *row.FinalizationID != r.FinalizationID {
+		return biz.Attachment{}, biz.Fail(biz.AttachmentConflict, "attachment has another finalization identity")
 	}
-	if row.Version != r.ExpectedVersion {
+	current, err := managedAttachment(ctx, tx, row)
+	if err != nil {
+		return biz.Attachment{}, err
+	}
+	if current.State == biz.Released {
+		return current, nil
+	}
+	if row.FinalizationID == nil && row.Version != r.ExpectedVersion {
 		return biz.Attachment{}, biz.Fail(biz.VersionConflict, "attachment version changed")
 	}
-	row, e = q.ReleaseAttachment(ctx, sqlcgen.ReleaseAttachmentParams{TenantID: r.TenantID, AttachmentID: r.AttachmentID, FinalizationID: &r.FinalizationID})
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	state := biz.Releasing
+	if current.ConsumerSnapshot != nil && current.ConsumerSnapshot.State == "closed" && current.ConsumerSnapshot.FinalizationID == r.FinalizationID {
+		state = biz.Released
 	}
-	if e = attachmentHistory(ctx, q, row, "release_requested"); e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	row, err = q.ReleaseAttachment(ctx, sqlcgen.ReleaseAttachmentParams{TenantID: r.TenantID, AttachmentID: r.AttachmentID, FinalizationID: &r.FinalizationID, State: string(state)})
+	if err != nil {
+		return biz.Attachment{}, databaseFailure(err)
 	}
-	if e = tx.Commit(ctx); e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	if err = attachmentHistory(ctx, q, row, "release_requested"); err != nil {
+		return biz.Attachment{}, databaseFailure(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return biz.Attachment{}, databaseFailure(err)
 	}
 	return managedAttachment(ctx, p.pool, row)
 }

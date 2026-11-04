@@ -1,6 +1,8 @@
 # ANI Resource 文档导航
 
-[2026-11-03 网络管理简化](plans/network-management-simplification-20261103.md)：Res 管理意图与结果，KCN 负责底层收敛；正式观察语义见[持续观察规格 v2](specs/cr-observation.md)，实际结果见执行状态。
+[2026-11-04 网络状态消费简化](plans/network-management-simplification.md)：完全采信 KCN 原生状态，移除 Res 网络证明与审计逻辑；正式合同为[规格 v3](specs/cr-observation.md)，实现/验证/部署分别见[执行状态](execution/status.md#network-management-simplification-20261104)。
+
+[2026-11-03 网络管理简化](plans/network-management-simplification-20261103.md)：Res 管理意图与结果，KCN 负责底层收敛；该历史方案的观察条款现已由[网络状态消费规格 v3](specs/cr-observation.md)替代，实际结果见执行状态。
 
 [LB 使用方式对齐（2026-11-02）](specs/vpc-connectivity-lb.md)：公共 `lb-common`、每 LB 专属 Proxy 和独立于基础 Intranet 的运行准入；实际迁移、前后端和业务验证见[执行状态](execution/status.md#lb-usage-alignment-20261102)。
 
@@ -59,7 +61,7 @@ GPU 容器实例 v1.5：[规格](specs/instance-mvp.md)、[实施计划](plans/i
 ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段和协议细节是工程设计，不冒充已经逐项人工批准或实际验收。
 当前用户明确决定优先。规格、ADR、代码或证据出现差异时，标明是待实现目标、过期材料还是需要变更的决定，并更新对应权威材料，不能静默挑选有利版本。
 
-NET-05A 的观察、时效、调度与增量验收统一见[持续观察规格](specs/cr-observation.md)；既有资源与 Attachment 协议仍以首片规格为准。实际源码、分层验收和容量边界见 [NET-05A 实施记录](execution/records/NET-05A-implementation.md)，当前结果只看执行状态。
+当前观察、调度与验收合同统一见[持续观察规格](specs/cr-observation.md)；既有资源与 Attachment 协议仍以首片规格为准。实际源码、分层验收和容量边界见 [NET-05A 实施记录](execution/records/NET-05A-implementation.md)，当前结果只看执行状态。
 
 管理员逐条手工复现三项 Public 转发问题：[命令与独立 YAML](runbooks/public-forwarding-manual-20260917/README.md)。此入口是手工 Provider 诊断，准备时未执行新资源创建或流量复验，不替代产品验收。
 

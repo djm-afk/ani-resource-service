@@ -16,10 +16,10 @@ func (p *manualVNicBoundary) Observe(context.Context, ProviderTarget) (ProviderO
 }
 func (p *manualVNicBoundary) EnsureVNic(context.Context, ProviderTarget) (ProviderObservation, error) {
 	p.ensured++
-	return ProviderObservation{Exists: true, Identity: "manual-original-uid", Ready: true, VNic: &VNicFacts{MACAddress: "02:00:00:00:00:01", PrimaryIP: "10.42.1.42", IPs: []string{"10.42.1.42"}}}, nil
+	return ProviderObservation{Exists: true, Identity: "manual-original-uid", Ready: reportedReady(true), VNic: &VNicFacts{MACAddress: "02:00:00:00:00:01", PrimaryIP: "10.42.1.42", IPs: []string{"10.42.1.42"}}}, nil
 }
 func TestManualVNicWorkerUsesSpecificReadinessAndPreservesAllocation(t *testing.T) {
-	r := &tombstoneBudgetRepository{work: Work{Resource: ResourceWork{Kind: "vnic", State: Provisioning}, Operation: Operation{Kind: "create_vnic"}, ActiveOperation: true, Now: time.Now()}}
+	r := &earlyCompletionRepository{work: Work{Resource: ResourceWork{Kind: "vnic", State: Provisioning}, Operation: Operation{Kind: "create_vnic"}, ActiveOperation: true, Now: time.Now()}}
 	p := &manualVNicBoundary{}
 	w, e := NewWorker(r, p, "44444444-4444-4444-8444-444444444444", DefaultWorkerPolicy())
 	if e != nil {

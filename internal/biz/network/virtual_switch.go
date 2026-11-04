@@ -18,11 +18,9 @@ type VirtualSwitch struct {
 
 type VirtualSwitchNode struct {
 	NodeName, NodeUID, State, Reason string
-	// LastObservedAt is the oldest provider evidence supporting the last
-	// successful inspection. Failed reads never renew this durable timestamp.
-	LastObservedAt time.Time `json:"LastObservedAt,omitzero"`
-	Priority       int32
-	Allocated      bool
+
+	Priority  int32
+	Allocated bool
 	// Patch intent and acknowledgement survive ambiguous Kubernetes responses.
 	ResourceVersion, OriginalValue, OriginalOwner string
 	OriginalPresent, Prepared, Applied, Unknown   bool
@@ -133,20 +131,20 @@ func (e *Egress) DeleteVirtualSwitch(ctx context.Context, id string) (VirtualSwi
 // VirtualSwitchWork owns a separate lease: concurrent VLANs never patch the
 // shared group under unrelated per-VLAN leases.
 type VirtualSwitchWork struct {
-	Switch VirtualSwitch
-	Owner  string
-	Epoch  int64
-	Now    time.Time
+	Switch                   VirtualSwitch
+	Owner                    string
+	Epoch, ClaimedGeneration int64
+	Now                      time.Time
 }
 
 type VirtualSwitchWorkRepository interface {
 	ClaimVirtualSwitch(context.Context, string, time.Duration) (VirtualSwitchWork, bool, error)
 	SaveVirtualSwitchNode(context.Context, VirtualSwitchWork, int, VirtualSwitchNode) error
-	FinishVirtualSwitch(context.Context, VirtualSwitchWork, string, Reason, time.Duration) error
+	FinishVirtualSwitch(context.Context, VirtualSwitchWork, VirtualSwitchProgress, time.Duration) error
 }
 
-// Read/patch are external boundaries. Implementations must check the complete
-// frozen membership and use Node UID/RV plus binding owner CAS for each patch.
+// Read/patch operate on the frozen Res membership and use the original Node
+// identity plus metadata owner CAS for each patch.
 type VirtualSwitchGroupProvider interface {
 	InspectVirtualSwitchNode(context.Context, VirtualSwitch, VirtualSwitchNode) (VirtualSwitchNode, error)
 	PatchVirtualSwitchNode(context.Context, VirtualSwitch, VirtualSwitchNode, bool) (VirtualSwitchNode, error)

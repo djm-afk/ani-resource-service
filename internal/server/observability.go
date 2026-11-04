@@ -7,7 +7,6 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"go.opentelemetry.io/otel/attribute"
 	"log/slog"
-	"time"
 
 	kratosmetrics "github.com/go-kratos/kratos/contrib/otel/v3/metrics"
 	kratostracing "github.com/go-kratos/kratos/contrib/otel/v3/tracing"
@@ -33,7 +32,6 @@ type Observability struct {
 	requests          metric.Int64Counter
 	seconds           metric.Float64Histogram
 	workerAttempts    metric.Int64Counter
-	evidenceAge       metric.Float64Gauge
 	providerReachable metric.Int64Gauge
 }
 
@@ -110,12 +108,7 @@ func NewObservability(name, version string, readiness *Readiness) (*Observabilit
 	if err != nil {
 		return nil, err
 	}
-	evidenceAge, err := meter.Float64Gauge("ani_network_applied_evidence_age_seconds")
-	if err != nil {
-		return nil, err
-	}
 	return &Observability{
-		evidenceAge:    evidenceAge,
 		registry:       registry,
 		workerAttempts: workerAttempts, providerReachable: providerReachable,
 		meterProvider:  meterProvider,
@@ -168,17 +161,17 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 	} else if err != nil {
 		result = "database_error"
 	}
-	o.workerAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result), attribute.String("kind", work.Resource.Kind)))
-	if err == nil && progress.Observed {
-		o.evidenceAge.Record(ctx, time.Since(progress.Proof.CollectedAt).Seconds(), metric.WithAttributes(attribute.String("kind", work.Resource.Kind)))
+	if progress.ObservationError != "" && err == nil {
+		result = "read_error"
 	}
-	if err == nil {
+	if err == nil && (progress.Observed || progress.ObservationError != "") {
 		reachable := int64(1)
-		if progress.Reason == biz.ProviderUnavailable || progress.Reason == biz.ProviderUnknown {
+		if progress.ObservationError != "" {
 			reachable = 0
 		}
-		o.providerReachable.Record(ctx, reachable)
+		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", work.Resource.Kind)))
 	}
+	o.workerAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result), attribute.String("kind", work.Resource.Kind)))
 	if work.ActiveOperation || err != nil || work.Resource.State != progress.State || work.Resource.Reason != progress.Reason {
 		logger.InfoContext(ctx, "network reconciliation", "tenant_id", work.Resource.TenantID, "resource_type", work.Resource.Kind, "resource_id", work.Resource.ID, "operation_id", work.Operation.ID, "epoch", work.Epoch, "resource_state", progress.State, "result", result, "reason", progress.Reason)
 	}
@@ -191,9 +184,16 @@ func (o *Observability) ObserveAttachmentWork(ctx context.Context, work biz.Atta
 	} else if err != nil {
 		result = "database_error"
 	}
+	if err == nil && p.ObservationError != "" {
+		result = "read_error"
+	}
 	o.workerAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", "attachment"), attribute.String("result", result)))
-	if err == nil && p.Observed {
-		o.evidenceAge.Record(ctx, time.Since(p.Proof.CollectedAt).Seconds(), metric.WithAttributes(attribute.String("kind", "attachment")))
+	if err == nil && (p.Observed || p.ObservationError != "") {
+		reachable := int64(1)
+		if p.ObservationError != "" {
+			reachable = 0
+		}
+		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", "attachment")))
 	}
 }
 
@@ -217,9 +217,16 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 	} else if err != nil {
 		result = "database_error"
 	}
+	if err == nil && progress.ObservationError != "" {
+		result = "read_error"
+	}
 	o.workerAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", "virtual_switch"), attribute.String("result", result)))
-	if err == nil && progress.Observed && !progress.CollectedAt.IsZero() {
-		o.evidenceAge.Record(ctx, time.Since(progress.CollectedAt).Seconds(), metric.WithAttributes(attribute.String("kind", "virtual_switch")))
+	if err == nil && (progress.Observed || progress.ObservationError != "") {
+		reachable := int64(1)
+		if progress.ObservationError != "" {
+			reachable = 0
+		}
+		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", "virtual_switch")))
 	}
 	if err != nil || progress.ProviderError != nil || work.Switch.BindingState != progress.BindingState || work.Switch.Reason != progress.Reason {
 		logger.InfoContext(ctx, "virtual switch reconciliation", "resource_id", work.Switch.ID, "operation_id", work.Switch.LastOperationID, "binding_id", work.Switch.BindingID, "epoch", work.Epoch, "binding_state", progress.BindingState, "observed", progress.Observed, "result", result, "reason", progress.Reason)

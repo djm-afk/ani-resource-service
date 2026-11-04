@@ -881,10 +881,11 @@ type LoadBalancerBackendMember struct {
 	Weight       uint32                 `protobuf:"varint,5,opt,name=weight,proto3" json:"weight,omitempty"`
 	AttachmentId string                 `protobuf:"bytes,6,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
 	// unknown, available or unavailable, based on this member's identity facts.
-	State            string                 `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
-	Reason           string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
-	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                   `protobuf:"varint,10,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	State      string                 `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
+	Reason     string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	ObservedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool `protobuf:"varint,10,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1119,17 +1120,22 @@ type LoadBalancer struct {
 	// provider_target_version until that projection or its cleanup is verified.
 	AppliedVersion     int64                          `protobuf:"varint,20,opt,name=applied_version,json=appliedVersion,proto3" json:"applied_version,omitempty"`
 	ConfigurationState LoadBalancerConfigurationState `protobuf:"varint,21,opt,name=configuration_state,json=configurationState,proto3,enum=network.v1.LoadBalancerConfigurationState" json:"configuration_state,omitempty"`
-	// unknown without a suitable fresh health source. Gateway/Route/Policy
+	// deprecated and always UNKNOWN. Gateway/Route/Policy
 	// Accepted, Pod Running and operation success cannot imply healthy.
-	DataPlaneState   LoadBalancerDataPlaneState `protobuf:"varint,22,opt,name=data_plane_state,json=dataPlaneState,proto3,enum=network.v1.LoadBalancerDataPlaneState" json:"data_plane_state,omitempty"`
-	ObservedAt       *timestamppb.Timestamp     `protobuf:"bytes,23,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	ObservationStale bool                       `protobuf:"varint,24,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	CreatedAt        *timestamppb.Timestamp     `protobuf:"bytes,25,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp     `protobuf:"bytes,26,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	LastOperationId  string                     `protobuf:"bytes,27,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
-	PublicAddress    string                     `protobuf:"bytes,28,opt,name=public_address,json=publicAddress,proto3" json:"public_address,omitempty"`
+	//
+	// Deprecated: Marked as deprecated in network/v1/load_balancer.proto.
+	DataPlaneState LoadBalancerDataPlaneState `protobuf:"varint,22,opt,name=data_plane_state,json=dataPlaneState,proto3,enum=network.v1.LoadBalancerDataPlaneState" json:"data_plane_state,omitempty"`
+	ObservedAt     *timestamppb.Timestamp     `protobuf:"bytes,23,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool                   `protobuf:"varint,24,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,25,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,26,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	LastOperationId  string                 `protobuf:"bytes,27,opt,name=last_operation_id,json=lastOperationId,proto3" json:"last_operation_id,omitempty"`
+	PublicAddress    string                 `protobuf:"bytes,28,opt,name=public_address,json=publicAddress,proto3" json:"public_address,omitempty"`
 	// Timestamp of actual data-plane health evidence, independent of configured
-	// resources. Absent when unknown; stale evidence forces data_plane_state=unknown.
+	// resources. Deprecated: Res returns UNKNOWN and no data-plane timestamp.
+	//
+	// Deprecated: Marked as deprecated in network/v1/load_balancer.proto.
 	DataPlaneObservedAt *timestamppb.Timestamp  `protobuf:"bytes,29,opt,name=data_plane_observed_at,json=dataPlaneObservedAt,proto3" json:"data_plane_observed_at,omitempty"`
 	Listeners           []*LoadBalancerListener `protobuf:"bytes,30,rep,name=listeners,proto3" json:"listeners,omitempty"`
 	// Read-only version of the latest configuration that changed the Provider
@@ -1316,6 +1322,7 @@ func (x *LoadBalancer) GetConfigurationState() LoadBalancerConfigurationState {
 	return LoadBalancerConfigurationState_LOAD_BALANCER_CONFIGURATION_STATE_UNSPECIFIED
 }
 
+// Deprecated: Marked as deprecated in network/v1/load_balancer.proto.
 func (x *LoadBalancer) GetDataPlaneState() LoadBalancerDataPlaneState {
 	if x != nil {
 		return x.DataPlaneState
@@ -1365,6 +1372,7 @@ func (x *LoadBalancer) GetPublicAddress() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in network/v1/load_balancer.proto.
 func (x *LoadBalancer) GetDataPlaneObservedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.DataPlaneObservedAt
@@ -2425,7 +2433,7 @@ const file_network_v1_load_balancer_proto_rawDesc = "" +
 	"\x10_timeout_secondsB\x16\n" +
 	"\x14_unhealthy_thresholdB\x14\n" +
 	"\x12_healthy_thresholdB\a\n" +
-	"\x05_port\"\xcf\v\n" +
+	"\x05_port\"\xd7\v\n" +
 	"\fLoadBalancer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x15\n" +
@@ -2449,8 +2457,8 @@ const file_network_v1_load_balancer_proto_rawDesc = "" +
 	"\aversion\x18\x12 \x01(\x03R\aversion\x12'\n" +
 	"\x0fdesired_version\x18\x13 \x01(\x03R\x0edesiredVersion\x12'\n" +
 	"\x0fapplied_version\x18\x14 \x01(\x03R\x0eappliedVersion\x12[\n" +
-	"\x13configuration_state\x18\x15 \x01(\x0e2*.network.v1.LoadBalancerConfigurationStateR\x12configurationState\x12P\n" +
-	"\x10data_plane_state\x18\x16 \x01(\x0e2&.network.v1.LoadBalancerDataPlaneStateR\x0edataPlaneState\x12;\n" +
+	"\x13configuration_state\x18\x15 \x01(\x0e2*.network.v1.LoadBalancerConfigurationStateR\x12configurationState\x12T\n" +
+	"\x10data_plane_state\x18\x16 \x01(\x0e2&.network.v1.LoadBalancerDataPlaneStateB\x02\x18\x01R\x0edataPlaneState\x12;\n" +
 	"\vobserved_at\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"observedAt\x12+\n" +
 	"\x11observation_stale\x18\x18 \x01(\bR\x10observationStale\x129\n" +
@@ -2459,8 +2467,8 @@ const file_network_v1_load_balancer_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12*\n" +
 	"\x11last_operation_id\x18\x1b \x01(\tR\x0flastOperationId\x12%\n" +
-	"\x0epublic_address\x18\x1c \x01(\tR\rpublicAddress\x12O\n" +
-	"\x16data_plane_observed_at\x18\x1d \x01(\v2\x1a.google.protobuf.TimestampR\x13dataPlaneObservedAt\x12>\n" +
+	"\x0epublic_address\x18\x1c \x01(\tR\rpublicAddress\x12S\n" +
+	"\x16data_plane_observed_at\x18\x1d \x01(\v2\x1a.google.protobuf.TimestampB\x02\x18\x01R\x13dataPlaneObservedAt\x12>\n" +
 	"\tlisteners\x18\x1e \x03(\v2 .network.v1.LoadBalancerListenerR\tlisteners\x126\n" +
 	"\x17provider_target_version\x18\x1f \x01(\x03R\x15providerTargetVersion\"\x81\x05\n" +
 	"\x19CreateLoadBalancerRequest\x12(\n" +

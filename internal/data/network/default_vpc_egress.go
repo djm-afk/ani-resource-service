@@ -4,36 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"strings"
+	"time"
 )
 
 type DefaultVPCEgressPostgres struct {
-	base      *Postgres
-	identity  biz.DefaultVPCIdentity
-	provider  biz.DefaultEgressProvider
-	freshness time.Duration
+	base     *Postgres
+	identity biz.DefaultVPCIdentity
 }
 
-func NewDefaultVPCEgressRepository(p *Postgres, i biz.DefaultVPCIdentity, provider biz.DefaultEgressProvider, freshness time.Duration) (*DefaultVPCEgressPostgres, error) {
+func NewDefaultVPCEgressRepository(p *Postgres, i biz.DefaultVPCIdentity) (*DefaultVPCEgressPostgres, error) {
 	if err := i.Validate(); err != nil {
 		return nil, err
 	}
-	if p == nil || provider == nil || freshness <= 0 || i.ClusterID != p.placement.ClusterID {
-		return nil, biz.Fail(biz.InvalidArgument, "fixed default VPC, matching placement and provider are required")
+	if p == nil || i.ClusterID != p.placement.ClusterID {
+		return nil, biz.Fail(biz.InvalidArgument, "fixed default VPC and matching placement are required")
 	}
-	return &DefaultVPCEgressPostgres{p, i, provider, freshness}, nil
+	return &DefaultVPCEgressPostgres{base: p, identity: i}, nil
 }
 func defaultEgressSnapshot(r sqlcgen.NetworkDefaultVpcEgress, operationState string) biz.DefaultVPCEgress {
-	v := biz.DefaultVPCEgress{EgressMetadata: biz.EgressMetadata{ID: r.ResourceID, Name: r.Name, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, LastOperationID: r.LastOperationID}, PoolID: r.PoolID, Phase: r.Phase, OperationState: operationState, Address: r.Address, EIPID: r.EipID,
+	v := biz.DefaultVPCEgress{EgressMetadata: biz.EgressMetadata{ID: r.ResourceID, Name: r.Name, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, ObservationStale: r.ObservedAt == nil || r.ObservationError != "", LastOperationID: r.LastOperationID}, PoolID: r.PoolID, Phase: r.Phase, OperationState: operationState, Address: r.Address, EIPID: r.EipID,
 		Identity:        biz.DefaultVPCIdentity{ClusterID: r.ClusterID, ClusterUID: r.ClusterUid, Namespace: r.DefaultVpcNamespace, Name: r.DefaultVpcName, UID: r.DefaultVpcUid},
-		EIPProviderName: r.EipProviderName, EIPProviderUID: r.EipProviderUid, SnatProviderName: r.SnatProviderName, SnatProviderUID: r.SnatProviderUid, PendingAction: r.PendingAction, PendingUnknown: r.PendingUnknown, DesiredEnabled: true, TargetGeneration: r.TargetGeneration}
+		EIPProviderName: r.EipProviderName, EIPProviderUID: r.EipProviderUid, SnatProviderName: r.SnatProviderName, SnatProviderUID: r.SnatProviderUid, PendingAction: r.PendingAction, PendingUnknown: r.PendingUnknown, DesiredEnabled: true}
 	if r.AppliedEnabled.Valid {
 		enabled := r.AppliedEnabled.Bool
 		v.AppliedEnabled = &enabled
@@ -68,10 +65,7 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 	if v, found, err := p.replay(ctx, p.base.queries, i); found || err != nil {
 		return v, err
 	}
-	proof, err := p.provider.ValidateDefaultVPCEgress(ctx, p.identity, i.PoolID)
-	if err != nil {
-		return biz.DefaultVPCEgress{}, switchAdmissionFailure(err)
-	}
+
 	tx, err := p.base.pool.Begin(ctx)
 	if err != nil {
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
@@ -95,20 +89,15 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 	if err != nil {
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
 	}
-	resource, err := q.GetPlatform(ctx, sqlcgen.GetPlatformParams{ClusterID: p.identity.ClusterID, Kind: "public_pool", ResourceID: i.PoolID})
-	if err != nil {
-		return biz.DefaultVPCEgress{}, databaseFailure(err)
+	if pool.Scope != "public" {
+		return biz.DefaultVPCEgress{}, biz.Fail(biz.ResourceNotFound, "public address pool not found")
 	}
-	if pool.Scope != "public" || pool.Retired || proof.Revision != pool.ConfigRevision || proof.ProviderUID == "" || proof.ProviderUID != resource.ProviderUid || proof.ObservedAt.IsZero() || proof.ObservedAt.After(now) || now.Sub(proof.ObservedAt) > p.freshness || len(proof.Hash) != 64 {
-		return biz.DefaultVPCEgress{}, biz.Fail(biz.PublicEgressNotReady, "public pool identity, physical proof or configuration changed")
-	}
-	// Platform pre-acceptance does not open or require tenant allocation.
-	if err = p.base.poolReady(ctx, q, pool, now, p.freshness, false); err != nil {
+	if err = p.base.poolAllocationAllowed(ctx, q, pool, false); err != nil {
 		return biz.DefaultVPCEgress{}, err
 	}
 	id, op := newEgressID("dve"), uuid.NewString()
 	suffix := strings.TrimPrefix(id, "dve_")
-	err = q.InsertDefaultEgress(ctx, sqlcgen.InsertDefaultEgressParams{ResourceID: id, EipID: newEgressID("eip"), ClusterID: p.identity.ClusterID, ClusterUid: p.identity.ClusterUID, DefaultVpcNamespace: p.identity.Namespace, DefaultVpcName: p.identity.Name, DefaultVpcUid: p.identity.UID, Name: i.Name, PoolID: i.PoolID, PoolRevision: pool.ConfigRevision, PoolProviderUid: resource.ProviderUid, AdmissionHash: proof.Hash, AdmittedAt: now, LastOperationID: op, EipProviderName: "ani-default-eip-" + suffix, EipBindingID: uuid.NewString(), SnatProviderName: "ani-default-snat-" + suffix, SnatBindingID: uuid.NewString()})
+	err = q.InsertDefaultEgress(ctx, sqlcgen.InsertDefaultEgressParams{ResourceID: id, EipID: newEgressID("eip"), ClusterID: p.identity.ClusterID, ClusterUid: p.identity.ClusterUID, DefaultVpcNamespace: p.identity.Namespace, DefaultVpcName: p.identity.Name, DefaultVpcUid: p.identity.UID, Name: i.Name, PoolID: i.PoolID, PoolRevision: pool.ConfigRevision, CreatedAt: now, LastOperationID: op, EipProviderName: "ani-default-eip-" + suffix, EipBindingID: uuid.NewString(), SnatProviderName: "ani-default-snat-" + suffix, SnatBindingID: uuid.NewString()})
 	if err != nil {
 		return biz.DefaultVPCEgress{}, switchAdmissionFailure(err)
 	}
@@ -140,13 +129,7 @@ func (p *DefaultVPCEgressPostgres) GetDefaultVPCEgress(ctx context.Context, id s
 	return p.observedDefaultEgress(ctx, r.NetworkDefaultVpcEgress, r.OperationState)
 }
 func (p *DefaultVPCEgressPostgres) observedDefaultEgress(ctx context.Context, row sqlcgen.NetworkDefaultVpcEgress, state string) (biz.DefaultVPCEgress, error) {
-	v := defaultEgressSnapshot(row, state)
-	now, err := p.base.queries.DatabaseTime(ctx)
-	if err != nil {
-		return v, databaseFailure(err)
-	}
-	v.ObservationStale = v.Reason == biz.ProviderUnavailable || v.ObservedAt == nil || v.ObservedAt.After(now) || now.Sub(*v.ObservedAt) > p.freshness
-	return v, nil
+	return defaultEgressSnapshot(row, state), nil
 }
 func (p *DefaultVPCEgressPostgres) GetCurrentDefaultVPCEgress(ctx context.Context) (biz.DefaultVPCEgress, error) {
 	r, err := p.base.queries.GetCurrentDefaultEgress(ctx, sqlcgen.GetCurrentDefaultEgressParams{
@@ -222,7 +205,7 @@ func (p *DefaultVPCEgressPostgres) ClaimDefaultVPCEgress(ctx context.Context, ow
 	if err != nil {
 		return biz.DefaultEgressWork{}, false, databaseFailure(err)
 	}
-	x := biz.DefaultEgressWork{Egress: defaultEgressSnapshot(r.NetworkDefaultVpcEgress, r.OperationState), Owner: owner, Epoch: epoch, PoolRevision: r.NetworkDefaultVpcEgress.PoolRevision, PoolProviderUID: r.NetworkDefaultVpcEgress.PoolProviderUid, EIPBindingID: r.NetworkDefaultVpcEgress.EipBindingID, SnatBindingID: r.NetworkDefaultVpcEgress.SnatBindingID, Now: now}
+	x := biz.DefaultEgressWork{Egress: defaultEgressSnapshot(r.NetworkDefaultVpcEgress, r.OperationState), Owner: owner, Epoch: epoch.LeaseEpoch, ClaimedGeneration: epoch.RequestedGeneration, PoolRevision: r.NetworkDefaultVpcEgress.PoolRevision, EIPBindingID: r.NetworkDefaultVpcEgress.EipBindingID, SnatBindingID: r.NetworkDefaultVpcEgress.SnatBindingID, Now: now}
 	return x, true, databaseFailure(tx.Commit(ctx))
 }
 func (p *DefaultVPCEgressPostgres) AssertDefaultVPCEgressLease(ctx context.Context, x biz.DefaultEgressWork) error {
@@ -246,53 +229,49 @@ func (p *DefaultVPCEgressPostgres) BeginDefaultVPCEgressMutation(ctx context.Con
 	return nil
 }
 func (p *DefaultVPCEgressPostgres) FinishDefaultVPCEgress(ctx context.Context, x biz.DefaultEgressWork, v biz.DefaultEgressProgress) error {
-	o := v.Observation
-	// A failed observation can retain the previous result, never establish a
-	// new available state, complete a mutation, or advance the evidence clock.
-	retaining := !v.Observed && v.State == x.Egress.State && v.Reason == biz.ProviderUnavailable && !v.ClearPending && v.PendingUnknown == x.Egress.PendingUnknown
-	if v.State == biz.Available && !retaining && (!v.Observed || !o.Ready || o.EIPUID == "" || o.SnatUID == "" || o.Address == "" || o.TargetGeneration < 1 || o.AppliedEnabled == nil || !*o.AppliedEnabled) {
-		return biz.Fail(biz.DependencyUnavailable, "default egress availability needs complete provider binding proof")
-	}
-	if v.State == biz.Deleted && (!v.Observed || o.EIPExists || o.SnatExists || !o.Unbound || !v.ClearPending || v.PendingUnknown) {
-		return biz.Fail(biz.DependencyUnavailable, "default egress deletion needs final disappearance and unbinding proof")
-	}
 	tx, err := p.base.pool.Begin(ctx)
 	if err != nil {
 		return databaseFailure(err)
 	}
 	defer tx.Rollback(ctx)
 	q := p.base.queries.WithTx(tx)
-	var observedAt *time.Time
-	if v.Observed {
-		observedAt = &o.ObservedAt
+	now, err := q.DatabaseTime(ctx)
+	if err != nil {
+		return databaseFailure(err)
+	}
+	o := v.Observation
+	if !v.Observed {
+		o.EIPUID, o.SnatUID, o.Address, o.AppliedEnabled = x.Egress.EIPProviderUID, x.Egress.SnatProviderUID, x.Egress.Address, x.Egress.AppliedEnabled
 	}
 	var applied pgtype.Bool
 	if o.AppliedEnabled != nil {
 		applied = pgtype.Bool{Bool: *o.AppliedEnabled, Valid: true}
 	}
-	if retaining && x.Egress.AppliedEnabled != nil {
-		applied = pgtype.Bool{Bool: *x.Egress.AppliedEnabled, Valid: true}
-	}
-	n, err := q.FinishDefaultEgress(ctx, sqlcgen.FinishDefaultEgressParams{State: string(v.State), Phase: v.Phase, Reason: string(v.Reason), EipUid: o.EIPUID, SnatUid: o.SnatUID, Address: o.Address, AppliedEnabled: applied, TargetGeneration: o.TargetGeneration, Observed: v.Observed, ObservedAt: observedAt, ClearPending: v.ClearPending, PendingUnknown: v.PendingUnknown, DelayMs: v.Delay.Milliseconds(), ClusterID: p.identity.ClusterID, ResourceID: x.Egress.ID, Version: x.Egress.Version, OperationID: x.Egress.LastOperationID, Owner: x.Owner, Epoch: x.Epoch})
+	terminal := v.State == biz.Deleted
+	active := x.Egress.OperationState != "succeeded" && x.Egress.OperationState != "failed"
+	completed := !active || v.OperationState == biz.Succeeded || v.OperationState == biz.OpFailed
+	park := completed && (x.Egress.PendingAction == "" || v.ClearPending) && !v.PendingUnknown && v.ObservationError == ""
+	n, err := q.FinishDefaultEgress(ctx, sqlcgen.FinishDefaultEgressParams{State: string(v.State), Phase: v.Phase, Reason: string(v.Reason), EipUid: o.EIPUID, SnatUid: o.SnatUID, Address: o.Address, AppliedEnabled: applied, Observed: v.Observed, Now: now, ObservationError: string(v.ObservationError), ClaimedGeneration: x.ClaimedGeneration, Backoff: v.Backoff, Park: park, Terminal: terminal, ClearPending: v.ClearPending, PendingUnknown: v.PendingUnknown, DelayMs: v.Delay.Milliseconds(), ClusterID: p.identity.ClusterID, ResourceID: x.Egress.ID, Version: x.Egress.Version, OperationID: x.Egress.LastOperationID, Owner: x.Owner, Epoch: x.Epoch})
 	if err != nil {
 		return databaseFailure(err)
 	}
 	if n != 1 {
 		return biz.ErrLeaseLost
 	}
-	if v.OperationState != "" {
-		if err = q.FinishDefaultEgressOperation(ctx, sqlcgen.FinishDefaultEgressOperationParams{State: string(v.OperationState), Reason: string(v.Reason), ResourceID: x.Egress.ID, OperationID: x.Egress.LastOperationID}); err != nil {
+	if active && v.OperationState != "" {
+		if err = q.FinishDefaultEgressOperation(ctx, sqlcgen.FinishDefaultEgressOperationParams{State: string(v.OperationState), Reason: string(v.OperationReason), ResourceID: x.Egress.ID, OperationID: x.Egress.LastOperationID}); err != nil {
 			return databaseFailure(err)
 		}
 	}
-	body, _ := json.Marshal(struct {
-		State  biz.ResourceState
-		Phase  string
-		Reason biz.Reason
-		Proof  string
-	}{v.State, v.Phase, v.Reason, o.Hash})
-	if err = q.InsertDefaultEgressHistory(ctx, sqlcgen.InsertDefaultEgressHistoryParams{HistoryID: uuid.NewString(), ResourceID: x.Egress.ID, OperationID: x.Egress.LastOperationID, Event: "worker_progress", Detail: body}); err != nil {
-		return databaseFailure(err)
+	if active || v.State != x.Egress.State || v.Reason != x.Egress.Reason {
+		body, _ := json.Marshal(struct {
+			State  biz.ResourceState
+			Phase  string
+			Reason biz.Reason
+		}{v.State, v.Phase, v.Reason})
+		if err = q.InsertDefaultEgressHistory(ctx, sqlcgen.InsertDefaultEgressHistoryParams{HistoryID: uuid.NewString(), ResourceID: x.Egress.ID, OperationID: x.Egress.LastOperationID, Event: "worker_progress", Detail: body}); err != nil {
+			return databaseFailure(err)
+		}
 	}
 	return databaseFailure(tx.Commit(ctx))
 }

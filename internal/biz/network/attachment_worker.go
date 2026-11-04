@@ -4,90 +4,90 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"slices"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type AttachmentWork struct {
-	ConsumerSnapshot      *ConsumerSubmission
-	Requirement           ObservationRequirement
-	Now                   time.Time
-	RequireFreshRelations bool
-	Attachment            Attachment
-	Plan                  PodPrimaryPlan
-	Relations             []byte
-	ConsumerPodUIDs       []string
-	ProtocolBlocked       bool
-	Owner                 string
-	Epoch                 int64
+	ConsumerSnapshot  *ConsumerSubmission
+	ClaimedGeneration int64
+	Now               time.Time
+	Attachment        Attachment
+	Plan              PodPrimaryPlan
+	Owner             string
+	Epoch             int64
 }
+
+type AttachmentAddressObservation struct {
+	CurrentVNicName, CurrentVNicUID, CurrentMACAddress string
+	CurrentIPs                                         []string
+}
+
+// AttachmentAddressReader reads display data for the current registered
+// consumer. On a read error it returns the last values for the unchanged source;
+// it never determines whether the management relationship is attached/released.
+type AttachmentAddressReader interface {
+	ObserveAttachmentAddresses(context.Context, Attachment, ConsumerSubmission) (AttachmentAddressObservation, error)
+}
+
 type AttachmentProgress struct {
 	ConsumerSnapshot                *ConsumerSubmission
-	Proof                           ObservationProof
-	Backoff                         bool
+	Addresses                       *AttachmentAddressObservation
 	State                           AttachmentState
-	Reason                          Reason
+	Reason, ObservationError        Reason
+	ProviderError                   error
 	PodName, PodUID, FinalizationID string
-	Relations                       []byte
-	Observed, ProtocolBlocked       bool
-	ProtocolRecovered               bool
+	Observed, Backoff               bool
 	NextDelay                       time.Duration
 }
+
 type AttachmentWorkRepository interface {
 	ClaimAttachment(context.Context, string, time.Duration) (AttachmentWork, bool, error)
 	FinishAttachment(context.Context, AttachmentWork, AttachmentProgress) error
 }
-type AttachmentObservation struct {
-	VerifiedCurrent         bool
-	PendingCandidate        bool
-	Proof                   ObservationProof
-	Exists, HasDependencies bool
-	PodName, PodUID         string
-	Relations               []byte
-}
-type AttachmentProvider interface {
-	ObserveAttachment(context.Context, AttachmentWork) (AttachmentObservation, error)
-}
+
 type ManualVNicReference struct{ VNicID, ProviderName, ProviderUID, BindingID string }
 
 type ConsumerSubmission struct {
 	ManualVNics                                                            []ManualVNicReference `json:",omitempty"`
 	SnapshotRevision                                                       int64
 	DesiredRunState                                                        string
-	RootController                                                         WorkloadReference
-	Controllers                                                            []ControllerReference
-	CurrentPods, RetiredPods                                               []PodReference
+	CurrentPods                                                            []PodReference
 	ProtocolVersion                                                        int32
 	TenantID, InstanceID, SubmissionID, AttachmentID, ClusterID, Namespace string
 	Generation                                                             int64
 	State, FinalizationID                                                  string
-	PodUIDs, ControllerUIDs                                                []string
+	PodUIDs                                                                []string
 	ClosedAt                                                               *time.Time
 }
+
 type InstanceConsumer interface {
 	GetSubmission(context.Context, Attachment) (ConsumerSubmission, error)
 }
+
 type AttachmentWorker struct {
 	repository AttachmentWorkRepository
-	provider   AttachmentProvider
 	consumer   InstanceConsumer
+	addresses  AttachmentAddressReader
 	owner      string
 	policy     WorkerPolicy
 	observer   func(context.Context, AttachmentWork, AttachmentProgress, error)
 }
 
-func NewAttachmentWorker(r AttachmentWorkRepository, p AttachmentProvider, c InstanceConsumer, owner string, policy WorkerPolicy, observers ...func(context.Context, AttachmentWork, AttachmentProgress, error)) (*AttachmentWorker, error) {
-	id, e := uuid.Parse(owner)
-	if len(observers) > 1 || e != nil || id == uuid.Nil || r == nil || p == nil || c == nil || policy.RequestTimeout <= 0 || policy.Lease < 3*policy.RequestTimeout || policy.ObserveEvery <= 0 {
+func NewAttachmentWorker(r AttachmentWorkRepository, c InstanceConsumer, addresses AttachmentAddressReader, owner string, policy WorkerPolicy, observers ...func(context.Context, AttachmentWork, AttachmentProgress, error)) (*AttachmentWorker, error) {
+	id, err := uuid.Parse(owner)
+	if len(observers) > 1 || err != nil || id == uuid.Nil || r == nil || c == nil || addresses == nil || policy.RequestTimeout <= 0 || policy.Lease < 3*policy.RequestTimeout || policy.ObserveEvery <= 0 {
 		return nil, fmt.Errorf("invalid attachment worker dependencies")
 	}
-	worker := &AttachmentWorker{repository: r, provider: p, consumer: c, owner: owner, policy: policy}
+	worker := &AttachmentWorker{repository: r, consumer: c, addresses: addresses, owner: owner, policy: policy}
 	if len(observers) == 1 {
 		worker.observer = observers[0]
 	}
 	return worker, nil
 }
+
 func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, w.policy.Lease)
 	defer cancel()
@@ -96,100 +96,81 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 		return found, err
 	}
 	a := work.Attachment
-	p := AttachmentProgress{State: a.State, Reason: a.Reason, PodName: a.PodName, PodUID: a.PodUID, FinalizationID: a.FinalizationID, Relations: work.Relations, ProtocolBlocked: work.ProtocolBlocked, NextDelay: w.policy.ObserveEvery}
-	var consumer ConsumerSubmission
-	var consumerErr error
-	// A successfully released managed attachment already holds an immutable,
-	// validated owner closure. Keep checking provider relations without turning
-	// every retained tombstone into another owner RPC.
-	if releasedManagedClosure(work) {
-		consumer = *a.ConsumerSnapshot
-	} else {
-		call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
-		consumer, consumerErr = w.consumer.GetSubmission(call, a)
-		cancel()
+	progress := AttachmentProgress{State: a.State, Reason: a.Reason, PodName: a.PodName, PodUID: a.PodUID, FinalizationID: a.FinalizationID, NextDelay: w.policy.ObserveEvery}
+	if a.State == Released {
+		return w.finish(ctx, work, progress)
+	}
+	call, stop := context.WithTimeout(ctx, w.policy.RequestTimeout)
+	consumer, err := w.consumer.GetSubmission(call, a)
+	stop()
+	if err != nil {
+		progress.ObservationError, progress.ProviderError, progress.Backoff = ConsumerUnavailable, err, true
+		return w.finish(ctx, work, progress)
+	}
+	if !validConsumer(a, consumer) {
+		progress.Reason, progress.Backoff = AttachmentProtocol, true
+		return w.finish(ctx, work, progress)
 	}
 	if a.WorkloadMode == "controller_managed" || a.WorkloadMode == "vm_managed" {
-		return w.stepManaged(ctx, work, consumer, consumerErr)
-	}
-	if consumerErr == nil && validConsumer(a, consumer) {
-		work.ConsumerPodUIDs = consumer.PodUIDs
-		work.RequireFreshRelations = consumer.State == "closed" && a.State != Released
-	}
-	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
-	o, observeErr := w.provider.ObserveAttachment(call, work)
-	cancel()
-	if observeErr != nil {
-		p.Reason = observationReason(observeErr)
-		if providerKind(observeErr) == ProviderConflict {
-			p.Reason = AttachmentProtocol
-			p.ProtocolBlocked = true
+		switch CompareConsumerSnapshot(a, consumer) {
+		case SnapshotStale:
+			progress.Reason, progress.Backoff = VersionConflict, true
+			return w.finish(ctx, work, progress)
+		case SnapshotConflict:
+			progress.Reason, progress.Backoff = AttachmentProtocol, true
+			return w.finish(ctx, work, progress)
 		}
-	} else {
-		p.Observed = true
-		p.Proof = o.Proof
-		if p.Proof.CollectedAt.IsZero() {
-			p.Proof = ObservationProof{CollectedAt: work.Now, CoveredGeneration: work.Requirement.RequestedGeneration}
+		progress.ConsumerSnapshot = &consumer
+	}
+	progress.Observed, progress.Reason = true, ""
+	progress.PodName, progress.PodUID = "", ""
+	switch consumer.State {
+	case "closing", "closed":
+		progress.State, progress.FinalizationID = Releasing, consumer.FinalizationID
+		if consumer.State == "closed" {
+			progress.State = Released
 		}
-		p.Relations = o.Relations
-		if o.Exists && (o.PodUID == "" || (a.PodUID != "" && a.PodUID != o.PodUID) || (a.ConfirmUID != "" && a.ConfirmUID != o.PodUID)) {
-			p.Reason = AttachmentProtocol
-			p.ProtocolBlocked = true
-		} else {
-			if o.Exists {
-				p.PodName = o.PodName
-				p.PodUID = o.PodUID
-				if a.State == Reserved {
-					p.State = Attached
-				}
-				p.Reason = ""
-			}
-			if a.State == Released && (o.Exists || o.HasDependencies) {
-				p.Reason = AttachmentProtocol
-				p.ProtocolBlocked = true
-			}
-			if consumerErr != nil {
-				if a.State == Releasing || (!o.Exists && a.State == Reserved) {
-					p.Reason = ConsumerUnavailable
-				}
-			} else if !validConsumer(a, consumer) {
-				p.Reason = AttachmentProtocol
-				p.ProtocolBlocked = true
-			} else if consumer.State == "closing" || consumer.State == "closed" {
-				if a.State != Released {
-					p.State = Releasing
-					p.FinalizationID = consumer.FinalizationID
-					p.Reason = ConsumerUnclosed
-				}
-				if (p.PodUID != "" && !slices.Contains(consumer.PodUIDs, p.PodUID)) && consumer.State == "closed" {
-					p.Reason = AttachmentProtocol
-					p.ProtocolBlocked = true
-				} else if consumer.State == "closed" && !o.Exists && !o.HasDependencies && !p.ProtocolBlocked {
-					p.State = Released
-					p.Reason = ""
-				}
-				if o.Exists || o.HasDependencies {
-					if a.State != Released {
-						p.Reason = CleanupPending
-					}
-				}
-			} else if a.State == Releasing {
-				p.Reason = ConsumerUnclosed
-			} else if !o.Exists && a.State == Attached {
-				p.Reason = ProviderMissing
-			}
+	case "open":
+		if a.State == Releasing {
+			progress.State, progress.Reason = Releasing, ConsumerUnclosed
+			break
+		}
+		progress.State = Reserved
+		if consumer.DesiredRunState == "stopped" || consumer.DesiredRunState == "deleted" {
+			break
+		}
+		if len(consumer.CurrentPods) == 1 {
+			pod := consumer.CurrentPods[0].Reference
+			progress.PodName, progress.PodUID, progress.State = pod.Name, pod.UID, Attached
+		} else if (a.WorkloadMode == "" || a.WorkloadMode == "single_pod") && a.PodName != "" && a.PodUID != "" && slices.Contains(consumer.PodUIDs, a.PodUID) {
+			progress.PodName, progress.PodUID, progress.State = a.PodName, a.PodUID, Attached
 		}
 	}
-	if p.ProtocolBlocked {
-		p.Reason = AttachmentProtocol
+	if progress.State != Attached {
+		progress.Addresses = &AttachmentAddressObservation{CurrentIPs: []string{}}
+		return w.finish(ctx, work, progress)
 	}
-	p.Backoff = observeErr != nil || consumerErr != nil
-	if p.State == Released && p.Observed && p.Reason == "" && !p.ProtocolBlocked && !p.Backoff {
-		p.NextDelay = max(w.policy.ObserveEvery, w.policy.StaleAfter)
+	current := a
+	current.State, current.PodName, current.PodUID = progress.State, progress.PodName, progress.PodUID
+	current.ConsumerSnapshot = &consumer
+	if current.PodName != a.PodName || current.PodUID != a.PodUID {
+		current.CurrentVNicName, current.CurrentVNicUID, current.CurrentMACAddress = "", "", ""
+		current.CurrentIPs = nil
 	}
-	err = w.repository.FinishAttachment(ctx, work, p)
+	call, stop = context.WithTimeout(ctx, w.policy.RequestTimeout)
+	addresses, addressErr := w.addresses.ObserveAttachmentAddresses(call, current, consumer)
+	stop()
+	progress.Addresses = &addresses
+	if addressErr != nil {
+		progress.ObservationError, progress.ProviderError, progress.Backoff = ProviderUnavailable, addressErr, true
+	}
+	return w.finish(ctx, work, progress)
+}
+
+func (w *AttachmentWorker) finish(ctx context.Context, work AttachmentWork, progress AttachmentProgress) (bool, error) {
+	err := w.repository.FinishAttachment(ctx, work, progress)
 	if w.observer != nil {
-		w.observer(ctx, work, p, err)
+		w.observer(ctx, work, progress, err)
 	}
 	if errors.Is(err, ErrLeaseLost) {
 		err = nil
@@ -197,46 +178,20 @@ func (w *AttachmentWorker) Step(ctx context.Context) (bool, error) {
 	return true, err
 }
 
-func releasedManagedClosure(work AttachmentWork) bool {
-	a := work.Attachment
-	if a.State != Released || work.ProtocolBlocked || a.Reason != "" || a.ConsumerSnapshot == nil || a.SnapshotHash == "" {
-		return false
-	}
-	if a.WorkloadMode != "controller_managed" && a.WorkloadMode != "vm_managed" {
-		return false
-	}
-	c := *a.ConsumerSnapshot
-	return c.State == "closed" && c.FinalizationID == a.FinalizationID && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == frozenConsumerSnapshotHash(a) && CompareConsumerSnapshot(a, c) == SnapshotAccepted
-}
 func validConsumer(a Attachment, c ConsumerSubmission) bool {
-	if a.WorkloadMode == "controller_managed" || a.WorkloadMode == "vm_managed" {
-		if a.WorkloadMode == "vm_managed" {
-			return validVMConsumer(a, c)
-		}
+	if a.WorkloadMode == "controller_managed" {
 		return validManagedConsumer(a, c)
 	}
-	if len(c.PodUIDs) > 1 {
+	if a.WorkloadMode == "vm_managed" {
+		return validVMConsumer(a, c)
+	}
+	if c.ProtocolVersion != 1 || !consumerScopeMatches(a, c) || len(c.PodUIDs) > 1 {
 		return false
 	}
-	for _, id := range c.PodUIDs {
-		if id == "" {
+	for _, uid := range c.PodUIDs {
+		if uid == "" {
 			return false
 		}
 	}
-	if c.ProtocolVersion != 1 || c.TenantID != a.TenantID || c.InstanceID != a.InstanceID || c.SubmissionID != a.SubmissionID || c.Generation != a.Generation || c.AttachmentID != a.ID || c.ClusterID != a.ClusterID || c.Namespace != a.Namespace {
-		return false
-	}
-	if c.State != "open" && c.State != "closing" && c.State != "closed" {
-		return false
-	}
-	if a.FinalizationID != "" && c.FinalizationID != a.FinalizationID {
-		return false
-	}
-	if c.State != "open" {
-		id, e := uuid.Parse(c.FinalizationID)
-		if e != nil || id == uuid.Nil {
-			return false
-		}
-	}
-	return c.State != "closed" || (c.ClosedAt != nil && !c.ClosedAt.IsZero())
+	return validConsumerState(a, c)
 }

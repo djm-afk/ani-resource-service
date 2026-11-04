@@ -153,9 +153,9 @@ func (s *KC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		meta := o["metadata"].(map[string]any)
-		// Manual VNICs use ordinary background garbage collection for their
-		// KCN-owned IP children; existing VPC/Subnet fixtures remain orphan-only.
-		validPropagation := options.PropagationPolicy == "Orphan" || (kind == "vnics" && (options.PropagationPolicy == "" || options.PropagationPolicy == "Background"))
+		// Native garbage collection owns derived objects. Res still supplies
+		// the original UID and resourceVersion for its declaration deletion.
+		validPropagation := options.PropagationPolicy == "" || options.PropagationPolicy == "Background" || options.PropagationPolicy == "Orphan"
 		if options.Preconditions.UID != meta["uid"] || options.Preconditions.ResourceVersion != meta["resourceVersion"] || !validPropagation {
 			s.Invalid = fmt.Sprintf("unconditional deletion of %s", kind)
 			fail(409, "Conflict")

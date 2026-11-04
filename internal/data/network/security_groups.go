@@ -15,9 +15,6 @@ import (
 	db "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 )
 
-func (p *Postgres) UseSecurityGroupObserver(o biz.SecurityGroupConsumerObserver) {
-	p.securityGroupObserver = o
-}
 func sgTenantLock(ctx context.Context, q *db.Queries, tenant string) error {
 	return databaseFailure(q.LockSecurityGroupRequest(ctx, db.LockSecurityGroupRequestParams{TenantID: tenant, Action: "tenant-security-groups", RequestKey: "mutation"}))
 }
@@ -285,7 +282,7 @@ func (p *Postgres) MutateSecurityGroup(ctx context.Context, i biz.SecurityGroupI
 			if e != nil {
 				return biz.SecurityGroupMutation{}, e
 			}
-			all := append(slices.Clone(binding.SecurityGroupIDs), binding.AppliedSecurityGroupIDs...)
+			all := slices.Clone(binding.SecurityGroupIDs)
 			all = append(all, v.ID)
 			if e = sgCombination(ctx, q, i.TenantID, all, &v); e != nil {
 				return biz.SecurityGroupMutation{}, e
@@ -349,8 +346,8 @@ func resolveSecurityGroups(ctx context.Context, q *db.Queries, tenant, clusterID
 		if v.Namespace != namespace || v.ClusterID != clusterID {
 			return nil, biz.Fail(biz.PlacementMismatch, "security group placement differs from consumer")
 		}
-		if v.State != biz.Available {
-			return nil, biz.Fail(biz.NetworkNotReady, "security group is not available")
+		if v.State == biz.Deleting || v.State == biz.Deleted || v.ProviderName == "" {
+			return nil, biz.Fail(biz.ResourceInUse, "security group declaration is being removed or has no provider name")
 		}
 		names = append(names, v.ProviderName)
 	}
@@ -436,6 +433,9 @@ func (p *Postgres) confirmSecurityGroupBinding(ctx context.Context, tenant, kind
 		if e = sgSaveTarget(ctx, q, v); e != nil {
 			return databaseFailure(e)
 		}
+		if e = q.RetireSecurityGroupTask(ctx, db.RetireSecurityGroupTaskParams{TenantID: tenant, TargetType: kind, TargetID: id}); e != nil {
+			return databaseFailure(e)
+		}
 		return databaseFailure(tx.Commit(ctx))
 	}
 	if e != nil {
@@ -448,41 +448,27 @@ func (p *Postgres) confirmSecurityGroupBinding(ctx context.Context, tenant, kind
 	if (!release && (v.Version != version || !sameStrings(v.SecurityGroupIDs, ids))) || (release && v.Version > version) {
 		return biz.Fail(biz.VersionConflict, "consumer security group intent changed")
 	}
-	applied := false
-	if !release {
-		if p.securityGroupObserver == nil {
-			return biz.Fail(biz.DependencyUnavailable, "security group provider observation is unavailable")
-		}
-		observeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		var observeErr error
-		applied, observeErr = p.securityGroupObserver.ObserveSecurityGroupConsumer(observeCtx, v)
-		cancel()
-		if observeErr != nil {
-			return observeErr
-		}
-	}
 	v.Version = version
 	v.SecurityGroupIDs = slices.Clone(ids)
-	v.AppliedSecurityGroupIDs = nil
-	if applied {
-		v.AppliedSecurityGroupIDs = slices.Clone(ids)
-	}
-	now, e := q.DatabaseTime(ctx)
-	if e != nil {
-		return databaseFailure(e)
-	}
-	v.ObservedAt = &now
-	v.State = "configured"
-	if applied {
-		v.State = "applied"
-	}
+	v.State, v.Reason = "configured", ""
 	if release {
 		v.State = "released"
+		v.AppliedSecurityGroupIDs = nil
 	}
+	// This records the consumer's successful configuration submission. A
+	// background target read supplies Applied IDs and ObservedAt separately.
 	if e = sgSaveTarget(ctx, q, v); e != nil {
 		return databaseFailure(e)
 	}
 	if e = q.ReleaseSecurityGroupReferences(ctx, db.ReleaseSecurityGroupReferencesParams{TenantID: tenant, TargetType: kind, TargetID: id, KeepIds: ids}); e != nil {
+		return databaseFailure(e)
+	}
+	if release {
+		e = q.RetireSecurityGroupTask(ctx, db.RetireSecurityGroupTaskParams{TenantID: tenant, TargetType: kind, TargetID: id})
+	} else {
+		e = q.ScheduleSecurityGroup(ctx, db.ScheduleSecurityGroupParams{TenantID: tenant, TargetType: kind, TargetID: id, RequestedVersion: v.Version})
+	}
+	if e != nil {
 		return databaseFailure(e)
 	}
 	return databaseFailure(tx.Commit(ctx))

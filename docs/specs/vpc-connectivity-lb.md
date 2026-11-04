@@ -1,5 +1,7 @@
 # VPC 基础内网、公网出站与租户 LB 统一方案
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
 
 初始日期：2026-09-14；后端合同更新：2026-10-30。状态：实现范围与实际验收分别见执行状态；用户已确认的约束见 [ADR-0005](../adr/0005-separate-vpc-connectivity-and-exclusive-eip-bindings.md)。本文定义目标行为，实施任务见[执行计划](../plans/vpc-connectivity-lb.md)，当前进度只看[执行状态](../execution/status.md)。历史实施结果保留各自时点；本次固定三规格、多监听器和 VPC 预设只改后端，未修改前端或共享平台预置。

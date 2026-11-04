@@ -35,8 +35,8 @@ type networkJointAggregates struct {
 
 func wireNetworkJointAggregates(t *testing.T, f *lbAdmissionFixture, provider *data.KCProvider, policy biz.WorkerPolicy) *networkJointAggregates {
 	t.Helper()
-	f.f.p.UseEgressInfrastructure(provider)
-	e, err := biz.NewEgress(f.f.p, provider, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), policy.StaleAfter, time.Now)
+	f.f.p.UseVirtualSwitchInfrastructure(provider)
+	e, err := biz.NewEgress(f.f.p, provider, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func wireNetworkJointAggregates(t *testing.T, f *lbAdmissionFixture, provider *d
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, err := data.NewDefaultVPCEgressRepository(f.f.p, identity, adapter, policy.StaleAfter)
+	repo, err := data.NewDefaultVPCEgressRepository(f.f.p, identity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestNetworkJointBoundaryPublishesV09UnderlayReference(t *testing.T) {
 
 func networkJointBackendObserver(t *testing.T, f *lbAdmissionFixture, provider *data.KCProvider, policy biz.WorkerPolicy) *biz.AttachmentWorker {
 	t.Helper()
-	attachments := biz.NewAttachments(f.f.p, time.Minute)
+	attachments := biz.NewAttachments(f.f.p)
 	owners := lbKnownOwners{}
 	for _, name := range []string{"lb-backend", "lb-second"} {
 		var id string
@@ -355,7 +355,7 @@ func networkJointBackendObserver(t *testing.T, f *lbAdmissionFixture, provider *
 		}
 		owners[id] = attachment
 	}
-	worker, err := biz.NewAttachmentWorker(f.f.p, provider, owners, uuid.NewString(), policy)
+	worker, err := biz.NewAttachmentWorker(f.f.p, owners, provider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,12 +381,15 @@ func TestNetworkJointBackendWorkerRefreshesAttachmentObservation(t *testing.T) {
 	if err = f.f.owner.QueryRow(f.f.ctx, "SELECT observed_at,pod_uid FROM network_attachments WHERE tenant_id=$1 AND instance_id='lb-backend'", f.f.tenant).Scan(&before, &podUID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.f.owner.Exec(f.f.ctx, "UPDATE network_attachments SET next_check_at=clock_timestamp() WHERE tenant_id=$1 AND instance_id='lb-backend'", f.f.tenant); err != nil {
+		t.Fatal(err)
+	}
 	awaitNET05A(t, 3*time.Second, func() bool {
 		if _, err := worker.Step(f.f.ctx); err != nil {
 			t.Fatal(err)
 		}
 		var observed time.Time
 		var samePod bool
-		return f.f.owner.QueryRow(f.f.ctx, "SELECT observed_at,(pod_uid=$2 AND state='attached' AND NOT protocol_blocked) FROM network_attachments WHERE tenant_id=$1 AND instance_id='lb-backend'", f.f.tenant, podUID).Scan(&observed, &samePod) == nil && observed.After(before) && samePod
+		return f.f.owner.QueryRow(f.f.ctx, "SELECT observed_at,(pod_uid=$2 AND state='attached') FROM network_attachments WHERE tenant_id=$1 AND instance_id='lb-backend'", f.f.tenant, podUID).Scan(&observed, &samePod) == nil && observed.After(before) && samePod
 	})
 }

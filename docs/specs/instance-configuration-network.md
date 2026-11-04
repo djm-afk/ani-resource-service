@@ -1,5 +1,7 @@
 # 容器实例挂载、配置与 VPC 接入合同
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 日期：2026-10-19。状态：**增量实现合同；实际交付与未验证范围只见[执行状态](../execution/status.md#instance-configuration-and-network-2026-10-19)**。原固定输入的哈希保留在任务源清单中。
 
 2026-10-28 增量以[已审 Restart/PVC v2.0 方案](../plans/container-instance-restart-pvc-20261028.md)为输入；以下当前挂载、引用代际和 Storage 删除协调规则替代旧的创建后卷配置不变与双态引用。当前实施/真实验收只见[唯一状态](../execution/status.md#container-restart-pvc-20261028)，迁移和向前恢复见[运行手册](../runbooks/instance-mvp-fedora.md)。

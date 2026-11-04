@@ -140,7 +140,7 @@ func TestBaseSchemaLegacyPublicUpgradePreservesDurableFactsAndReplay(t *testing.
 	snapshot := func(owner *pgxpool.Pool, table string) string {
 		t.Helper()
 		var s string
-		err := owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(r)-'base_connectivity_required'-'scope'-'managed_by'-'system_owner_vpc'-'purpose'-'create_dispatched'-'retired'-'lb_id'-'provider_generation'-'provider_ready'-'provider_observed_at'-'provider_observed_uid'-'provider_observed_generation' ORDER BY to_jsonb(r)::text),'[]')::text FROM `+table+` r WHERE tenant_id=$1`, legacy.Tenant).Scan(&s)
+		err := owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(r)-'evidence_hash'-'evidence_applied_at'-'vnic_id'-'observation_error'-'target_generation'-'lease_owner'-'lease_until'-'lease_epoch'-'next_run_at'-'base_connectivity_required'-'scope'-'managed_by'-'system_owner_vpc'-'purpose'-'create_dispatched'-'retired'-'lb_id'-'provider_generation'-'provider_ready'-'provider_observed_at'-'provider_observed_uid'-'provider_observed_generation' ORDER BY to_jsonb(r)::text),'[]')::text FROM `+table+` r WHERE tenant_id=$1`, legacy.Tenant).Scan(&s)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -175,9 +175,9 @@ func TestBaseSchemaLegacyPublicUpgradePreservesDurableFactsAndReplay(t *testing.
 	if err := f.Owner.QueryRow(ctx, `SELECT bool_and(NOT retired) FROM network_reconciliations WHERE tenant_id=$1`, legacy.Tenant).Scan(&activeReconciliation); err != nil || !activeReconciliation {
 		t.Fatal("migration retired existing durable work", activeReconciliation, err)
 	}
-	var unknown bool
-	if err := f.Owner.QueryRow(ctx, `SELECT bool_and(NOT provider_ready AND provider_observed_at IS NULL AND provider_observed_uid='' AND provider_generation=0 AND provider_observed_generation=0) FROM network_provider_bindings WHERE tenant_id=$1`, legacy.Tenant).Scan(&unknown); err != nil || !unknown {
-		t.Fatal("migration fabricated VPC Provider readiness", unknown, err)
+	var obsolete int
+	if err := f.Owner.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_name='network_provider_bindings' AND column_name IN ('provider_ready','provider_observed_at','provider_observed_uid','provider_generation','provider_observed_generation')`).Scan(&obsolete); err != nil || obsolete != 0 {
+		t.Fatal("obsolete provider proof columns remain", obsolete, err)
 	}
 	got, err := f.Repository.GetEIP(ctx, legacy.Tenant, legacy.EIP)
 	if err != nil || got.Scope != "public" || got.ManagedBy != "tenant" || got.BindingID != legacy.Snat || got.BindingTarget == nil || got.BindingTarget.Kind != "vpc_snat" || got.BindingState != "bound" {
@@ -187,11 +187,11 @@ func TestBaseSchemaLegacyPublicUpgradePreservesDurableFactsAndReplay(t *testing.
 	if err != nil || snat.ID != legacy.Snat || snat.Purpose != "public" {
 		t.Fatal(snat, err)
 	}
-	replay, err := f.Repository.AcceptEIP(ctx, legacy.EIPIntent, biz.Attribution{}, time.Minute)
+	replay, err := f.Repository.AcceptEIP(ctx, legacy.EIPIntent, biz.Attribution{})
 	if err != nil || replay.ID != legacy.EIP || replay.State != biz.Provisioning || replay.Version != 1 {
 		t.Fatal("permanent EIP receipt drifted", replay, err)
 	}
-	sr, err := f.Repository.AcceptSnat(ctx, legacy.SnatIntent, biz.Attribution{}, time.Minute)
+	sr, err := f.Repository.AcceptSnat(ctx, legacy.SnatIntent, biz.Attribution{})
 	if err != nil || sr.ID != legacy.Snat || sr.State != biz.Provisioning || sr.Version != 1 {
 		t.Fatal("permanent SNAT receipt consulted new readiness", sr, err)
 	}

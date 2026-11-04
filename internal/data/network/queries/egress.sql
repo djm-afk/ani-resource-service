@@ -17,12 +17,12 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,'public','tenant','provisioning',$9,$9,$10) RETUR
 SELECT * FROM network_eips WHERE tenant_id=$1 AND eip_id=$2 FOR UPDATE;
 
 -- name: GetEIP :one
-SELECT sqlc.embed(e),coalesce(c.snat_id,'')::text AS binding_id,
+SELECT sqlc.embed(e),coalesce(task.observation_error,'')::text AS observation_error,coalesce(c.snat_id,'')::text AS binding_id,
  coalesce(c.state,'unbound')::text AS binding_state,
  coalesce(c.target_kind,'')::text AS binding_target_kind,
  coalesce(c.snat_id,c.lb_id,'')::text AS binding_target_id,
  coalesce(sn.vpc_id,lb.vpc_id,'')::text AS binding_vpc_id
-FROM network_eips e LEFT JOIN network_eip_claims c
+FROM network_eips e LEFT JOIN network_reconciliations task ON task.tenant_id=e.tenant_id AND task.eip_id=e.eip_id LEFT JOIN network_eip_claims c
  ON c.tenant_id=e.tenant_id AND c.eip_id=e.eip_id AND c.released_at IS NULL
 LEFT JOIN network_snat_bindings sn ON sn.tenant_id=c.tenant_id AND sn.snat_id=c.snat_id
 LEFT JOIN network_load_balancers lb ON lb.tenant_id=c.tenant_id AND lb.lb_id=c.lb_id
@@ -42,12 +42,12 @@ LEFT JOIN network_load_balancers lb ON lb.tenant_id=c.tenant_id AND lb.lb_id=c.l
 WHERE e.tenant_id=$1 AND e.eip_id=$2;
 
 -- name: ListEIPs :many
-SELECT sqlc.embed(e),coalesce(c.snat_id,'')::text AS binding_id,
+SELECT sqlc.embed(e),coalesce(task.observation_error,'')::text AS observation_error,coalesce(c.snat_id,'')::text AS binding_id,
  coalesce(c.state,'unbound')::text AS binding_state,
  coalesce(c.target_kind,'')::text AS binding_target_kind,
  coalesce(c.snat_id,c.lb_id,'')::text AS binding_target_id,
  coalesce(sn.vpc_id,lb.vpc_id,'')::text AS binding_vpc_id
-FROM network_eips e LEFT JOIN network_eip_claims c
+FROM network_eips e LEFT JOIN network_reconciliations task ON task.tenant_id=e.tenant_id AND task.eip_id=e.eip_id LEFT JOIN network_eip_claims c
  ON c.tenant_id=e.tenant_id AND c.eip_id=e.eip_id AND c.released_at IS NULL
 LEFT JOIN network_snat_bindings sn ON sn.tenant_id=c.tenant_id AND sn.snat_id=c.snat_id
 LEFT JOIN network_load_balancers lb ON lb.tenant_id=c.tenant_id AND lb.lb_id=c.lb_id
@@ -59,7 +59,7 @@ ORDER BY e.created_at DESC,e.eip_id DESC LIMIT sqlc.arg(max_results)::integer;
 
 -- name: AdvanceEIP :one
 UPDATE network_eips SET state=sqlc.arg(state),reason=sqlc.arg(reason),version=version+1,updated_at=clock_timestamp(),
- address=CASE WHEN sqlc.arg(address)::text<>'' THEN sqlc.arg(address) ELSE address END,
+ address=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.arg(address)::text ELSE address END,
  observed_at=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.narg(observed_at)::timestamptz ELSE observed_at END
 WHERE tenant_id=sqlc.arg(tenant_id) AND eip_id=sqlc.arg(eip_id) AND version=sqlc.arg(version) RETURNING *;
 
@@ -72,7 +72,8 @@ INSERT INTO network_snat_bindings(tenant_id,snat_id,cluster_id,namespace,name,de
 VALUES($1,$2,$3,$4,'VPC SNAT','',$5,$6,'public',true,'provisioning',$7,$7,$8) RETURNING *;
 
 -- name: GetSnat :one
-SELECT sqlc.embed(s),e.address FROM network_snat_bindings s
+SELECT sqlc.embed(s),e.address,coalesce(task.observation_error,'')::text AS observation_error FROM network_snat_bindings s
+LEFT JOIN network_reconciliations task ON task.tenant_id=s.tenant_id AND task.snat_id=s.snat_id
 JOIN network_eips e ON e.tenant_id=s.tenant_id AND e.eip_id=s.eip_id
 WHERE s.tenant_id=sqlc.arg(tenant_id) AND s.purpose='public' AND e.scope='public' AND e.managed_by='tenant' AND
  ((NOT sqlc.arg(by_vpc)::boolean AND s.snat_id=sqlc.arg(id)::text) OR
@@ -94,19 +95,18 @@ VALUES(sqlc.arg(tenant_id),sqlc.arg(eip_id),sqlc.arg(cluster_id),sqlc.arg(namesp
 ON CONFLICT DO NOTHING;
 
 -- name: SetSnatIntent :one
-UPDATE network_snat_bindings SET desired_enabled=sqlc.arg(enabled),applied_enabled=NULL,state='provisioning',reason='',
+UPDATE network_snat_bindings SET desired_enabled=sqlc.arg(enabled),state='provisioning',reason='',
  last_operation_id=sqlc.arg(operation_id),version=version+1,updated_at=clock_timestamp()
 WHERE tenant_id=sqlc.arg(tenant_id) AND snat_id=sqlc.arg(snat_id) AND version=sqlc.arg(version) RETURNING *;
 
 -- name: AdvanceSnat :one
 UPDATE network_snat_bindings SET state=sqlc.arg(state),reason=sqlc.arg(reason),version=version+1,updated_at=clock_timestamp(),
  applied_enabled=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.narg(applied_enabled)::boolean ELSE applied_enabled END,
- target_generation=greatest(target_generation,sqlc.arg(target_generation)::bigint),
  observed_at=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.narg(observed_at)::timestamptz ELSE observed_at END
 WHERE tenant_id=sqlc.arg(tenant_id) AND snat_id=sqlc.arg(snat_id) AND version=sqlc.arg(version) RETURNING *;
 
 -- name: AdmitSnatDeletion :one
-UPDATE network_snat_bindings SET state='deleting',reason='',applied_enabled=NULL,last_operation_id=sqlc.arg(operation_id),version=version+1,updated_at=clock_timestamp()
+UPDATE network_snat_bindings SET state='deleting',reason='',last_operation_id=sqlc.arg(operation_id),version=version+1,updated_at=clock_timestamp()
 WHERE tenant_id=sqlc.arg(tenant_id) AND snat_id=sqlc.arg(snat_id) AND version=sqlc.arg(version) RETURNING *;
 
 -- Global scheduling inventory is worker-only. Admission and completion always

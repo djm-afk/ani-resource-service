@@ -196,6 +196,10 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	if x.VM.UID != "" && v.Native.UID != x.VM.UID {
 		return ErrOwnership
 	}
+	if ReconcileNetworkSubmission(v, x) {
+		// Save this current management revision before confirming it with Network.
+		return nil
+	}
 	if len(x.Volumes) > 0 {
 		for i := range v.Disks {
 			for _, d := range x.Volumes {
@@ -234,11 +238,13 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 		}
 		return nil
 	}
-	addresses, e := w.network.Observe(ctx, *v, x)
-	if e != nil && !errors.Is(e, ErrDependency) {
-		return e
+	confirmationErr := w.network.Confirm(ctx, *v, x)
+	if addresses, addressErr := w.network.CurrentAddresses(ctx, *v); addressErr == nil {
+		v.Addresses = addresses
 	}
-	v.Addresses = addresses
+	if x.Stopped || x.Deleted || (x.Terminal && x.Launcher == nil) {
+		v.Addresses = nil
+	}
 	action := o.Action
 	if o.Step == "network-starting" {
 		action = "start"
@@ -250,10 +256,10 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	case "start":
 		v.Desired = "Running"
 		if x.Running {
-			if e != nil {
-				return e
+			if confirmationErr != nil {
+				return confirmationErr
 			}
-			if e = w.confirmNetworkInterface(ctx, v, x, addresses); e != nil {
+			if e = w.confirmNetworkInterface(ctx, v, x); e != nil {
 				return e
 			}
 			o.State = "succeeded"
@@ -296,13 +302,8 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 		return err
 	case "stop", "force-stop":
 		v.Desired = "Stopped"
-		if e != nil {
-			// Address withdrawal must be confirmed by Network, rather than
-			// manufacturing an empty address set from a dependency failure.
-			return e
-		}
 		ended := x.Terminal && x.VMI != nil && x.VMI.UID != "" && x.VM.UID == v.Native.UID && v.Native.UID != ""
-		if ((x.Stopped && x.VMI == nil) || ended) && x.Launcher == nil && len(x.StateChangeRequests) == 0 && len(v.Addresses) == 0 {
+		if ((x.Stopped && x.VMI == nil) || ended) && x.Launcher == nil && len(x.StateChangeRequests) == 0 {
 			o.State = "succeeded"
 			o.Pending = nil
 			return nil
@@ -317,6 +318,12 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	case "restart":
 		v.Desired = "Running"
 		if o.OldVMIUID != "" && x.VMI != nil && x.VMI.UID != o.OldVMIUID && x.Running {
+			if confirmationErr != nil {
+				return confirmationErr
+			}
+			if e = w.confirmNetworkInterface(ctx, v, x); e != nil {
+				return e
+			}
 			o.State = "succeeded"
 			o.Pending = nil
 			return nil
@@ -351,6 +358,9 @@ func (w *Worker) remove(ctx context.Context, o *Operation, v *VM) error {
 	x, e := w.native.Observe(ctx, *v)
 	if e != nil {
 		return e
+	}
+	if ReconcileNetworkSubmission(v, x) {
+		return nil
 	}
 	v.BackendStates = x.BackendStates
 	for i := range v.Disks {

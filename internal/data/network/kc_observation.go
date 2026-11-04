@@ -2,17 +2,12 @@ package data
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,222 +15,109 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
 
-type ObservationOptions struct {
-	AuditInterval, AuditJitter, AuditTimeout, FlushInterval time.Duration
-	QueueCapacity                                           int
+type observedObjectKey struct {
+	GVR       schema.GroupVersionResource
+	Namespace string
+	Name      string
 }
 
-func DefaultObservationOptions() ObservationOptions {
-	return ObservationOptions{30 * time.Second, 2 * time.Second, 10 * time.Second, 100 * time.Millisecond, 4096}
-}
-
-type observationTarget struct{ tenant, id, kind string }
-
-func (t observationTarget) key() string { return t.kind + "/" + t.tenant + "/" + t.id }
-
-type auditView struct {
-	collected       time.Time
-	sequence, epoch uint64
-	indices         map[schema.GroupVersionResource]cache.Indexer
-	generations     map[string]int64
-	targets         map[string][]observationTarget
-	recovery        []observationTarget
-	bytes           int64
-}
-
-// An audit result belongs to its own completion channel. A later collection
-// must not overwrite the result observed by a waiter on this one.
-type auditCollection struct {
-	done chan struct{}
-	view *auditView
-	err  error
-}
-
-// KCObservation supplies invalidation hints and independently audited facts.
-// Only domain workers apply facts. Watch never writes product state or freshness.
+// KCObservation maps ordinary object events to already registered Res work.
+// Workers read their own targets directly; this component never applies state.
 type KCObservation struct {
-	provider          *KCProvider
-	client            dynamic.Interface
-	options           ObservationOptions
-	informers         []cache.SharedIndexInformer
-	mu                sync.Mutex
-	view              *auditView
-	pending           map[string]struct{}
-	pendingSince      time.Time
-	changes           map[string]uint64
-	attachmentChanges map[string]uint64
-	sequence, epoch   uint64
-	overflow          bool
-	refreshing        *auditCollection
-	cancel            context.CancelFunc
-	ctx               context.Context
-	done              chan struct{}
-	started           bool
-	synced            atomic.Bool
-	auditSuccess      atomic.Int64
-	watchErrors       atomic.Int64
-	sourceStarts      atomic.Int64
-	watchIndexBytes   atomic.Int64
-	auditFailures     atomic.Int64
-	optionalFailures  atomic.Int64
-	auditMaxSeconds   float64
-	collectingSince   time.Time
-	notifications     atomic.Int64
-	coalesced         atomic.Int64
-	overflows         atomic.Int64
-	candidates        atomic.Int64
-	pgMetrics         map[string]float64
+	provider       *KCProvider
+	client         dynamic.Interface
+	requestTimeout time.Duration
+	informers      []cache.SharedIndexInformer
+	queue          workqueue.TypedRateLimitingInterface[observedObjectKey]
+	mu             sync.Mutex
+	cancel         context.CancelFunc
+	done           chan struct{}
+	started        bool
+	watchErrors    atomic.Int64
+	notifications  atomic.Int64
+	retries        atomic.Int64
+	pgMetrics      map[string]float64
 }
 
-func (p *KCProvider) EnableObservation(options ObservationOptions) (*KCObservation, error) {
-	if options.AuditInterval <= 0 || options.AuditTimeout <= 0 || options.FlushInterval <= 0 || options.QueueCapacity < 16 || p.observation != nil {
-		return nil, fmt.Errorf("invalid observation lifecycle/options")
+func observationResources() []schema.GroupVersionResource {
+	return []schema.GroupVersionResource{
+		kcVPCs, kcSubnets,
+		{Group: kcVPCs.Group, Version: "v1", Resource: "vnics"},
+		{Group: kcVPCs.Group, Version: "v1", Resource: "vnicips"},
+		kcEIPs, kcSnats, kcEgressGateways, kcVlans, kcSecurityGroups,
+		pods, kcNodes,
+		lbEnvoyProxies, lbGateways, lbBackends, lbRoutes, lbTCPRoutes,
+		lbUDPRoutes, lbPolicies, lbClientPolicies, lbPatchPolicies,
 	}
-	o := &KCObservation{provider: p, client: p.watchClient, options: options, pending: map[string]struct{}{}, changes: map[string]uint64{}, done: make(chan struct{})}
-	for index, gvr := range p.observationResources() {
-		boundary := o.sourceBoundary
-		if index >= len(observationGVRs) {
-			boundary = o.lbSourceBoundary
-		}
-		resource := o.client.Resource(gvr)
+}
+
+func (p *KCProvider) EnableObservation(requestTimeout time.Duration) (*KCObservation, error) {
+	if requestTimeout <= 0 || p.observation != nil || p.watchClient == nil {
+		return nil, fmt.Errorf("invalid observation lifecycle or request timeout")
+	}
+	observer := &KCObservation{
+		provider: p, client: p.watchClient, requestTimeout: requestTimeout,
+		queue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[observedObjectKey]()),
+		done:  make(chan struct{}),
+	}
+	for _, gvr := range observationResources() {
+		resource := observer.client.Resource(gvr)
 		informer := cache.NewSharedIndexInformer(&cache.ListWatch{
-			ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-				boundary()
-				return resource.List(ctx, opts)
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				return resource.List(ctx, options)
 			},
-			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-				// Streaming initial events rebuild the store just like LIST. A
-				// normal watch resumes its RV without replaying initial events.
-				if opts.SendInitialEvents != nil && *opts.SendInitialEvents {
-					boundary()
-				}
-				return resource.Watch(ctx, opts)
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				return resource.Watch(ctx, options)
 			},
-		}, &unstructured.Unstructured{}, 0, cache.Indexers{relationshipIndex: relationshipKeys})
-		_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{AddFunc: func(obj any) { o.changed(nil, obj) }, UpdateFunc: o.changed, DeleteFunc: func(obj any) { o.changed(obj, nil) }})
+		}, &unstructured.Unstructured{}, 0, cache.Indexers{})
+		_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    func(object any) { observer.changed(gvr, nil, object) },
+			UpdateFunc: func(old, current any) { observer.changed(gvr, old, current) },
+			DeleteFunc: func(object any) { observer.changed(gvr, object, nil) },
+		})
 		if err != nil {
+			observer.queue.ShutDown()
 			return nil, err
 		}
-		if err = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) { o.watchErrors.Add(1); boundary() }); err != nil {
+		if err = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
+			observer.watchErrors.Add(1)
+			slog.Warn("network object watch failed", "resource", gvr.String(), "error", err)
+		}); err != nil {
+			observer.queue.ShutDown()
 			return nil, err
 		}
-		o.informers = append(o.informers, informer)
+		observer.informers = append(observer.informers, informer)
 	}
-	p.observation = o
-	p.repository.sharedObservation = true
-	return o, nil
-}
-
-// A relist or reported source failure is a continuity boundary. Normal Watch
-// renewal resumes from resourceVersion and does not invalidate independent audits.
-// In-flight independent collections cannot inherit proof from before it. The
-// full audit recovers the scope; ordinary unrelated object events remain keyed.
-func (o *KCObservation) sourceBoundary() {
-	o.mu.Lock()
-	o.epoch++
-	o.overflow = true
-	o.mu.Unlock()
-	o.sourceStarts.Add(1)
-}
-
-// An optional LB source cannot invalidate an independently complete base
-// audit. LB observations carry this key even when their object is absent.
-// The same sequence fence rejects collections begun before an LB relist.
-func (o *KCObservation) lbSourceBoundary() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.sourceStarts.Add(1)
-	o.sequence++
-	if _, exists := o.changes["lb-source"]; !exists && len(o.changes) >= o.options.QueueCapacity*8 {
-		clear(o.changes)
-		clear(o.attachmentChanges)
-		o.epoch++
-		o.overflow = true
-		o.overflows.Add(1)
-	}
-	o.changes["lb-source"] = o.sequence
-	if _, pending := o.pending["lb-source"]; pending {
-		o.coalesced.Add(1)
-		return
-	}
-	if len(o.pending) >= o.options.QueueCapacity {
-		o.overflow = true
-		o.overflows.Add(1)
-		return
-	}
-	if len(o.pending) == 0 {
-		o.pendingSince = time.Now()
-	}
-	o.pending["lb-source"] = struct{}{}
+	p.observation = observer
+	return observer, nil
 }
 
 func unwrapObject(value any) *unstructured.Unstructured {
-	if t, ok := value.(cache.DeletedFinalStateUnknown); ok {
-		value = t.Obj
+	switch deleted := value.(type) {
+	case cache.DeletedFinalStateUnknown:
+		value = deleted.Obj
+	case *cache.DeletedFinalStateUnknown:
+		value = deleted.Obj
 	}
-	o, _ := value.(*unstructured.Unstructured)
-	return o
+	object, _ := value.(*unstructured.Unstructured)
+	return object
 }
-func (o *KCObservation) changed(old, new any) {
-	before, after := unwrapObject(old), unwrapObject(new)
-	if before != nil && after != nil && reflect.DeepEqual(before.Object, after.Object) {
-		o.coalesced.Add(1)
+
+func (o *KCObservation) changed(gvr schema.GroupVersionResource, old, current any) {
+	before, after := unwrapObject(old), unwrapObject(current)
+	if before != nil && after != nil && before.GetResourceVersion() != "" && before.GetResourceVersion() == after.GetResourceVersion() {
 		return
 	}
-	for _, item := range []struct {
-		object *unstructured.Unstructured
-		sign   int64
-	}{{before, -1}, {after, 1}} {
-		if item.object != nil {
-			body, _ := json.Marshal(item.object.Object)
-			o.watchIndexBytes.Add(item.sign * int64(len(body)))
-		}
-	}
-	if unchangedNodeNetworkObservation(before, after) {
-		o.coalesced.Add(1)
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.sequence++
 	for _, object := range []*unstructured.Unstructured{before, after} {
-		if object == nil {
-			continue
-		}
-		keys, _ := relationshipKeys(object)
-		for _, key := range keys {
-			if len(o.changes) >= o.options.QueueCapacity*8 {
-				clear(o.changes)
-				clear(o.attachmentChanges)
-				o.epoch++
-				o.overflow = true
-				o.overflows.Add(1)
-			}
-			o.changes[key] = o.sequence
-			if attachmentObservationObject(object) {
-				if o.attachmentChanges == nil {
-					o.attachmentChanges = map[string]uint64{}
-				}
-				o.attachmentChanges[key] = o.sequence
-			}
-			if _, ok := o.pending[key]; ok {
-				o.coalesced.Add(1)
-				continue
-			}
-			if len(o.pending) >= o.options.QueueCapacity {
-				o.overflow = true
-				o.overflows.Add(1)
-				continue
-			}
-			if len(o.pending) == 0 {
-				o.pendingSince = time.Now()
-			}
-			o.pending[key] = struct{}{}
+		if object != nil && object.GetName() != "" {
+			o.queue.Add(observedObjectKey{GVR: gvr, Namespace: object.GetNamespace(), Name: object.GetName()})
 		}
 	}
 }
+
 func (o *KCObservation) Start(parent context.Context) error {
 	o.mu.Lock()
 	if o.started {
@@ -243,45 +125,68 @@ func (o *KCObservation) Start(parent context.Context) error {
 		return fmt.Errorf("observer already started")
 	}
 	o.started = true
-	o.ctx, o.cancel = context.WithCancel(parent)
-	ctx := o.ctx
+	ctx, cancel := context.WithCancel(parent)
+	o.cancel = cancel
 	o.mu.Unlock()
 	var group sync.WaitGroup
 	defer func() {
-		o.cancel()
+		cancel()
+		o.queue.ShutDown()
 		group.Wait()
-		o.mu.Lock()
-		pending := o.refreshing
-		o.mu.Unlock()
-		if pending != nil {
-			<-pending.done
-		}
-		o.synced.Store(false)
 		close(o.done)
 	}()
+	// Restore only persisted Res tasks, including objects deleted while the
+	// process was stopped. No Kubernetes inventory or status reset is needed.
+	wakeCtx, wakeCancel := context.WithTimeout(ctx, o.requestTimeout)
+	err := o.provider.repository.WakeManagedTasks(wakeCtx)
+	wakeCancel()
+	if err != nil {
+		return err
+	}
 	for _, informer := range o.informers {
 		group.Add(1)
-		go func() { defer group.Done(); informer.Run(ctx.Done()) }()
+		go func() {
+			defer group.Done()
+			informer.Run(ctx.Done())
+		}()
 	}
-	// Audit and the PG bridge must run even if a Watch's initial LIST is denied.
 	group.Add(1)
-	go func() { defer group.Done(); o.auditLoop(ctx) }()
-	ticker := time.NewTicker(o.options.FlushInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			synced := true
-			for _, i := range o.informers[:len(observationGVRs)] {
-				synced = synced && i.HasSynced()
-			}
-			o.synced.Store(synced)
-			o.flush(ctx)
+	go func() {
+		defer group.Done()
+		for o.processNextNotification(ctx) {
 		}
-	}
+	}()
+	group.Add(1)
+	go func() {
+		defer group.Done()
+		o.collectTelemetry(ctx)
+	}()
+	<-ctx.Done()
+	return nil
 }
+
+func (o *KCObservation) processNextNotification(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	key, shutdown := o.queue.Get()
+	if shutdown {
+		return false
+	}
+	defer o.queue.Done(key)
+	request, cancel := context.WithTimeout(ctx, o.requestTimeout)
+	err := o.provider.repository.NotifyObservedObject(request, key.GVR, key.Namespace, key.Name)
+	cancel()
+	if err != nil {
+		o.retries.Add(1)
+		o.queue.AddRateLimited(key)
+		return true
+	}
+	o.notifications.Add(1)
+	o.queue.Forget(key)
+	return true
+}
+
 func (o *KCObservation) Stop(ctx context.Context) error {
 	o.mu.Lock()
 	cancel, started := o.cancel, o.started
@@ -299,7 +204,8 @@ func (o *KCObservation) Stop(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
-func (o *KCObservation) auditLoop(ctx context.Context) {
+
+func (o *KCObservation) collectTelemetry(ctx context.Context) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -307,453 +213,35 @@ func (o *KCObservation) auditLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-		}
-		if v, err := o.refresh(ctx, time.Time{}, true); err == nil {
-			o.wakeAudited(ctx, v)
-		}
-		probe, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		metrics := o.provider.repository.observationTelemetry(probe)
-		cancel()
-		o.mu.Lock()
-		o.pgMetrics = metrics
-		o.mu.Unlock()
-		delay := o.options.AuditInterval
-		if o.options.AuditJitter > 0 {
-			delay += time.Duration(rand.Int64N(int64(o.options.AuditJitter)))
-		}
-		timer.Reset(delay)
-	}
-}
-func (o *KCObservation) flush(ctx context.Context) {
-	o.mu.Lock()
-	v := o.view
-	if v == nil {
-		o.mu.Unlock()
-		return
-	}
-	keys := o.pending
-	attachmentKeys := map[string]bool{}
-	for key := range keys {
-		attachmentKeys[key] = o.attachmentChanges[key] > v.sequence
-	}
-	o.pending = map[string]struct{}{}
-	o.pendingSince = time.Time{}
-	overflow := o.overflow
-	o.overflow = false
-	o.mu.Unlock()
-	targets := map[string]observationTarget{}
-	if overflow {
-		for _, ts := range v.targets {
-			for _, t := range ts {
-				targets[t.key()] = t
-			}
-		}
-	} else {
-		for key := range keys {
-			for _, t := range v.targets[key] {
-				// Services/controllers can share an owner UID with an attachment
-				// without changing its Pod/NIC/IP/EIP facts. Do not turn those
-				// events into repeated owner reads and durable attachment work.
-				if t.kind == "attachment" && !attachmentKeys[key] {
-					continue
-				}
-				targets[t.key()] = t
-			}
-		}
-	}
-	deadline, cancel := context.WithTimeout(ctx, o.options.AuditTimeout)
-	defer cancel()
-	for _, t := range targets {
-		var err error
-		if t.kind == "attachment" {
-			err = o.provider.repository.NotifyAttachment(deadline, t.tenant, t.id)
-		} else if t.tenant == "" {
-			_, err = o.provider.repository.queries.NotifyPlatform(deadline, sqlcgen.NotifyPlatformParams{ResourceID: t.id})
-		} else {
-			err = o.provider.repository.NotifyResource(deadline, t.tenant, t.id)
-		}
-		if err != nil {
+			probe, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+			metrics := o.provider.repository.observationTelemetry(probe)
+			cancel()
 			o.mu.Lock()
-			o.overflow = true
+			o.pgMetrics = metrics
 			o.mu.Unlock()
-			return
+			timer.Reset(30 * time.Second)
 		}
-		o.notifications.Add(1)
 	}
 }
 
-// refresh coalesces complete paginated audits. Caller cancellation never cancels
-// another worker's collection; all work remains bounded by the lifecycle timeout.
-func (o *KCObservation) refresh(ctx context.Context, after time.Time, force bool) (*auditView, error) {
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		o.mu.Lock()
-		if !force && o.view != nil && !o.view.collected.Before(after) {
-			v := o.view
-			o.mu.Unlock()
-			return v, nil
-		}
-		current := o.refreshing
-		if current == nil {
-			current = &auditCollection{done: make(chan struct{})}
-			o.refreshing = current
-			o.collectingSince = time.Now()
-			lifecycle := o.ctx
-			if lifecycle == nil {
-				lifecycle = ctx
-			}
-			go func() {
-				collect, cancel := context.WithTimeout(lifecycle, o.options.AuditTimeout)
-				defer cancel()
-				view, err := o.collect(collect)
-				o.mu.Lock()
-				elapsed := time.Since(o.collectingSince).Seconds()
-				o.collectingSince = time.Time{}
-				if err != nil {
-					o.auditFailures.Add(1)
-				} else {
-					o.auditMaxSeconds = max(o.auditMaxSeconds, elapsed)
-					o.view = view
-					o.auditSuccess.Store(time.Now().UnixNano())
-				}
-				current.view, current.err = view, err
-				o.refreshing = nil
-				close(current.done)
-				o.mu.Unlock()
-			}()
-		}
-		o.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-current.done:
-		}
-		if current.err != nil {
-			return nil, current.err
-		}
-		if current.view != nil && !current.view.collected.Before(after) {
-			return current.view, nil
-		}
-		// A critical caller can join an audit begun before its own boundary.
-		// Keep that fixed boundary and await the next shared collection here.
-		// Returning a retry would move the boundary on every new Claim and can
-		// starve cleanup while other workers continually keep an audit in flight.
-		force = false
-	}
-}
-func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
-	o.mu.Lock()
-	seq, epoch := o.sequence, o.epoch
-	o.mu.Unlock()
-	// Capture pending generations before collection. A concurrent notification
-	// cannot be completed by a view whose collection did not cover that trigger.
-	resources, err := o.provider.repository.queries.ObservationResources(ctx, sqlcgen.ObservationResourcesParams{ClusterID: o.provider.repository.placement.ClusterID})
-	if err != nil {
-		return nil, err
-	}
-	platforms, err := o.provider.repository.queries.ObservationPlatformResources(ctx, sqlcgen.ObservationPlatformResourcesParams{ClusterID: o.provider.repository.placement.ClusterID})
-	if err != nil {
-		return nil, err
-	}
-	attachments, err := o.provider.repository.queries.ObservationAttachments(ctx, sqlcgen.ObservationAttachmentsParams{ClusterID: o.provider.repository.placement.ClusterID})
-	if err != nil {
-		return nil, err
-	}
-	now, err := o.provider.repository.queries.DatabaseTime(ctx)
-	if err != nil {
-		return nil, err
-	}
-	v := &auditView{collected: now, sequence: seq, epoch: epoch, indices: map[schema.GroupVersionResource]cache.Indexer{}, generations: map[string]int64{}, targets: map[string][]observationTarget{}}
-	for _, gvr := range observationGVRs {
-		objects, err := o.provider.listAll(ctx, gvr)
-		if err != nil {
-			return nil, fmt.Errorf("network audit LIST %s: %w", gvr.String(), err)
-		}
-		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
-		for _, object := range objects {
-			obj := object.DeepCopy()
-			if err = index.Add(obj); err != nil {
-				return nil, err
-			}
-			body, _ := json.Marshal(obj.Object)
-			v.bytes += int64(len(body))
-		}
-		v.indices[gvr] = index
-	}
-	bind := func(keys []string, t observationTarget) {
-		for _, k := range keys {
-			v.targets[k] = append(v.targets[k], t)
-		}
-	}
-	subnetRefs := map[string]string{}
-	parkedTargets := map[string]bool{}
-	for _, r := range resources {
-		t := observationTarget{r.TenantID, r.ResourceID, r.ResourceKind}
-		parkedTargets[t.key()] = !r.Recovery
-		v.generations[t.key()] = r.RequestedGeneration
-		if r.Recovery {
-			v.recovery = append(v.recovery, t)
-		}
-		kind, field := "VPC", "gateway"
-		if r.ResourceKind == "vnic" {
-			kind, field = "VNic", "vnic"
-		}
-		if r.ResourceKind == "subnet" {
-			kind, field = "Subnet", "subnet"
-			subnetRefs[r.ResourceID] = r.Namespace + "/" + r.ProviderName
-		}
-		if r.ResourceKind == "eip" || r.ResourceKind == "snat" {
-			kind = egressCRKind(r.ResourceKind)
-			field = r.ResourceKind
-		}
-		if r.ResourceKind == "load_balancer" {
-			kind, field = "Gateway", "load-balancer"
-		}
-
-		if !r.Recovery && r.ProviderUid != "" {
-			gvr := egressGVR(r.ResourceKind)
-			switch r.ResourceKind {
-			case "vpc":
-				gvr = kcVPCs
-			case "vnic":
-				gvr = kcManualVNics
-			case "subnet":
-				gvr = kcSubnets
-			case "load_balancer":
-				gvr = lbGateways
-			}
-			if obj := lbViewObject(v, gvr, r.Namespace, r.ProviderName); obj != nil && string(obj.GetUID()) == r.ProviderUid {
-				v.recovery = append(v.recovery, t)
-			}
-		}
-		keys := []string{"object:" + kind + "/" + r.Namespace + "/" + r.ProviderName, field + ":" + r.Namespace + "/" + r.ProviderName, "uid:" + r.ProviderUid}
-		if r.ResourceKind == "load_balancer" {
-			keys = append(keys, "lb-source")
-		}
-		bind(keys, t)
-	}
-	for _, r := range platforms {
-		t := observationTarget{"", r.ResourceID, r.Kind}
-		parkedTargets[t.key()] = !r.Recovery
-		v.generations[t.key()] = r.RequestedGeneration
-		if r.Recovery {
-			v.recovery = append(v.recovery, t)
-		}
-		ns := ""
-		if r.Kind == "public_pool" {
-			ns = kcSystemNamespace
-		}
-		relation := r.Kind
-		if relation == "public_pool" {
-			relation = "pool"
-		}
-		if relation == "egress_gateway" {
-			relation = "gateway"
-		}
-		keys := []string{"object:" + egressCRKind(r.Kind) + "/" + ns + "/" + r.ProviderName, relation + ":" + ns + "/" + r.ProviderName, "uid:" + r.ProviderUid}
-		if r.Recovery && (r.Kind == "device" || r.Kind == "vlan") {
-			keys = append(keys, "node-network")
-		}
-
-		if r.Recovery && r.Kind == "public_pool" {
-			keys = append(keys, "provider-images", "object:ConfigMap/kcn-system/kcn-config", "intranet-service-ranges")
-		}
-		bind(keys, t)
-	}
-	edges, err := o.provider.repository.queries.ObservationEgressEdges(ctx, sqlcgen.ObservationEgressEdgesParams{ClusterID: o.provider.repository.placement.ClusterID})
-	if err != nil {
-		return nil, err
-	}
-	for _, edge := range edges {
-		target := observationTarget{edge.TenantID, edge.ResourceID, edge.Kind}
-		parked := parkedTargets[target.key()]
-		// Parked history still tracks its original object and EIP/SNAT
-		// orphan references, but unrelated platform churn cannot reopen it.
-		if parked && edge.RefKind != "eip" && edge.RefKind != "snat" {
-			continue
-		}
-		relation := edge.RefKind
-		if relation == "public_pool" {
-			relation = "pool"
-		}
-		if relation == "egress_gateway" {
-			relation = "gateway"
-		}
-		keys := []string{"object:" + egressCRKind(edge.RefKind) + "/" + edge.Namespace + "/" + edge.ProviderName, relation + ":" + edge.Namespace + "/" + edge.ProviderName, "uid:" + edge.ProviderUid}
-		if !parked {
-			keys = append(keys, "node-network")
-		}
-		bind(keys, target)
-	}
-	for _, a := range attachments {
-		t := observationTarget{a.TenantID, a.AttachmentID, "attachment"}
-		v.generations[t.key()] = a.RequestedGeneration
-		if a.Recovery {
-			v.recovery = append(v.recovery, t)
-		}
-		var consumer *biz.ConsumerSubmission
-		if err := json.Unmarshal(a.ConsumerSnapshot, &consumer); err != nil {
-			return nil, err
-		}
-		keys, err := attachmentObservationKeys(biz.AttachmentWork{
-			Attachment: biz.Attachment{ID: a.AttachmentID, TenantID: a.TenantID, Namespace: a.Namespace, PodName: a.PodName, PodUID: a.PodUid, WorkloadMode: a.WorkloadMode},
-			Plan:       biz.PodPrimaryPlan{PrimaryNetworkRef: subnetRefs[a.SubnetID]}, Relations: a.ProviderRelations, ConsumerSnapshot: consumer,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for _, gvr := range observationGVRs[2:5] {
-			for _, obj := range indexedObjects(v.indices[gvr], keys) {
-				keys = append(keys, "uid:"+string(obj.GetUID()))
-				if obj.GetKind() == "VNic" {
-					keys = append(keys, "vNic:"+obj.GetNamespace()+"/"+obj.GetName())
-				}
-			}
-		}
-		bind(keys, t)
-	}
-	lbEdges, err := o.provider.repository.queries.ObservationLBEdges(ctx, sqlcgen.ObservationLBEdgesParams{ClusterID: o.provider.repository.placement.ClusterID})
-	if err != nil {
-		return nil, err
-	}
-	for _, edge := range lbEdges {
-		bind([]string{edge.RelationKey}, observationTarget{edge.TenantID, edge.LbID, "load_balancer"})
-	}
-	// Resolve every mandatory object and relationship before spending time on
-	// optional LB sources. A partial LB view never becomes absence proof, while
-	// its failure does not discard this independently complete base view.
-	if err = ctx.Err(); err != nil {
-		return nil, err
-	}
-	if err = o.collectLB(ctx, v); err != nil {
-		o.optionalFailures.Add(1)
-		slog.WarnContext(ctx, "network optional LB audit unavailable", "error", err)
-	}
-	for _, r := range resources {
-		if r.ResourceKind == "load_balancer" && !r.Recovery && r.ProviderUid != "" {
-			if obj := lbViewObject(v, lbGateways, r.Namespace, r.ProviderName); obj != nil && string(obj.GetUID()) == r.ProviderUid {
-				v.recovery = append(v.recovery, observationTarget{r.TenantID, r.ResourceID, r.ResourceKind})
-			}
-		}
-	}
-	if err = ctx.Err(); err != nil {
-		return nil, err
-	}
-	return v, nil
-}
-
-// Attachment observations consume only Pod/VNic/VNicIP/EIP facts. A sibling
-// Service can share a Notebook owner UID without changing any of those facts.
-// Retain general changes for Network/LB and the same overflow/continuity epoch.
-func attachmentObservationObject(object *unstructured.Unstructured) bool {
-	if object.GetAPIVersion() == "v1" && object.GetKind() == "Pod" {
-		return true
-	}
-	if object.GetAPIVersion() != "networking.kubercloud.com/v1" {
-		return false
-	}
-	switch object.GetKind() {
-	case "VNic", "VNicIP", "EIP":
-		return true
-	}
-	return false
-}
-
-func (o *KCObservation) valid(v *auditView, keys []string) bool {
-	return o.validChanges(v, keys, false)
-}
-func (o *KCObservation) validAttachment(v *auditView, keys []string) bool {
-	return o.validChanges(v, keys, true)
-}
-func (o *KCObservation) validChanges(v *auditView, keys []string, attachment bool) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if v.epoch != o.epoch {
-		return false
-	}
-	changes := o.changes
-	if attachment {
-		changes = o.attachmentChanges
-	}
-	for _, key := range keys {
-		if changes[key] > v.sequence {
-			return false
-		}
-	}
-	return true
-}
-
-// Ordinary projection consumes the shared recovery audit. It never starts a
-// full collection for one resource; stale/uncovered facts wait for that audit.
-func (o *KCObservation) cachedSnapshot(now time.Time) (*auditView, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.view == nil || now.Sub(o.view.collected) > o.options.AuditInterval+o.options.AuditJitter {
-		return nil, fmt.Errorf("%w: shared observation is pending", biz.ErrObservationPending)
-	}
-	return o.view, nil
-}
-
-func (o *KCObservation) snapshot(ctx context.Context, after time.Time) (*auditView, error) {
-	if after.IsZero() {
-		after = time.Now().Add(-o.options.AuditInterval - o.options.AuditJitter)
-	}
-	return o.refresh(ctx, after, false)
-}
-
-// Snapshot exposes bounded operational measurements; no tenant/object label is
-// emitted. Encoded byte sizes estimate index payload, not allocator RSS.
 func (o *KCObservation) Snapshot() map[string]float64 {
+	metrics := o.provider.io.snapshot()
+	metrics["pending_keys"] = float64(o.queue.Len())
+	metrics["watch_errors_total"] = float64(o.watchErrors.Load())
+	metrics["notifications_total"] = float64(o.notifications.Load())
+	metrics["notification_retries_total"] = float64(o.retries.Load())
+	synced := true
+	for _, informer := range o.informers {
+		synced = synced && informer.HasSynced()
+	}
+	metrics["source_synced"] = 0
+	if synced {
+		metrics["source_synced"] = 1
+	}
 	o.mu.Lock()
-	defer o.mu.Unlock()
-	m := o.provider.io.snapshot()
-	m["watch_index_payload_bytes"] = float64(max(0, o.watchIndexBytes.Load()))
-	m["audit_collection_max_seconds"] = o.auditMaxSeconds
-	m["audit_failures_total"] = float64(o.auditFailures.Load())
-	m["optional_audit_failures_total"] = float64(o.optionalFailures.Load())
-	if !o.collectingSince.IsZero() {
-		m["audit_collecting_seconds"] = time.Since(o.collectingSince).Seconds()
+	for key, value := range o.pgMetrics {
+		metrics[key] = value
 	}
-	for k, v := range o.pgMetrics {
-		m[k] = v
-	}
-	for name, value := range map[string]float64{"source_synced": 0, "pending_keys": float64(len(o.pending)), "watch_errors_total": float64(o.watchErrors.Load()), "source_boundaries_total": float64(o.sourceStarts.Load()), "notifications_total": float64(o.notifications.Load()), "coalesced_total": float64(o.coalesced.Load()), "queue_overflows_total": float64(o.overflows.Load()), "relation_candidates_total": float64(o.candidates.Load())} {
-		m[name] = value
-	}
-	if !o.pendingSince.IsZero() {
-		m["oldest_memory_hint_seconds"] = time.Since(o.pendingSince).Seconds()
-	}
-	if o.synced.Load() {
-		m["source_synced"] = 1
-	}
-	if v := o.view; v != nil {
-		m["audit_evidence_age_seconds"] = time.Since(v.collected).Seconds()
-		m["audit_index_payload_bytes"] = float64(v.bytes)
-		for gvr, index := range v.indices {
-			m["audit_objects_"+gvr.Resource] = float64(len(index.ListKeys()))
-		}
-	}
-	return m
-}
-
-func (o *KCObservation) wakeAudited(ctx context.Context, v *auditView) {
-	ctx, cancel := context.WithTimeout(ctx, o.options.AuditTimeout)
-	defer cancel()
-	for _, t := range v.recovery {
-		var err error
-		q := o.provider.repository.queries
-		switch {
-		case t.kind == "attachment":
-			err = q.WakeAuditedAttachment(ctx, sqlcgen.WakeAuditedAttachmentParams{TenantID: t.tenant, AttachmentID: t.id})
-		case t.tenant == "":
-			err = q.WakeAuditedPlatform(ctx, sqlcgen.WakeAuditedPlatformParams{ResourceID: t.id})
-		default:
-			err = q.WakeAuditedResource(ctx, sqlcgen.WakeAuditedResourceParams{TenantID: t.tenant, ResourceID: t.id})
-		}
-		if err != nil {
-			return
-		} // next shared recovery retains this obligation
-	}
+	o.mu.Unlock()
+	return metrics
 }

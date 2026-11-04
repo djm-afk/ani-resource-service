@@ -25,7 +25,7 @@ INSERT INTO network_security_group_idempotency(tenant_id,action,idempotency_key,
 -- name: InsertSecurityGroupOperation :exec
 INSERT INTO network_security_group_operations(tenant_id,operation_id,payload,actor_ref,caller_ref,intent) VALUES($1,$2,$3,$4,$5,$6);
 -- name: UpdateSecurityGroupOperation :execrows
-UPDATE network_security_group_operations SET payload=$3 WHERE tenant_id=$1 AND operation_id=$2;
+UPDATE network_security_group_operations SET payload=$3 WHERE tenant_id=$1 AND operation_id=$2 AND (payload->>'CompletedAt') IS NULL;
 -- name: GetSecurityGroupOperation :one
 SELECT payload FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2;
 -- name: GetSecurityGroupTarget :one
@@ -48,7 +48,7 @@ WHERE r.tenant_id=sqlc.arg(tenant_id) AND r.security_group_id=sqlc.arg(security_
 AND (sqlc.arg(target_filter)::text='' OR t.target_type=sqlc.arg(target_filter)) ORDER BY t.target_type,t.target_id;
 -- name: ScheduleSecurityGroup :exec
 INSERT INTO network_security_group_reconciliations(tenant_id,target_type,target_id,requested_version) VALUES($1,$2,$3,$4)
-ON CONFLICT(tenant_id,target_type,target_id) DO UPDATE SET requested_version=excluded.requested_version,next_run_at=clock_timestamp();
+ON CONFLICT(tenant_id,target_type,target_id) DO UPDATE SET requested_version=excluded.requested_version,requested_generation=network_security_group_reconciliations.requested_generation+1,next_run_at=clock_timestamp();
 -- name: LockSecurityGroupTask :one
 SELECT * FROM network_security_group_reconciliations WHERE tenant_id=$1 AND target_type=$2 AND target_id=$3 FOR UPDATE;
 -- name: ClaimSecurityGroupTask :one
@@ -60,9 +60,28 @@ lease_until=clock_timestamp()+sqlc.arg(lease_micros)::bigint*interval '1 microse
 WHERE tenant_id=sqlc.arg(tenant_id) AND target_type=sqlc.arg(target_type) AND target_id=sqlc.arg(target_id) RETURNING *;
 -- name: FinishSecurityGroupTask :execrows
 UPDATE network_security_group_reconciliations SET lease_owner=NULL,lease_until=NULL,
-next_run_at=clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond'
+ processed_generation=greatest(processed_generation,sqlc.arg(claimed_generation)::bigint),
+ observation_error=CASE WHEN sqlc.arg(observed)::boolean THEN '' WHEN sqlc.arg(observation_error)::text<>'' THEN sqlc.arg(observation_error)::text ELSE observation_error END,
+ retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN sqlc.arg(terminal)::boolean THEN 'infinity'::timestamptz
+   WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond'
+   WHEN requested_generation>sqlc.arg(claimed_generation)::bigint THEN sqlc.arg(now)::timestamptz
+   WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz
+   ELSE sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
 WHERE tenant_id=sqlc.arg(tenant_id) AND target_type=sqlc.arg(target_type) AND target_id=sqlc.arg(target_id)
 AND lease_owner=sqlc.arg(owner)::uuid AND lease_epoch=sqlc.arg(epoch) AND requested_version=sqlc.arg(version) AND lease_until>clock_timestamp();
 
--- name: ListSecurityGroupConsumerRelations :many
-SELECT provider_relations FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2;
+-- name: GetSecurityGroupConsumerAttachment :one
+SELECT * FROM network_attachments WHERE tenant_id=sqlc.arg(tenant_id) AND cluster_id=sqlc.arg(cluster_id)
+ AND namespace=sqlc.arg(namespace) AND instance_id=sqlc.arg(instance_id) AND consumer_type=sqlc.arg(consumer_type)
+ AND slot='primary' AND state='attached' ORDER BY updated_at DESC,attachment_id DESC LIMIT 1;
+
+-- name: MapSecurityGroupProviderNames :many
+SELECT security_group_id FROM network_security_groups WHERE tenant_id=sqlc.arg(tenant_id)
+ AND payload->>'ClusterID'=sqlc.arg(cluster_id)::text AND payload->>'Namespace'=sqlc.arg(namespace)::text
+ AND payload->>'ProviderName'=ANY(sqlc.arg(provider_names)::text[]) ORDER BY security_group_id;
+
+-- name: RetireSecurityGroupTask :exec
+UPDATE network_security_group_reconciliations SET next_run_at='infinity'::timestamptz,
+ lease_owner=NULL,lease_until=NULL,lease_epoch=lease_epoch+1,processed_generation=requested_generation
+WHERE tenant_id=sqlc.arg(tenant_id) AND target_type=sqlc.arg(target_type) AND target_id=sqlc.arg(target_id);

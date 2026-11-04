@@ -30,10 +30,12 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type capacityConsumer struct{ pods map[string]string }
+type capacityConsumer struct {
+	pods map[string]biz.WorkloadReference
+}
 
 func (c capacityConsumer) GetSubmission(_ context.Context, a biz.Attachment) (biz.ConsumerSubmission, error) {
-	return biz.ConsumerSubmission{ProtocolVersion: 1, TenantID: a.TenantID, InstanceID: a.InstanceID, SubmissionID: a.SubmissionID, AttachmentID: a.ID, ClusterID: a.ClusterID, Namespace: a.Namespace, Generation: a.Generation, State: "open", PodUIDs: []string{c.pods[a.ID]}}, nil
+	return biz.ConsumerSubmission{ProtocolVersion: 1, TenantID: a.TenantID, InstanceID: a.InstanceID, SubmissionID: a.SubmissionID, AttachmentID: a.ID, ClusterID: a.ClusterID, Namespace: a.Namespace, Generation: a.Generation, State: "open", PodUIDs: []string{c.pods[a.ID].UID}, CurrentPods: []biz.PodReference{{Reference: c.pods[a.ID]}}}, nil
 }
 
 type capacityResource struct{ kind, tenant, id, namespace, name string }
@@ -136,8 +138,8 @@ func TestNET05ACapacity(t *testing.T) {
 			}
 		}
 	}
-	attachments := biz.NewAttachments(p, time.Minute)
-	consumer := capacityConsumer{map[string]string{}}
+	attachments := biz.NewAttachments(p)
+	consumer := capacityConsumer{map[string]biz.WorkloadReference{}}
 	padding := strings.Repeat("x", 512)
 	for i := 0; i < count; i++ {
 		// Seed through the real use cases; refresh parents through the worker as needed.
@@ -155,7 +157,7 @@ func TestNET05ACapacity(t *testing.T) {
 		}
 		name := fmt.Sprintf("pod-%d", i)
 		podUID, nicUID := uuid.NewString(), uuid.NewString()
-		consumer.pods[a.ID] = podUID
+		consumer.pods[a.ID] = biz.WorkloadReference{APIVersion: "v1", Kind: "Pod", Namespace: a.Namespace, Name: name, UID: podUID}
 		pod := attachmentPod(a, name, podUID)
 		pod["metadata"].(map[string]any)["annotations"].(map[string]any)["net05a.test/padding"] = padding
 		api.Change("pods", pod, false)
@@ -204,7 +206,7 @@ func TestNET05ACapacity(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		attachmentWorker, e := biz.NewAttachmentWorker(replicaDB, provider, consumer, uuid.NewString(), policy)
+		attachmentWorker, e := biz.NewAttachmentWorker(replicaDB, consumer, provider, uuid.NewString(), policy)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -334,7 +336,7 @@ func TestNET05ACapacity(t *testing.T) {
 			pending = remaining
 			var attached int
 			var age, queue float64
-			e = db.QueryRow(ctx, `SELECT count(*) FILTER(WHERE state='attached'),coalesce(max(extract(epoch FROM clock_timestamp()-observed_at)),0)::float8,greatest(0,extract(epoch FROM clock_timestamp()-min(next_check_at)))::float8 FROM network_attachments`).Scan(&attached, &age, &queue)
+			e = db.QueryRow(ctx, `SELECT count(*) FILTER(WHERE state='attached'),coalesce(max(extract(epoch FROM clock_timestamp()-observed_at)),0)::float8,coalesce(greatest(0,extract(epoch FROM clock_timestamp()-min(next_check_at) FILTER(WHERE next_check_at<>'infinity'::timestamptz))),0)::float8 FROM network_attachments`).Scan(&attached, &age, &queue)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -368,7 +370,7 @@ func TestNET05ACapacity(t *testing.T) {
 						entry = map[string]float64{"rows": float64(total)}
 						fairness[key] = entry
 					}
-					entry["maximum_evidence_age_seconds"] = max(entry["maximum_evidence_age_seconds"], age)
+					entry["maximum_observation_age_seconds"] = max(entry["maximum_observation_age_seconds"], age)
 				}
 				fairRows.Close()
 				stats := map[string]any{}
@@ -379,7 +381,7 @@ func TestNET05ACapacity(t *testing.T) {
 				}
 				var memory runtime.MemStats
 				runtime.ReadMemStats(&memory)
-				_ = encoder.Encode(map[string]any{"phase": phase.name, "elapsed_seconds": time.Since(started).Seconds(), "attached": attached, "heap_alloc": memory.HeapAlloc, "heap_sys": memory.HeapSys, "rss_high_water_bytes": maximumRSS, "maximum_evidence_age_seconds": maxEvidence, "queue_age_seconds": queue, "observer": stats, "worker": timings.snapshot()})
+				_ = encoder.Encode(map[string]any{"phase": phase.name, "elapsed_seconds": time.Since(started).Seconds(), "attached": attached, "heap_alloc": memory.HeapAlloc, "heap_sys": memory.HeapSys, "rss_high_water_bytes": maximumRSS, "maximum_observation_age_seconds": maxEvidence, "queue_age_seconds": queue, "observer": stats, "worker": timings.snapshot()})
 			}
 		}
 		ticker.Stop()
@@ -417,7 +419,7 @@ func TestNET05ACapacity(t *testing.T) {
 		cpu := func(r syscall.Rusage) float64 {
 			return float64(r.Utime.Sec+r.Stime.Sec) + float64(r.Utime.Usec+r.Stime.Usec)/1e6
 		}
-		result := map[string]any{"pg_delta": afterPG, "cpu_seconds": cpu(afterCPU) - cpu(beforeCPU), "rss_high_water_bytes": maximumRSS, "emitted_events": emitted, "missed_changes": missed, "phase": phase.name, "event_phase_seconds": phase.duration.Seconds(), "measurement_tail_seconds": max(0.0, time.Since(started).Seconds()-phase.duration.Seconds()), "seconds": time.Since(started).Seconds(), "requests": afterRequests, "bytes": afterBytes, "p50": percentile(.5), "p95": percentile(.95), "p99": percentile(.99), "latency_samples": len(latencies), "unapplied_changes": len(pending), "max_evidence_age_seconds": maxEvidence, "max_queue_age_seconds": maxQueue}
+		result := map[string]any{"pg_delta": afterPG, "cpu_seconds": cpu(afterCPU) - cpu(beforeCPU), "rss_high_water_bytes": maximumRSS, "emitted_events": emitted, "missed_changes": missed, "phase": phase.name, "event_phase_seconds": phase.duration.Seconds(), "measurement_tail_seconds": max(0.0, time.Since(started).Seconds()-phase.duration.Seconds()), "seconds": time.Since(started).Seconds(), "requests": afterRequests, "bytes": afterBytes, "p50": percentile(.5), "p95": percentile(.95), "p99": percentile(.99), "latency_samples": len(latencies), "unapplied_changes": len(pending), "max_observation_age_seconds": maxEvidence, "max_queue_age_seconds": maxQueue}
 		summary["phase_results"] = append(summary["phase_results"].([]any), result)
 		summary["cold_converged_seconds"] = coldConverged
 		summary["fairness"] = fairness

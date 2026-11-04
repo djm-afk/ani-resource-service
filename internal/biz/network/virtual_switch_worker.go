@@ -3,9 +3,8 @@ package biz
 import (
 	"context"
 	"errors"
-	"time"
-
 	"github.com/google/uuid"
+	"time"
 )
 
 type VirtualSwitchWorker struct {
@@ -19,19 +18,19 @@ type VirtualSwitchWorker struct {
 // VirtualSwitchProgress describes one attempt without treating retained healthy
 // state during a temporary read failure as a successful observation.
 type VirtualSwitchProgress struct {
-	ProviderError error `json:"-"`
-	BindingState  string
-	Reason        Reason
-	Action        string
-	NodeName      string
-	NodeUID       string
-	Observed      bool
-	CollectedAt   time.Time
+	ProviderError                             error `json:"-"`
+	BindingState                              string
+	Reason, ObservationError, OperationReason Reason
+	Action                                    string
+	NodeName                                  string
+	NodeUID                                   string
+	Observed                                  bool
+	Backoff                                   bool
 }
 
 func NewVirtualSwitchWorker(r VirtualSwitchWorkRepository, p VirtualSwitchGroupProvider, owner string, policy WorkerPolicy, observers ...func(context.Context, VirtualSwitchWork, VirtualSwitchProgress, error)) (*VirtualSwitchWorker, error) {
 	id, err := uuid.Parse(owner)
-	if len(observers) > 1 || r == nil || p == nil || err != nil || id == uuid.Nil || policy.RequestTimeout <= 0 || policy.Lease < 3*policy.RequestTimeout || policy.ObserveEvery <= 0 || policy.StaleAfter <= policy.ObserveEvery {
+	if len(observers) > 1 || r == nil || p == nil || err != nil || id == uuid.Nil || policy.RequestTimeout <= 0 || policy.Lease < 3*policy.RequestTimeout || policy.ObserveEvery <= 0 {
 		return nil, Fail(InvalidArgument, "invalid switch worker dependencies or policy")
 	}
 	w := &VirtualSwitchWorker{repository: r, provider: p, owner: id.String(), policy: policy}
@@ -64,7 +63,7 @@ func (w *VirtualSwitchWorker) Step(ctx context.Context) (worked bool, err error)
 	}()
 	finish := func(state string, reason Reason, delay time.Duration) (bool, error) {
 		progress.BindingState, progress.Reason = state, reason
-		return true, w.repository.FinishVirtualSwitch(ctx, work, state, reason, delay)
+		return true, w.repository.FinishVirtualSwitch(ctx, work, progress, delay)
 	}
 	for index, node := range sw.Nodes {
 		progress.Action, progress.NodeName, progress.NodeUID = "inspect", node.NodeName, node.NodeUID
@@ -72,14 +71,12 @@ func (w *VirtualSwitchWorker) Step(ctx context.Context) (worked bool, err error)
 		current, inspectErr := w.provider.InspectVirtualSwitchNode(call, sw, node)
 		cancel()
 		if inspectErr != nil {
-			progress.ProviderError = inspectErr
-			state := "degraded"
-			if deleting {
-				state = "cleaning"
-			} else if providerKind(inspectErr) == ProviderTemporary && sw.State == Available && sw.BindingState == "configured" && freshVirtualSwitchObservation(work.Switch, work.Now, w.policy.StaleAfter) {
-				state = "configured"
+			progress.ProviderError, progress.OperationReason = inspectErr, observationReason(inspectErr)
+			if providerKind(inspectErr) != ProviderConflict {
+				progress.ObservationError = observationReason(inspectErr)
 			}
-			return finish(state, providerReason(inspectErr), w.policy.ObserveEvery)
+			progress.Backoff = true
+			return finish(work.Switch.BindingState, work.Switch.Reason, w.policy.RetryMin)
 		}
 		if (!deleting && current.Applied) || (deleting && current.State == "cleaned") {
 			if err = w.repository.SaveVirtualSwitchNode(ctx, work, index, current); err != nil {
@@ -99,53 +96,25 @@ func (w *VirtualSwitchWorker) Step(ctx context.Context) (worked bool, err error)
 		applied, patchErr := w.provider.PatchVirtualSwitchNode(call, sw, current, deleting)
 		cancel()
 		if patchErr != nil {
-			progress.ProviderError = patchErr
-			state := "degraded"
-			if deleting {
-				state = "cleaning"
-			}
-			return finish(state, providerReason(patchErr), w.policy.ObserveEvery)
+			progress.ProviderError, progress.OperationReason = patchErr, providerReason(patchErr)
+			progress.Backoff = true
+			return finish(work.Switch.BindingState, work.Switch.Reason, w.policy.RetryMin)
 		}
 		if err = w.repository.SaveVirtualSwitchNode(ctx, work, index, applied); err != nil {
 			return true, err
 		}
+		progress.Observed = true
 		state := "pending"
 		if deleting {
 			state = "cleaning"
 		}
 		return finish(state, "", w.policy.RetryMin)
 	}
+	progress.Observed = true
 	if deleting {
 		return finish("cleaned", "", w.policy.ObserveEvery)
 	}
 	progress.Observed = true
-	progress.CollectedAt = virtualSwitchObservationTime(sw)
 	progress.Action, progress.NodeName, progress.NodeUID = "", "", ""
 	return finish("configured", "", w.policy.ObserveEvery)
-}
-
-func virtualSwitchObservationTime(sw VirtualSwitch) time.Time {
-	var oldest time.Time
-	for _, node := range sw.Nodes {
-		if !node.Applied || node.Unknown || node.LastObservedAt.IsZero() {
-			return time.Time{}
-		}
-		if oldest.IsZero() || node.LastObservedAt.Before(oldest) {
-			oldest = node.LastObservedAt
-		}
-	}
-	return oldest
-}
-
-func freshVirtualSwitchObservation(sw VirtualSwitch, now time.Time, staleAfter time.Duration) bool {
-	oldest := virtualSwitchObservationTime(sw)
-	if oldest.IsZero() || now.Before(oldest) || now.Sub(oldest) > staleAfter {
-		return false
-	}
-	for _, node := range sw.Nodes {
-		if node.LastObservedAt.After(now) {
-			return false
-		}
-	}
-	return true
 }

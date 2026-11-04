@@ -3,12 +3,6 @@ package data_test
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	networkv1 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
@@ -16,6 +10,11 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/service/network"
 	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 	"k8s.io/client-go/tools/clientcmd"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 type lbAdmissionFixture struct {
@@ -58,7 +57,7 @@ func newLBAdmissionFixture(t *testing.T, interceptors ...func(http.ResponseWrite
 	if err != nil {
 		t.Fatal(err)
 	}
-	attachments := biz.NewAttachments(f.p, time.Minute)
+	attachments := biz.NewAttachments(f.p)
 	a, err := attachments.Prepare(f.ctx, biz.PrepareAttachment{TenantID: f.tenant, VPCID: vpc.ID, SubnetID: backend.ID, InstanceID: "lb-backend", Slot: "primary", RequestKey: "backend", SubmissionID: uuid.NewString(), Generation: 1, ClusterID: "test-cluster", Namespace: "tenant-" + f.tenant})
 	if err != nil {
 		t.Fatal(err)
@@ -72,10 +71,15 @@ func newLBAdmissionFixture(t *testing.T, interceptors ...func(http.ResponseWrite
 	}
 	api.Change("vnics", map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNic", "metadata": map[string]any{"namespace": a.Namespace, "name": "lb-backend-nic", "uid": nicUID, "ownerReferences": owner("Pod", "v1", "lb-backend", podUID)}, "spec": map[string]any{"type": "VETH", "subnet": a.Plan.PrimaryNetworkRef}}, false)
 	api.Change("vnicips", map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNicIP", "metadata": map[string]any{"namespace": a.Namespace, "name": "lb-backend-ip", "uid": ipUID, "ownerReferences": owner("VNic", "networking.kubercloud.com/v1", "lb-backend-nic", nicUID)}, "spec": map[string]any{"subnet": a.Plan.PrimaryNetworkRef, "vNic": "lb-backend-nic", "ipAddress": "10.42.2.2"}, "status": map[string]any{"vNic": "lb-backend-nic"}}, false)
+	a, err = attachments.Confirm(f.ctx, biz.ConfirmAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: a.Version, ClusterID: a.ClusterID, Namespace: a.Namespace, PodName: "lb-backend", PodUID: podUID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	consumer := &attachmentConsumer{value: consumerFor(a, "open", "")}
+	consumer.value.PodUIDs = []string{podUID}
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = time.Millisecond
-	worker, err := biz.NewAttachmentWorker(f.p, provider, consumer, uuid.NewString(), policy)
+	worker, err := biz.NewAttachmentWorker(f.p, consumer, provider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,14 +88,13 @@ func newLBAdmissionFixture(t *testing.T, interceptors ...func(http.ResponseWrite
 			t.Fatal(err)
 		}
 		v, err := attachments.Get(f.ctx, f.tenant, a.ID)
-		return err == nil && v.State == biz.Attached
+		return err == nil && v.State == biz.Attached && len(v.CurrentIPs) == 1
 	})
-	// Capability observation is controlled evidence for U05 only. U06 tests
-	// exercise its actual observer; this record never reaches the live cluster.
-	if _, err = f.owner.Exec(f.ctx, `INSERT INTO network_lb_capabilities(cluster_id,ready,reason,observed_at,fingerprint,provider_images) VALUES('test-cluster',true,'',clock_timestamp(),'controlled-U05',ARRAY['controlled-provider'])`); err != nil {
+	// A diagnostic record is independent of admission and object reconciliation.
+	if _, err = f.owner.Exec(f.ctx, `INSERT INTO network_lb_capabilities(cluster_id,ready,reason,observed_at) VALUES('test-cluster',true,'',clock_timestamp())`); err != nil {
 		t.Fatal(err)
 	}
-	lbs, err := biz.NewLoadBalancers(f.p, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)), time.Minute, time.Now)
+	lbs, err := biz.NewLoadBalancers(f.p, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,4 +223,14 @@ func TestLBAdmissionRejectsCIDROnlyBackendAndDuplicateVIP(t *testing.T) {
 }
 func slicesCloneLBInputs(v []biz.LoadBalancerBackendInput) []biz.LoadBalancerBackendInput {
 	return append([]biz.LoadBalancerBackendInput{}, v...)
+}
+
+func setLBCurrentBackendAddresses(t *testing.T, f *lbAdmissionFixture, lbID, attachmentID string, addresses []string) {
+	t.Helper()
+	if _, err := f.f.owner.Exec(f.f.ctx, `UPDATE network_attachments SET current_ips=$3 WHERE tenant_id=$1 AND attachment_id=$2`, f.f.tenant, attachmentID, addresses); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.f.p.NotifyResource(f.f.ctx, f.f.tenant, lbID); err != nil {
+		t.Fatal(err)
+	}
 }

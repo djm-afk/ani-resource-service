@@ -79,11 +79,11 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 		return err
 	}
 	w := bc.Network.Worker
-	policy := biz.WorkerPolicy{Lease: w.Lease.AsDuration(), RequestTimeout: w.RequestTimeout.AsDuration(), ObserveEvery: w.ObserveEvery.AsDuration(), StaleAfter: w.StaleAfter.AsDuration(), RetryMin: w.RetryMin.AsDuration(), RetryMax: w.RetryMax.AsDuration()}
-	repository.UseBaseConnectivityFreshness(policy.StaleAfter)
-	repository.UseEgressInfrastructure(provider)
+	policy := biz.WorkerPolicy{Lease: w.Lease.AsDuration(), RequestTimeout: w.RequestTimeout.AsDuration(), ObserveEvery: w.ObserveEvery.AsDuration(), RetryMin: w.RetryMin.AsDuration(), RetryMax: w.RetryMax.AsDuration()}
+	repository.UseVirtualSwitchInfrastructure(provider)
+	repository.UseLoadBalancerCapabilityReader(provider)
 	key, _ := base64.StdEncoding.DecodeString(bc.Network.CursorSigningKey)
-	networkUC, err := biz.NewNetwork(repository, key, policy.StaleAfter, time.Now)
+	networkUC, err := biz.NewNetwork(repository, key)
 	if err != nil {
 		return err
 	}
@@ -113,31 +113,31 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, policy.StaleAfter, time.Now)
+	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, time.Now)
 	if err != nil {
 		return err
 	}
-	lbs, err := biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, key, policy.StaleAfter, time.Now)
+	lbs, err := biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, key)
 	if err != nil {
 		return err
 	}
-	attachments := biz.NewAttachments(repository, policy.StaleAfter)
+	attachments := biz.NewAttachments(repository)
 	fallback, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint)
 	if err != nil {
 		return err
 	}
 	defer fallback.Close()
-	consumer, err := wireInstanceNetwork(instances, networkUC, attachments, fallback, bc.Network.ClusterId, "tenant-", policy.StaleAfter)
+	consumer, err := wireInstanceNetwork(instances, networkUC, attachments, fallback, bc.Network.ClusterId, "tenant-")
 	if err != nil {
 		return err
 	}
-	vms, consumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, consumer, policy.StaleAfter, networkUC)
+	vms, consumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, consumer, networkUC)
 	if err != nil {
 		return err
 	}
 	attachments.UseConsumerDirectory(networkConsumerDirectory(instances, vms))
 	defer vms.Close()
-	attachmentWorker, err := biz.NewAttachmentWorker(repository, provider, consumer, uuid.NewString(), policy, observability.ObserveAttachmentWork)
+	attachmentWorker, err := biz.NewAttachmentWorker(repository, consumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
 	if err != nil {
 		return err
 	}

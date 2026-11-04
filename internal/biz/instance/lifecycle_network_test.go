@@ -30,54 +30,37 @@ func TestLifecycleRestartConfirmsFreshNetworkVersion(t *testing.T) {
 	}
 }
 
-func TestLifecycleNetworkObservationFailureDoesNotConfirm(t *testing.T) {
+func TestLifecycleNetworkReadErrorDoesNotInvalidateManagementAck(t *testing.T) {
 	repo, network, worker := lifecycleNetworkFixture(t)
-	// A cached version could still pass the CAS. Failed observation must not
-	// authorize that write or seal runtime completion.
-	network.version = repo.instance.Network.AttachmentVersion
+	repo.instance.Network.NetworkState = "attached"
+	repo.instance.Network.ConfirmedSnapshotRevision = repo.instance.Network.SnapshotRevision
 	network.observeError = ErrNetworkUnavailable
 	stepCleanupWorker(t, worker)
 	operation := repo.instance.ActiveOperation
-	if network.observes != 1 || network.confirms != 0 || repo.instance.Network.ConfirmedSnapshotRevision != 2 || operation.State != "blocked" || operation.Execution.Phase != "waiting_network" || operation.Execution.CompletionScope != "" {
-		t.Fatal("failed observation allowed confirmation or completion", network, operation)
+	if network.confirms != 0 || operation.State != "completed" || repo.instance.Observed != Running {
+		t.Fatal("read failure invalidated accepted management state", network, operation)
 	}
 }
 
-func TestLifecycleNetworkProtocolRecoveryRequiresConfirmAndFreshObservation(t *testing.T) {
+func TestLifecycleNetworkConfirmationRetriesWithoutReasonGate(t *testing.T) {
 	repo, network, worker := lifecycleNetworkFixture(t)
 	network.reason = "ATTACHMENT_PROTOCOL_VIOLATION"
 	network.confirmError = ErrNetworkUnavailable
 	stepCleanupWorker(t, worker)
-	operation := repo.instance.ActiveOperation
-	if network.confirms != 1 || network.confirmed != 0 || repo.instance.Network.ConfirmedSnapshotRevision != 2 || repo.instance.Network.Reason != "INSTANCE_NETWORK_UNAVAILABLE" || operation.State != "blocked" || operation.Execution.Phase != "waiting_network" {
-		t.Fatal("failed protocol recovery confirmation did not remain blocked", network, operation, repo.instance.Network)
+	if network.confirms != 1 || network.confirmed != 0 || repo.instance.Network.ConfirmedSnapshotRevision != 2 || repo.instance.ActiveOperation.State == "completed" {
+		t.Fatal(network, repo.instance.ActiveOperation)
 	}
 	network.confirmError = nil
 	stepCleanupWorker(t, worker)
-	operation = repo.instance.ActiveOperation
-	if network.confirmed != 1 || repo.instance.Network.ConfirmedSnapshotRevision != 5 || operation.State == "completed" || operation.Execution.Phase != "waiting_network" || operation.Execution.VerifiedPodUID != "" {
-		t.Fatal("normal owner confirmation was skipped or completed runtime early", network, operation)
+	if network.confirmed != 1 || repo.instance.Network.ConfirmedSnapshotRevision != 5 || repo.instance.Network.NetworkState != "attached" || repo.instance.ActiveOperation.State == "completed" {
+		t.Fatal(network, repo.instance.Network)
 	}
-	// A durable Confirm is necessary, but neither the old protocol result nor
-	// another Pod or snapshot may qualify this runtime as attached.
-	for _, mismatch := range []string{"protocol still blocked", "different Pod", "different snapshot"} {
-		switch mismatch {
-		case "different Pod":
-			network.reason, network.podUID = "", "another-pod"
-		case "different snapshot":
-			network.podUID, network.snapshot = "new-pod", 4
-		}
-		stepCleanupWorker(t, worker)
-		operation = repo.instance.ActiveOperation
-		if operation.State != "blocked" || operation.Execution.Phase != "waiting_network" || operation.Execution.VerifiedPodUID != "" || operation.Execution.CompletionScope != "" || network.confirms != 2 {
-			t.Fatal("unverified post-Confirm observation completed the lifecycle", mismatch, network, operation)
-		}
-	}
-	network.snapshot = 5
+	// The ACK must first be saved, but an old diagnostic cannot require a new
+	// provider observation before the current management revision is used.
+	network.observeError = ErrNetworkUnavailable
 	stepCleanupWorker(t, worker)
-	operation = repo.instance.ActiveOperation
-	if operation.State != "completed" || operation.Execution.Phase != "done" || operation.Execution.VerifiedPodUID != "new-pod" || operation.Execution.NetworkSnapshotRevision != 5 || repo.instance.Observed != Running || network.confirms != 2 || network.observes != 6 {
-		t.Fatal("fresh matching network observation did not complete the lifecycle", network, operation)
+	if repo.instance.ActiveOperation.State != "completed" || repo.instance.Observed != Running || network.confirms != 2 {
+		t.Fatal("ACK required an extra network read", network, repo.instance.ActiveOperation)
 	}
 }
 
@@ -409,7 +392,6 @@ func (n *lifecycleNetworkPort) Confirm(_ context.Context, i Instance) error {
 
 func lifecycleNetworkFixture(t *testing.T) (*lifecycleNetworkRepo, *lifecycleNetworkPort, *Worker) {
 	t.Helper()
-	root := WorkloadReference{"kubeflow.org/v1", "Notebook", "tenant", "notebook", "notebook-uid"}
 	controller := WorkloadReference{"apps/v1", "StatefulSet", "tenant", "notebook", "controller-uid"}
 	pod := WorkloadReference{"v1", "Pod", "tenant", "notebook-0", "new-pod"}
 	repo := &lifecycleNetworkRepo{cleanupWorkerRepo: cleanupWorkerRepo{instance: Instance{
@@ -424,7 +406,7 @@ func lifecycleNetworkFixture(t *testing.T) (*lifecycleNetworkRepo, *lifecycleNet
 		Network: &NetworkRuntime{
 			State: "open", DesiredRunState: Running, SubmissionID: "submission", Generation: 1,
 			SnapshotRevision: 5, ConfirmedSnapshotRevision: 2, AttachmentID: "attachment", AttachmentVersion: 475,
-			RootController: root, Controllers: []ControllerReference{{controller, root}}, CurrentPods: []PodReference{{pod, controller}},
+			CurrentPods: []PodReference{{pod, controller}},
 		},
 	}}}
 	provider := &lifecycleNetworkProvider{cleanupWorkerProvider: &cleanupWorkerProvider{observation: Observation{

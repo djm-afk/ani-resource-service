@@ -200,6 +200,7 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 		// manufacturing a newer timestamp or clearing its addresses.
 		if !observed.ObservedAt.Before(current.ObservedAt) {
 			current.Observed, current.Reason, current.ObservedAt = observed.State, observed.Reason, observed.ObservedAt.UTC()
+			biz.ReconcileNetworkSubmission(&current, observed)
 			if !observed.Running {
 				current.Addresses = nil
 			}
@@ -209,8 +210,8 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 	// a concurrent UpdateNetwork and user intent cannot be replaced by the VM
 	// snapshot captured at claim time.
 	_, err = tx.Exec(ctx, `UPDATE vm.virtual_machines SET current_configuration=
- jsonb_set(jsonb_set(jsonb_set(jsonb_set(current_configuration,'{Observed}',$3::jsonb),'{Reason}',$4::jsonb),'{ObservedAt}',$5::jsonb),'{Addresses}',$6::jsonb),updated_at=now()
- WHERE tenant_id=$1 AND id=$2`, work.TenantID, work.VMID, encode(current.Observed), encode(current.Reason), encode(current.ObservedAt), encode(current.Addresses))
+ jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(current_configuration,'{Observed}',$3::jsonb),'{Reason}',$4::jsonb),'{ObservedAt}',$5::jsonb),'{Addresses}',$6::jsonb),'{Network}',$7::jsonb),updated_at=now()
+ WHERE tenant_id=$1 AND id=$2`, work.TenantID, work.VMID, encode(current.Observed), encode(current.Reason), encode(current.ObservedAt), encode(current.Addresses), encode(current.Network))
 	if err != nil {
 		return err
 	}
@@ -236,7 +237,10 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	return p.notifyNetworkSubmission(ctx, current)
 }
 
 func knownObservationState(state string) bool {

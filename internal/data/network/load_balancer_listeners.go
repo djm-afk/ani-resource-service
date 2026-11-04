@@ -32,7 +32,7 @@ func loadLBListenersVersion(ctx context.Context, q *sqlcgen.Queries, row sqlcgen
 		}
 		for _, member := range members {
 			m := member.NetworkLbMember
-			listener.Backends = append(listener.Backends, biz.LoadBalancerBackend{ID: m.MemberID, SubnetID: m.SubnetID, Address: m.Address, Port: uint32(m.Port), Weight: uint32(member.Weight), AttachmentID: m.AttachmentID, State: m.State, Reason: biz.Reason(m.Reason), ObservedAt: m.ObservedAt})
+			listener.Backends = append(listener.Backends, biz.LoadBalancerBackend{ID: m.MemberID, SubnetID: m.SubnetID, Address: m.Address, Port: uint32(m.Port), Weight: uint32(member.Weight), AttachmentID: m.AttachmentID, State: m.State, Reason: biz.Reason(m.Reason), ObservedAt: m.ObservedAt, ObservationStale: m.ObservedAt == nil})
 		}
 		v.Listeners = append(v.Listeners, listener)
 	}

@@ -2,10 +2,10 @@ package data
 
 import (
 	"context"
-	"slices"
-
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"slices"
+	"time"
 )
 
 // A parent observation can wake a saved waiting product. Only authoritative
@@ -71,7 +71,7 @@ func hydrateLBWork(ctx context.Context, q *sqlcgen.Queries, work *biz.ResourceWo
 	if err != nil {
 		return err
 	}
-	s := &biz.LoadBalancerWork{LoadBalancer: v, VIPOccupiedRevision: r.VipOccupiedRevision, VIPAbsenceRevision: r.VipAbsenceRevision}
+	s := &biz.LoadBalancerWork{LoadBalancer: v}
 	s.Components = append(s.Components, biz.LoadBalancerComponent{ID: b.BindingID, Kind: "gateway", Name: b.ProviderName, Identity: b.ProviderUid, PendingAction: b.PendingAction, CreateDispatched: b.CreateDispatched, TargetVersion: v.ProviderTargetVersion})
 	cs, err := q.ListLBComponents(ctx, sqlcgen.ListLBComponentsParams{TenantID: r.TenantID, LbID: r.LbID})
 	if err != nil {
@@ -88,13 +88,13 @@ func hydrateLBWork(ctx context.Context, q *sqlcgen.Queries, work *biz.ResourceWo
 	for _, c := range cs {
 		s.Components = append(s.Components, biz.LoadBalancerComponent{ID: c.ComponentID, Kind: c.Kind, MemberID: textValue(c.MemberID), ListenerID: textValue(c.ListenerID), ListenerName: listenerNames[textValue(c.ListenerID)], Name: c.ProviderName, Identity: c.ProviderUid, PendingAction: c.PendingAction, CreateDispatched: c.CreateDispatched, TargetVersion: c.TargetVersion, AppliedVersion: c.AppliedVersion, Deleted: c.DeletedAt != nil})
 	}
-	ms, err := q.ListLBMemberIdentities(ctx, sqlcgen.ListLBMemberIdentitiesParams{TenantID: r.TenantID, LbID: r.LbID})
+	ms, err := q.ListLBMembers(ctx, sqlcgen.ListLBMembersParams{TenantID: r.TenantID, LbID: r.LbID, ConfigVersion: v.ProviderTargetVersion})
 	if err != nil {
 		return err
 	}
 	for _, item := range ms {
 		m := item.NetworkLbMember
-		s.Members = append(s.Members, biz.LoadBalancerMemberIdentity{LoadBalancerBackend: biz.LoadBalancerBackend{ID: m.MemberID, SubnetID: m.SubnetID, AttachmentID: m.AttachmentID, Address: m.Address, Port: uint32(m.Port)}, PodName: item.PodName, PodUID: m.PodUid, VNicName: m.VnicName, VNicUID: m.VnicUid, VNicIPName: m.VnicipName, VNicIPUID: m.VnicipUid})
+		s.Members = append(s.Members, biz.LoadBalancerMemberIdentity{LoadBalancerBackend: biz.LoadBalancerBackend{ID: m.MemberID, SubnetID: m.SubnetID, AttachmentID: m.AttachmentID, Address: m.Address, Port: uint32(m.Port)}, PodUID: m.PodUid})
 	}
 	work.LoadBalancer = s
 	return nil
@@ -123,14 +123,14 @@ func (p *Postgres) BeginLoadBalancerMutation(ctx context.Context, w biz.Work, c 
 	}
 	return databaseFailure(tx.Commit(ctx))
 }
-func (p *Postgres) finishLB(ctx context.Context, q *sqlcgen.Queries, w biz.Work, pv biz.Progress) error {
+func (p *Postgres) finishLB(ctx context.Context, q *sqlcgen.Queries, w biz.Work, pv biz.Progress, observedAt *time.Time) error {
 	if w.Resource.LoadBalancer == nil || pv.LoadBalancer == nil || !pv.Observed {
 		return nil
 	}
 	o := pv.LoadBalancer
 	lb := w.Resource.LoadBalancer.LoadBalancer
 	for _, c := range o.Components {
-		if c.ID == w.BindingID {
+		if c.ID == w.BindingID || c.Conflict {
 			continue
 		}
 		identity := c.Identity
@@ -146,32 +146,21 @@ func (p *Postgres) finishLB(ctx context.Context, q *sqlcgen.Queries, w biz.Work,
 		}
 	}
 	for _, m := range o.Members {
-		if err := affected(q.SaveLBMemberObservation(ctx, sqlcgen.SaveLBMemberObservationParams{TenantID: w.Resource.TenantID, LbID: w.Resource.ID, MemberID: m.ID, Eligible: m.Eligible, Reason: string(m.Reason), ObservedAt: &o.Proof.CollectedAt})); err != nil {
+		if err := affected(q.SaveLBMemberObservation(ctx, sqlcgen.SaveLBMemberObservationParams{TenantID: w.Resource.TenantID, LbID: w.Resource.ID, MemberID: m.ID, Eligible: m.Eligible, Reason: string(m.Reason), ObservedAt: observedAt})); err != nil {
 			return err
 		}
 	}
-	for _, g := range o.Generated {
-		if err := affected(q.SaveLBGenerated(ctx, sqlcgen.SaveLBGeneratedParams{TenantID: w.Resource.TenantID, ClusterID: p.placement.ClusterID, Namespace: g.Namespace, LbID: w.Resource.ID, Kind: g.Kind, ProviderName: g.Name, ProviderUid: g.Identity, GatewayUid: g.GatewayIdentity, ObservedAt: o.Proof.CollectedAt, Released: g.Released})); err != nil {
-			return err
-		}
-	}
-	if o.GeneratedReady {
+	if o.ConfigurationState == "configured" {
 		if err := q.BoundLBClaim(ctx, sqlcgen.BoundLBClaimParams{TenantID: w.Resource.TenantID, LbID: &w.Resource.ID}); err != nil {
 			return err
 		}
 	}
 	if o.ConfigurationState == "waiting_for_backends" {
-		if !o.GeneratedReleased || !o.AddressReleased {
-			return biz.ErrLeaseLost
-		}
 		if err := q.ReserveLBClaim(ctx, sqlcgen.ReserveLBClaimParams{TenantID: w.Resource.TenantID, LbID: &w.Resource.ID}); err != nil {
 			return err
 		}
 	}
 	if pv.State == biz.Deleted {
-		if !o.GeneratedReleased || !o.AddressReleased {
-			return biz.ErrLeaseLost
-		}
 		if err := q.ReleaseLBClaim(ctx, sqlcgen.ReleaseLBClaimParams{TenantID: w.Resource.TenantID, LbID: &w.Resource.ID}); err != nil {
 			return err
 		}

@@ -22,9 +22,11 @@ type terminalPowerNetwork struct {
 	err       error
 }
 
-func (n terminalPowerNetwork) Observe(context.Context, VM, Observation) ([]Address, error) {
+func (n terminalPowerNetwork) CurrentAddresses(context.Context, VM) ([]Address, error) {
 	return n.addresses, n.err
 }
+
+func (n terminalPowerNetwork) Confirm(context.Context, VM, Observation) error { return nil }
 
 func TestStopConvergesWithRetainedManualTerminalVMI(t *testing.T) {
 	v := mediaFixtureVM()
@@ -33,11 +35,11 @@ func TestStopConvergesWithRetainedManualTerminalVMI(t *testing.T) {
 	w := &Worker{repo: &mediaCheckpointRepo{}, native: n, network: terminalPowerNetwork{}}
 	o := Operation{Action: "stop", State: "unknown", Pending: &Mutation{Action: "stop", Submitted: true, Target: v.Native}}
 	if err := w.power(context.Background(), &o, &v); err != nil || o.State != "succeeded" || o.Pending != nil || n.stops != 0 {
-		t.Fatalf("Stop must finish after confirmed exit, launcher absence and withdrawn addresses: op=%+v stops=%d err=%v", o, n.stops, err)
+		t.Fatalf("Stop must finish after confirmed native exit and launcher absence: op=%+v stops=%d err=%v", o, n.stops, err)
 	}
 }
 
-func TestTerminalStopStillRequiresLauncherRequestsAndAddressWithdrawal(t *testing.T) {
+func TestTerminalStopRequiresOnlyOwnNativeClosure(t *testing.T) {
 	for _, mode := range []string{"live-launcher", "native-request", "current-address", "network-unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			v := mediaFixtureVM()
@@ -56,8 +58,13 @@ func TestTerminalStopStillRequiresLauncherRequestsAndAddressWithdrawal(t *testin
 			n := &terminalPowerNative{x: x}
 			w := &Worker{repo: &mediaCheckpointRepo{}, native: n, network: network}
 			o := Operation{Action: "stop", State: "unknown", Pending: &Mutation{Action: "stop", Submitted: true, Target: v.Native}}
-			if err := w.power(context.Background(), &o, &v); err == nil || o.State == "succeeded" || n.stops != 0 {
-				t.Fatal("terminal identity bypassed required withdrawal proof", mode, o, err)
+			err := w.power(context.Background(), &o, &v)
+			if mode == "current-address" || mode == "network-unknown" {
+				if err != nil || o.State != "succeeded" || n.stops != 0 {
+					t.Fatal("network observation blocked native Stop completion", mode, o, err)
+				}
+			} else if err == nil || o.State == "succeeded" || n.stops != 0 {
+				t.Fatal("Stop completed before its native workload closed", mode, o, err)
 			}
 		})
 	}

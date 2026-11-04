@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -263,11 +264,18 @@ type SecurityGroupWork struct {
 	Operation                             Operation
 	TenantID, TargetType, TargetID, Owner string
 	Version, Epoch                        int64
+	ClaimedGeneration                     int64
 }
 type SecurityGroupResult struct {
 	ProviderUID, State, Reason string
 	AppliedIDs                 []string
 	Complete                   bool
+	Observed                   bool
+	ObservationError           Reason
+	OperationReason            Reason
+	ProviderError              error `json:"-"`
+	Backoff                    bool
+	NextDelay                  time.Duration
 }
 type SecurityGroupWorkRepository interface {
 	ClaimSecurityGroup(context.Context, string, time.Duration) (SecurityGroupWork, bool, error)
@@ -287,18 +295,40 @@ func NewSecurityGroupWorker(r SecurityGroupWorkRepository, p SecurityGroupProvid
 	return &SecurityGroupWorker{r, p, owner, policy}
 }
 func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
-	work, found, e := w.repository.ClaimSecurityGroup(ctx, w.owner, w.policy.Lease)
-	if e != nil || !found {
-		return found, e
+	step, cancelStep := context.WithTimeout(ctx, w.policy.Lease)
+	defer cancelStep()
+	work, found, err := w.repository.ClaimSecurityGroup(step, w.owner, w.policy.Lease)
+	if err != nil || !found {
+		return found, err
 	}
-	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
-	r, applyErr := w.provider.ApplySecurityGroup(call, work)
+	call, cancel := context.WithTimeout(step, w.policy.RequestTimeout)
+	result, applyErr := w.provider.ApplySecurityGroup(call, work)
 	cancel()
-	e = w.repository.FinishSecurityGroup(ctx, work, r, applyErr)
-	if e == ErrLeaseLost {
+	result.NextDelay = w.policy.ObserveEvery
+	if applyErr != nil {
+		result.ProviderError = applyErr
+		if result.OperationReason == "" {
+			result.OperationReason = providerReason(applyErr)
+		}
+		result.Backoff = true
+		result.NextDelay = w.policy.RetryMin
+		if providerKind(applyErr) == ProviderReject && result.ObservationError == "" && work.Group.State != Deleting {
+			result.Backoff = false
+		}
+	}
+	if applyErr == nil && !result.Complete && result.OperationReason == "" {
+		result.OperationReason = Reason(result.Reason)
+		if result.OperationReason == "" {
+			result.OperationReason = ProviderNotReady
+		}
+	}
+	finish, cancelFinish := context.WithTimeout(context.WithoutCancel(step), w.policy.RequestTimeout)
+	defer cancelFinish()
+	err = w.repository.FinishSecurityGroup(finish, work, result, applyErr)
+	if errors.Is(err, ErrLeaseLost) {
 		return true, nil
 	}
-	return true, e
+	return true, err
 }
 
 func validateSecurityGroupKey(key string) error {
@@ -308,8 +338,4 @@ func validateSecurityGroupKey(key string) error {
 
 func DefaultSecurityGroupRule() SecurityGroupRule {
 	return SecurityGroupRule{ID: "sgr_default_ingress_drop", Direction: "ingress", Protocol: "all", Action: "drop", Priority: 1, IsDefault: true}
-}
-
-type SecurityGroupConsumerObserver interface {
-	ObserveSecurityGroupConsumer(context.Context, SecurityGroupBinding) (bool, error)
 }

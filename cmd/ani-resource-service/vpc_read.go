@@ -34,7 +34,7 @@ func runVPCRead(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	defer repository.Close()
 	key, _ := base64.StdEncoding.DecodeString(bc.Network.CursorSigningKey)
-	network, err := biz.NewNetwork(repository, key, bc.Network.Worker.StaleAfter.AsDuration(), time.Now)
+	network, err := biz.NewNetwork(repository, key)
 	if err != nil {
 		return err
 	}

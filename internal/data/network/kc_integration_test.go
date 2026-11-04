@@ -113,8 +113,8 @@ func (s *controlledKC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&value); err != nil {
 			s.requestInvalid = err.Error()
 		}
-		if value.Preconditions.UID != "stable-provider-uid" || value.Preconditions.ResourceVersion != "10" || value.PropagationPolicy != "Orphan" {
-			s.requestInvalid = "delete lacks safe identity/version/non-cascade conditions"
+		if value.Preconditions.UID != "stable-provider-uid" || value.Preconditions.ResourceVersion != "10" || value.PropagationPolicy != "" && value.PropagationPolicy != "Background" {
+			s.requestInvalid = "delete lacks original identity/version conditions"
 		}
 		s.object = nil
 		_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Status","status":"Success"}`))
@@ -126,7 +126,7 @@ func (s *controlledKC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestKCAdapterExecutesTheVPCContractThroughHTTP(t *testing.T) {
 	repository, _ := database(t)
-	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}

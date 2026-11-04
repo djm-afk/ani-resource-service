@@ -63,12 +63,12 @@ func (w *Worker) observeNetwork(ctx context.Context, i *Instance) bool {
 	}
 	if w.network == nil || n.AttachmentID == "" {
 		n.Reason = "INSTANCE_NETWORK_UNAVAILABLE"
-		return false
+		return networkManagementConfirmed(*i)
 	}
 	o, err := w.network.Observe(ctx, *i)
 	if err != nil {
 		n.Reason = networkReason(err)
-		return false
+		return networkManagementConfirmed(*i)
 	}
 	n.CurrentIPs = append([]string{}, o.CurrentIPs...)
 	n.CurrentVNicUID = o.CurrentVNicUID
@@ -79,12 +79,12 @@ func (w *Worker) observeNetwork(ctx context.Context, i *Instance) bool {
 	n.AttachmentVersion = o.Version
 	n.NetworkState = o.State
 	n.Reason = o.Reason
-	if n.State == "closed" && n.ReleaseAcknowledged && o.State == "released" && o.Reason == "" {
+	if n.State == "closed" && o.State == "released" {
 		n.Cleaned = true
 		n.Reason = ""
 		return false
 	}
-	return i.RuntimeDesired == Running && n.State == "open" && o.State == "attached" && o.Reason == "" && o.PodUID != "" && o.PodUID == i.PodUID && o.SnapshotRevision == n.SnapshotRevision && n.ConfirmedSnapshotRevision == n.SnapshotRevision
+	return i.RuntimeDesired == Running && n.State == "open" && o.State == "attached" && o.PodUID != "" && o.PodUID == i.PodUID && o.SnapshotRevision == n.SnapshotRevision && n.ConfirmedSnapshotRevision == n.SnapshotRevision
 }
 
 // Confirm only a revision already published by a successful Instance Finish.
@@ -102,6 +102,7 @@ func (w *Worker) confirmNetwork(ctx context.Context, i *Instance) (bool, error) 
 		return false, nil
 	}
 	n.ConfirmedSnapshotRevision = n.SnapshotRevision
+	n.NetworkState, n.Reason = "attached", ""
 	return true, nil
 }
 func (w *Worker) releaseNetwork(ctx context.Context, i *Instance) bool {
@@ -117,23 +118,20 @@ func (w *Worker) releaseNetwork(ctx context.Context, i *Instance) bool {
 		n.Reason = "INSTANCE_NETWORK_UNAVAILABLE"
 		return false
 	}
-	if !n.ReleaseStarted {
-		n.ReleaseStarted = true
-		n.Reason = "NETWORK_RELEASE_PENDING"
+	done, err := w.network.Release(ctx, *i)
+	if err != nil {
+		n.Reason = networkReason(err)
 		return false
 	}
-	if !n.ReleaseAcknowledged {
-		if err := w.network.Release(ctx, *i); err != nil {
-			n.Reason = networkReason(err)
-			return false
-		}
-		n.ReleaseAcknowledged = true
-		n.Reason = "WAITING_FOR_NETWORK_RELEASE"
-	}
-	if n.NetworkState == "released" && n.ReleaseAcknowledged {
-		n.Cleaned = true
-		n.Reason = ""
+	if done {
+		n.NetworkState, n.Reason, n.Cleaned = "released", "", true
 		return true
 	}
+	n.Reason = "WAITING_FOR_NETWORK_RELEASE"
 	return false
+}
+
+func networkManagementConfirmed(i Instance) bool {
+	n := i.Network
+	return n == nil || (i.RuntimeDesired == Running && n.State == "open" && n.NetworkState == "attached" && n.ConfirmedSnapshotRevision == n.SnapshotRevision && len(n.CurrentPods) == 1 && n.CurrentPods[0].Reference.UID == i.PodUID)
 }

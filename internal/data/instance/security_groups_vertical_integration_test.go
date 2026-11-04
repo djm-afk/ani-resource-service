@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -38,17 +37,17 @@ import (
 	ktesting "k8s.io/client-go/testing"
 )
 
-// The existing Notebook/CNI test boundary already supplies real ownership
-// chains. These additions model only controller annotation projection and KCN
-// application; SG authorization, catalog, refs and all operations use real SQL.
+// The boundary models controller annotation projection and KCN status. Target
+// observations use the real provider's single-current-VNic reader; SG catalog,
+// authorization, references and operations use real SQL.
 type verticalSecurityGroupBoundary struct {
-	repo     *networkdata.Postgres
+	provider networkbiz.SecurityGroupProvider
 	notebook *notebookNetworkBoundary
 }
 
-func (b *verticalSecurityGroupBoundary) ApplySecurityGroup(_ context.Context, w networkbiz.SecurityGroupWork) (networkbiz.SecurityGroupResult, error) {
+func (b *verticalSecurityGroupBoundary) ApplySecurityGroup(ctx context.Context, w networkbiz.SecurityGroupWork) (networkbiz.SecurityGroupResult, error) {
 	if w.TargetType != "security_group" {
-		return networkbiz.SecurityGroupResult{}, fmt.Errorf("unexpected target %s", w.TargetType)
+		return b.provider.ApplySecurityGroup(ctx, w)
 	}
 	return networkbiz.SecurityGroupResult{ProviderUID: "controlled-kcn-" + w.TargetID, State: string(networkbiz.Available), Complete: true}, nil
 }
@@ -73,46 +72,21 @@ func (b *verticalSecurityGroupBoundary) mirrorCNI(ctx context.Context, namespace
 		b.notebook.api.Objects["pods/"+namespace+"/"+pod.GetName()] = pod.Object
 		if nic := b.notebook.api.Objects["vnics/"+namespace+"/nic"]; nic != nil {
 			names := []any{}
+			applied := map[string]any{}
 			if ann[biz.SecurityGroupsAnnotation] != "" {
 				for _, name := range strings.Split(ann[biz.SecurityGroupsAnnotation], ",") {
 					names = append(names, name)
+					applied[name] = int64(1)
 				}
 			}
 			spec := nic["spec"].(map[string]any)
 			spec["securityGroups"] = names
+			if err = unstructured.SetNestedMap(nic, applied, "status", "appliedSecurityGroups"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
-}
-func (b *verticalSecurityGroupBoundary) ObserveSecurityGroupConsumer(ctx context.Context, binding networkbiz.SecurityGroupBinding) (bool, error) {
-	if err := b.mirrorCNI(ctx, binding.Namespace); err != nil {
-		return false, err
-	}
-	names, err := b.repo.ResolveSecurityGroups(ctx, binding.TenantID, binding.VPCID, binding.Namespace, binding.SecurityGroupIDs)
-	if err != nil {
-		return false, err
-	}
-	pods, err := b.notebook.client.Resource(verticalPodGVR).Namespace(binding.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return false, err
-	}
-	if len(pods.Items) != 1 {
-		return false, nil
-	}
-	pod := &pods.Items[0]
-	if pod.GetLabels()["network.ani.io/tenant-id"] != binding.TenantID || pod.GetLabels()["network.ani.io/instance-id"] != binding.TargetID {
-		return false, fmt.Errorf("CNI observed a foreign consumer")
-	}
-	actual := []string{}
-	if raw := pod.GetAnnotations()[biz.SecurityGroupsAnnotation]; raw != "" {
-		actual = strings.Split(raw, ",")
-	}
-	slices.Sort(actual)
-	slices.Sort(names)
-	if !slices.Equal(actual, names) {
-		return false, fmt.Errorf("CNI has not applied the selected groups")
-	}
-	return true, nil
 }
 func (b *verticalSecurityGroupBoundary) installNotebookProjection(t *testing.T) {
 	t.Helper()
@@ -361,7 +335,7 @@ func TestInstanceSecurityGroupsVerticalRealCatalogCreateReplaceClearDelete(t *te
 	policy := networkbiz.DefaultWorkerPolicy()
 	policy.ObserveEvery = time.Millisecond
 	policy.RetryMin = time.Millisecond
-	networkUC, err := networkbiz.NewNetwork(nrepo, make([]byte, 32), time.Minute, time.Now)
+	networkUC, err := networkbiz.NewNetwork(nrepo, make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,9 +379,8 @@ func TestInstanceSecurityGroupsVerticalRealCatalogCreateReplaceClearDelete(t *te
 	}
 	c.Spec.Network = &biz.NetworkSelection{VPCID: vpc.ID, SubnetID: subnet.ID}
 	boundary := newNotebookNetworkBoundary(t, api)
-	sgBoundary := &verticalSecurityGroupBoundary{repo: nrepo, notebook: boundary}
+	sgBoundary := &verticalSecurityGroupBoundary{provider: nprovider, notebook: boundary}
 	sgBoundary.installNotebookProjection(t)
-	nrepo.UseSecurityGroupObserver(sgBoundary)
 	groups := networkbiz.NewSecurityGroups(nrepo)
 	sgWorker := networkbiz.NewSecurityGroupWorker(nrepo, sgBoundary, uuid.NewString(), policy)
 	createGroup := func(key string) networkbiz.SecurityGroup {
@@ -443,8 +416,9 @@ func TestInstanceSecurityGroupsVerticalRealCatalogCreateReplaceClearDelete(t *te
 	if ack, e := intake.AcceptCreate(ctx, request); e != nil || !ack.GetDurableOwnerAck().GetAccepted() {
 		t.Fatal("real create admission failed", ack, e)
 	}
-	attachments := networkbiz.NewAttachments(nrepo, time.Minute)
-	adapter, err := data.NewInstanceNetwork(networkUC, attachments, c.Spec.ClusterID, "tenant-", time.Minute)
+	attachments := networkbiz.NewAttachments(nrepo)
+	f.repo.UseNetworkNotifier(attachments.Notify)
+	adapter, err := data.NewInstanceNetwork(networkUC, attachments, c.Spec.ClusterID, "tenant-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +438,7 @@ func TestInstanceSecurityGroupsVerticalRealCatalogCreateReplaceClearDelete(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	nworker, err := networkbiz.NewAttachmentWorker(nrepo, nprovider, consumer, uuid.NewString(), policy)
+	nworker, err := networkbiz.NewAttachmentWorker(nrepo, consumer, nprovider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,6 +480,26 @@ func TestInstanceSecurityGroupsVerticalRealCatalogCreateReplaceClearDelete(t *te
 		if value, present := pod.GetAnnotations()[biz.SecurityGroupsAnnotation]; !present || value != names || pod.GetAnnotations()["instance.ani.io/intent-version"] != strconv.FormatInt(i.Version, 10) {
 			t.Fatal("current Pod differs", pod.GetAnnotations())
 		}
+		// Instance has already completed its configuration operation. Applied
+		// output is refreshed separately by the SG worker from current KCN status.
+		var binding networkbiz.SecurityGroupBinding
+		for round := 0; round < 100; round++ {
+			if _, e = sgWorker.Step(ctx); e != nil {
+				t.Fatal(e)
+			}
+			var body []byte
+			if e = nf.Owner.QueryRow(ctx, `SELECT payload FROM network_security_group_targets WHERE tenant_id=$1 AND target_type='container' AND target_id=$2`, c.TenantID, c.ID).Scan(&body); e != nil {
+				t.Fatal(e)
+			}
+			if e = json.Unmarshal(body, &binding); e != nil {
+				t.Fatal(e)
+			}
+			if binding.State == "applied" && slices.Equal(binding.AppliedSecurityGroupIDs, ids) {
+				return
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+		t.Fatal("SG worker did not project the current VNic status", binding)
 	}
 	i := drive(biz.Running)
 	assertCurrent(i, []string{first.ID}, first.ProviderName)

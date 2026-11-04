@@ -135,7 +135,7 @@ func TestManualVNicPGReservationRacesDelete(t *testing.T) {
 			t.Fatalf("exactly one concurrent acceptance must succeed: reserve=%v delete=%v", reserveErr, deleteErr)
 		}
 		if deleteErr == nil {
-			if biz.ReasonOf(reserveErr) != biz.ProviderNotReady {
+			if biz.ReasonOf(reserveErr) != biz.ResourceBusy {
 				t.Fatal("reservation did not reject deleting VNIC", reserveErr)
 			}
 			deadline := time.Now().Add(time.Second)

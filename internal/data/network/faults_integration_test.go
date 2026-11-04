@@ -17,9 +17,9 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func newNetwork(t *testing.T, repository *data.Postgres, freshness time.Duration) *biz.Network {
+func newNetwork(t *testing.T, repository *data.Postgres, _ time.Duration) *biz.Network {
 	t.Helper()
-	n, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"), freshness, time.Now)
+	n, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,13 +44,12 @@ func fastPolicy() biz.WorkerPolicy {
 	p.RequestTimeout = 100 * time.Millisecond
 	p.Lease = 350 * time.Millisecond
 	p.ObserveEvery = 5 * time.Millisecond
-	p.StaleAfter = 30 * time.Millisecond
 	p.RetryMin = 5 * time.Millisecond
 	p.RetryMax = 10 * time.Millisecond
 	return p
 }
 
-func TestUnknownPOSTRemainsBlockedUntilTheActualLateRequestAppears(t *testing.T) {
+func TestUnknownPOSTRetriesTheSameNameWhileOriginalUIDIsUnknown(t *testing.T) {
 	repository, _ := database(t)
 	network := newNetwork(t, repository, time.Minute)
 	api := &controlledKC{}
@@ -61,8 +60,8 @@ func TestUnknownPOSTRemainsBlockedUntilTheActualLateRequestAppears(t *testing.T)
 		if r.Method == "POST" && len(r.URL.Path) > 5 && r.URL.Path[len(r.URL.Path)-5:] == "/vpcs" {
 			if posts.Add(1) == 1 {
 				close(arrived)
+				<-release // The first response outlives the caller; later POSTs use the same name.
 			}
-			<-release // Model an API request executing after the caller's timeout.
 		}
 		api.ServeHTTP(w, r)
 	}))
@@ -85,21 +84,21 @@ func TestUnknownPOSTRemainsBlockedUntilTheActualLateRequestAppears(t *testing.T)
 		t.Fatal("no actual HTTP POST reached the server")
 	}
 	op, err := network.GetOperation(context.Background(), accepted.TenantID, accepted.LastOperationID)
-	if err != nil || op.State != biz.Blocked || op.Reason != biz.ProviderUnknown {
+	if err != nil || op.State != biz.Retrying || op.Reason != biz.ProviderUnknown {
 		t.Fatalf("unknown POST lost: %+v %v", op, err)
 	}
 	if _, err := network.DeleteVPC(context.Background(), accepted.TenantID, accepted.ID); biz.ReasonOf(err) != biz.ResourceBusy {
 		t.Fatalf("unknown create allowed deletion: %v", err)
 	}
-	// A separate worker with a new owner observes NotFound, but must not POST.
+	// A new worker retries the same durable name after a current GET404.
 	replacement, err := biz.NewWorker(repository, provider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(15 * time.Millisecond)
 	runStep(t, replacement)
-	if posts.Load() != 1 {
-		t.Fatal("unknown result caused duplicate external POST")
+	if posts.Load() != 2 {
+		t.Fatal("unknown create did not retry its fixed provider name")
 	}
 	release <- struct{}{}
 	deadline := time.Now().Add(2 * time.Second)
@@ -111,10 +110,10 @@ func TestUnknownPOSTRemainsBlockedUntilTheActualLateRequestAppears(t *testing.T)
 			t.Fatal(err)
 		}
 		if v.State == biz.Available {
-			if v.LastOperationID != accepted.LastOperationID || posts.Load() != 1 {
+			if v.LastOperationID != accepted.LastOperationID || posts.Load() != 2 {
 				t.Fatal("late recovery changed durable identity")
 			}
-			t.Logf("late POST: %s op=%s blocked -> available; external POSTs=%d", v.ID, v.LastOperationID, posts.Load())
+			t.Logf("late POST: %s op=%s retrying -> available; external POSTs=%d", v.ID, v.LastOperationID, posts.Load())
 			return
 		}
 	}
@@ -230,8 +229,8 @@ func TestConcurrentAcceptanceAndWorkersUseTheSameDatabaseAuthority(t *testing.T)
 	}
 }
 
-// Availability can expire without a read path writing or calling the provider.
-func TestPureQueriesExposeStaleObservationAndKeepSuccessfulOperationHistory(t *testing.T) {
+// Observation age does not change native resource state or trigger provider work.
+func TestPureQueriesKeepProjectionAndSuccessfulOperationHistory(t *testing.T) {
 	repository, owner := database(t)
 	n := newNetwork(t, repository, 30*time.Millisecond)
 	v := create(t, n, "stale")
@@ -261,8 +260,8 @@ func TestPureQueriesExposeStaleObservationAndKeepSuccessfulOperationHistory(t *t
 	time.Sleep(45 * time.Millisecond)
 	for range 5 {
 		got, err := n.GetVPC(ctx, v.TenantID, v.ID)
-		if err != nil || !got.ObservationStale || got.Version != before.Version || got.State != biz.Available {
-			t.Fatalf("query advanced or hid stale observation: %+v %v", got, err)
+		if err != nil || got.ObservationStale || got.Version != before.Version || got.State != biz.Available {
+			t.Fatalf("query changed an unchanged successful observation: %+v %v", got, err)
 		}
 		if _, err := n.ListVPCs(ctx, biz.ListVPCs{TenantID: v.TenantID}); err != nil {
 			t.Fatal(err)
@@ -281,14 +280,17 @@ func TestPureQueriesExposeStaleObservationAndKeepSuccessfulOperationHistory(t *t
 	api.mu.Lock()
 	api.object["status"] = map[string]any{}
 	api.mu.Unlock()
+	if err := repository.NotifyResource(ctx, v.TenantID, v.ID); err != nil {
+		t.Fatal(err)
+	}
 	runStep(t, worker)
 	got, err := n.GetVPC(ctx, v.TenantID, v.ID)
-	if err != nil || got.State != biz.Degraded {
-		t.Fatalf("worker did not persist lost readiness: %+v %v", got, err)
+	if err != nil || got.State != biz.Available || got.Reason != biz.ProviderStatusUnreported {
+		t.Fatalf("unreported native Ready did not preserve resource state: %+v %v", got, err)
 	}
 	op, err := n.GetOperation(ctx, v.TenantID, v.LastOperationID)
 	if err != nil || op.State != biz.Succeeded {
 		t.Fatalf("historic operation rewritten: %+v %v", op, err)
 	}
-	t.Log(fmt.Sprintf("query-only phase kept version %d and %d HTTP requests; worker then degraded resource", before.Version, count))
+	t.Log(fmt.Sprintf("query-only phase kept version %d and %d HTTP requests; worker then recorded an unreported native status", before.Version, count))
 }

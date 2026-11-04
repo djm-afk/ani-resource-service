@@ -3,13 +3,11 @@ package data_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/google/uuid"
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/google/uuid"
-	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
 
 func deferredEmptyLBRequest(f *lbAdmissionFixture) biz.CreateLoadBalancer {
@@ -30,12 +28,11 @@ func assertLBProviderMutationCounts(t *testing.T, f *lbAdmissionFixture, before 
 }
 
 // Real authorization, admission and PG run with a Kubernetes protocol fixture.
-// Expired parent observations and unavailable capability cannot prevent saving
-// empty intent, but still prevent activation.
+// Parent read age and absent capability do not gate saving or activating intent.
 func TestLBDeferredDatabaseAdmissionReplayOfflineAndDeletion(t *testing.T) {
 	f := newLBAdmissionFixture(t)
 	before, _ := f.api.Counts()
-	if _, err := f.f.owner.Exec(f.f.ctx, `DELETE FROM network_lb_capabilities; UPDATE network_provider_bindings SET provider_observed_at=clock_timestamp()-interval '2 hour' WHERE vpc_id IS NOT NULL; UPDATE network_subnets SET observed_at=clock_timestamp()-interval '2 hour'`); err != nil {
+	if _, err := f.f.owner.Exec(f.f.ctx, `DELETE FROM network_lb_capabilities; UPDATE network_vpcs SET observed_at=clock_timestamp()-interval '2 hour'; UPDATE network_subnets SET observed_at=clock_timestamp()-interval '2 hour'`); err != nil {
 		t.Fatal(err)
 	}
 	request := deferredEmptyLBRequest(f)
@@ -76,15 +73,14 @@ func TestLBDeferredDatabaseAdmissionReplayOfflineAndDeletion(t *testing.T) {
 	if _, err = f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: lb.Version, IdempotencyKey: "old-version", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Name: "stale", UpdateMask: []string{"name"}}}); biz.ReasonOf(err) != biz.VersionConflict {
 		t.Fatal("stale optimistic update", err)
 	}
-	// Activation checks current native readiness; a stale database projection
-	// alone no longer means the runtime is unavailable.
+	// Activating this declaration does not require parent runtime acknowledgements.
 	vpc := f.api.Object("vpcs", "tenant-"+f.f.tenant, strings.Replace(f.vpc.ID, "_", "-", 1))
 	vpc["status"].(map[string]any)["conditions"] = []any{}
 	f.api.Change("vpcs", vpc, false)
 	activation := updated.LoadBalancer.Listeners[0]
 	activationInput := biz.LoadBalancerListenerInput{ID: activation.ID, Name: activation.Name, Protocol: activation.Protocol, Port: &activation.Port, Backends: f.request.Backends}
-	if _, err = f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: updated.LoadBalancer.Version, IdempotencyKey: "offline-activation", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{activationInput}, UpdateMask: []string{"listeners"}}}); biz.ReasonOf(err) != biz.ParentNotReady {
-		t.Fatal("activation bypassed runtime prerequisites", err)
+	if _, err = f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: updated.LoadBalancer.Version, IdempotencyKey: "offline-activation", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{activationInput}, UpdateMask: []string{"listeners"}}}); err != nil {
+		t.Fatal("parent runtime acknowledgement gated activation", err)
 	}
 	deleted, err := f.lbs.Delete(f.f.ctx, "", lb.ID)
 	if err != nil || deleted.LoadBalancer.State != biz.Deleted || deleted.Operation.State != biz.Succeeded || deleted.LoadBalancer.ObservedAt != nil {
@@ -166,16 +162,10 @@ func TestLBDeferredMixedDatabaseEditPreservesRuntimeFaultAndProjection(t *testin
 	before, _ := f.api.Counts()
 	// Persist a known runtime fault and stale observation. A database-only edit
 	// must not manufacture recovery, refresh health, or require fresh capability.
-	if _, err = f.f.owner.Exec(f.f.ctx, `UPDATE network_load_balancers SET state='degraded',configuration_state='degraded',reason='PROVIDER_UNAVAILABLE',observed_at=clock_timestamp()-interval '2 hour',data_plane_state='healthy',data_plane_observed_at=clock_timestamp()-interval '2 hour' WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID); err != nil {
+	if _, err = f.f.owner.Exec(f.f.ctx, `UPDATE network_load_balancers SET state='degraded',configuration_state='degraded',reason='PROVIDER_UNAVAILABLE',observed_at=clock_timestamp()-interval '2 hour' WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.f.owner.Exec(f.f.ctx, `DELETE FROM network_lb_capabilities`); err != nil {
-		t.Fatal(err)
-	}
-	// GET masks expired health evidence in its response. Compare persistence
-	// and the acceptance snapshot against the original database timestamp.
-	var originalPlaneTime time.Time
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT data_plane_observed_at FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID).Scan(&originalPlaneTime); err != nil {
 		t.Fatal(err)
 	}
 	lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
@@ -192,13 +182,8 @@ func TestLBDeferredMixedDatabaseEditPreservesRuntimeFaultAndProjection(t *testin
 		t.Fatal(err)
 	}
 	current := result.LoadBalancer
-	if result.Operation.State != biz.Succeeded || current.DesiredVersion != 2 || current.ProviderTargetVersion != 1 || current.AppliedVersion != 1 || current.State != biz.Degraded || current.ConfigurationState != "degraded" || current.DataPlaneState != "healthy" || current.DataPlaneObservedAt == nil || !current.DataPlaneObservedAt.Equal(originalPlaneTime) || current.Reason != lb.Reason || current.ObservedAt == nil || !current.ObservedAt.Equal(*lb.ObservedAt) || !current.ObservationStale {
+	if result.Operation.State != biz.Succeeded || current.DesiredVersion != 2 || current.ProviderTargetVersion != 1 || current.AppliedVersion != 1 || current.State != biz.Degraded || current.ConfigurationState != "degraded" || current.Reason != lb.Reason || current.ObservedAt == nil || !current.ObservedAt.Equal(*lb.ObservedAt) {
 		t.Fatal("empty listener edit altered runtime evidence", result)
-	}
-	var storedPlaneState string
-	var storedPlaneTime time.Time
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT data_plane_state,data_plane_observed_at FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID).Scan(&storedPlaneState, &storedPlaneTime); err != nil || storedPlaneState != "healthy" || !storedPlaneTime.Equal(originalPlaneTime) {
-		t.Fatal("database-only edit cleared or refreshed historical health evidence", storedPlaneState, storedPlaneTime, err)
 	}
 	if !reflect.DeepEqual(priorGateway, f.api.Object("gateways", namespace, gateway)) {
 		t.Fatal("database-only edit changed Gateway")
@@ -337,10 +322,6 @@ func TestLBDeferredRetiredProductDeletionIgnoresSubsequentExternalVIPAllocation(
 	var cleanupTarget int64
 	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT to_jsonb(r)::text,provider_uid,cleanup_target_version FROM network_lb_retired_bindings r WHERE tenant_id=$1 AND lb_id=$2 AND binding_id=$3`, f.f.tenant, waiting.ID, binding.id).Scan(&retirementBefore, &retiredUID, &cleanupTarget); err != nil || retiredUID != binding.uid || cleanupTarget != 3 {
 		t.Fatal("actual cleanup lacks matching immutable retirement", retiredUID, cleanupTarget, err)
-	}
-	var pendingGenerated int
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT count(*) FROM network_lb_generated_resources WHERE tenant_id=$1 AND lb_id=$2 AND released_at IS NULL`, f.f.tenant, waiting.ID).Scan(&pendingGenerated); err != nil || pendingGenerated != 0 {
-		t.Fatal("actual cleanup left generated resources", pendingGenerated, err)
 	}
 	f.f.stopObservation()
 	var namespace, subnetName string

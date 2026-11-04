@@ -69,7 +69,7 @@ func TestBaseConcurrentWorkersDoNotAllocateTwiceOrLoseDeletionFences(t *testing.
 	defer func() { cancel(); wg.Wait() }()
 	awaitNET05A(t, 8*time.Second, func() bool {
 		value, err := f.n.GetVPC(f.ctx, f.tenant, v.ID)
-		return err == nil && value.State == biz.Available
+		return err == nil && baseFixtureProductsSettled(value, biz.Available)
 	})
 	e, s := baseIDs(t, f, v.ID)
 	var eipOp string
@@ -84,7 +84,7 @@ func TestBaseConcurrentWorkersDoNotAllocateTwiceOrLoseDeletionFences(t *testing.
 	}
 	awaitNET05A(t, 8*time.Second, func() bool {
 		value, err := f.n.GetVPC(f.ctx, f.tenant, v.ID)
-		return err == nil && value.State == biz.Deleted
+		return err == nil && baseFixtureProductsSettled(value, biz.Deleted)
 	})
 	cancel()
 	wg.Wait()
@@ -102,12 +102,11 @@ func TestBaseConcurrentWorkersDoNotAllocateTwiceOrLoseDeletionFences(t *testing.
 	requireBaseProcessCleanup(t, f, api, v.ID, e, s)
 }
 
-func TestBaseBackfillRechecksFreshnessAfterPlatformLockWait(t *testing.T) {
+func TestBaseBackfillRechecksAllocationSettingAfterPlatformLockWait(t *testing.T) {
 	f, _ := newBackfillFixture(t)
 	availableVPC(t, f.n, f.w, f.tenant, "locked-admission")
 	plan := planBackfill(t, f)
 	resumeBackfill(t, f, plan)
-	f.p.UseBaseConnectivityFreshness(time.Second)
 	blocker, err := f.owner.Begin(f.ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -115,12 +114,6 @@ func TestBaseBackfillRechecksFreshnessAfterPlatformLockWait(t *testing.T) {
 	defer blocker.Rollback(f.ctx)
 	var blockerPID int
 	if err = blocker.QueryRow(f.ctx, `SELECT pg_backend_pid() FROM pg_advisory_xact_lock(hashtextextended('platform-cluster:test-cluster',0))`).Scan(&blockerPID); err != nil {
-		t.Fatal(err)
-	}
-	// Start with fresh committed facts, then prove the real dispatcher is waiting
-	// on the platform lock until those facts expire. No fake clock is substituted.
-	var observed time.Time
-	if err = f.owner.QueryRow(f.ctx, `UPDATE network_platform_resources SET observed_at=clock_timestamp() WHERE resource_id=$1 RETURNING observed_at`, f.pool.ID).Scan(&observed); err != nil {
 		t.Fatal(err)
 	}
 	type answer struct {
@@ -134,28 +127,26 @@ func TestBaseBackfillRechecksFreshnessAfterPlatformLockWait(t *testing.T) {
 		err := f.owner.QueryRow(f.ctx, `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND NOT granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND $1=ANY(pg_blocking_pids(pid)))`, blockerPID).Scan(&waiting)
 		return err == nil && waiting
 	})
-	awaitNET05A(t, 5*time.Second, func() bool {
-		var expired bool
-		err := f.owner.QueryRow(f.ctx, `SELECT clock_timestamp()>$1::timestamptz+interval '1200 milliseconds'`, observed).Scan(&expired)
-		return err == nil && expired
-	})
+	if _, err = blocker.Exec(f.ctx, `UPDATE network_public_pools SET allocation_enabled=false WHERE resource_id=$1`, f.pool.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err = blocker.Commit(f.ctx); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case got := <-answers:
 		if got.err != nil || got.result.State != "blocked" {
-			t.Fatal("stale facts admitted after lock wait", got.result, got.err)
+			t.Fatal("closed allocation admitted after lock wait", got.result, got.err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("dispatcher failed to resume after lock release")
 	}
 	var count int
 	if err = f.owner.QueryRow(f.ctx, `SELECT count(*) FROM network_operations WHERE kind='ensure_vpc_base_connectivity'`).Scan(&count); err != nil || count != 0 {
-		t.Fatal("stale acceptance left an operation", count, err)
+		t.Fatal("closed allocation left an operation", count, err)
 	}
 	saved, err := f.p.GetBaseBackfill(f.ctx, plan.RunID)
 	if err != nil || !saved.Paused || saved.Candidates[0].State != "pending" {
-		t.Fatal("stale fixed plan was not paused intact", saved, err)
+		t.Fatal("blocked fixed plan was not paused intact", saved, err)
 	}
 }

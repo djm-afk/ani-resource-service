@@ -30,14 +30,8 @@ type DefaultVPCEgress struct {
 	PendingAction                                                      string
 	PendingUnknown, DesiredEnabled                                     bool
 	AppliedEnabled                                                     *bool
-	TargetGeneration                                                   int64
 }
 type DefaultVPCEgressIntent struct{ Name, PoolID, IdempotencyKey string }
-type DefaultEgressPoolProof struct {
-	Revision          int64
-	ProviderUID, Hash string
-	ObservedAt        time.Time
-}
 type DefaultVPCEgressRepository interface {
 	CreateDefaultVPCEgress(context.Context, DefaultVPCEgressIntent, Attribution) (DefaultVPCEgress, error)
 	GetDefaultVPCEgress(context.Context, string) (DefaultVPCEgress, error)
@@ -97,26 +91,26 @@ func (u *DefaultVPCEgressUseCase) GetCurrent(ctx context.Context) (DefaultVPCEgr
 }
 
 type DefaultEgressWork struct {
-	Egress                                              DefaultVPCEgress
-	Owner, EIPBindingID, SnatBindingID, PoolProviderUID string
-	Epoch, PoolRevision                                 int64
-	Now                                                 time.Time
+	Egress                                 DefaultVPCEgress
+	Owner, EIPBindingID, SnatBindingID     string
+	Epoch, PoolRevision, ClaimedGeneration int64
+	Now                                    time.Time
 }
 type DefaultEgressObservation struct {
-	EIPExists, SnatExists, EIPReady, Ready, Unbound bool
-	EIPUID, SnatUID, Address, Hash                  string
-	AppliedEnabled                                  *bool
-	TargetGeneration                                int64
-	ObservedAt                                      time.Time
+	EIPExists, SnatExists    bool
+	Ready                    *bool
+	StatusReason             Reason
+	EIPUID, SnatUID, Address string
+	AppliedEnabled           *bool
 }
 type DefaultEgressProgress struct {
-	State                                  ResourceState
-	Phase                                  string
-	Reason                                 Reason
-	OperationState                         OperationState
-	Observation                            DefaultEgressObservation
-	Observed, ClearPending, PendingUnknown bool
-	Delay                                  time.Duration
+	State                                           ResourceState
+	Phase                                           string
+	Reason, ObservationError, OperationReason       Reason
+	OperationState                                  OperationState
+	Observation                                     DefaultEgressObservation
+	Observed, ClearPending, PendingUnknown, Backoff bool
+	Delay                                           time.Duration
 }
 type DefaultEgressWorkRepository interface {
 	ClaimDefaultVPCEgress(context.Context, string, time.Duration) (DefaultEgressWork, bool, error)
@@ -125,7 +119,6 @@ type DefaultEgressWorkRepository interface {
 	FinishDefaultVPCEgress(context.Context, DefaultEgressWork, DefaultEgressProgress) error
 }
 type DefaultEgressProvider interface {
-	ValidateDefaultVPCEgress(context.Context, DefaultVPCIdentity, string) (DefaultEgressPoolProof, error)
 	ObserveDefaultVPCEgress(context.Context, DefaultEgressWork) (DefaultEgressObservation, error)
 	MutateDefaultVPCEgress(context.Context, DefaultEgressWork, string) error
 }

@@ -3,12 +3,11 @@ package data
 import (
 	"context"
 	"errors"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"time"
 )
 
 func (p *Postgres) claimPlatform(ctx context.Context, tx pgx.Tx, q *sqlcgen.Queries, owner string, duration time.Duration) (biz.Work, bool, error) {
@@ -48,37 +47,7 @@ func (p *Postgres) claimPlatform(ctx context.Context, tx pgx.Tx, q *sqlcgen.Quer
 	if err != nil {
 		return biz.Work{}, false, databaseFailure(err)
 	}
-	work := biz.Work{Resource: biz.ResourceWork{ID: r.ResourceID, Kind: r.Kind, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, ObservedAt: r.ObservedAt, UpdatedAt: r.UpdatedAt, LastOperationID: r.LastOperationID, Egress: &biz.EgressWorkSpec{Platform: &value}}, Operation: biz.Operation{ID: op.OperationID, ResourceID: r.ResourceID, ResourceType: r.Kind, Kind: op.Kind, State: biz.OperationState(op.State), Reason: biz.Reason(op.Reason)}, ActiveOperation: active, BindingID: r.BindingID, KnownIdentity: r.ProviderUid, PendingAction: r.PendingAction, Owner: owner, Epoch: lease.LeaseEpoch, Attempt: op.Attempt, Now: now, Requirement: biz.ObservationRequirement{RequestedGeneration: lease.RequestedGeneration, AppliedAt: lease.EvidenceAppliedAt, Hash: lease.EvidenceHash}}
-	if r.ObservedAt != nil {
-		work.Requirement.PreviousCollectedAt = *r.ObservedAt
-	}
-	if r.Kind == "public_pool" && r.State == "provisioning" && active {
-		pool, err := q.GetPublicPool(ctx, sqlcgen.GetPublicPoolParams{ClusterID: r.ClusterID, ResourceID: r.ResourceID})
-		if err != nil {
-			return biz.Work{}, false, databaseFailure(err)
-		}
-		if pool.ManagedGateway {
-			gateway, err := q.GetPlatform(ctx, sqlcgen.GetPlatformParams{ClusterID: r.ClusterID, Kind: "egress_gateway", ResourceID: textValue(pool.GatewayID)})
-			if err != nil {
-				return biz.Work{}, false, databaseFailure(err)
-			}
-			if !freshResource(gateway.State, gateway.ObservedAt, now, p.baseFreshnessLimit()) {
-				work.GateReason = biz.ProviderNotReady
-			}
-			if gateway.State == "failed" || gateway.State == "deleted" || gateway.State == "deleting" {
-				work.DependencyFailed = true
-			}
-		}
-	}
-	if value.Vlan != nil && value.Vlan.VirtualSwitchID != "" && r.State != "deleting" && r.State != "deleted" {
-		s, err := q.GetVirtualSwitch(ctx, sqlcgen.GetVirtualSwitchParams{ResourceID: value.Vlan.VirtualSwitchID})
-		if err != nil {
-			return biz.Work{}, false, databaseFailure(err)
-		}
-		if s.State != "available" || s.BindingState != "configured" {
-			work.GateReason = biz.ProviderNotReady
-		}
-	}
+	work := biz.Work{Resource: biz.ResourceWork{ID: r.ResourceID, Kind: r.Kind, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, ObservedAt: r.ObservedAt, UpdatedAt: r.UpdatedAt, LastOperationID: r.LastOperationID, Egress: &biz.EgressWorkSpec{Platform: &value}}, Operation: biz.Operation{ID: op.OperationID, ResourceID: r.ResourceID, ResourceType: r.Kind, Kind: op.Kind, State: biz.OperationState(op.State), Reason: biz.Reason(op.Reason)}, ActiveOperation: active, BindingID: r.BindingID, KnownIdentity: r.ProviderUid, PendingAction: r.PendingAction, Owner: owner, Epoch: lease.LeaseEpoch, Attempt: op.Attempt, Now: now, ClaimedGeneration: lease.RequestedGeneration}
 	if err = tx.Commit(ctx); err != nil {
 		return biz.Work{}, false, databaseFailure(err)
 	}
@@ -126,8 +95,13 @@ func (p *Postgres) finishPlatform(ctx context.Context, w biz.Work, progress biz.
 	if err = p.lockedPlatform(ctx, q, w); err != nil {
 		return err
 	}
-	if progress.Observed && !progress.Proof.Covers(w.Requirement) {
-		return biz.ErrLeaseLost
+	now, err := q.DatabaseTime(ctx)
+	if err != nil {
+		return databaseFailure(err)
+	}
+	var observedAt *time.Time
+	if progress.Observed {
+		observedAt = &now
 	}
 	if w.Resource.Kind == "public_pool" && progress.State == biz.Deleted {
 		progress, err = p.finishManagedPoolCleanup(ctx, q, w, progress)
@@ -135,18 +109,9 @@ func (p *Postgres) finishPlatform(ctx context.Context, w biz.Work, progress biz.
 			return err
 		}
 	}
-	r, err := q.AdvancePlatform(ctx, sqlcgen.AdvancePlatformParams{ResourceID: w.Resource.ID, Version: w.Resource.Version, State: string(progress.State), Reason: string(progress.Reason), Identity: progress.Identity, Observed: progress.Observed, ObservedAt: proofTime(progress.Observed, progress.Proof), ClearPending: progress.ClearPending})
+	r, err := q.AdvancePlatform(ctx, sqlcgen.AdvancePlatformParams{ResourceID: w.Resource.ID, Version: w.Resource.Version, State: string(progress.State), Reason: string(progress.Reason), Identity: progress.Identity, Observed: progress.Observed, ObservedAt: observedAt, ClearPending: progress.ClearPending})
 	if err != nil {
 		return databaseFailure(err)
-	}
-	if progress.Observed && r.Kind == "public_pool" && progress.Egress != nil {
-		images := progress.Egress.ProviderImages
-		if images == nil {
-			images = []string{}
-		}
-		if err = affected(q.SavePlatformImages(ctx, sqlcgen.SavePlatformImagesParams{ClusterID: r.ClusterID, ResourceID: r.ResourceID, ProviderImages: images})); err != nil {
-			return err
-		}
 	}
 	if progress.State == biz.Deleted {
 		switch r.Kind {
@@ -161,7 +126,7 @@ func (p *Postgres) finishPlatform(ctx context.Context, w biz.Work, progress biz.
 	}
 
 	if w.ActiveOperation {
-		if err = affected(q.CompletePlatformAttempt(ctx, sqlcgen.CompletePlatformAttemptParams{ResourceID: r.ResourceID, OperationID: w.Operation.ID, Epoch: w.Epoch, State: string(progress.OperationState), Reason: string(progress.Reason), DelayMicros: progress.NextDelay.Microseconds()})); err != nil {
+		if err = affected(q.CompletePlatformAttempt(ctx, sqlcgen.CompletePlatformAttemptParams{ResourceID: r.ResourceID, OperationID: w.Operation.ID, Epoch: w.Epoch, State: string(progress.OperationState), Reason: string(progress.OperationReason), DelayMicros: progress.NextDelay.Microseconds()})); err != nil {
 			return err
 		}
 	}
@@ -175,7 +140,7 @@ func (p *Postgres) finishPlatform(ctx context.Context, w biz.Work, progress biz.
 			return databaseFailure(err)
 		}
 	}
-	if err = affected(q.ReleasePlatformLease(ctx, sqlcgen.ReleasePlatformLeaseParams{ResourceID: r.ResourceID, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: progress.NextDelay.Microseconds(), CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, w.Requirement), Observed: progress.Observed, EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, Park: p.parkResource(w, progress)})); err != nil {
+	if err = affected(q.ReleasePlatformLease(ctx, sqlcgen.ReleasePlatformLeaseParams{ResourceID: r.ResourceID, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: progress.NextDelay.Microseconds(), Now: now, ClaimedGeneration: w.ClaimedGeneration, Observed: progress.Observed, ObservationError: string(progress.ObservationError), Backoff: progress.Backoff, Park: p.parkResource(w, progress), Terminal: progress.State == biz.Deleted})); err != nil {
 		return err
 	}
 	return databaseFailure(tx.Commit(ctx))

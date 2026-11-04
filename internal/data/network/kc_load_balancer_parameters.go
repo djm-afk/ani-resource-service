@@ -1,11 +1,8 @@
 package data
 
 import (
-	"context"
 	"fmt"
-
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func lbGatewayListener(l biz.LoadBalancerListener) map[string]any {
@@ -103,19 +100,4 @@ func lbUDPHealthPolicy(r lbResolved, c biz.LoadBalancerComponent) map[string]any
 	}
 	patches = append(patches, patch("cluster.v3.Cluster", "/common_lb_config/healthy_panic_threshold", map[string]any{"value": int64(0)}))
 	return map[string]any{"targetRef": map[string]any{"group": lbGateways.Group, "kind": "Gateway", "name": r.binding.ProviderName}, "type": "JSONPatch", "jsonPatches": patches}
-}
-
-func (p *KCProvider) validateLBCertificate(ctx context.Context, r lbResolved, l biz.LoadBalancerListener) error {
-	ref := l.Parameters.Certificate
-	if ref.Namespace != "" && ref.Namespace != r.binding.Namespace {
-		return &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	secret, err := p.client.Resource(lbSecrets).Namespace(r.binding.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
-	if err != nil {
-		return readFailure(err)
-	}
-	if secret.GetNamespace() != r.binding.Namespace || secret.GetName() != ref.Name || secret.GetUID() == "" || secret.GetLabels()[tenantLabel] != r.work.Resource.TenantID || crString(secret, "type") != "kubernetes.io/tls" || crString(secret, "data", "tls.crt") == "" || crString(secret, "data", "tls.key") == "" {
-		return &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	return nil
 }

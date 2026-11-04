@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
-	"strings"
 
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
@@ -34,7 +33,7 @@ func (n *Network) ReserveNetworkInterface(ctx context.Context, v biz.VM, o biz.O
 	if err != nil {
 		return biz.NetworkInterfaceChoice{}, err
 	}
-	if x.ClusterID != v.Spec.ClusterID || x.Namespace != v.Spec.Namespace || x.NamespaceUID != v.Spec.NamespaceUID || x.ProviderUID == "" {
+	if x.ClusterID != v.Spec.ClusterID || x.Namespace != v.Spec.Namespace || x.NamespaceUID != v.Spec.NamespaceUID {
 		return biz.NetworkInterfaceChoice{}, biz.ErrChanged
 	}
 	return biz.NetworkInterfaceChoice{Mode: "manual", Name: x.Name, VNicID: x.ID, ProviderName: x.ProviderName, ProviderUID: x.ProviderUID, MACAddress: x.MACAddress, IPs: append([]string{}, x.IPs...)}, nil
@@ -100,7 +99,7 @@ func (n *Native) SetNetworkInterface(ctx context.Context, v biz.VM, c biz.Networ
 	}
 	delete(ann, biz.VNicAnnotation)
 	if c.Mode == "manual" {
-		if c.ProviderName == "" || c.ProviderUID == "" {
+		if c.ProviderName == "" {
 			return biz.ErrChanged
 		}
 		ann[biz.VNicAnnotation] = c.ProviderName
@@ -125,7 +124,7 @@ func (n *Network) ResolveNetworkInterfaceChoice(ctx context.Context, v biz.VM, c
 	if err != nil {
 		return c, err
 	}
-	if x.ProviderUID != c.ProviderUID || x.ProviderName != c.ProviderName {
+	if (c.ProviderUID != "" && x.ProviderUID != "" && x.ProviderUID != c.ProviderUID) || x.ProviderName != c.ProviderName {
 		return c, biz.ErrChanged
 	}
 	c.Name = x.Name
@@ -145,11 +144,7 @@ func (n *Network) CurrentNetworkInterface(ctx context.Context, v biz.VM) (biz.Ne
 		out.ObservedAt = *a.ObservedAt
 	}
 	out.IPs = append([]string{}, a.CurrentIPs...)
-	if strings.HasPrefix(a.CurrentVNicName, "auto-") {
-		out.Mode = "automatic"
-	} else if a.CurrentVNicName != "" {
-		out.Mode = "manual"
-	}
-	out.Confirmed = a.State == network.Attached && a.Reason == "" && a.ConfirmedPodUID == a.PodUID && len(a.VMCurrentAddresses) > 0
+	out.Mode = biz.PrimaryNetworkInterface(v).Applied.Mode
+	out.Confirmed = a.State == network.Attached && a.ConfirmedPodUID == a.PodUID
 	return out, nil
 }

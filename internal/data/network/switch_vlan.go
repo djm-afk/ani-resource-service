@@ -4,15 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 )
 
-func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a biz.Attribution, freshness time.Duration) (biz.PlatformResource, error) {
+func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a biz.Attribution) (biz.PlatformResource, error) {
 	if i.Vlan.ClusterID != p.placement.ClusterID {
 		return biz.PlatformResource{}, biz.Fail(biz.InvalidArgument, "cluster is not configured for this service")
 	}
@@ -20,17 +18,17 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 	if err != nil {
 		return biz.PlatformResource{}, err
 	}
-	infra, ok := p.egressInfrastructure.(biz.VirtualSwitchInfrastructure)
-	if !ok {
+	infra := p.virtualSwitchInfrastructure
+	if infra == nil {
 		return biz.PlatformResource{}, biz.Fail(biz.DependencyUnavailable, "virtual switch inventory is unavailable")
 	}
 	// No SQL write transaction is held during external inventory collection.
-	proof, err := infra.VirtualSwitchInventory(ctx, p.placement.ClusterID, sw, i.Vlan.DeviceName)
+	membership, err := infra.VirtualSwitchInventory(ctx, p.placement.ClusterID, sw, i.Vlan.DeviceName)
 	if err != nil {
 		return biz.PlatformResource{}, switchAdmissionFailure(err)
 	}
-	if len(proof.Members) == 0 || proof.Fingerprint == "" {
-		return biz.PlatformResource{}, biz.Fail(biz.DependencyUnavailable, "complete switch membership proof is required")
+	if len(membership.Members) == 0 || membership.Fingerprint == "" {
+		return biz.PlatformResource{}, biz.Fail(biz.DependencyUnavailable, "switch member selection is required")
 	}
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -51,26 +49,24 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
-	if s.Version != sw.Version || s.State != "available" || (s.ClusterID != "" && s.ClusterID != p.placement.ClusterID) || s.BindingState == "degraded" {
+	if s.Version != sw.Version || (s.State == "deleting" || s.State == "deleted") || (s.ClusterID != "" && s.ClusterID != p.placement.ClusterID) {
 		return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "virtual switch binding changed or is unavailable")
 	}
 	now, err := q.DatabaseTime(ctx)
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
-	if proof.Inventory.CollectedAt.IsZero() || proof.Inventory.CollectedAt.After(now) || now.Sub(proof.Inventory.CollectedAt) > time.Minute {
-		return biz.PlatformResource{}, biz.Fail(biz.DependencyUnavailable, "switch inventory expired before acceptance")
-	}
+
 	if s.BindingID == nil {
-		for j := range proof.Members {
-			proof.Members[j].State = "pending"
+		for j := range membership.Members {
+			membership.Members[j].State = "pending"
 		}
-		nodes, err := json.Marshal(proof.Members)
+		nodes, err := json.Marshal(membership.Members)
 		if err != nil {
 			return biz.PlatformResource{}, err
 		}
 		bid := uuid.NewString()
-		s, err = q.BindVirtualSwitch(ctx, sqlcgen.BindVirtualSwitchParams{ResourceID: s.ResourceID, Version: s.Version, ClusterID: p.placement.ClusterID, BindingID: &bid, Fingerprint: proof.Fingerprint, Nodes: nodes})
+		s, err = q.BindVirtualSwitch(ctx, sqlcgen.BindVirtualSwitchParams{ResourceID: s.ResourceID, Version: s.Version, ClusterID: p.placement.ClusterID, BindingID: &bid, Fingerprint: membership.Fingerprint, Nodes: nodes})
 		if err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
@@ -82,7 +78,7 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 		if err = json.Unmarshal(s.Nodes, &frozen); err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
-		if !sameSwitchMembers(frozen, proof.Members) {
+		if !sameSwitchMembers(frozen, membership.Members) {
 			return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "frozen switch membership changed")
 		}
 	}
@@ -98,12 +94,12 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 		if err = json.Unmarshal(device.NodeInventory, &frozenDevice); err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
-		if !sameSwitchDeviceIdentity(frozenDevice, proof.Inventory.Items) {
+		if !sameSwitchDeviceIdentity(frozenDevice, membership.Inventory.Items) {
 			return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "registered device membership changed")
 		}
 	} else {
 		id, op := newEgressID("device"), uuid.NewString()
-		nodes, err := json.Marshal(proof.Inventory.Items)
+		nodes, err := json.Marshal(membership.Inventory.Items)
 		if err != nil {
 			return biz.PlatformResource{}, err
 		}
@@ -111,7 +107,7 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 		if err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
-		if err = q.InsertSwitchDevice(ctx, sqlcgen.InsertSwitchDeviceParams{ResourceID: id, ClusterID: p.placement.ClusterID, DeviceName: i.Vlan.DeviceName, InventoryFingerprint: proof.Inventory.Fingerprint, NodeInventory: nodes, VirtualSwitchID: &s.ResourceID, SwitchBindingID: s.BindingID}); err != nil {
+		if err = q.InsertSwitchDevice(ctx, sqlcgen.InsertSwitchDeviceParams{ResourceID: id, ClusterID: p.placement.ClusterID, DeviceName: i.Vlan.DeviceName, InventoryFingerprint: membership.Inventory.Fingerprint, NodeInventory: nodes, VirtualSwitchID: &s.ResourceID, SwitchBindingID: s.BindingID}); err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
 		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: "adopt_device", State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now}); err != nil {

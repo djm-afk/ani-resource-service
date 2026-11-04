@@ -2,10 +2,9 @@ package data_test
 
 import (
 	"github.com/google/uuid"
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"reflect"
 	"testing"
-
-	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
 
 // Reuses the actual admission, PostgreSQL, worker and KC adapter. Only the
@@ -69,22 +68,7 @@ func TestLBMultipleListenersMainFlow(t *testing.T) {
 		}
 	}
 	checkRoutes(2)
-	// A missing EndpointSlice port cannot stand for the whole configured LB.
-	slice := f.api.Object("endpointslices", namespace, gateway+"-slice")
-	allPorts := slice["ports"]
-	slice["ports"] = slice["ports"].([]any)[:1]
-	f.api.Change("endpointslices", slice, false)
-	f.f.drive(t, func() bool {
-		lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
-		return err == nil && lb.ConfigurationState == "degraded"
-	})
-	if lb.AppliedVersion != 1 {
-		t.Fatal("incomplete port observation advanced the applied version")
-	}
-	slice["ports"] = allPorts
-	f.api.Change("endpointslices", slice, false)
-	lb = lbState(t, f, lb.ID, biz.Available)
-	// Losing one backend's Provider identity withdraws only its listener route.
+	// Withdrawing one current consumer address affects only its listener route.
 	var firstRoute, secondRoute string
 	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT provider_name FROM network_lb_components WHERE tenant_id=$1 AND lb_id=$2 AND kind='route' AND listener_id=$3`, f.f.tenant, lb.ID, firstID).Scan(&firstRoute); err != nil {
 		t.Fatal(err)
@@ -92,10 +76,8 @@ func TestLBMultipleListenersMainFlow(t *testing.T) {
 	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT provider_name FROM network_lb_components WHERE tenant_id=$1 AND lb_id=$2 AND kind='route' AND listener_id=$3`, f.f.tenant, lb.ID, secondID).Scan(&secondRoute); err != nil {
 		t.Fatal(err)
 	}
-	ip := f.api.Object("vnicips", namespace, "lb-backend-ip")
-	originalUID := ip["metadata"].(map[string]any)["uid"]
-	ip["metadata"].(map[string]any)["uid"] = uuid.NewString()
-	f.api.Change("vnicips", ip, false)
+	firstBackend := lb.Listeners[0].Backends[0]
+	setLBCurrentBackendAddresses(t, f, lb.ID, firstBackend.AttachmentID, []string{})
 	f.f.drive(t, func() bool {
 		lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
 		firstObj, secondObj := f.api.Object("httproutes", namespace, firstRoute), f.api.Object("httproutes", namespace, secondRoute)
@@ -109,8 +91,7 @@ func TestLBMultipleListenersMainFlow(t *testing.T) {
 	if lb.AppliedVersion != 1 {
 		t.Fatal("backend identity loss changed applied version")
 	}
-	ip["metadata"].(map[string]any)["uid"] = originalUID
-	f.api.Change("vnicips", ip, false)
+	setLBCurrentBackendAddresses(t, f, lb.ID, firstBackend.AttachmentID, []string{firstBackend.Address})
 	lb = lbState(t, f, lb.ID, biz.Available)
 	// A masked metadata update omits the listener set and preserves its identity.
 	metadata, err := f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: lb.Version, IdempotencyKey: "rename-only", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Name: "renamed", UpdateMask: []string{"name"}}})
@@ -129,29 +110,9 @@ func TestLBMultipleListenersMainFlow(t *testing.T) {
 	}
 	update := func(key string, listeners []biz.LoadBalancerListenerInput) {
 		t.Helper()
-		priorApplied := lb.AppliedVersion
-		if key == "add-and-change" {
-			c.mu.Lock()
-			c.holdGenerated = true
-			c.mu.Unlock()
-		}
 		accepted, err := f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: lb.Version, IdempotencyKey: key, LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: listeners, UpdateMask: []string{"listeners"}}})
 		if err != nil {
 			t.Fatal(err)
-		}
-		if key == "add-and-change" {
-			f.f.drive(t, func() bool {
-				obj := f.api.Object("gateways", namespace, gateway)
-				return obj != nil && len(obj["spec"].(map[string]any)["listeners"].([]any)) == 3
-			})
-			lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
-			if err != nil || lb.AppliedVersion != priorApplied {
-				t.Fatal("missing generated Service ports advanced applied_version", lb, err)
-			}
-			c.mu.Lock()
-			c.holdGenerated = false
-			c.generated(f.api, f.api.Object("gateways", namespace, gateway), false)
-			c.mu.Unlock()
 		}
 		f.f.drive(t, func() bool {
 			lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)

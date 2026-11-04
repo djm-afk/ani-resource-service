@@ -28,13 +28,11 @@ type NetworkAttachment struct {
 	Plan                []byte
 	State               string
 	Reason              string
-	ProtocolBlocked     bool
 	Version             int64
 	PodName             string
 	PodUid              string
 	ConfirmUid          string
 	FinalizationID      *string
-	ProviderRelations   []byte
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	ObservedAt          *time.Time
@@ -46,17 +44,18 @@ type NetworkAttachment struct {
 	RequestedGeneration int64
 	ProcessedGeneration int64
 	RetryNotBefore      time.Time
-	EvidenceHash        string
-	EvidenceAppliedAt   time.Time
 	ConsumerType        string
+	ObservationError    string
+	CurrentVnicName     string
+	CurrentVnicUid      string
+	CurrentMacAddress   string
+	CurrentIps          []string
 }
 
 type NetworkAttachmentConsumerSnapshot struct {
 	TenantID                  string
 	AttachmentID              string
 	SnapshotRevision          int64
-	SnapshotHash              string
-	RootController            []byte
 	Snapshot                  []byte
 	ConfirmedSnapshotRevision int64
 	ConfirmedPodUid           string
@@ -137,9 +136,6 @@ type NetworkDefaultVpcEgress struct {
 	Name                string
 	PoolID              string
 	PoolRevision        int64
-	PoolProviderUid     string
-	AdmissionHash       string
-	AdmittedAt          time.Time
 	State               string
 	Phase               string
 	Reason              string
@@ -153,19 +149,22 @@ type NetworkDefaultVpcEgress struct {
 	SnatBindingID       string
 	Address             string
 	AppliedEnabled      pgtype.Bool
-	TargetGeneration    int64
 	PendingAction       string
 	PendingUnknown      bool
 	PendingSince        *time.Time
 	LeaseOwner          *string
 	LeaseUntil          *time.Time
 	LeaseEpoch          int64
-	NextRunAt           time.Time
+	NextRunAt           pgtype.Timestamptz
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	ObservedAt          *time.Time
 	RetiredAt           *time.Time
 	EipID               string
+	ObservationError    string
+	RequestedGeneration int64
+	ProcessedGeneration int64
+	RetryNotBefore      time.Time
 }
 
 type NetworkDefaultVpcEgressHistory struct {
@@ -275,12 +274,10 @@ type NetworkIdempotency struct {
 }
 
 type NetworkLbCapability struct {
-	ClusterID      string
-	Ready          bool
-	Reason         string
-	ObservedAt     time.Time
-	Fingerprint    string
-	ProviderImages []string
+	ClusterID  string
+	Ready      bool
+	Reason     string
+	ObservedAt time.Time
 }
 
 type NetworkLbComponent struct {
@@ -349,19 +346,6 @@ type NetworkLbConfigurationMember struct {
 	Weight        int32
 }
 
-type NetworkLbGeneratedResource struct {
-	TenantID     string
-	ClusterID    string
-	Namespace    string
-	LbID         string
-	Kind         string
-	ProviderName string
-	ProviderUid  string
-	GatewayUid   string
-	ObservedAt   time.Time
-	ReleasedAt   *time.Time
-}
-
 type NetworkLbListener struct {
 	TenantID   string
 	ClusterID  string
@@ -394,10 +378,6 @@ type NetworkLbMember struct {
 	Address      string
 	Port         int32
 	PodUid       string
-	VnicName     string
-	VnicUid      string
-	VnicipName   string
-	VnicipUid    string
 	State        string
 	Reason       string
 	ObservedAt   *time.Time
@@ -414,8 +394,6 @@ type NetworkLbRetiredBinding struct {
 	CleanupTargetVersion int64
 	OperationID          string
 	OperationState       string
-	VipOccupiedRevision  string
-	VipAbsenceRevision   string
 	CleanupCompletedAt   time.Time
 }
 
@@ -514,14 +492,10 @@ type NetworkLoadBalancer struct {
 	Reason                string
 	UpdatedAt             time.Time
 	ObservedAt            *time.Time
-	VipOccupiedRevision   string
-	VipAbsenceRevision    string
 	LastOperationID       *string
 	DesiredVersion        int64
 	AppliedVersion        int64
 	ConfigurationState    string
-	DataPlaneState        string
-	DataPlaneObservedAt   *time.Time
 	AcceptedConfigVersion pgtype.Int8
 	AppliedConfigVersion  pgtype.Int8
 	ProviderTargetVersion pgtype.Int8
@@ -595,8 +569,7 @@ type NetworkPlatformReconciliation struct {
 	RequestedGeneration int64
 	ProcessedGeneration int64
 	RetryNotBefore      time.Time
-	EvidenceHash        string
-	EvidenceAppliedAt   time.Time
+	ObservationError    string
 }
 
 type NetworkPlatformResource struct {
@@ -614,34 +587,28 @@ type NetworkPlatformResource struct {
 	LastOperationID string
 	ProviderName    string
 	ProviderUid     string
-	ProviderImages  []string
 	BindingID       string
 	PendingAction   string
 	PendingSince    *time.Time
 }
 
 type NetworkProviderBinding struct {
-	TenantID                   string
-	VpcID                      *string
-	BindingID                  string
-	ClusterID                  string
-	Namespace                  string
-	ProviderName               string
-	ProviderUid                string
-	PendingAction              string
-	PendingSince               *time.Time
-	SubnetID                   *string
-	ResourceKind               string
-	EipID                      *string
-	SnatID                     *string
-	CreateDispatched           bool
-	LbID                       *string
-	ProviderReady              bool
-	ProviderObservedAt         *time.Time
-	ProviderObservedUid        string
-	ProviderGeneration         int64
-	ProviderObservedGeneration int64
-	VnicID                     *string
+	TenantID         string
+	VpcID            *string
+	BindingID        string
+	ClusterID        string
+	Namespace        string
+	ProviderName     string
+	ProviderUid      string
+	PendingAction    string
+	PendingSince     *time.Time
+	SubnetID         *string
+	ResourceKind     string
+	EipID            *string
+	SnatID           *string
+	CreateDispatched bool
+	LbID             *string
+	VnicID           *string
 }
 
 type NetworkPublicPool struct {
@@ -679,13 +646,12 @@ type NetworkReconciliation struct {
 	RequestedGeneration int64
 	ProcessedGeneration int64
 	RetryNotBefore      time.Time
-	EvidenceHash        string
-	EvidenceAppliedAt   time.Time
 	EipID               *string
 	SnatID              *string
 	Retired             bool
 	LbID                *string
 	VnicID              *string
+	ObservationError    string
 }
 
 type NetworkResourceHistory struct {
@@ -735,14 +701,18 @@ type NetworkSecurityGroupOperation struct {
 }
 
 type NetworkSecurityGroupReconciliation struct {
-	TenantID         string
-	TargetType       string
-	TargetID         string
-	RequestedVersion int64
-	NextRunAt        time.Time
-	LeaseOwner       *string
-	LeaseUntil       *time.Time
-	LeaseEpoch       int64
+	TenantID            string
+	TargetType          string
+	TargetID            string
+	RequestedVersion    int64
+	NextRunAt           pgtype.Timestamptz
+	LeaseOwner          *string
+	LeaseUntil          *time.Time
+	LeaseEpoch          int64
+	ObservationError    string
+	RequestedGeneration int64
+	ProcessedGeneration int64
+	RetryNotBefore      time.Time
 }
 
 type NetworkSecurityGroupReference struct {
@@ -762,26 +732,25 @@ type NetworkSecurityGroupTarget struct {
 }
 
 type NetworkSnatBinding struct {
-	TenantID         string
-	SnatID           string
-	ClusterID        string
-	Namespace        string
-	Name             string
-	Description      string
-	VpcID            string
-	EipID            string
-	DesiredEnabled   bool
-	AppliedEnabled   pgtype.Bool
-	TargetGeneration int64
-	State            string
-	Reason           string
-	Version          int64
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	ObservedAt       *time.Time
-	LastOperationID  string
-	Purpose          string
-	SystemOwnerVpc   *string
+	TenantID        string
+	SnatID          string
+	ClusterID       string
+	Namespace       string
+	Name            string
+	Description     string
+	VpcID           string
+	EipID           string
+	DesiredEnabled  bool
+	AppliedEnabled  pgtype.Bool
+	State           string
+	Reason          string
+	Version         int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	ObservedAt      *time.Time
+	LastOperationID string
+	Purpose         string
+	SystemOwnerVpc  *string
 }
 
 type NetworkSubnet struct {
@@ -865,11 +834,15 @@ type NetworkVirtualSwitchOperation struct {
 }
 
 type NetworkVirtualSwitchReconciliation struct {
-	ResourceID string
-	NextRunAt  time.Time
-	LeaseOwner *string
-	LeaseUntil *time.Time
-	LeaseEpoch int64
+	ResourceID          string
+	NextRunAt           time.Time
+	LeaseOwner          *string
+	LeaseUntil          *time.Time
+	LeaseEpoch          int64
+	ObservationError    string
+	RequestedGeneration int64
+	ProcessedGeneration int64
+	RetryNotBefore      time.Time
 }
 
 type NetworkVlanNetwork struct {
@@ -953,22 +926,20 @@ type NetworkVpc struct {
 }
 
 type NetworkVpcBaseConnectivity struct {
-	TenantID           string
-	VpcID              string
-	ClusterID          string
-	Namespace          string
-	PoolID             string
-	PoolRevision       int64
-	Purpose            string
-	EipID              string
-	SnatID             string
-	OperationID        string
-	State              string
-	Reason             string
-	ProviderReady      bool
-	ProviderObservedAt *time.Time
-	ObservedAt         *time.Time
-	Terminating        bool
-	Version            int64
-	CreatedAt          time.Time
+	TenantID     string
+	VpcID        string
+	ClusterID    string
+	Namespace    string
+	PoolID       string
+	PoolRevision int64
+	Purpose      string
+	EipID        string
+	SnatID       string
+	OperationID  string
+	State        string
+	Reason       string
+	ObservedAt   *time.Time
+	Terminating  bool
+	Version      int64
+	CreatedAt    time.Time
 }

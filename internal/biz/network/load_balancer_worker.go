@@ -15,20 +15,21 @@ type LoadBalancerComponent struct {
 }
 type LoadBalancerMemberIdentity struct {
 	LoadBalancerBackend
-	PodName, PodUID, VNicName, VNicUID, VNicIPName, VNicIPUID string
+	PodUID string
 }
 type LoadBalancerWork struct {
-	VIPOccupiedRevision, VIPAbsenceRevision string
-	LoadBalancer                            LoadBalancer
-	Members                                 []LoadBalancerMemberIdentity
-	Components                              []LoadBalancerComponent
+	LoadBalancer LoadBalancer
+	Members      []LoadBalancerMemberIdentity
+	Components   []LoadBalancerComponent
 }
 type LoadBalancerComponentObservation struct {
-	Conflict                         bool
-	ID, Identity                     string
-	Exists, Matches, Ready, Deleting bool
-	ClearPending, Deleted            bool
-	AppliedVersion                   int64
+	Conflict                  bool
+	ID, Identity              string
+	Exists, Matches, Deleting bool
+	Ready                     *bool
+	StatusReason              Reason
+	ClearPending, Deleted     bool
+	AppliedVersion            int64
 }
 type LoadBalancerMemberObservation struct {
 	ID       string
@@ -36,22 +37,11 @@ type LoadBalancerMemberObservation struct {
 	Reason   Reason
 }
 
-// Generated resources are observed identities, not specifications owned by
-// Network. The adapter proves their entire owner chain before returning them.
-type LoadBalancerGeneratedResource struct {
-	Kind, Namespace, Name, Identity, GatewayIdentity string
-	Released                                         bool
-}
 type LoadBalancerObservation struct {
-	GeneratedConflict                                                     bool
-	VIPOccupiedRevision, VIPAbsenceRevision                               string
-	Proof                                                                 ObservationProof
-	Components                                                            []LoadBalancerComponentObservation
-	Members                                                               []LoadBalancerMemberObservation
-	Generated                                                             []LoadBalancerGeneratedResource
-	DependenciesReady, GeneratedReady, GeneratedReleased, AddressReleased bool
-	ConfigurationState                                                    string
-	AppliedVersion                                                        int64
+	Components         []LoadBalancerComponentObservation
+	Members            []LoadBalancerMemberObservation
+	ConfigurationState string
+	AppliedVersion     int64
 }
 type LoadBalancerProvider interface {
 	ObserveLoadBalancer(context.Context, Work) (LoadBalancerObservation, error)
@@ -67,222 +57,226 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 	if !ok || !repoOK || work.Resource.LoadBalancer == nil {
 		return errors.New("LB lifecycle dependencies unavailable")
 	}
-	p := Progress{State: work.Resource.State, Identity: work.KnownIdentity, NextDelay: w.policy.ObserveEvery, OperationState: Retrying}
-	// The repository establishes this proof under the resource/lease fence.
-	// Target zero alone never authorizes bypassing unknown CREATE recovery.
+	p := Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity, NextDelay: w.policy.ObserveEvery}
+	if work.ActiveOperation {
+		p.OperationState = Retrying
+	}
+	finish := func() error {
+		if p.Backoff {
+			p.NextDelay = w.retryDelay(work.Attempt)
+		}
+		err := w.finish(ctx, work, p)
+		if w.observer != nil {
+			w.observer(ctx, work, p, err)
+		}
+		return lbLeaseResult(err)
+	}
 	if work.CancelUnsent {
-		p.State, p.OperationState, p.ClearPending = Deleted, Succeeded, true
-		return lbLeaseResult(w.finish(ctx, work, p))
+		p.State, p.OperationState, p.ClearPending, p.Reason = Deleted, Succeeded, true, ""
+		return finish()
 	}
-	if work.GateReason != "" {
-		p.Reason, p.OperationState, p.Backoff = work.GateReason, Blocked, true
-		p.NextDelay = w.retryDelay(work.Attempt)
-		return lbLeaseResult(w.finish(ctx, work, p))
-	}
-	callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
-	o, err := provider.ObserveLoadBalancer(callCtx, work)
+	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
+	o, err := provider.ObserveLoadBalancer(call, work)
 	cancel()
 	if err != nil {
-		p.ProviderError = err
-		p.Reason = observationReason(err)
-		p.OperationState, p.Backoff = Blocked, true
-		if p.State == Available && p.Reason == ProviderOwnership {
-			p.State = Degraded
+		p.ProviderError, p.OperationReason, p.Backoff = err, observationReason(err), true
+		if providerKind(err) != ProviderConflict {
+			p.ObservationError = observationReason(err)
 		}
-	} else {
-		p.Observed, p.Proof, p.LoadBalancer = true, o.Proof, &o
-		o.ConfigurationState = "applying"
-		deleting := p.State == Deleting || p.State == Deleted
-		runtime := ProjectLoadBalancerListeners(EffectiveLoadBalancerListeners(work.Resource.LoadBalancer.LoadBalancer))
-		draining := !deleting && len(runtime) == 0
-		removing := deleting || draining
-		allEligible := lbRuntimeMembersEligible(runtime, o)
-		// A changed/missing backend must first be removed from the Route.
-		// This safety update also runs during ordinary continuous observation.
-		order := []string{"retired_route", "retired_policy", "backend", "envoy_proxy", "gateway", "policy", "route"}
-		if !allEligible {
-			order = []string{"retired_route", "retired_policy", "route", "backend", "envoy_proxy", "gateway", "policy"}
+		if work.ActiveOperation {
+			p.OperationState = Blocked
 		}
-		if removing {
-			order = []string{"route", "policy", "gateway", "backend", "envoy_proxy"}
-		}
-		if o.GeneratedConflict {
-			// A foreign generated occupant blocks Gateway/address cleanup, but
-			// must not prevent withdrawing an invalid IP from our owned Route.
-			order = nil
-			if removing {
-				order = []string{"route", "policy"}
-			} else if !allEligible {
-				order = []string{"route"}
+		return finish()
+	}
+	p.Observed = true
+	lb := work.Resource.LoadBalancer.LoadBalancer
+	o.ConfigurationState, o.AppliedVersion = lb.ConfigurationState, lb.AppliedVersion
+	deleting := p.State == Deleting || p.State == Deleted
+	runtime := ProjectLoadBalancerListeners(EffectiveLoadBalancerListeners(lb))
+	draining := !deleting && len(runtime) == 0
+	removing := deleting || draining
+	eligible := lbRuntimeMembersEligible(runtime, o)
+	order := []string{"retired_route", "retired_policy", "backend", "envoy_proxy", "gateway", "policy", "route"}
+	if !eligible {
+		order = []string{"retired_route", "retired_policy", "route", "backend", "envoy_proxy", "gateway", "policy"}
+	}
+	if removing {
+		order = []string{"route", "policy", "gateway", "backend", "envoy_proxy"}
+	}
+	allReady, acted, reportedFalse, managementBlocked := true, false, false, false
+	pendingReason := Reason("")
+	for _, kind := range order {
+		for _, c := range work.Resource.LoadBalancer.Components {
+			retiredListener := c.ListenerID != "" && !lbDesiredListenerComponent(work, c)
+			selected := c.Kind
+			if LoadBalancerIsRoute(c.Kind) {
+				selected = "route"
+			} else if c.Kind == "client_policy" || c.Kind == "patch_policy" {
+				selected = "policy"
 			}
-		}
-		allReady, acted := !o.GeneratedConflict, false
-		for _, kind := range order {
-			if (kind == "backend" || kind == "envoy_proxy") && removing && (!o.GeneratedReleased || !o.AddressReleased) {
-				allReady, p.Reason = false, CleanupPending
+			if retiredListener && !removing {
+				selected = "retired_" + selected
+			}
+			if selected != kind {
+				continue
+			}
+			v, found := lbComponentObservation(o, c.ID)
+			if !found {
+				allReady = false
+				continue
+			}
+			retired := c.Deleted || retiredListener || (c.Kind == "backend" && !lbDesiredMember(work, c.MemberID))
+			remove := removing || retired
+			// A different UID ends the original lifecycle. Never delete its replacement.
+			if remove && c.Identity != "" && v.Exists && v.Identity != c.Identity {
+				v = LoadBalancerComponentObservation{ID: c.ID, Identity: c.Identity}
+			}
+			if v.Conflict || (v.Exists && (v.Identity == "" || (c.Identity != "" && c.Identity != v.Identity))) {
+				allReady, managementBlocked = false, true
+				p.OperationReason = ProviderOwnership
 				break
 			}
-			for _, c := range work.Resource.LoadBalancer.Components {
-				retiredListener := c.ListenerID != "" && !lbDesiredListenerComponent(work, c)
-				selectedKind := c.Kind
-				if LoadBalancerIsRoute(c.Kind) {
-					selectedKind = "route"
-				} else if c.Kind == "client_policy" || c.Kind == "patch_policy" {
-					selectedKind = "policy"
-				}
-				if retiredListener && !removing {
-					selectedKind = "retired_" + selectedKind
-				}
-				if selectedKind != kind {
-					continue
-				}
-				v, exists := lbComponentObservation(o, c.ID)
-				if !exists {
-					allReady, p.Reason = false, ProviderUnknown
-					break
-				}
-				if v.Conflict {
-					allReady, p.Reason = false, ProviderOwnership
-					break
-				}
-				retired := c.Deleted || retiredListener || (c.Kind == "backend" && !lbDesiredMember(work, c.MemberID))
-				remove := removing || retired
-				if retired && c.Kind == "backend" && !removing && (!lbRouteCurrent(work, o) || !o.GeneratedReady) {
-					allReady = false
-					continue
-				}
-				if v.Exists && (v.Identity == "" || (c.Identity != "" && c.Identity != v.Identity)) {
-					allReady, p.Reason = false, ProviderOwnership
-					break
-				}
-				if !v.Exists && c.PendingAction == "create" {
-					allReady, p.Reason = false, ProviderUnknown
-					break
-				}
-				action := ""
-				if remove {
-					if !v.Exists {
-						v.Deleted, v.ClearPending = true, true
-						lbReplaceObservation(&o, v)
-						continue
-					}
-					allReady = false
-					if !v.Deleting {
-						action = "delete"
-					} else {
-						p.Reason = CleanupPending
-					}
-				} else if !v.Exists {
-					allReady = false
-					if c.Identity != "" || c.Deleted || !work.ActiveOperation {
-						p.Reason = ProviderMissing
-						break
-					}
-					if !o.DependenciesReady || !allEligible {
-						p.Reason = ProviderNotReady
-						continue
-					}
-					action = "create"
-				} else if !v.Matches {
-					allReady = false
-					if c.Kind == "backend" {
-						p.Reason = ProviderOwnership
-						break
-					}
-					// With a lost update, an authoritative read of the old spec
-					// cannot prove the pending request was rejected. A new CAS
-					// update is safe: only one request at the observed RV can win.
-					action = "update"
-				} else {
-					v.ClearPending = c.PendingAction != "delete"
-					if v.Ready {
-						v.AppliedVersion = work.Resource.LoadBalancer.LoadBalancer.ProviderTargetVersion
-					}
+			if retired && c.Kind == "backend" && !removing && !lbRouteCurrent(work, o) {
+				allReady = false
+				continue
+			}
+			action := ""
+			switch {
+			case remove:
+				if !v.Exists {
+					v.Deleted, v.ClearPending = true, true
 					lbReplaceObservation(&o, v)
-					if !v.Ready {
-						allReady = false
-						p.Reason = ProviderNotReady
-					}
+					continue
 				}
-				if action != "" {
-					if err = repository.BeginLoadBalancerMutation(ctx, work, c, action, v.Identity); err != nil {
-						return lbLeaseResult(err)
-					}
-					if v.Identity != "" {
-						c.Identity = v.Identity
-					}
-					callCtx, cancel = context.WithTimeout(ctx, w.policy.RequestTimeout)
-					result, mutationErr := provider.MutateLoadBalancer(callCtx, work, c, action, o)
-					cancel()
-					if mutationErr != nil {
-						p.Reason, p.Backoff = providerReason(mutationErr), true
-						v.ClearPending = providerKind(mutationErr) != ProviderUncertain
-						lbReplaceObservation(&o, v)
-					} else {
-						result.ClearPending = action != "delete"
-						lbReplaceObservation(&o, result)
-						p.Reason = ProviderNotReady
-					}
-					// Mutations are not observations of the completed configuration.
-					allReady, acted = false, true
-					p.NextDelay = w.policy.RetryMin
+				allReady = false
+				if !v.Deleting {
+					action = "delete"
+				} else {
+					pendingReason = CleanupPending
+				}
+			case !v.Exists:
+				allReady = false
+				if c.Identity != "" || c.Deleted || !work.ActiveOperation {
+					pendingReason, reportedFalse = ProviderMissing, true
 					break
 				}
+				if c.Kind == "backend" && !lbMemberEligibleForWorker(o, c.MemberID) {
+					continue
+				}
+				action = "create"
+			case !v.Matches:
+				allReady = false
+				if c.Kind == "backend" {
+					p.OperationReason, managementBlocked = ProviderOwnership, true
+					break
+				}
+				action = "update"
+			default:
+				v.ClearPending = c.PendingAction != "delete"
+				if v.Ready != nil && *v.Ready {
+					v.AppliedVersion = lb.ProviderTargetVersion
+				} else {
+					allReady = false
+					if v.Ready != nil {
+						reportedFalse = true
+						pendingReason = v.StatusReason
+					}
+				}
+				lbReplaceObservation(&o, v)
 			}
-			if acted || p.Reason == ProviderUnknown || p.Reason == ProviderOwnership || (removing && !allReady) {
+			if managementBlocked {
 				break
 			}
-		}
-		if o.GeneratedConflict {
-			p.Reason, p.OperationState = ProviderOwnership, Blocked
-		}
-		if deleting {
-			if allReady && o.GeneratedReleased && o.AddressReleased {
-				p.State, p.OperationState, p.Reason = Deleted, Succeeded, ""
+			if action == "" {
+				continue
 			}
-		} else if draining {
-			if allReady && o.GeneratedReleased && o.AddressReleased {
-				p.State, p.OperationState, p.Reason = Provisioning, Succeeded, ""
-				o.ConfigurationState, o.AppliedVersion = "waiting_for_backends", work.Resource.LoadBalancer.LoadBalancer.ProviderTargetVersion
-			} else if p.Reason == "" {
-				p.Reason = CleanupPending
+			if action == "update" && c.Identity == "" {
+				// Save the recovered CREATE identity before the next lease can
+				// begin an update against that registered object.
+				v.ClearPending = true
+				lbReplaceObservation(&o, v)
+				acted, p.NextDelay = true, w.policy.RetryMin
+				break
 			}
-		} else if allReady && allEligible && lbRuntimeComponentsCovered(work, runtime) && o.DependenciesReady && o.GeneratedReady {
-			p.State, p.OperationState, p.Reason = Available, Succeeded, ""
-			o.ConfigurationState, o.AppliedVersion = "configured", work.Resource.LoadBalancer.LoadBalancer.ProviderTargetVersion
-		} else if work.Resource.LoadBalancer.LoadBalancer.AppliedVersion > 0 {
-			p.State, o.ConfigurationState = Degraded, "degraded"
-		}
-		if !removing && p.State != Available && p.Reason == "" {
-			p.Reason = ProviderNotReady
-		}
-		if !allEligible && !removing && p.Reason != ProviderUnknown && p.Reason != ProviderOwnership {
-			p.Reason = BackendIdentityMismatch
-		}
-		for _, v := range o.Components {
-			if v.ID == work.BindingID {
-				if v.Identity != "" {
-					p.Identity = v.Identity
+			if err = repository.BeginLoadBalancerMutation(ctx, work, c, action, v.Identity); err != nil {
+				return lbLeaseResult(err)
+			}
+			if v.Identity != "" {
+				c.Identity = v.Identity
+			}
+			call, cancel = context.WithTimeout(ctx, w.policy.RequestTimeout)
+			result, mutateErr := provider.MutateLoadBalancer(call, work, c, action, o)
+			cancel()
+			if mutateErr != nil {
+				p.ProviderError, p.OperationReason, p.Backoff = mutateErr, providerReason(mutateErr), true
+				v.ClearPending = providerKind(mutateErr) != ProviderUncertain
+				lbReplaceObservation(&o, v)
+				if work.ActiveOperation && providerKind(mutateErr) == ProviderReject {
+					if deleting {
+						p.OperationState = Blocked
+					} else {
+						p.OperationState = OpFailed
+					}
 				}
-				p.ClearPending = v.ClearPending
+			} else {
+				result.ClearPending = action != "delete"
+				lbReplaceObservation(&o, result)
 			}
+			allReady, acted = false, true
+			p.NextDelay = w.policy.RetryMin
+			break
 		}
-		p.LoadBalancer = &o
+		if acted || managementBlocked || (removing && !allReady) {
+			break
+		}
 	}
-	if p.Reason == ProviderUnknown || p.Reason == ProviderOwnership || p.Reason == CleanupPending {
-		p.OperationState = Blocked
+	if managementBlocked {
+		if work.ActiveOperation {
+			p.OperationState = Blocked
+		}
+		p.Backoff = true
+	} else if deleting {
+		if allReady {
+			p.State, p.OperationState, p.Reason = Deleted, Succeeded, ""
+		}
+	} else if draining {
+		if allReady {
+			p.State, p.OperationState, p.Reason = Provisioning, Succeeded, ""
+			o.ConfigurationState, o.AppliedVersion = "waiting_for_backends", lb.ProviderTargetVersion
+		}
+	} else if allReady && eligible && lbRuntimeComponentsCovered(work, runtime) {
+		p.State, p.Reason = Available, ""
+		if work.ActiveOperation {
+			p.OperationState = Succeeded
+		}
+		o.ConfigurationState, o.AppliedVersion = "configured", lb.ProviderTargetVersion
+	} else {
+		if !eligible {
+			reportedFalse, pendingReason = true, BackendIdentityMismatch
+		}
+		if reportedFalse {
+			p.Reason = pendingReason
+			if p.Reason == "" {
+				p.Reason = ProviderNotReady
+			}
+			if work.Resource.State == Available || work.Resource.State == Degraded {
+				p.State, o.ConfigurationState = Degraded, "degraded"
+			}
+		} else if work.ActiveOperation {
+			p.Reason = ProviderStatusUnreported
+			o.ConfigurationState = "applying"
+		}
 	}
-	if p.Reason != "" && !p.Backoff {
-		p.Backoff = work.ActiveOperation && p.NextDelay != w.policy.RetryMin
+	for _, v := range o.Components {
+		if v.ID == work.BindingID {
+			if v.Identity != "" && !v.Conflict {
+				p.Identity = v.Identity
+			}
+			p.ClearPending = v.ClearPending
+		}
 	}
-	if p.Backoff {
-		p.NextDelay = w.retryDelay(work.Attempt)
-	}
-	err = w.finish(ctx, work, p)
-	if w.observer != nil {
-		w.observer(ctx, work, p, err)
-	}
-	return lbLeaseResult(err)
+	p.LoadBalancer = &o
+	return finish()
 }
 func lbLeaseResult(err error) error {
 	if errors.Is(err, ErrLeaseLost) {
@@ -322,7 +316,7 @@ func lbRouteCurrent(w Work, o LoadBalancerObservation) bool {
 		if LoadBalancerIsRoute(c.Kind) && !c.Deleted && lbDesiredListenerComponent(w, c) {
 			found = true
 			v, ok := lbComponentObservation(o, c.ID)
-			if !ok || !v.Exists || !v.Matches || !v.Ready {
+			if !ok || !v.Exists || !v.Matches || v.Ready == nil || !*v.Ready {
 				return false
 			}
 		}
@@ -401,4 +395,13 @@ func lbRuntimeComponentsCovered(work Work, listeners []LoadBalancerListener) boo
 		}
 	}
 	return true
+}
+
+func lbMemberEligibleForWorker(o LoadBalancerObservation, id string) bool {
+	for _, m := range o.Members {
+		if m.ID == id {
+			return m.Eligible
+		}
+	}
+	return false
 }

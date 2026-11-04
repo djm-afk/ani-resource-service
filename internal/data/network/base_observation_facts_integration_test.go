@@ -1,7 +1,6 @@
 package data_test
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -41,7 +40,6 @@ func baseFactsDirectWorker(t *testing.T, f *egressFixture, kube string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.p.UseEgressInfrastructure(provider)
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = 100 * time.Millisecond
 	policy.RetryMin, policy.RetryMax = time.Millisecond, 10*time.Millisecond
@@ -55,7 +53,7 @@ func TestBaseObservationFailurePreservesConfirmedSnatAppliedFacts(t *testing.T) 
 	var fail atomic.Bool
 	f, _, _, kube := newBaseKCFixture(t, func(w http.ResponseWriter, r *http.Request, _ *controlled.Server) bool {
 		if fail.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/snats/") {
-			http.Error(w, "temporary SNAT read failure", http.StatusServiceUnavailable)
+			http.Error(w, "read failure", http.StatusServiceUnavailable)
 			return true
 		}
 		return false
@@ -63,105 +61,75 @@ func TestBaseObservationFailurePreservesConfirmedSnatAppliedFacts(t *testing.T) 
 	vpc := baseState(t, f, createBaseVPC(t, f, "snat-read-facts").ID, biz.Available)
 	_, snatID := baseIDs(t, f, vpc.ID)
 	baseFactsDirectWorker(t, f, kube)
-	var before time.Time
-	if err := f.owner.QueryRow(f.ctx, `SELECT observed_at FROM network_snat_bindings WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID).Scan(&before); err != nil {
-		t.Fatal(err)
-	}
-	assertPreserved := func(reason biz.Reason) {
+	projection := func() string {
 		t.Helper()
-		var preserved bool
-		if err := f.owner.QueryRow(f.ctx, `SELECT state='available' AND reason=$3 AND applied_enabled IS TRUE AND observed_at=$4 FROM network_snat_bindings WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID, string(reason), before).Scan(&preserved); err != nil || !preserved {
-			t.Fatal("unsuccessful observation erased or renewed confirmed SNAT facts", preserved, err)
+		var value string
+		if err := f.owner.QueryRow(f.ctx, `SELECT jsonb_build_array(state,reason,applied_enabled,observed_at)::text FROM network_snat_bindings WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID).Scan(&value); err != nil {
+			t.Fatal(err)
 		}
+		return value
 	}
+	before := projection()
 	fail.Store(true)
 	baseFactsStep(t, f, snatID)
-	assertPreserved(biz.ProviderUnavailable)
-	// The dependency gate skips the provider call altogether. It must preserve
-	// exactly the same known result, without making its old evidence fresh.
-	f.p.UseBaseConnectivityFreshness(time.Nanosecond)
+	if projection() != before {
+		t.Fatal("read failure changed confirmed SNAT state/reason/applied/time")
+	}
+	var observationError string
+	if err := f.owner.QueryRow(f.ctx, `SELECT observation_error FROM network_reconciliations WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID).Scan(&observationError); err != nil || observationError != string(biz.ProviderUnavailable) {
+		t.Fatal(observationError, err)
+	}
+	current, err := f.n.GetVPC(f.ctx, f.tenant, vpc.ID)
+	if err != nil || current.State != biz.Available || current.BaseConnectivity == nil || current.BaseConnectivity.State != "ready" || !current.BaseConnectivity.ObservationStale {
+		t.Fatal(current, err)
+	}
+	fail.Store(false)
 	baseFactsStep(t, f, snatID)
-	assertPreserved(biz.BaseConnectivityNotReady)
+	if err := f.owner.QueryRow(f.ctx, `SELECT observation_error FROM network_reconciliations WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID).Scan(&observationError); err != nil || observationError != "" {
+		t.Fatal("successful current read did not clear diagnostic", observationError, err)
+	}
 }
 
-func TestBaseObservationVPCReadFailureRetainsOnlyUnexpiredOriginalProof(t *testing.T) {
+func TestVPCReadFailureDoesNotRewriteManagedEgressProjection(t *testing.T) {
 	var fail atomic.Bool
-	f, api, _, kube := newBaseKCFixture(t, func(w http.ResponseWriter, r *http.Request, _ *controlled.Server) bool {
+	f, _, _, kube := newBaseKCFixture(t, func(w http.ResponseWriter, r *http.Request, _ *controlled.Server) bool {
 		if fail.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/vpcs/") {
-			http.Error(w, "temporary VPC read failure", http.StatusServiceUnavailable)
+			http.Error(w, "read failure", http.StatusServiceUnavailable)
 			return true
 		}
 		return false
 	})
 	vpc := baseState(t, f, createBaseVPC(t, f, "vpc-read-facts").ID, biz.Available)
 	baseFactsDirectWorker(t, f, kube)
-	var providerAt, aggregateAt time.Time
-	if err := f.owner.QueryRow(f.ctx, `SELECT provider_observed_at,observed_at FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID).Scan(&providerAt, &aggregateAt); err != nil {
+	var before, after string
+	query := `SELECT to_jsonb(b)::text FROM network_vpc_base_connectivity b WHERE tenant_id=$1 AND vpc_id=$2`
+	if err := f.owner.QueryRow(f.ctx, query, f.tenant, vpc.ID).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
 	fail.Store(true)
 	baseFactsStep(t, f, vpc.ID)
-	var preserved bool
-	if err := f.owner.QueryRow(f.ctx, `SELECT state='ready' AND provider_ready AND provider_observed_at=$3 AND observed_at=$4 FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID, providerAt, aggregateAt).Scan(&preserved); err != nil || !preserved {
-		t.Fatal("temporary read discarded fresh prior VPC readiness", preserved, err)
+	if err := f.owner.QueryRow(f.ctx, query, f.tenant, vpc.ID).Scan(&after); err != nil || before != after {
+		t.Fatal("VPC read error rewrote child relationship", before, after, err)
 	}
-	// Time expiry still closes dependent admission; the failed read must not
-	// prolong either timestamp or continue claiming current provider readiness.
-	f.p.UseBaseConnectivityFreshness(time.Nanosecond)
-	baseFactsStep(t, f, vpc.ID)
-	if err := f.owner.QueryRow(f.ctx, `SELECT state='degraded' AND NOT provider_ready AND provider_observed_at=$3 AND observed_at IS NULL FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID, providerAt).Scan(&preserved); err != nil || !preserved {
-		t.Fatal("expired VPC proof retained readiness", preserved, err)
-	}
-	// A current same-name/different-UID object is never eligible for fallback.
-	f.p.UseBaseConnectivityFreshness(time.Minute)
-	fail.Store(false)
-	baseFactsStep(t, f, vpc.ID)
-	name := strings.Replace(vpc.ID, "_", "-", 1)
-	object := api.Object("vpcs", "tenant-"+f.tenant, name)
-	object["metadata"].(map[string]any)["uid"] = uuid.NewString()
-	api.Change("vpcs", object, false)
-	baseFactsStep(t, f, vpc.ID)
-	if err := f.owner.QueryRow(context.Background(), `SELECT NOT provider_ready AND observed_at IS NULL FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID).Scan(&preserved); err != nil || !preserved {
-		t.Fatal("replacement identity reused last readiness", preserved, err)
+	current, err := f.n.GetVPC(f.ctx, f.tenant, vpc.ID)
+	if err != nil || current.State != vpc.State || current.Reason != vpc.Reason || !current.ObservedAt.Equal(*vpc.ObservedAt) || !current.ObservationStale {
+		t.Fatal(current, err)
 	}
 }
 
-func TestBaseObservationChildFreshnessRecoveryWakesParentOnce(t *testing.T) {
+func TestManagedChildStatusDoesNotFanOutParentHealthWork(t *testing.T) {
 	f, _, _, kube := newBaseKCFixture(t, nil)
-	vpc := baseState(t, f, createBaseVPC(t, f, "child-freshness-recovery").ID, biz.Available)
-	eipID, _ := baseIDs(t, f, vpc.ID)
+	vpc := baseState(t, f, createBaseVPC(t, f, "no-health-fanout").ID, biz.Available)
+	eipID, snatID := baseIDs(t, f, vpc.ID)
 	baseFactsDirectWorker(t, f, kube)
-	f.p.UseBaseConnectivityFreshness(200 * time.Millisecond)
-	var childBefore int64
-	if err := f.owner.QueryRow(f.ctx, `SELECT requested_generation FROM network_reconciliations WHERE tenant_id=$1 AND eip_id=$2`, f.tenant, eipID).Scan(&childBefore); err != nil {
+	var before, after int64
+	query := `SELECT requested_generation FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`
+	if err := f.owner.QueryRow(f.ctx, query, f.tenant, vpc.ID).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(220 * time.Millisecond)
-	baseFactsStep(t, f, vpc.ID)
-	var childAfter int64
-	if err := f.owner.QueryRow(f.ctx, `SELECT requested_generation FROM network_reconciliations WHERE tenant_id=$1 AND eip_id=$2`, f.tenant, eipID).Scan(&childAfter); err != nil || childAfter != childBefore+1 {
-		t.Fatal("timestamp-only VPC proof recovery did not wake child", childBefore, childAfter, err)
-	}
-	var degraded bool
-	if err := f.owner.QueryRow(f.ctx, `SELECT state='degraded' FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID).Scan(&degraded); err != nil || !degraded {
-		t.Fatal("fixture did not reach expired child proof", degraded, err)
-	}
-	generation := func() int64 {
-		t.Helper()
-		var v int64
-		if err := f.owner.QueryRow(f.ctx, `SELECT requested_generation FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID).Scan(&v); err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-	before := generation()
 	baseFactsStep(t, f, eipID)
-	if after := generation(); after != before+1 {
-		t.Fatalf("timestamp-only recovery did not wake parent: before=%d after=%d", before, after)
-	}
-	// Fresh-to-fresh observations do not form an audit -> child -> parent loop.
-	baseFactsStep(t, f, eipID)
-	if after := generation(); after != before+1 {
-		t.Fatalf("stable freshness repeatedly woke parent: before=%d after=%d", before, after)
+	baseFactsStep(t, f, snatID)
+	if err := f.owner.QueryRow(f.ctx, query, f.tenant, vpc.ID).Scan(&after); err != nil || before != after {
+		t.Fatal("child reads queued unrelated parent health checks", before, after, err)
 	}
 }

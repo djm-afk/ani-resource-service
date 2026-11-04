@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
@@ -19,7 +18,7 @@ func (n failingPreflightVMNAD) ResolveVMNetwork(context.Context, biz.VMNetworkSe
 	return biz.VMPrimaryPlan{}, n.err
 }
 
-func TestVMNetworkPreflightPGUsesCurrentProofWithoutRefreshingProjection(t *testing.T) {
+func TestVMNetworkSelectionUsesManagementPlacementWithoutRefreshingProjection(t *testing.T) {
 	f, _, _ := newAutoVMNetwork(t)
 	policy := awaitAutoVMNetwork(t, f)
 	f.r.WorkloadMode = "vm_managed"
@@ -31,7 +30,7 @@ func TestVMNetworkPreflightPGUsesCurrentProofWithoutRefreshingProjection(t *test
 			t.Fatal(err)
 		}
 	}
-	plan, err := f.p.ResolveVMNetworkSelection(ctx, f.r, time.Minute)
+	plan, err := f.p.ResolveVMNetworkSelection(ctx, f.r)
 	if err != nil || plan.NADUID != policy.NADUID {
 		t.Fatalf("old projection blocked current valid network: %+v %v", plan, err)
 	}
@@ -39,7 +38,7 @@ func TestVMNetworkPreflightPGUsesCurrentProofWithoutRefreshingProjection(t *test
 	if err := f.owner.QueryRow(ctx, "SELECT observed_at < clock_timestamp()-interval '60 seconds' FROM network_vpcs WHERE tenant_id=$1 AND vpc_id=$2", f.r.TenantID, f.r.VPCID).Scan(&stillStale); err != nil || !stillStale {
 		t.Fatal("preflight refreshed durable observation", err)
 	}
-	// Prepare repeats the actual current proof under the existing parent locks.
+	// Prepare shares the current Res management selection.
 	if _, err := f.a.Prepare(ctx, f.r); err != nil {
 		t.Fatal("Prepare retained a hidden TTL gate", err)
 	}
@@ -50,8 +49,8 @@ func TestVMNetworkPreflightPGUsesCurrentProofWithoutRefreshingProjection(t *test
 		}
 	}
 	f.api.Mu.Unlock()
-	if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r, time.Minute); err == nil {
-		t.Fatal("same-name replacement admitted")
+	if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r); err != nil {
+		t.Fatal("selection audited the underlying Subnet instead of its Res record", err)
 	}
 }
 
@@ -65,13 +64,13 @@ func TestVMNetworkPreflightPGLogsOnlyAllowlistedReason(t *testing.T) {
 		&biz.Error{Reason: biz.AttachmentConflict, Message: secret, Cause: errors.New(secret)},
 		&biz.Error{Reason: biz.Reason(secret), Message: secret},
 	} {
-		if err := f.p.SetVMNetworkResolver(failingPreflightVMNAD{failure}, time.Minute); err != nil {
+		if err := f.p.SetVMNetworkResolver(failingPreflightVMNAD{failure}); err != nil {
 			t.Fatal(err)
 		}
 		var output bytes.Buffer
 		old := slog.Default()
 		slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
-		_, err := f.p.ResolveVMNetworkSelection(context.Background(), f.r, time.Minute)
+		_, err := f.p.ResolveVMNetworkSelection(context.Background(), f.r)
 		slog.SetDefault(old)
 		if err != failure {
 			t.Fatalf("preflight changed resolver error: %v", err)

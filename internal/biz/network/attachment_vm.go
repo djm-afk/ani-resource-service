@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"strings"
+	"time"
 )
 
 type VMNetworkExpectation struct {
@@ -31,9 +32,15 @@ type VMNetworkResolver interface {
 
 // VMNetworkPreparer is an optional, ancillary part of Network's existing
 // durable Subnet reconciliation. Its failure does not change ordinary network
-// availability; VM admission requires its separately persisted ready identity.
+// availability; it only prepares the NAD declaration owned by this service.
 type VMNetworkPreparer interface {
 	PrepareVMNetwork(context.Context, ProviderTarget) error
+}
+
+// Retry only the unfinished Res declaration after the Subnet projection has
+// committed. It must not rewrite that projection or a completed operation.
+type VMNetworkPreparationRepository interface {
+	RetryVMNetworkPreparation(context.Context, Work, time.Duration) error
 }
 
 // VMReader is implemented by the VM domain. Instance IDs in this mode are VM
@@ -76,67 +83,5 @@ func ValidVMNetworkExpectation(e *VMNetworkExpectation) bool {
 }
 
 func validVMConsumer(a Attachment, c ConsumerSubmission) bool {
-	if c.ProtocolVersion != 3 || c.SnapshotRevision < 1 || c.TenantID != a.TenantID || c.InstanceID != a.InstanceID || c.SubmissionID != a.SubmissionID || c.Generation != a.Generation || c.AttachmentID != a.ID || c.ClusterID != a.ClusterID || c.Namespace != a.Namespace || len(c.CurrentPods) > 1 || len(c.Controllers) > 4096 || len(c.RetiredPods) > 4096 {
-		return false
-	}
-	if c.DesiredRunState != "running" && c.DesiredRunState != "stopped" && c.DesiredRunState != "deleted" {
-		return false
-	}
-	if c.RootController.UID == "" {
-		if c.RootController != (WorkloadReference{}) || len(c.Controllers) != 0 || len(c.CurrentPods) != 0 || len(c.RetiredPods) != 0 {
-			return false
-		}
-	} else if !referenceValid(c.RootController, "kubevirt.io/v1", "VirtualMachine", a.Namespace) {
-		return false
-	}
-	controllers := map[string]WorkloadReference{}
-	for _, item := range c.Controllers {
-		if !referenceValid(item.Reference, "kubevirt.io/v1", "VirtualMachineInstance", a.Namespace) || item.Owner != c.RootController || controllers[item.Reference.UID].UID != "" {
-			return false
-		}
-		controllers[item.Reference.UID] = item.Reference
-	}
-	seen := map[string]bool{}
-	for _, group := range [][]PodReference{c.CurrentPods, c.RetiredPods} {
-		for _, pod := range group {
-			if !referenceValid(pod.Reference, "v1", "Pod", a.Namespace) || controllers[pod.Owner.UID] != pod.Owner || seen[pod.Reference.UID] {
-				return false
-			}
-			seen[pod.Reference.UID] = true
-		}
-	}
-	if c.State == "open" {
-		return c.FinalizationID == "" && c.ClosedAt == nil
-	}
-	if (c.State != "closing" && c.State != "closed") || c.DesiredRunState != "deleted" || !UUIDFinalization(c.FinalizationID) {
-		return false
-	}
-	return c.State != "closed" || (c.ClosedAt != nil && !c.ClosedAt.IsZero() && len(c.CurrentPods) == 0)
-}
-
-// VMClosedProtocolRecoveryMatches authorizes only cleanup of an unchanged,
-// already accepted closure. It grants neither a current Pod nor address use.
-func VMClosedProtocolRecoveryMatches(a Attachment, c ConsumerSubmission) bool {
-	if a.WorkloadMode != "vm_managed" || (a.State != Releasing && a.State != Released) {
-		return false
-	}
-	return closedProtocolSnapshotMatches(a, c)
-}
-
-// ClosedProtocolRecoveryMatches also permits a retained, already released
-// controller attachment to recover after a late relation has gone away. It
-// does not authorize initial controller release from a protocol conflict.
-func ClosedProtocolRecoveryMatches(a Attachment, c ConsumerSubmission) bool {
-	if a.WorkloadMode == "vm_managed" {
-		return VMClosedProtocolRecoveryMatches(a, c)
-	}
-	return a.WorkloadMode == "controller_managed" && a.State == Released && closedProtocolSnapshotMatches(a, c)
-}
-
-func closedProtocolSnapshotMatches(a Attachment, c ConsumerSubmission) bool {
-	if a.ConsumerSnapshot == nil || a.SnapshotRevision < 1 || a.SnapshotHash == "" || a.RootController.UID == "" || a.FinalizationID == "" {
-		return false
-	}
-	return c.State == "closed" && c.DesiredRunState == "deleted" && len(c.CurrentPods) == 0 && c.FinalizationID == a.FinalizationID && c.RootController == a.RootController &&
-		CompareConsumerSnapshot(a, c) == SnapshotAccepted && c.SnapshotRevision == a.SnapshotRevision && ConsumerSnapshotHash(c) == frozenConsumerSnapshotHash(a)
+	return validCurrentConsumer(a, c, 3)
 }

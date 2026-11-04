@@ -2,13 +2,12 @@ package data_test
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"k8s.io/client-go/tools/clientcmd"
+	"testing"
+	"time"
 )
 
 type lbKnownOwners map[string]biz.Attachment
@@ -18,11 +17,13 @@ func (o lbKnownOwners) GetSubmission(_ context.Context, a biz.Attachment) (biz.C
 	if !ok {
 		return biz.ConsumerSubmission{}, biz.Fail(biz.ResourceNotFound, "unknown controlled owner submission")
 	}
-	return consumerFor(known, "open", ""), nil
+	c := consumerFor(known, "open", "")
+	c.PodUIDs = []string{known.PodUID}
+	return c, nil
 }
 func addLBBackend(t *testing.T, f *lbAdmissionFixture, subnet biz.Subnet, name, address string) biz.LoadBalancerBackendInput {
 	t.Helper()
-	attachments := biz.NewAttachments(f.f.p, time.Minute)
+	attachments := biz.NewAttachments(f.f.p)
 	a, err := attachments.Prepare(f.f.ctx, biz.PrepareAttachment{TenantID: f.f.tenant, VPCID: f.vpc.ID, SubnetID: subnet.ID, InstanceID: name, Slot: "primary", RequestKey: name, SubmissionID: uuid.NewString(), Generation: 1, ClusterID: "test-cluster", Namespace: "tenant-" + f.f.tenant})
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +37,10 @@ func addLBBackend(t *testing.T, f *lbAdmissionFixture, subnet biz.Subnet, name, 
 	}
 	f.api.Change("vnics", map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNic", "metadata": map[string]any{"namespace": a.Namespace, "name": name + "-nic", "uid": nicUID, "ownerReferences": owner("Pod", "v1", name, podUID)}, "spec": map[string]any{"type": "VETH", "subnet": a.Plan.PrimaryNetworkRef}}, false)
 	f.api.Change("vnicips", map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNicIP", "metadata": map[string]any{"namespace": a.Namespace, "name": name + "-ip", "uid": ipUID, "ownerReferences": owner("VNic", "networking.kubercloud.com/v1", name+"-nic", nicUID)}, "spec": map[string]any{"subnet": a.Plan.PrimaryNetworkRef, "vNic": name + "-nic", "ipAddress": address}, "status": map[string]any{"vNic": name + "-nic"}}, false)
+	a, err = attachments.Confirm(f.f.ctx, biz.ConfirmAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: a.Version, ClusterID: a.ClusterID, Namespace: a.Namespace, PodName: name, PodUID: podUID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var originalID string
 	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT attachment_id FROM network_attachments WHERE tenant_id=$1 AND instance_id='lb-backend'`, f.f.tenant).Scan(&originalID); err != nil {
 		t.Fatal(err)
@@ -54,7 +59,7 @@ func addLBBackend(t *testing.T, f *lbAdmissionFixture, subnet biz.Subnet, name, 
 	}
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = time.Millisecond
-	worker, err := biz.NewAttachmentWorker(f.f.p, provider, lbKnownOwners{a.ID: a, original.ID: original}, uuid.NewString(), policy)
+	worker, err := biz.NewAttachmentWorker(f.f.p, lbKnownOwners{a.ID: a, original.ID: original}, provider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +68,7 @@ func addLBBackend(t *testing.T, f *lbAdmissionFixture, subnet biz.Subnet, name, 
 			t.Fatal(err)
 		}
 		observed, err := attachments.Get(f.f.ctx, f.f.tenant, a.ID)
-		return err == nil && observed.State == biz.Attached
+		return err == nil && observed.State == biz.Attached && len(observed.CurrentIPs) == 1
 	})
 	return biz.LoadBalancerBackendInput{SubnetID: subnet.ID, Address: address, Port: 8080}
 }

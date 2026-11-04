@@ -10,7 +10,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 )
 
-func TestConfirmedDeleteRetiresTimerAndEventRecoversOriginalIdentity(t *testing.T) {
+func TestConfirmedDeleteRetiresTimerAndIgnoresLaterEvents(t *testing.T) {
 	p, db := database(t)
 	n := newNetwork(t, p, time.Minute)
 	provider := &memoryProvider{}
@@ -46,19 +46,15 @@ func TestConfirmedDeleteRetiresTimerAndEventRecoversOriginalIdentity(t *testing.
 			t.Fatal("terminal timer was still claimable", found, err)
 		}
 	}
-	// An event wakes the retained identity; it does not recreate a new identity
-	// or rewrite the completed user operation.
+	// Later events cannot revive a completed lifetime or mutate a replacement.
 	provider.objects[v.ID] = original
 	if err := p.NotifyResource(ctx, v.TenantID, v.ID); err != nil {
 		t.Fatal(err)
 	}
-	awaitNET05A(t, time.Second, func() bool {
-		if _, err := w.Step(ctx); err != nil {
-			t.Fatal(err)
-		}
-		if err := db.QueryRow(ctx, "SELECT lease_epoch,next_run_at='infinity'::timestamptz FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2", v.TenantID, v.ID).Scan(&after, &parked); err != nil {
-			t.Fatal(err)
-		}
-		return after > before && parked && !provider.objects[v.ID].Exists
-	})
+	if found, err := w.Step(ctx); err != nil || found {
+		t.Fatal("retired task was revived", found, err)
+	}
+	if err := db.QueryRow(ctx, "SELECT lease_epoch,next_run_at='infinity'::timestamptz FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2", v.TenantID, v.ID).Scan(&after, &parked); err != nil || after != before || !parked || !provider.objects[v.ID].Exists {
+		t.Fatal("terminal notification changed original task or external object", after, parked, err)
+	}
 }

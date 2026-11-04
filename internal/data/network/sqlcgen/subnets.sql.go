@@ -118,7 +118,7 @@ func (q *Queries) AdvanceSubnet(ctx context.Context, arg AdvanceSubnetParams) (N
 
 const countBlockingSubnets = `-- name: CountBlockingSubnets :one
 SELECT count(*)::bigint FROM network_subnets s WHERE s.tenant_id=$1 AND s.vpc_id=$2
- AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND (a.state<>'released' OR a.protocol_blocked)))
+ AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND a.state<>'released'))
 `
 
 type CountBlockingSubnetsParams struct {
@@ -176,7 +176,7 @@ func (q *Queries) CountSubnets(ctx context.Context, arg CountSubnetsParams) (int
 }
 
 const getSubnet = `-- name: GetSubnet :one
-SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers FROM network_subnets WHERE tenant_id=$1 AND subnet_id=$2
+SELECT s.tenant_id, s.subnet_id, s.vpc_id, s.name, s.description, s.cidr, s.gateway, s.state, s.reason, s.version, s.created_at, s.updated_at, s.observed_at, s.last_operation_id, s.available_ip_count, s.used_ip_count, s.available_ip_range, s.used_ip_range, s.exclude_ips, s.enable_dhcp, s.dns_servers,coalesce(r.observation_error,'')::text AS observation_error FROM network_subnets s LEFT JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id WHERE s.tenant_id=$1 AND s.subnet_id=$2
 `
 
 type GetSubnetParams struct {
@@ -184,31 +184,37 @@ type GetSubnetParams struct {
 	SubnetID string
 }
 
-func (q *Queries) GetSubnet(ctx context.Context, arg GetSubnetParams) (NetworkSubnet, error) {
+type GetSubnetRow struct {
+	NetworkSubnet    NetworkSubnet
+	ObservationError string
+}
+
+func (q *Queries) GetSubnet(ctx context.Context, arg GetSubnetParams) (GetSubnetRow, error) {
 	row := q.db.QueryRow(ctx, getSubnet, arg.TenantID, arg.SubnetID)
-	var i NetworkSubnet
+	var i GetSubnetRow
 	err := row.Scan(
-		&i.TenantID,
-		&i.SubnetID,
-		&i.VpcID,
-		&i.Name,
-		&i.Description,
-		&i.Cidr,
-		&i.Gateway,
-		&i.State,
-		&i.Reason,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ObservedAt,
-		&i.LastOperationID,
-		&i.AvailableIpCount,
-		&i.UsedIpCount,
-		&i.AvailableIpRange,
-		&i.UsedIpRange,
-		&i.ExcludeIps,
-		&i.EnableDhcp,
-		&i.DnsServers,
+		&i.NetworkSubnet.TenantID,
+		&i.NetworkSubnet.SubnetID,
+		&i.NetworkSubnet.VpcID,
+		&i.NetworkSubnet.Name,
+		&i.NetworkSubnet.Description,
+		&i.NetworkSubnet.Cidr,
+		&i.NetworkSubnet.Gateway,
+		&i.NetworkSubnet.State,
+		&i.NetworkSubnet.Reason,
+		&i.NetworkSubnet.Version,
+		&i.NetworkSubnet.CreatedAt,
+		&i.NetworkSubnet.UpdatedAt,
+		&i.NetworkSubnet.ObservedAt,
+		&i.NetworkSubnet.LastOperationID,
+		&i.NetworkSubnet.AvailableIpCount,
+		&i.NetworkSubnet.UsedIpCount,
+		&i.NetworkSubnet.AvailableIpRange,
+		&i.NetworkSubnet.UsedIpRange,
+		&i.NetworkSubnet.ExcludeIps,
+		&i.NetworkSubnet.EnableDhcp,
+		&i.NetworkSubnet.DnsServers,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -335,12 +341,12 @@ func (q *Queries) InsertSubnetIdempotency(ctx context.Context, arg InsertSubnetI
 }
 
 const listSubnets = `-- name: ListSubnets :many
-SELECT tenant_id, subnet_id, vpc_id, name, description, cidr, gateway, state, reason, version, created_at, updated_at, observed_at, last_operation_id, available_ip_count, used_ip_count, available_ip_range, used_ip_range, exclude_ips, enable_dhcp, dns_servers FROM network_subnets WHERE tenant_id=$1
- AND ($2::text='' OR vpc_id=$2)
- AND ($3::text='' OR name=$3)
- AND (($4::text='' AND state<>'deleted') OR state=$4)
- AND ($5::text='' OR (created_at,subnet_id)<($6::timestamptz,$5::text))
-ORDER BY created_at DESC,subnet_id DESC LIMIT $7::integer
+SELECT s.tenant_id, s.subnet_id, s.vpc_id, s.name, s.description, s.cidr, s.gateway, s.state, s.reason, s.version, s.created_at, s.updated_at, s.observed_at, s.last_operation_id, s.available_ip_count, s.used_ip_count, s.available_ip_range, s.used_ip_range, s.exclude_ips, s.enable_dhcp, s.dns_servers,coalesce(r.observation_error,'')::text AS observation_error FROM network_subnets s LEFT JOIN network_reconciliations r ON r.tenant_id=s.tenant_id AND r.subnet_id=s.subnet_id WHERE s.tenant_id=$1
+ AND ($2::text='' OR s.vpc_id=$2)
+ AND ($3::text='' OR s.name=$3)
+ AND (($4::text='' AND s.state<>'deleted') OR s.state=$4)
+ AND ($5::text='' OR (s.created_at,s.subnet_id)<($6::timestamptz,$5::text))
+ORDER BY s.created_at DESC,s.subnet_id DESC LIMIT $7::integer
 `
 
 type ListSubnetsParams struct {
@@ -353,7 +359,12 @@ type ListSubnetsParams struct {
 	MaxResults     int32
 }
 
-func (q *Queries) ListSubnets(ctx context.Context, arg ListSubnetsParams) ([]NetworkSubnet, error) {
+type ListSubnetsRow struct {
+	NetworkSubnet    NetworkSubnet
+	ObservationError string
+}
+
+func (q *Queries) ListSubnets(ctx context.Context, arg ListSubnetsParams) ([]ListSubnetsRow, error) {
 	rows, err := q.db.Query(ctx, listSubnets,
 		arg.TenantID,
 		arg.VpcFilter,
@@ -367,31 +378,32 @@ func (q *Queries) ListSubnets(ctx context.Context, arg ListSubnetsParams) ([]Net
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NetworkSubnet{}
+	items := []ListSubnetsRow{}
 	for rows.Next() {
-		var i NetworkSubnet
+		var i ListSubnetsRow
 		if err := rows.Scan(
-			&i.TenantID,
-			&i.SubnetID,
-			&i.VpcID,
-			&i.Name,
-			&i.Description,
-			&i.Cidr,
-			&i.Gateway,
-			&i.State,
-			&i.Reason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ObservedAt,
-			&i.LastOperationID,
-			&i.AvailableIpCount,
-			&i.UsedIpCount,
-			&i.AvailableIpRange,
-			&i.UsedIpRange,
-			&i.ExcludeIps,
-			&i.EnableDhcp,
-			&i.DnsServers,
+			&i.NetworkSubnet.TenantID,
+			&i.NetworkSubnet.SubnetID,
+			&i.NetworkSubnet.VpcID,
+			&i.NetworkSubnet.Name,
+			&i.NetworkSubnet.Description,
+			&i.NetworkSubnet.Cidr,
+			&i.NetworkSubnet.Gateway,
+			&i.NetworkSubnet.State,
+			&i.NetworkSubnet.Reason,
+			&i.NetworkSubnet.Version,
+			&i.NetworkSubnet.CreatedAt,
+			&i.NetworkSubnet.UpdatedAt,
+			&i.NetworkSubnet.ObservedAt,
+			&i.NetworkSubnet.LastOperationID,
+			&i.NetworkSubnet.AvailableIpCount,
+			&i.NetworkSubnet.UsedIpCount,
+			&i.NetworkSubnet.AvailableIpRange,
+			&i.NetworkSubnet.UsedIpRange,
+			&i.NetworkSubnet.ExcludeIps,
+			&i.NetworkSubnet.EnableDhcp,
+			&i.NetworkSubnet.DnsServers,
+			&i.ObservationError,
 		); err != nil {
 			return nil, err
 		}
@@ -498,7 +510,7 @@ func (q *Queries) LockSubnetCreationKey(ctx context.Context, arg LockSubnetCreat
 
 const subnetOverlaps = `-- name: SubnetOverlaps :one
 SELECT EXISTS(SELECT 1 FROM network_subnets s WHERE s.tenant_id=$1 AND s.vpc_id=$2
- AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND (a.state<>'released' OR a.protocol_blocked)))
+ AND (s.state<>'deleted' OR EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND a.state<>'released'))
  AND s.cidr::cidr && $3::cidr)::boolean
 `
 

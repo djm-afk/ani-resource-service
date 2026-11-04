@@ -45,7 +45,7 @@ SET pending_action=sqlc.arg(action), pending_since=clock_timestamp(),
     provider_uid=CASE WHEN provider_uid='' THEN sqlc.arg(identity)::text ELSE provider_uid END
 WHERE tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=sqlc.arg(resource_id)::text AND binding_id=sqlc.arg(binding_id)
   AND (provider_uid='' OR provider_uid=sqlc.arg(identity))
-  AND ((sqlc.arg(action)::text='create' AND pending_action='')
+  AND ((sqlc.arg(action)::text='create' AND (pending_action='' OR (pending_action='create' AND provider_uid='')))
        OR (sqlc.arg(action)='update' AND provider_uid<>'' AND pending_action IN ('','update'))
        OR (sqlc.arg(action)='delete' AND (pending_action IN ('','delete') OR sqlc.arg(identity)::text<>'')));
 
@@ -77,11 +77,15 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id
 -- name: ReleaseLease :execrows
 UPDATE network_reconciliations
 SET lease_owner=NULL, lease_until=NULL,
-    processed_generation=greatest(processed_generation,sqlc.arg(covered_generation)::bigint),
-    evidence_hash=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.arg(evidence_hash)::text ELSE evidence_hash END,
-    evidence_applied_at=CASE WHEN sqlc.arg(observed)::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
-    retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
-    next_run_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
+    processed_generation=greatest(processed_generation,sqlc.arg(claimed_generation)::bigint),
+    observation_error=CASE WHEN sqlc.arg(observed)::boolean THEN '' WHEN sqlc.arg(observation_error)::text<>'' THEN sqlc.arg(observation_error)::text ELSE observation_error END,
+    retired=retired OR sqlc.arg(terminal)::boolean,
+    retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+    next_run_at=CASE WHEN sqlc.arg(terminal)::boolean THEN 'infinity'::timestamptz
+      WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond'
+      WHEN requested_generation>sqlc.arg(claimed_generation)::bigint THEN sqlc.arg(now)::timestamptz
+      WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz
+      ELSE sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
 WHERE tenant_id=sqlc.arg(tenant_id) AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=sqlc.arg(resource_id)::text
   AND lease_owner=sqlc.arg(owner) AND lease_epoch=sqlc.arg(epoch) AND lease_until>clock_timestamp();
 
@@ -103,15 +107,3 @@ WHERE b.tenant_id=sqlc.arg(tenant_id) AND b.lb_id=sqlc.arg(lb_id)::text AND b.bi
 AND EXISTS(SELECT 1 FROM network_lb_retired_bindings r JOIN network_load_balancers l USING(tenant_id,cluster_id,namespace,lb_id)
  WHERE r.tenant_id=b.tenant_id AND r.lb_id=b.lb_id AND r.binding_id=b.binding_id AND r.provider_uid=b.provider_uid
  AND r.provider_name=b.provider_name AND r.cleanup_target_version=l.applied_version AND l.configuration_state='waiting_for_backends');
-
--- name: SaveVPCProviderReadiness :execrows
-UPDATE network_provider_bindings SET provider_ready=sqlc.arg(ready),
- provider_observed_at=sqlc.narg(observed_at)::timestamptz,
- provider_observed_uid=sqlc.arg(identity),provider_generation=sqlc.arg(generation),provider_observed_generation=sqlc.arg(observed_generation)
-WHERE tenant_id=sqlc.arg(tenant_id) AND vpc_id=sqlc.arg(vpc_id)::text AND binding_id=sqlc.arg(binding_id)
- AND (provider_uid='' OR provider_uid=sqlc.arg(identity));
-
--- name: GetVPCProviderReadiness :one
-SELECT b.provider_ready,b.provider_observed_at,b.provider_observed_uid,b.provider_generation,b.provider_observed_generation
-FROM network_provider_bindings b
-WHERE b.tenant_id=$1 AND b.vpc_id=$2;

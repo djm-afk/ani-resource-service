@@ -2,10 +2,8 @@ package vm
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
@@ -17,14 +15,13 @@ type Network struct {
 	attachments *network.Attachments
 	vnics       *network.Network
 	repo        biz.Repository
-	native      biz.NativePort
 }
 
-func NewNetwork(a *network.Attachments, r biz.Repository, n biz.NativePort) (*Network, error) {
-	if a == nil || r == nil || n == nil {
+func NewNetwork(a *network.Attachments, r biz.Repository) (*Network, error) {
+	if a == nil || r == nil {
 		return nil, biz.ErrInvalid
 	}
-	return &Network{attachments: a, repo: r, native: n}, nil
+	return &Network{attachments: a, repo: r}, nil
 }
 func (n *Network) Prepare(ctx context.Context, v biz.VM) (biz.NetworkPlan, error) {
 	submission := uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-network/"+v.ID)).String()
@@ -38,7 +35,7 @@ func (n *Network) Prepare(ctx context.Context, v biz.VM) (biz.NetworkPlan, error
 		return biz.NetworkPlan{}, biz.ErrChanged
 	}
 	labels := map[string]string{"network.ani.io/tenant-id": v.TenantID, "network.ani.io/instance-id": v.ID, "network.ani.io/attachment-id": a.ID, "network.ani.io/submission-id": submission, "network.ani.io/generation": "1"}
-	return biz.NetworkPlan{AttachmentID: a.ID, SubmissionID: submission, Generation: 1, Version: a.Version, BindingRevision: a.BindingRevision, Namespace: p.Namespace, NADName: p.NADName, NADUID: p.NADUID, NADDigest: p.NADConfigDigest, KCNSubnetRef: p.KCNSubnetRef, Labels: labels}, nil
+	return biz.NetworkPlan{SnapshotRevision: 1, Consumer: &biz.NetworkConsumerState{State: "open", DesiredRunState: strings.ToLower(v.Desired)}, AttachmentID: a.ID, SubmissionID: submission, Generation: 1, Version: a.Version, BindingRevision: a.BindingRevision, Namespace: p.Namespace, NADName: p.NADName, NADUID: p.NADUID, NADDigest: p.NADConfigDigest, KCNSubnetRef: p.KCNSubnetRef, Labels: labels}, nil
 }
 func (n *Network) attachment(ctx context.Context, v biz.VM) (network.Attachment, error) {
 	if v.Network.AttachmentID == "" {
@@ -71,30 +68,23 @@ func (n *Network) CurrentAddresses(ctx context.Context, v biz.VM) ([]biz.Address
 	}
 	return out, nil
 }
-func (n *Network) Observe(ctx context.Context, v biz.VM, x biz.Observation) ([]biz.Address, error) {
-	a, e := n.attachment(ctx, v)
-	if e != nil {
-		return nil, e
+func (n *Network) Confirm(ctx context.Context, v biz.VM, x biz.Observation) error {
+	if !x.Running || x.Launcher == nil {
+		return nil
 	}
-	if x.Launcher != nil && x.VMI != nil && x.Running {
-		snapshot, e := n.GetVMNetworkSubmission(ctx, a)
-		if e != nil {
-			return nil, e
-		}
-		if a.ConfirmedPodUID != x.Launcher.UID || a.ConfirmedSnapshotRevision != snapshot.SnapshotRevision {
-			_, e = n.attachments.Confirm(ctx, network.ConfirmAttachment{TenantID: v.TenantID, AttachmentID: a.ID, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, PodName: x.Launcher.Name, PodUID: x.Launcher.UID, ExpectedVersion: a.Version, ExpectedSnapshotRevision: snapshot.SnapshotRevision})
-			if e != nil {
-				return nil, e
-			}
-		}
+	c := v.Network.Consumer
+	if c == nil || c.State != "open" || c.CurrentLauncher == nil || c.CurrentLauncher.UID != x.Launcher.UID || v.Network.SnapshotRevision < 1 {
+		return biz.ErrDependency
 	}
-	if !x.Running {
-		if (x.Stopped || x.Terminal) && len(a.VMCurrentAddresses) != 0 {
-			return nil, biz.ErrDependency
-		}
-		return nil, nil
+	a, err := n.attachment(ctx, v)
+	if err != nil {
+		return err
 	}
-	return n.CurrentAddresses(ctx, v)
+	if a.ConfirmedPodUID == x.Launcher.UID && a.ConfirmedSnapshotRevision == v.Network.SnapshotRevision {
+		return nil
+	}
+	_, err = n.attachments.Confirm(ctx, network.ConfirmAttachment{TenantID: v.TenantID, AttachmentID: a.ID, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, PodName: x.Launcher.Name, PodUID: x.Launcher.UID, ExpectedVersion: a.Version, ExpectedSnapshotRevision: v.Network.SnapshotRevision})
+	return err
 }
 func (n *Network) Release(ctx context.Context, v biz.VM) (bool, error) {
 	if v.Network.AttachmentID == "" {
@@ -114,8 +104,8 @@ func (n *Network) Release(ctx context.Context, v biz.VM) (bool, error) {
 	if a.State == network.Released {
 		return true, nil
 	}
-	_, e = n.attachments.Release(ctx, network.ReleaseAttachment{TenantID: v.TenantID, AttachmentID: a.ID, FinalizationID: snapshot.FinalizationID, ExpectedVersion: a.Version})
-	return false, e
+	a, e = n.attachments.Release(ctx, network.ReleaseAttachment{TenantID: v.TenantID, AttachmentID: a.ID, FinalizationID: snapshot.FinalizationID, ExpectedVersion: a.Version})
+	return a.State == network.Released, e
 }
 func nativeRef(r biz.ObjectRef, api string) network.WorkloadReference {
 	return network.WorkloadReference{APIVersion: api, Kind: r.Kind, Namespace: r.Namespace, Name: r.Name, UID: r.UID}
@@ -128,99 +118,35 @@ func (n *Network) GetVMNetworkSubmission(ctx context.Context, a network.Attachme
 	if v.Network.AttachmentID != a.ID || v.Network.SubmissionID != a.SubmissionID || v.Network.Generation != a.Generation {
 		return network.ConsumerSubmission{}, biz.ErrDependency
 	}
-	var x biz.Observation
-	// Ordinary ownership snapshots need runtime identity only. Final closure
-	// retains the full direct lifecycle observation and storage cleanup checks.
-	if runtime, ok := n.native.(biz.ConsoleNativePort); ok && !v.Closing {
-		x, e = runtime.ObserveConsole(ctx, v)
-	} else {
-		x, e = n.native.Observe(ctx, v)
+	current := v.Network.Consumer
+	if current == nil || v.Network.SnapshotRevision < 1 {
+		return network.ConsumerSubmission{}, biz.ErrDependency
 	}
-	if e != nil {
-		return network.ConsumerSubmission{}, e
+	c := network.ConsumerSubmission{
+		ProtocolVersion: 3, TenantID: v.TenantID, InstanceID: v.ID, SubmissionID: a.SubmissionID, AttachmentID: a.ID,
+		ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, Generation: a.Generation,
+		State: current.State, DesiredRunState: current.DesiredRunState, FinalizationID: current.FinalizationID,
+		ClosedAt: current.ClosedAt, SnapshotRevision: v.Network.SnapshotRevision,
 	}
-	var old network.ConsumerSubmission
-	if len(v.Network.Consumer) > 0 {
-		if e = json.Unmarshal(v.Network.Consumer, &old); e != nil {
-			return old, e
-		}
-	}
-	c := network.ConsumerSubmission{ProtocolVersion: 3, TenantID: v.TenantID, InstanceID: v.ID, SubmissionID: a.SubmissionID, AttachmentID: a.ID, ClusterID: v.Spec.ClusterID, Namespace: v.Spec.Namespace, Generation: a.Generation, State: "open", DesiredRunState: strings.ToLower(v.Desired), SnapshotRevision: v.Network.SnapshotRevision, Controllers: append([]network.ControllerReference(nil), old.Controllers...), RetiredPods: append([]network.PodReference(nil), old.RetiredPods...)}
 	for _, choice := range []biz.NetworkInterfaceChoice{biz.PrimaryNetworkInterface(v).Desired, biz.PrimaryNetworkInterface(v).Applied} {
-		if choice.Mode == "manual" {
-			found := false
-			for _, ref := range c.ManualVNics {
-				found = found || ref.VNicID == choice.VNicID
-			}
-			if !found {
-				c.ManualVNics = append(c.ManualVNics, network.ManualVNicReference{VNicID: choice.VNicID, ProviderName: choice.ProviderName, ProviderUID: choice.ProviderUID})
-			}
+		if choice.Mode != "manual" {
+			continue
 		}
-	}
-	if x.VM.UID != "" {
-		c.RootController = nativeRef(x.VM, "kubevirt.io/v1")
-	} else {
-		c.RootController = old.RootController
-	}
-	if x.VMI != nil {
-		ref := nativeRef(*x.VMI, "kubevirt.io/v1")
 		found := false
-		for _, r := range c.Controllers {
-			found = found || r.Reference.UID == ref.UID
+		for _, ref := range c.ManualVNics {
+			found = found || ref.VNicID == choice.VNicID
 		}
 		if !found {
-			c.Controllers = append(c.Controllers, network.ControllerReference{Reference: ref, Owner: c.RootController})
-		}
-		if x.Launcher != nil {
-			c.CurrentPods = []network.PodReference{{Reference: nativeRef(*x.Launcher, "v1"), Owner: ref}}
+			c.ManualVNics = append(c.ManualVNics, network.ManualVNicReference{VNicID: choice.VNicID, ProviderName: choice.ProviderName, ProviderUID: choice.ProviderUID})
 		}
 	}
-	for _, p := range old.CurrentPods {
-		current := false
-		for _, q := range c.CurrentPods {
-			current = current || p.Reference.UID == q.Reference.UID
+	if current.CurrentLauncher != nil {
+		pod := network.PodReference{Reference: nativeRef(*current.CurrentLauncher, "v1")}
+		if current.CurrentVMI != nil {
+			pod.Owner = nativeRef(*current.CurrentVMI, "kubevirt.io/v1")
 		}
-		if !current {
-			found := false
-			for _, q := range c.RetiredPods {
-				found = found || p.Reference.UID == q.Reference.UID
-			}
-			if !found {
-				c.RetiredPods = append(c.RetiredPods, p)
-			}
-		}
-	}
-	for _, r := range c.Controllers {
-		c.ControllerUIDs = append(c.ControllerUIDs, r.Reference.UID)
-	}
-	for _, r := range c.CurrentPods {
-		c.PodUIDs = append(c.PodUIDs, r.Reference.UID)
-	}
-	if v.Closing {
-		c.DesiredRunState = "deleted"
-		c.State = "closing"
-		c.FinalizationID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-close/"+v.ID)).String()
-		if x.Deleted {
-			c.State = "closed"
-			now := time.Now().UTC()
-			c.ClosedAt = &now
-			if old.ClosedAt != nil {
-				c.ClosedAt = old.ClosedAt
-			}
-		}
-	}
-	if c.SnapshotRevision > 0 && network.ConsumerSnapshotHash(c) == network.ConsumerSnapshotHash(old) {
-		return c, nil
-	}
-	c.SnapshotRevision++
-	plan := v.Network
-	plan.SnapshotRevision = c.SnapshotRevision
-	plan.Consumer, e = json.Marshal(c)
-	if e != nil {
-		return c, e
-	}
-	if e = n.repo.UpdateNetwork(ctx, v, plan); e != nil {
-		return c, e
+		c.CurrentPods = []network.PodReference{pod}
+		c.PodUIDs = []string{pod.Reference.UID}
 	}
 	return c, nil
 }

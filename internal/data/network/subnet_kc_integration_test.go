@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func TestSubnetKCContractAndResidualReferencesBlockCleanup(t *testing.T) {
+func TestSubnetKCDeletionCompletesWhenOriginalObjectDisappears(t *testing.T) {
 	p, _ := database(t)
 	n := newNetwork(t, p, time.Minute)
 	api := &testenv.KC{}
@@ -68,30 +68,19 @@ func TestSubnetKCContractAndResidualReferencesBlockCleanup(t *testing.T) {
 	if _, err := n.DeleteSubnet(ctx, tenant, current.ID); err != nil {
 		t.Fatal(err)
 	}
-	// A disappeared CR is insufficient while a Provider IP still points at it.
+	// KCN owns its descendants. Res completes this deletion on the original
+	// Subnet's absence, even while a provider-owned child remains.
 	api.Mu.Lock()
 	delete(api.Objects, key)
 	api.Objects["vnicips/"+namespace+"/residual"] = map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNicIP", "metadata": map[string]any{"name": "residual", "namespace": namespace}, "spec": map[string]any{"subnet": providerName}}
 	api.Mu.Unlock()
-	for i := 0; i < 4; i++ {
-		if _, err := w.Step(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	pending, err := n.GetSubnet(ctx, tenant, current.ID)
-	if err != nil || pending.State != biz.Deleting || pending.Reason != biz.ResourceInUse {
-		t.Fatalf("residual IP ignored: %+v %v", pending, err)
-	}
-	api.Mu.Lock()
-	delete(api.Objects, "vnicips/"+namespace+"/residual")
-	api.Objects[key] = object
-	api.Mu.Unlock()
 	driveSubnet(t, n, w, current, biz.Deleted)
 	api.Mu.Lock()
 	defer api.Mu.Unlock()
-	if api.Creates["subnets"] != 1 || api.Deletes["subnets"] != 1 || api.Invalid != "" {
-		t.Fatalf("provider calls: create=%d delete=%d invalid=%s", api.Creates["subnets"], api.Deletes["subnets"], api.Invalid)
+	if api.Objects["vnicips/"+namespace+"/residual"] == nil || api.Deletes["vnicips"] != 0 || api.Deletes["subnets"] != 0 || api.Invalid != "" {
+		t.Fatal("Res operated on provider cleanup", api.Deletes, api.Invalid)
 	}
+
 }
 
 func TestSubnetKCIPRangesDetailsAndFences(t *testing.T) {
@@ -113,7 +102,6 @@ func TestSubnetKCIPRangesDetailsAndFences(t *testing.T) {
 	}
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = time.Hour
-	policy.StaleAfter = 2 * time.Hour
 	policy.RetryMin = time.Millisecond
 	worker, err := biz.NewWorker(p, provider, uuid.NewString(), policy)
 	if err != nil {
@@ -213,8 +201,8 @@ func TestSubnetKCIPRangesDetailsAndFences(t *testing.T) {
 	}
 	time.Sleep(policy.RetryMin)
 	refresh(func() { labels["network.ani.io/tenant-id"] = tenant; statusFields["observedGeneration"] = int64(0) })
-	if got := details(); got.AvailableIpRange != nil || got.UsedIpRange != nil {
-		t.Fatal("unobserved generation trusted", got)
+	if got := details(); got.GetAvailableIpRange() != "10.42.1.2-10.42.1.254" || got.UsedIpRange == nil {
+		t.Fatal("generation hid directly reported ranges", got)
 	}
 	time.Sleep(policy.RetryMin)
 	refresh(func() {
@@ -227,13 +215,13 @@ func TestSubnetKCIPRangesDetailsAndFences(t *testing.T) {
 	if got := details(); got.GetAvailableIpRange() != "10.42.1.30-10.42.1.254" || !got.ObservedAt.AsTime().Equal(before.ObservedAt.AsTime()) {
 		t.Fatal("read failure refreshed ranges", got)
 	}
-	staleNetwork, e := biz.NewNetwork(p, []byte("0123456789abcdef0123456789abcdef"), time.Minute, func() time.Time { return time.Now().Add(2 * time.Minute) })
+	staleNetwork, e := biz.NewNetwork(p, []byte("0123456789abcdef0123456789abcdef"))
 	if e != nil {
 		t.Fatal(e)
 	}
 	stale, e := service.NewNetworkService(staleNetwork).GetSubnet(ctx, &networkv1.GetSubnetRequest{TenantId: tenant, SubnetId: current.ID})
 	if e != nil || !stale.Subnet.ObservationStale || stale.Subnet.GetAvailableIpRange() != "10.42.1.30-10.42.1.254" {
-		t.Fatal("historical ranges lost stale marker", stale, e)
+		t.Fatal("read error lost its diagnostic or previous ranges", stale, e)
 	}
 	if _, e := rpc.GetSubnet(ctx, &networkv1.GetSubnetRequest{TenantId: uuid.NewString(), SubnetId: current.ID}); status.Code(e) != codes.NotFound {
 		t.Fatal("cross-tenant detail", e)
@@ -248,11 +236,7 @@ func TestSubnetKCIPRangesDetailsAndFences(t *testing.T) {
 		t.Fatal("range fence claim", work, found, e)
 	}
 	empty := ""
-	progress := biz.Progress{State: work.Resource.State, Observed: true, Identity: work.KnownIdentity, NextDelay: time.Hour, SubnetIPRanges: biz.SubnetIPRanges{Available: &empty, Used: &empty}, Proof: biz.ObservationProof{CollectedAt: before.ObservedAt.AsTime().Add(-time.Second), CoveredGeneration: work.Requirement.RequestedGeneration}}
-	if e := p.Finish(ctx, work, progress); !errors.Is(e, biz.ErrLeaseLost) {
-		t.Fatal("older observation accepted", e)
-	}
-	progress.Proof.CollectedAt = time.Now()
+	progress := biz.Progress{State: work.Resource.State, Observed: true, Identity: work.KnownIdentity, NextDelay: time.Hour, SubnetIPRanges: biz.SubnetIPRanges{Available: &empty, Used: &empty}}
 	oldWork := work
 	oldWork.Epoch--
 	if e := p.Finish(ctx, oldWork, progress); !errors.Is(e, biz.ErrLeaseLost) {

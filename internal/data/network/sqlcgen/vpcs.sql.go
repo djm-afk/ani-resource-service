@@ -192,18 +192,22 @@ func (q *Queries) GetTenantNamespaceIdentity(ctx context.Context, arg GetTenantN
 }
 
 const getVPC = `-- name: GetVPC :one
-SELECT v.tenant_id, v.vpc_id, v.name, v.description, v.cidr, v.state, v.reason, v.version, v.created_at, v.updated_at, v.observed_at, v.last_operation_id, v.base_connectivity_required,coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
+SELECT v.tenant_id, v.vpc_id, v.name, v.description, v.cidr, v.state, v.reason, v.version, v.created_at, v.updated_at, v.observed_at, v.last_operation_id, v.base_connectivity_required,coalesce(task.observation_error,'')::text AS observation_error,coalesce(base_task.observation_error,'')::text AS base_observation_error,coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
  (SELECT count(*) FROM network_subnets s WHERE s.tenant_id=v.tenant_id AND s.vpc_id=v.vpc_id AND s.state<>'deleted')::bigint AS subnet_count,
  (CASE WHEN pub.snat_id IS NULL THEN NULL::jsonb ELSE jsonb_build_object(
  'ID',pub.snat_id,'EIPID',pub.eip_id,'EIPAddress',pe.address,'BindingState',pc.state,
  'State',pub.state,'Reason',pub.reason,'Version',pub.version,'LastOperationID',pub.last_operation_id,
- 'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
+ 'ObservationError',coalesce(pub_task.observation_error,''),'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
 FROM network_vpcs v
+LEFT JOIN network_reconciliations task ON task.tenant_id=v.tenant_id AND task.vpc_id=v.vpc_id
 LEFT JOIN network_vpc_base_connectivity b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id
+LEFT JOIN network_reconciliations base_task ON base_task.tenant_id=b.tenant_id AND base_task.snat_id=b.snat_id
 LEFT JOIN (network_snat_bindings pub
  JOIN network_eips pe ON pe.tenant_id=pub.tenant_id AND pe.eip_id=pub.eip_id AND pe.scope='public' AND pe.managed_by='tenant'
  JOIN network_eip_claims pc ON pc.tenant_id=pub.tenant_id AND pc.snat_id=pub.snat_id AND pc.eip_id=pub.eip_id AND pc.released_at IS NULL)
- ON pub.tenant_id=v.tenant_id AND pub.vpc_id=v.vpc_id AND pub.purpose='public' AND pub.state<>'deleted' WHERE v.tenant_id=$1 AND v.vpc_id=$2
+ ON pub.tenant_id=v.tenant_id AND pub.vpc_id=v.vpc_id AND pub.purpose='public' AND pub.state<>'deleted'
+LEFT JOIN network_reconciliations pub_task ON pub_task.tenant_id=pub.tenant_id AND pub_task.snat_id=pub.snat_id
+WHERE v.tenant_id=$1 AND v.vpc_id=$2
 `
 
 type GetVPCParams struct {
@@ -212,12 +216,14 @@ type GetVPCParams struct {
 }
 
 type GetVPCRow struct {
-	NetworkVpc     NetworkVpc
-	BaseState      string
-	BaseReason     string
-	BaseObservedAt *time.Time
-	SubnetCount    int64
-	PublicEgress   []byte
+	NetworkVpc           NetworkVpc
+	ObservationError     string
+	BaseObservationError string
+	BaseState            string
+	BaseReason           string
+	BaseObservedAt       *time.Time
+	SubnetCount          int64
+	PublicEgress         []byte
 }
 
 func (q *Queries) GetVPC(ctx context.Context, arg GetVPCParams) (GetVPCRow, error) {
@@ -237,6 +243,8 @@ func (q *Queries) GetVPC(ctx context.Context, arg GetVPCParams) (GetVPCRow, erro
 		&i.NetworkVpc.ObservedAt,
 		&i.NetworkVpc.LastOperationID,
 		&i.NetworkVpc.BaseConnectivityRequired,
+		&i.ObservationError,
+		&i.BaseObservationError,
 		&i.BaseState,
 		&i.BaseReason,
 		&i.BaseObservedAt,
@@ -498,18 +506,21 @@ func (q *Queries) ListTenantNamespaceIdentities(ctx context.Context) ([]NetworkT
 }
 
 const listVPCs = `-- name: ListVPCs :many
-SELECT v.tenant_id, v.vpc_id, v.name, v.description, v.cidr, v.state, v.reason, v.version, v.created_at, v.updated_at, v.observed_at, v.last_operation_id, v.base_connectivity_required,coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
+SELECT v.tenant_id, v.vpc_id, v.name, v.description, v.cidr, v.state, v.reason, v.version, v.created_at, v.updated_at, v.observed_at, v.last_operation_id, v.base_connectivity_required,coalesce(task.observation_error,'')::text AS observation_error,coalesce(base_task.observation_error,'')::text AS base_observation_error,coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
  (SELECT count(*) FROM network_subnets s WHERE s.tenant_id=v.tenant_id AND s.vpc_id=v.vpc_id AND s.state<>'deleted')::bigint AS subnet_count,
  (CASE WHEN pub.snat_id IS NULL THEN NULL::jsonb ELSE jsonb_build_object(
  'ID',pub.snat_id,'EIPID',pub.eip_id,'EIPAddress',pe.address,'BindingState',pc.state,
  'State',pub.state,'Reason',pub.reason,'Version',pub.version,'LastOperationID',pub.last_operation_id,
- 'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
+ 'ObservationError',coalesce(pub_task.observation_error,''),'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
 FROM network_vpcs v
+LEFT JOIN network_reconciliations task ON task.tenant_id=v.tenant_id AND task.vpc_id=v.vpc_id
 LEFT JOIN network_vpc_base_connectivity b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id
+LEFT JOIN network_reconciliations base_task ON base_task.tenant_id=b.tenant_id AND base_task.snat_id=b.snat_id
 LEFT JOIN (network_snat_bindings pub
  JOIN network_eips pe ON pe.tenant_id=pub.tenant_id AND pe.eip_id=pub.eip_id AND pe.scope='public' AND pe.managed_by='tenant'
  JOIN network_eip_claims pc ON pc.tenant_id=pub.tenant_id AND pc.snat_id=pub.snat_id AND pc.eip_id=pub.eip_id AND pc.released_at IS NULL)
  ON pub.tenant_id=v.tenant_id AND pub.vpc_id=v.vpc_id AND pub.purpose='public' AND pub.state<>'deleted'
+LEFT JOIN network_reconciliations pub_task ON pub_task.tenant_id=pub.tenant_id AND pub_task.snat_id=pub.snat_id
 WHERE v.tenant_id = $1
   AND ($2::text = '' OR v.name = $2)
   AND (($3::text = '' AND v.state <> 'deleted') OR v.state = $3)
@@ -529,12 +540,14 @@ type ListVPCsParams struct {
 }
 
 type ListVPCsRow struct {
-	NetworkVpc     NetworkVpc
-	BaseState      string
-	BaseReason     string
-	BaseObservedAt *time.Time
-	SubnetCount    int64
-	PublicEgress   []byte
+	NetworkVpc           NetworkVpc
+	ObservationError     string
+	BaseObservationError string
+	BaseState            string
+	BaseReason           string
+	BaseObservedAt       *time.Time
+	SubnetCount          int64
+	PublicEgress         []byte
 }
 
 func (q *Queries) ListVPCs(ctx context.Context, arg ListVPCsParams) ([]ListVPCsRow, error) {
@@ -568,6 +581,8 @@ func (q *Queries) ListVPCs(ctx context.Context, arg ListVPCsParams) ([]ListVPCsR
 			&i.NetworkVpc.ObservedAt,
 			&i.NetworkVpc.LastOperationID,
 			&i.NetworkVpc.BaseConnectivityRequired,
+			&i.ObservationError,
+			&i.BaseObservationError,
 			&i.BaseState,
 			&i.BaseReason,
 			&i.BaseObservedAt,

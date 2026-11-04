@@ -255,16 +255,8 @@ func (w *Worker) stepLifecycle(ctx context.Context, work Work, provider Lifecycl
 			advance(&p, "waiting_network")
 			return finish()
 		}
-		// Network's observer can advance its version between worker turns.
-		// Refresh before the confirmation CAS; an unconfirmed snapshot is not
-		// ready yet, but a failed observation must not reuse a cached version.
+		// Refresh the management version before its ordinary confirmation CAS.
 		networkReady := w.observeNetwork(ctx, &p.Instance)
-		// The protocol recovery gate needs the owner's normal durable Confirm.
-		// It still verifies current facts, and completion waits for a fresh read.
-		if p.Instance.Network != nil && p.Instance.Network.Reason != "" && p.Instance.Network.Reason != "ATTACHMENT_PROTOCOL_VIOLATION" {
-			block(&p, "WAITING_FOR_NETWORK")
-			break
-		}
 		if changed, err := w.confirmNetwork(ctx, &p.Instance); changed || err != nil {
 			return finish()
 		}

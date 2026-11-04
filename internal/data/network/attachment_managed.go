@@ -23,12 +23,9 @@ func managedAttachment(ctx context.Context, db attachmentSnapshotReader, row sql
 	if err != nil || (a.WorkloadMode != "controller_managed" && a.WorkloadMode != "vm_managed") {
 		return a, err
 	}
-	var snapshot, root []byte
-	err = db.QueryRow(ctx, `SELECT snapshot_revision,snapshot_hash,root_controller,snapshot,confirmed_snapshot_revision,confirmed_pod_uid FROM network_attachment_consumer_snapshots WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID).Scan(&a.SnapshotRevision, &a.SnapshotHash, &root, &snapshot, &a.ConfirmedSnapshotRevision, &a.ConfirmedPodUID)
+	var snapshot []byte
+	err = db.QueryRow(ctx, `SELECT snapshot_revision,snapshot,confirmed_snapshot_revision,confirmed_pod_uid FROM network_attachment_consumer_snapshots WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID).Scan(&a.SnapshotRevision, &snapshot, &a.ConfirmedSnapshotRevision, &a.ConfirmedPodUID)
 	if err != nil {
-		return biz.Attachment{}, databaseFailure(err)
-	}
-	if err = json.Unmarshal(root, &a.RootController); err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
 	if len(snapshot) > 0 {
@@ -36,6 +33,9 @@ func managedAttachment(ctx context.Context, db attachmentSnapshotReader, row sql
 		if err = json.Unmarshal(snapshot, a.ConsumerSnapshot); err != nil {
 			return biz.Attachment{}, databaseFailure(err)
 		}
+	}
+	if a.WorkloadMode == "vm_managed" {
+		a.VMCurrentAddresses = vmCurrentAddresses(a)
 	}
 	return a, nil
 }
@@ -47,11 +47,7 @@ func persistConsumerSnapshot(ctx context.Context, db attachmentSnapshotWriter, a
 	if err != nil {
 		return err
 	}
-	root, err := json.Marshal(c.RootController)
-	if err != nil {
-		return err
-	}
-	tag, err := db.Exec(ctx, `UPDATE network_attachment_consumer_snapshots SET snapshot_revision=$3,snapshot_hash=$4,root_controller=$5,snapshot=$6 WHERE tenant_id=$1 AND attachment_id=$2 AND snapshot_revision<=$3`, a.TenantID, a.ID, c.SnapshotRevision, biz.ConsumerSnapshotHash(c), root, b)
+	tag, err := db.Exec(ctx, `UPDATE network_attachment_consumer_snapshots SET snapshot_revision=$3,snapshot=$4 WHERE tenant_id=$1 AND attachment_id=$2 AND snapshot_revision<=$3`, a.TenantID, a.ID, c.SnapshotRevision, b)
 	if err != nil {
 		return databaseFailure(err)
 	}
@@ -80,19 +76,17 @@ func (p *Postgres) confirmManagedAttachment(ctx context.Context, tx pgx.Tx, q *s
 	if err = tx.QueryRow(ctx, `SELECT confirmed_snapshot_revision,confirmed_pod_uid FROM network_attachment_consumer_snapshots WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID).Scan(&confirmedRevision, &confirmedUID); err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
-	if confirmedRevision == r.ExpectedSnapshotRevision && confirmedUID == r.PodUID {
+	if confirmedRevision == r.ExpectedSnapshotRevision && confirmedUID == r.PodUID && a.State == biz.Attached && a.PodUID == r.PodUID && a.PodName == r.PodName {
 		return a, nil
 	}
-	if row.Version != r.ExpectedVersion {
+	if row.Version != r.ExpectedVersion && (confirmedRevision != r.ExpectedSnapshotRevision || confirmedUID != r.PodUID) {
 		return biz.Attachment{}, biz.Fail(biz.VersionConflict, "attachment version changed")
 	}
-	// Confirm records only a declaration. Independent Provider observation is
-	// still required before this UID receives attached/address eligibility.
 	_, err = tx.Exec(ctx, `UPDATE network_attachment_consumer_snapshots SET confirmed_snapshot_revision=$3,confirmed_pod_uid=$4 WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID, r.ExpectedSnapshotRevision, r.PodUID)
 	if err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
-	_, err = tx.Exec(ctx, `UPDATE network_attachments SET version=version+1,state='reserved',pod_name='',pod_uid='',confirm_uid='',reason='',updated_at=clock_timestamp(),next_check_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID)
+	_, err = tx.Exec(ctx, `UPDATE network_attachments SET version=version+1,state='attached',pod_name=$3,pod_uid=$4,confirm_uid=$4,reason='',current_vnic_name=CASE WHEN pod_uid=$4 THEN current_vnic_name ELSE '' END,current_vnic_uid=CASE WHEN pod_uid=$4 THEN current_vnic_uid ELSE '' END,current_mac_address=CASE WHEN pod_uid=$4 THEN current_mac_address ELSE '' END,current_ips=CASE WHEN pod_uid=$4 THEN current_ips ELSE '{}'::text[] END,updated_at=clock_timestamp(),next_check_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID, r.PodName, r.PodUID)
 	if err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}

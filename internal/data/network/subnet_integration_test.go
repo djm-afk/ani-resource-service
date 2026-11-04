@@ -351,8 +351,8 @@ func TestSubnetUnknownCreateRetainsCIDRAndRejectsOldLeaseWrites(t *testing.T) {
 	}
 }
 
-func TestSubnetStaleParentRejectsNewIntentButNotPersistentReplay(t *testing.T) {
-	p, _ := database(t)
+func TestSubnetParentProjectionAgeDoesNotGateNewIntentOrReplay(t *testing.T) {
+	p, owner := database(t)
 	n := newNetwork(t, p, time.Minute)
 	w := subnetWorker(t, p)
 	tenant := uuid.NewString()
@@ -363,18 +363,20 @@ func TestSubnetStaleParentRejectsNewIntentButNotPersistentReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	strict := newNetwork(t, p, time.Millisecond)
-	time.Sleep(3 * time.Millisecond)
-	current, err := strict.GetVPC(ctx, tenant, v.ID)
-	if err != nil || !current.ObservationStale {
-		t.Fatalf("stale not visible: %+v %v", current, err)
+	if _, err = owner.Exec(ctx, `UPDATE network_vpcs SET state='degraded',reason='PROVIDER_NOT_READY',observed_at=clock_timestamp()-interval '1 hour' WHERE tenant_id=$1 AND vpc_id=$2`, tenant, v.ID); err != nil {
+		t.Fatal(err)
 	}
-	replay, err := strict.CreateSubnet(ctx, input)
+	current, err := n.GetVPC(ctx, tenant, v.ID)
+	if err != nil || current.ObservationStale || current.State != biz.Degraded {
+		t.Fatalf("projection age changed its diagnostic: %+v %v", current, err)
+	}
+	replay, err := n.CreateSubnet(ctx, input)
 	if err != nil || replay.ID != accepted.ID {
 		t.Fatalf("replay reapplied dynamic parent check: %+v %v", replay, err)
 	}
 	input.IdempotencyKey = "new"
-	if _, err := strict.CreateSubnet(ctx, input); biz.ReasonOf(err) != biz.ParentNotReady {
-		t.Fatal("new admission used stale parent", err)
+	input.Name, input.CIDR = "second", "10.42.2.0/24"
+	if next, err := n.CreateSubnet(ctx, input); err != nil || next.State != biz.Provisioning {
+		t.Fatal("provider projection gated new management intent", next, err)
 	}
 }

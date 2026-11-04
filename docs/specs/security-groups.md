@@ -1,5 +1,7 @@
 # 租户安全组
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 安全组由 Resource Network 拥有产品身份、规则、引用及持久操作；Governance
 负责受信租户、权限和 HTTP 适配，实例 owner 负责模板及当前运行对象。
 KCN v1 负责实际规则下发。来源为本地 kc-networking `6132623` 的 usage/API；

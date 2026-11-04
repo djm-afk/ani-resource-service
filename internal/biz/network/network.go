@@ -84,7 +84,7 @@ type CreateVPC struct {
 
 type NetworkRepository interface {
 	ResolveTenantNamespace(context.Context, string) (tenantnamespace.Identity, error)
-	AcceptSubnet(context.Context, SubnetIntent, Attribution, time.Duration) (Subnet, error)
+	AcceptSubnet(context.Context, SubnetIntent, Attribution) (Subnet, error)
 	GetSubnet(context.Context, string, string) (Subnet, error)
 	ListSubnets(context.Context, string, SubnetFilter) ([]Subnet, int64, error)
 	DeleteSubnet(context.Context, string, string) (Subnet, error)
@@ -100,15 +100,13 @@ type NetworkRepository interface {
 type Network struct {
 	repository NetworkRepository
 	cursorKey  []byte
-	freshness  time.Duration
-	now        func() time.Time
 }
 
-func NewNetwork(repository NetworkRepository, cursorKey []byte, freshness time.Duration, now func() time.Time) (*Network, error) {
-	if repository == nil || len(cursorKey) < 32 || freshness <= 0 || now == nil {
-		return nil, fmt.Errorf("repository, >=32 byte cursor key, freshness and clock are required")
+func NewNetwork(repository NetworkRepository, cursorKey []byte) (*Network, error) {
+	if repository == nil || len(cursorKey) < 32 {
+		return nil, fmt.Errorf("repository and >=32 byte cursor key are required")
 	}
-	return &Network{repository: repository, cursorKey: append([]byte(nil), cursorKey...), freshness: freshness, now: now}, nil
+	return &Network{repository: repository, cursorKey: append([]byte(nil), cursorKey...)}, nil
 }
 
 func (n *Network) CreateVPC(ctx context.Context, request CreateVPC) (VPC, error) {
@@ -134,11 +132,7 @@ func (n *Network) GetVPC(ctx context.Context, tenant, id string) (VPC, error) {
 	if !validVPCID(id) {
 		return VPC{}, Fail(ResourceNotFound, "VPC not found")
 	}
-	value, err := n.repository.GetVPC(ctx, tenant, id)
-	if err == nil {
-		value = n.observation(value)
-	}
-	return value, err
+	return n.repository.GetVPC(ctx, tenant, id)
 }
 
 func (n *Network) GetOperation(ctx context.Context, tenant, id string) (Operation, error) {
@@ -167,26 +161,7 @@ func (n *Network) DeleteVPC(ctx context.Context, tenant, id string) (VPC, error)
 	if !validVPCID(id) {
 		return VPC{}, Fail(ResourceNotFound, "VPC not found")
 	}
-	value, err := n.repository.DeleteVPC(ctx, tenant, id)
-	if err == nil {
-		value = n.observation(value)
-	}
-	return value, err
-}
-
-func (n *Network) observation(value VPC) VPC {
-	if p := value.PublicEgress; p != nil {
-		p.ObservationStale = p.ObservedAt == nil || p.ObservedAt.After(n.now()) || n.now().Sub(*p.ObservedAt) > n.freshness
-		if p.ObservationStale {
-			p.AppliedEnabled = nil
-		}
-	}
-	if value.BaseConnectivity != nil {
-		b := value.BaseConnectivity
-		b.ObservationStale = b.ObservedAt == nil || b.ObservedAt.After(n.now()) || n.now().Sub(*b.ObservedAt) > n.freshness
-	}
-	value.ObservationStale = value.Reason == ProviderUnavailable || value.ObservedAt == nil || value.ObservedAt.After(n.now()) || n.now().Sub(*value.ObservedAt) > n.freshness
-	return value
+	return n.repository.DeleteVPC(ctx, tenant, id)
 }
 
 func validVPCID(id string) bool {

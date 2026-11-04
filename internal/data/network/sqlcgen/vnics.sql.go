@@ -13,9 +13,9 @@ import (
 const advanceVNic = `-- name: AdvanceVNic :one
 UPDATE network_vnics SET state=$1,reason=$2,version=version+1,updated_at=clock_timestamp(),
  observed_at=CASE WHEN $3::boolean THEN $4::timestamptz ELSE observed_at END,
- mac_address=CASE WHEN $3::boolean AND $5::text<>'' THEN $5::text ELSE mac_address END,
- primary_ip=CASE WHEN $3::boolean AND $6::text<>'' THEN $6::text ELSE primary_ip END,
- ips=CASE WHEN $3::boolean AND cardinality($7::text[])>0 THEN $7::text[] ELSE ips END
+ mac_address=CASE WHEN $3::boolean THEN $5::text ELSE mac_address END,
+ primary_ip=CASE WHEN $3::boolean THEN $6::text ELSE primary_ip END,
+ ips=CASE WHEN $3::boolean THEN $7::text[] ELSE ips END
 WHERE tenant_id=$8 AND vnic_id=$9 AND version=$10 RETURNING tenant_id, vnic_id, vpc_id, subnet_id, name, description, state, reason, version, mac_address, primary_ip, ips, security_group_ids, observed_at, created_at, updated_at, last_operation_id, requested_ip, requested_mac
 `
 
@@ -66,6 +66,48 @@ func (q *Queries) AdvanceVNic(ctx context.Context, arg AdvanceVNicParams) (Netwo
 		&i.LastOperationID,
 		&i.RequestedIp,
 		&i.RequestedMac,
+	)
+	return i, err
+}
+
+const getVNic = `-- name: GetVNic :one
+SELECT v.tenant_id, v.vnic_id, v.vpc_id, v.subnet_id, v.name, v.description, v.state, v.reason, v.version, v.mac_address, v.primary_ip, v.ips, v.security_group_ids, v.observed_at, v.created_at, v.updated_at, v.last_operation_id, v.requested_ip, v.requested_mac,coalesce(r.observation_error,'')::text AS observation_error FROM network_vnics v LEFT JOIN network_reconciliations r ON r.tenant_id=v.tenant_id AND r.vnic_id=v.vnic_id WHERE v.tenant_id=$1 AND v.vnic_id=$2
+`
+
+type GetVNicParams struct {
+	TenantID string
+	VnicID   string
+}
+
+type GetVNicRow struct {
+	NetworkVnic      NetworkVnic
+	ObservationError string
+}
+
+func (q *Queries) GetVNic(ctx context.Context, arg GetVNicParams) (GetVNicRow, error) {
+	row := q.db.QueryRow(ctx, getVNic, arg.TenantID, arg.VnicID)
+	var i GetVNicRow
+	err := row.Scan(
+		&i.NetworkVnic.TenantID,
+		&i.NetworkVnic.VnicID,
+		&i.NetworkVnic.VpcID,
+		&i.NetworkVnic.SubnetID,
+		&i.NetworkVnic.Name,
+		&i.NetworkVnic.Description,
+		&i.NetworkVnic.State,
+		&i.NetworkVnic.Reason,
+		&i.NetworkVnic.Version,
+		&i.NetworkVnic.MacAddress,
+		&i.NetworkVnic.PrimaryIp,
+		&i.NetworkVnic.Ips,
+		&i.NetworkVnic.SecurityGroupIds,
+		&i.NetworkVnic.ObservedAt,
+		&i.NetworkVnic.CreatedAt,
+		&i.NetworkVnic.UpdatedAt,
+		&i.NetworkVnic.LastOperationID,
+		&i.NetworkVnic.RequestedIp,
+		&i.NetworkVnic.RequestedMac,
+		&i.ObservationError,
 	)
 	return i, err
 }

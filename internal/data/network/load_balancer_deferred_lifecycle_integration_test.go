@@ -3,16 +3,15 @@ package data_test
 import (
 	"context"
 	"errors"
-	"reflect"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/clientcmd"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
 )
 
 type deferredLBBinding struct{ id, namespace, name, uid string }
@@ -105,10 +104,8 @@ func restartDeferredWorker(t *testing.T, f *lbAdmissionFixture) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository.UseEgressInfrastructure(provider)
-	options := data.DefaultObservationOptions()
-	options.AuditInterval, options.AuditJitter, options.FlushInterval = 80*time.Millisecond, time.Millisecond, 10*time.Millisecond
-	observer, err := provider.EnableObservation(options)
+	repository.UseVirtualSwitchInfrastructure(provider)
+	observer, err := provider.EnableObservation(time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +125,7 @@ func restartDeferredWorker(t *testing.T, f *lbAdmissionFixture) {
 		t.Fatal(err)
 	}
 	f.f.p, f.f.w = repository, worker
-	f.lbs, err = biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)), time.Minute, time.Now)
+	f.lbs, err = biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,10 +287,10 @@ func TestLBDeferredActualAdapterLifecycleRestartAndReactivation(t *testing.T) {
 	if lb.State != biz.Provisioning || lb.Listeners[0].ID != firstID || lb.Listeners[1].ID != secondID || f.api.Object("gateways", running.namespace, running.name) != nil || f.api.Object("backends", running.namespace, oldBackend) != nil || f.api.Object("services", running.namespace, running.name) != nil || f.api.Object("endpointslices", running.namespace, running.name+"-slice") != nil {
 		t.Fatal("complete cleanup did not preserve product identity and remove old runtime", lb)
 	}
-	var retiredUID, retiredOperation, occupiedRevision, absenceRevision string
+	var retiredUID, retiredOperation string
 	var cleanupTarget int64
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT provider_uid,cleanup_target_version,operation_id,vip_occupied_revision,vip_absence_revision FROM network_lb_retired_bindings WHERE tenant_id=$1 AND lb_id=$2 AND binding_id=$3`, f.f.tenant, lb.ID, running.id).Scan(&retiredUID, &cleanupTarget, &retiredOperation, &occupiedRevision, &absenceRevision); err != nil || retiredUID != running.uid || cleanupTarget != 6 || retiredOperation != cleared.Operation.ID || occupiedRevision == "" || absenceRevision == "" || occupiedRevision == absenceRevision {
-		t.Fatal("durable retirement fact missing or not scoped to old Gateway/cleanup", retiredUID, cleanupTarget, retiredOperation, occupiedRevision, absenceRevision, err)
+	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT provider_uid,cleanup_target_version,operation_id FROM network_lb_retired_bindings WHERE tenant_id=$1 AND lb_id=$2 AND binding_id=$3`, f.f.tenant, lb.ID, running.id).Scan(&retiredUID, &cleanupTarget, &retiredOperation); err != nil || retiredUID != running.uid || cleanupTarget != 6 || retiredOperation != cleared.Operation.ID {
+		t.Fatal("durable retirement fact missing or not scoped to old Gateway/cleanup", retiredUID, cleanupTarget, retiredOperation, err)
 	}
 	first = deferredListenerInput(lb.Listeners[0], f.request.Backends)
 	second = deferredListenerInput(lb.Listeners[1], nil)
@@ -308,10 +305,6 @@ func TestLBDeferredActualAdapterLifecycleRestartAndReactivation(t *testing.T) {
 	if problems := validation.IsDNS1035Label(newBinding.name); len(problems) != 0 {
 		t.Error("reactivated Gateway cannot name its generated Service", newBinding.name, problems)
 	}
-	var newOccupied, newAbsence string
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT vip_occupied_revision,vip_absence_revision FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID).Scan(&newOccupied, &newAbsence); err != nil || newOccupied != "" || newAbsence != "" {
-		t.Fatal("new incarnation reused old VIP release proof", newOccupied, newAbsence, err)
-	}
 	lb = deferredConfigured(t, f, lb.ID, 7)
 	operation(resumed.Operation.ID)
 	deferredVersions(t, lb, 7, 7, 7)
@@ -324,10 +317,6 @@ func TestLBDeferredActualAdapterLifecycleRestartAndReactivation(t *testing.T) {
 	}
 	claim("bound", false)
 	occupancy(1, 1, 1)
-	var oldReleased, newLive int
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT (SELECT count(*) FROM network_lb_generated_resources WHERE tenant_id=$1 AND lb_id=$2 AND gateway_uid=$3 AND released_at IS NOT NULL),(SELECT count(*) FROM network_lb_generated_resources WHERE tenant_id=$1 AND lb_id=$2 AND gateway_uid=$4 AND released_at IS NULL)`, f.f.tenant, lb.ID, running.uid, newBinding.uid).Scan(&oldReleased, &newLive); err != nil || oldReleased == 0 || newLive == 0 {
-		t.Fatal("generated identities did not preserve old release and new live facts", oldReleased, newLive, err)
-	}
 	deleted, err := f.lbs.Delete(f.f.ctx, "", lb.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -345,9 +334,6 @@ func TestLBDeferredActualAdapterLifecycleRestartAndReactivation(t *testing.T) {
 	}
 	if survivingEIP, err := f.f.e.GetEIP(f.f.ctx, "", eip.ID); err != nil || survivingEIP.State == biz.Deleted {
 		t.Fatal("LB deletion changed independent EIP", survivingEIP, err)
-	}
-	if lb.DataPlaneState != "unknown" || lb.DataPlaneObservedAt != nil {
-		t.Fatal("controlled configuration asserted live application traffic health", lb)
 	}
 	t.Log("controlled empty-save/activate/mixed/shared/partial-clear/full-clear/restart/reactivate/delete chain completed; live VIP traffic remains a separate acceptance")
 }
@@ -406,8 +392,5 @@ func TestLBDeferredFirstActivationThenProductDelete(t *testing.T) {
 	backend = f.api.Object("pods", running.namespace, "lb-backend")
 	if backend == nil || backend["metadata"].(map[string]any)["uid"] != backendUID || f.api.Object("gateways", running.namespace, running.name) != nil || f.api.Object("services", running.namespace, running.name) != nil {
 		t.Fatal("product deletion changed the business backend or retained its LB data plane")
-	}
-	if lb.DataPlaneState != "unknown" || lb.DataPlaneObservedAt != nil {
-		t.Fatal("controlled lifecycle claimed live traffic health", lb)
 	}
 }

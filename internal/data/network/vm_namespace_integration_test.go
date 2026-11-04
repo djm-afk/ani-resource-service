@@ -3,6 +3,7 @@ package data_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -111,8 +112,11 @@ func newAutoVMNetwork(t *testing.T) (attachmentFixture, *vmNetworkAPI, string) {
 	if err = provider.ConfigureVMAutoNetwork(data.VMAutoNetworkConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if err = f.p.SetVMNetworkResolver(provider, time.Minute); err != nil {
+	if err = f.p.SetVMNetworkResolver(provider); err != nil {
 		t.Fatal(err)
+	}
+	if err = f.p.WakeManagedTasks(context.Background()); err != nil {
+		t.Fatal("observer startup wake", err)
 	}
 	return f, api, host.URL
 }
@@ -133,6 +137,54 @@ func awaitAutoVMNetwork(t *testing.T, f attachmentFixture) data.ManagedVMNAD {
 	}
 	t.Fatal("existing Subnet never received its automatic VM network")
 	return data.ManagedVMNAD{}
+}
+
+func TestVMNetworkPreparationRetryIsFencedByLeaseAndDeletion(t *testing.T) {
+	f, _, _ := newAutoVMNetwork(t)
+	awaitAutoVMNetwork(t, f)
+	ctx := context.Background()
+	// Startup wakes the VPC as well as the Subnet. Finish that independent work
+	// before asserting which product the next explicit notification will claim.
+	for round := 0; ; round++ {
+		found, err := f.resourceWorker.Step(ctx)
+		if err != nil || round >= 4 {
+			t.Fatal("startup work did not park", found, err)
+		}
+		if !found {
+			break
+		}
+	}
+	if err := f.p.NotifyResource(ctx, f.r.TenantID, f.r.SubnetID); err != nil {
+		t.Fatal(err)
+	}
+	w, found, err := f.p.Claim(ctx, uuid.NewString(), time.Minute)
+	if err != nil || !found || w.Resource.ID != f.r.SubnetID {
+		t.Fatal("claim Subnet", w, found, err)
+	}
+	finish := func(work biz.Work) {
+		t.Helper()
+		if err := f.p.Finish(ctx, work, biz.Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity, Observed: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finish(w)
+	if err := f.p.RetryVMNetworkPreparation(ctx, w, 0); err != nil {
+		t.Fatal("retry unfinished own declaration", err)
+	}
+	next, found, err := f.p.Claim(ctx, uuid.NewString(), time.Minute)
+	if err != nil || !found || next.Resource.ID != w.Resource.ID || next.ClaimedGeneration <= w.ClaimedGeneration {
+		t.Fatal("retry notification lost", next, found, err)
+	}
+	if err := f.p.RetryVMNetworkPreparation(ctx, w, 0); !errors.Is(err, biz.ErrLeaseLost) {
+		t.Fatal("old preparation changed a newer lease", err)
+	}
+	finish(next)
+	if _, err := f.n.DeleteSubnet(ctx, f.r.TenantID, f.r.SubnetID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.p.RetryVMNetworkPreparation(ctx, next, 0); !errors.Is(err, biz.ErrLeaseLost) {
+		t.Fatal("preparation revived a deleting product", err)
+	}
 }
 
 func TestVMAutoNetworkPGBackfillsExistingSubnetAndPinsAcrossRestart(t *testing.T) {
@@ -187,7 +239,7 @@ func TestVMAutoNetworkPGBackfillsExistingSubnetAndPinsAcrossRestart(t *testing.T
 	e := biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}
 	f.r.WorkloadMode = "vm_managed"
 	f.r.VMExpectation = &e
-	if _, err = f.p.ResolveVMNetworkSelection(ctx, f.r, time.Minute); err != nil {
+	if _, err = f.p.ResolveVMNetworkSelection(ctx, f.r); err != nil {
 		t.Fatal(err)
 	}
 	api.mu.Lock()
@@ -213,6 +265,10 @@ func TestVMAutoNetworkPGBackfillsExistingSubnetAndPinsAcrossRestart(t *testing.T
 		t.Fatal("Subnet binding or shared NAD identity incorrect", second, err)
 	}
 	otherTenant := uuid.NewString()
+	otherNamespace := "tenant-" + otherTenant
+	api.legacy.Mu.Lock()
+	api.legacy.Objects["namespaces//"+otherNamespace] = map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": otherNamespace, "uid": uuid.NewString(), "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": otherTenant}}, "status": map[string]any{"phase": "Active"}}
+	api.legacy.Mu.Unlock()
 	v := availableVPC(t, f.n, f.resourceWorker, otherTenant, "second-tenant-auto")
 	otherSubnet, err := f.n.CreateSubnet(ctx, biz.CreateSubnet{TenantID: otherTenant, VPCID: v.ID, Name: "other-tenant-subnet", CIDR: "10.42.1.0/24", IdempotencyKey: "other-auto-subnet"})
 	if err != nil {
@@ -229,7 +285,7 @@ func TestVMAutoNetworkPGBackfillsExistingSubnetAndPinsAcrossRestart(t *testing.T
 	saKey := "/api/v1/namespaces/" + f.r.Namespace + "/serviceaccounts/ani-vm-workload"
 	api.objects[saKey]["metadata"].(map[string]any)["uid"] = "replacement-sa-uid"
 	api.mu.Unlock()
-	if _, err = f.p.ResolveVMNetworkSelection(ctx, f.r, time.Minute); err == nil {
+	if _, err = f.p.ResolveVMNetworkSelection(ctx, f.r); err == nil {
 		t.Fatal("same-name ServiceAccount replacement accepted")
 	}
 }
@@ -333,23 +389,23 @@ func TestVMAutoNetworkPGStopAndClosureSurviveAuxiliaryPreparationFailure(t *test
 					t.Fatal(err)
 				}
 			}
-			if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r, time.Minute); err == nil {
+			if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r); err == nil {
 				t.Fatal("new/running VM admitted after auxiliary failure", fault)
 			}
 			c := vmConsumerFor(a)
 			c.DesiredRunState = "stopped"
-			c.RetiredPods, c.CurrentPods = c.CurrentPods, nil
+			c.CurrentPods = nil
 			setManagedConsumer(f, c)
 			workerPolicy := biz.DefaultWorkerPolicy()
 			workerPolicy.ObserveEvery = 5 * time.Millisecond
 			workerPolicy.RetryMin = time.Millisecond
 			var err error
-			f.worker, err = biz.NewAttachmentWorker(f.p, f.provider, f.consumer, uuid.NewString(), workerPolicy)
+			f.worker, err = biz.NewAttachmentWorker(f.p, f.consumer, f.provider, uuid.NewString(), workerPolicy)
 			if err != nil {
 				t.Fatal(err)
 			}
 			a = f.step(t, a.ID)
-			if a.State != biz.Reserved || a.Reason != "" || a.PodUID != "" || attachmentProtocolBlocked(t, f, a.ID) {
+			if a.State != biz.Reserved || a.Reason != "" || a.PodUID != "" {
 				t.Fatal("stopped VM could not converge after auxiliary failure", fault, a)
 			}
 			closed := time.Now()
@@ -362,7 +418,7 @@ func TestVMAutoNetworkPGStopAndClosureSurviveAuxiliaryPreparationFailure(t *test
 			for i := 0; i < 4 && a.State != biz.Released; i++ {
 				a = f.step(t, a.ID)
 			}
-			if a.State != biz.Released || a.Reason != "" || attachmentProtocolBlocked(t, f, a.ID) {
+			if a.State != biz.Released || a.Reason != "" {
 				t.Fatal("closed VM remained fenced on auxiliary failure", fault, a)
 			}
 			api.mu.Lock()

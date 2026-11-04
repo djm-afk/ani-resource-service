@@ -3,6 +3,9 @@ package data_test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -10,10 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 )
 
 // This HTTP fixture implements the Kubernetes/controller side only. Every LB
@@ -134,7 +133,7 @@ func (c *lbControllerFixture) http(w http.ResponseWriter, r *http.Request, api *
 			return true
 		}
 		m := obj["metadata"].(map[string]any)
-		if options.Preconditions.UID != m["uid"] || options.Preconditions.ResourceVersion != m["resourceVersion"] || options.PropagationPolicy != "Foreground" {
+		if options.Preconditions.UID != m["uid"] || options.Preconditions.ResourceVersion != m["resourceVersion"] || options.PropagationPolicy != "" {
 			fail(409, "Conflict")
 			return true
 		}
@@ -450,7 +449,7 @@ func TestLBActualAdapterThreeExposuresUpdateAndDelete(t *testing.T) {
 			if err = f.f.owner.QueryRow(f.f.ctx, `SELECT flavor FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID).Scan(&persistedFlavor); err != nil || persistedFlavor != scenario.flavor || lb.Flavor != scenario.flavor {
 				t.Fatal("selected flavor was not persisted", persistedFlavor, lb.Flavor, err)
 			}
-			if lb.ConfigurationState != "configured" || lb.AppliedVersion != 1 || lb.DataPlaneState != "unknown" || lb.DataPlaneObservedAt != nil {
+			if lb.ConfigurationState != "configured" || lb.AppliedVersion != 1 {
 				t.Fatal("configuration was confused with health", lb)
 			}
 			op, err := f.lbs.GetOperation(f.f.ctx, "", r.Operation.ID)
@@ -463,8 +462,8 @@ func TestLBActualAdapterThreeExposuresUpdateAndDelete(t *testing.T) {
 					return err == nil && v.State == biz.Available && v.BindingState == "bound" && v.BindingID == "" && v.BindingTarget != nil && v.BindingTarget.ID == lb.ID
 				})
 			}
-			// Creation must pass the real adapter's GeneratedReady checks for
-			// each flavor, including resources and replicas. Weight updates and
+			// Creation consumes the declared objects' controller status for
+			// each flavor. Weight updates and
 			// receipt replay share the same path across exposures; exercise them
 			// once with both public and private entries present.
 			if exposure == "public_private" && scenario.flavor == "small" {
@@ -550,9 +549,7 @@ func TestLBActualAdapterIdentityLossRemovesRouteAndRetainsAppliedVersion(t *test
 	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT namespace,provider_name FROM network_lb_components WHERE tenant_id=$1 AND lb_id=$2 AND kind='route'`, f.f.tenant, lb.ID).Scan(&ns, &route); err != nil {
 		t.Fatal(err)
 	}
-	ip := f.api.Object("vnicips", ns, "lb-backend-ip")
-	ip["metadata"].(map[string]any)["uid"] = uuid.NewString()
-	f.api.Change("vnicips", ip, false)
+	setLBCurrentBackendAddresses(t, f, lb.ID, lb.Backends[0].AttachmentID, []string{})
 	f.f.drive(t, func() bool {
 		lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
 		obj := f.api.Object("httproutes", ns, route)

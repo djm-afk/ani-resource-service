@@ -5,32 +5,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
-	"strings"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"slices"
+	"strings"
+	"time"
 )
 
 func newEgressID(prefix string) string {
 	return prefix + "_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 }
 func eipResource(r sqlcgen.NetworkEip) biz.EIP {
-	return biz.EIP{EgressMetadata: biz.EgressMetadata{ID: r.EipID, Name: r.Name, Description: r.Description, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, LastOperationID: r.LastOperationID}, TenantID: r.TenantID, Address: r.Address, BindingState: "unbound", Scope: r.Scope, ManagedBy: r.ManagedBy}
+	return biz.EIP{EgressMetadata: biz.EgressMetadata{ID: r.EipID, Name: r.Name, Description: r.Description, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, ObservationStale: r.ObservedAt == nil, LastOperationID: r.LastOperationID}, TenantID: r.TenantID, Address: r.Address, BindingState: "unbound", Scope: r.Scope, ManagedBy: r.ManagedBy}
 }
 func snatResource(r sqlcgen.NetworkSnatBinding, address string) biz.VPCSnatBinding {
-	v := biz.VPCSnatBinding{EgressMetadata: biz.EgressMetadata{ID: r.SnatID, Name: r.Name, Description: r.Description, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, LastOperationID: r.LastOperationID}, TenantID: r.TenantID, VPCID: r.VpcID, EIPID: r.EipID, EIPAddress: address, DesiredEnabled: r.DesiredEnabled, Purpose: r.Purpose}
+	v := biz.VPCSnatBinding{EgressMetadata: biz.EgressMetadata{ID: r.SnatID, Name: r.Name, Description: r.Description, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, ObservationStale: r.ObservedAt == nil, LastOperationID: r.LastOperationID}, TenantID: r.TenantID, VPCID: r.VpcID, EIPID: r.EipID, EIPAddress: address, DesiredEnabled: r.DesiredEnabled, Purpose: r.Purpose}
 	if r.AppliedEnabled.Valid {
 		value := r.AppliedEnabled.Bool
 		v.AppliedEnabled = &value
 	}
 	return v
-}
-func freshResource(state string, observed *time.Time, now time.Time, limit time.Duration) bool {
-	return state == string(biz.Available) && observed != nil && !observed.After(now) && now.Sub(*observed) <= limit
 }
 
 func egressReplay(ctx context.Context, q *sqlcgen.Queries, i biz.EgressIntent, dst any) (bool, error) {
@@ -93,7 +89,7 @@ func insertEgressAcceptance(ctx context.Context, q *sqlcgen.Queries, i biz.Egres
 	}
 	return databaseFailure(q.InsertHistory(ctx, sqlcgen.InsertHistoryParams{TenantID: i.TenantID, HistoryID: uuid.NewString(), EipID: eip, SnatID: snat, OperationID: &meta.LastOperationID, Event: i.Kind + "_accepted", ResourceState: string(meta.State), OperationState: string(biz.Queued), ActorRef: a.Actor, CallerRef: a.DirectCaller, CorrelationID: a.CorrelationID, CreatedAt: now}))
 }
-func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attribution, freshness time.Duration) (biz.EIP, error) {
+func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attribution) (biz.EIP, error) {
 	identity, err := p.ResolveTenantNamespace(ctx, i.TenantID)
 	if err != nil {
 		return biz.EIP{}, err
@@ -134,7 +130,7 @@ func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attr
 	if err != nil {
 		return biz.EIP{}, databaseFailure(err)
 	}
-	if err = p.poolReady(ctx, q, pool, now, freshness, true); err != nil {
+	if err = p.poolAllocationAllowed(ctx, q, pool, true); err != nil {
 		return biz.EIP{}, err
 	}
 	if err = p.acceptTenantNamespace(ctx, q, identity); err != nil {
@@ -205,6 +201,7 @@ func requirePublicSnat(row sqlcgen.NetworkSnatBinding) error {
 func (p *Postgres) GetEIP(ctx context.Context, tenant, id string) (biz.EIP, error) {
 	r, err := p.queries.GetEIP(ctx, sqlcgen.GetEIPParams{TenantID: tenant, EipID: id})
 	v := eipResource(r.NetworkEip)
+	v.ObservationStale = v.ObservedAt == nil || r.ObservationError != ""
 	v.BindingID = r.BindingID
 	v.BindingState = r.BindingState
 	v.BindingTarget = eipBindingTarget(r.BindingTargetKind, r.BindingTargetID, r.BindingState, r.BindingVpcID)
@@ -228,6 +225,7 @@ func (p *Postgres) ListEIPs(ctx context.Context, tenant string, f biz.VPCFilter)
 	values := make([]biz.EIP, 0, len(rows))
 	for _, r := range rows {
 		v := eipResource(r.NetworkEip)
+		v.ObservationStale = v.ObservedAt == nil || r.ObservationError != ""
 		v.BindingID = r.BindingID
 		v.BindingState = r.BindingState
 		v.BindingTarget = eipBindingTarget(r.BindingTargetKind, r.BindingTargetID, r.BindingState, r.BindingVpcID)
@@ -237,9 +235,11 @@ func (p *Postgres) ListEIPs(ctx context.Context, tenant string, f biz.VPCFilter)
 }
 func (p *Postgres) GetSnat(ctx context.Context, tenant, id string, byVPC bool) (biz.VPCSnatBinding, error) {
 	r, err := p.queries.GetSnat(ctx, sqlcgen.GetSnatParams{TenantID: tenant, ID: id, ByVpc: byVPC})
-	return snatResource(r.NetworkSnatBinding, r.Address), databaseFailure(err)
+	v := snatResource(r.NetworkSnatBinding, r.Address)
+	v.ObservationStale = v.ObservedAt == nil || r.ObservationError != ""
+	return v, databaseFailure(err)
 }
-func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Attribution, freshness time.Duration) (biz.VPCSnatBinding, error) {
+func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Attribution) (biz.VPCSnatBinding, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return biz.VPCSnatBinding{}, databaseFailure(err)
@@ -312,36 +312,8 @@ func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Att
 	if err != nil {
 		return biz.VPCSnatBinding{}, databaseFailure(err)
 	}
-	var parentProof sqlcgen.GetVPCProviderReadinessRow
-	// Disabling an existing binding remains possible when an exit is degraded.
-	// Creating/enabling requires applied, fresh parents and exit configuration.
-	if i.Kind == "bind_snat" || i.Enabled {
-		// Public egress depends on this VPC's own fenced Provider observation,
-		// never the aggregate lifecycle or optional Intranet EIP/SNAT readiness.
-		proof, proofErr := q.GetVPCProviderReadiness(ctx, sqlcgen.GetVPCProviderReadinessParams{TenantID: i.TenantID, VpcID: &vpcID})
-		if proofErr != nil {
-			return biz.VPCSnatBinding{}, databaseFailure(proofErr)
-		}
-		parentProof = proof
-		if parent.State == "deleting" || parent.State == "deleted" || parent.State == "failed" || !proof.ProviderReady || !freshTime(proof.ProviderObservedAt, now, freshness) || (proof.ProviderGeneration <= 0 || proof.ProviderObservedGeneration != proof.ProviderGeneration) {
-			return biz.VPCSnatBinding{}, biz.Fail(biz.PublicEgressNotReady, "VPC Provider is not fresh and ready")
-		}
-		if !freshResource(eip.State, eip.ObservedAt, now, freshness) {
-			return biz.VPCSnatBinding{}, biz.Fail(biz.PublicEgressNotReady, "EIP is not fresh and ready")
-		}
-		if err = completedOperation(ctx, q, i.TenantID, eip.LastOperationID); err != nil {
-			return biz.VPCSnatBinding{}, err
-		}
-		pool, err := q.GetPublicPool(ctx, sqlcgen.GetPublicPoolParams{ClusterID: eip.ClusterID, ResourceID: eip.PoolID})
-		if err != nil {
-			return biz.VPCSnatBinding{}, databaseFailure(err)
-		}
-		if pool.ConfigRevision != eip.PoolRevision {
-			return biz.VPCSnatBinding{}, biz.Fail(biz.PublicEgressNotReady, "fixed exit configuration changed")
-		}
-		if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
-			return biz.VPCSnatBinding{}, err
-		}
+	if parent.State == "deleting" || parent.State == "deleted" || eip.State == "deleting" || eip.State == "deleted" {
+		return biz.VPCSnatBinding{}, biz.Fail(biz.ResourceBusy, "a selected resource is being removed")
 	}
 	parentBinding, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: i.TenantID, ResourceID: vpcID})
 	if err != nil {
@@ -351,15 +323,8 @@ func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Att
 	if err != nil {
 		return biz.VPCSnatBinding{}, databaseFailure(err)
 	}
-	if i.Kind == "bind_snat" || i.Enabled {
-		if parentBinding.PendingAction != "" || eipBinding.PendingAction != "" {
-			return biz.VPCSnatBinding{}, biz.Fail(biz.ResourceBusy, "network parent has an unresolved Provider mutation")
-		}
-		if parentProof.ProviderObservedUid != parentBinding.ProviderUid {
-			return biz.VPCSnatBinding{}, biz.Fail(biz.ProviderOwnership, "VPC Provider observation identity changed")
-		}
-	}
-	if eip.ClusterID != p.placement.ClusterID || parentBinding.ClusterID != eip.ClusterID || parentBinding.Namespace != eip.Namespace || eipBinding.Namespace != eip.Namespace || eipBinding.ClusterID != eip.ClusterID || parentBinding.ProviderUid == "" || eipBinding.ProviderUid == "" {
+
+	if eip.ClusterID != p.placement.ClusterID || parentBinding.ClusterID != eip.ClusterID || parentBinding.Namespace != eip.Namespace || eipBinding.Namespace != eip.Namespace || eipBinding.ClusterID != eip.ClusterID {
 		return biz.VPCSnatBinding{}, biz.Fail(biz.ProviderOwnership, "resource placement or identity does not match")
 	}
 	opID := uuid.NewString()

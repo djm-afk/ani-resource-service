@@ -29,7 +29,7 @@ type AttachmentConsumerRow struct {
 	SubnetName, Slot, ConsumerType    string
 	ConsumerID, State, Reason, PodUID string
 	TenantID                          string
-	ObservationStale, ProtocolBlocked bool
+	ObservationStale                  bool
 	ObservedAt, CreatedAt             time.Time
 	HasObservation                    bool
 }
@@ -48,7 +48,7 @@ type AttachmentConsumer struct {
 	ConsumerName, ConsumerState        string
 	AttachmentState, AttachmentReason  string
 	ObservedAt                         *time.Time
-	ObservationStale, ProtocolBlocked  bool
+	ObservationStale                   bool
 }
 
 type AttachmentConsumerPage struct {
@@ -81,7 +81,7 @@ func (a *Attachments) ListInstances(ctx context.Context, r ListAttachmentConsume
 	if err != nil {
 		return AttachmentConsumerPage{}, err
 	}
-	rows, total, err := a.repository.ListAttachmentConsumers(ctx, tenant, AttachmentConsumerFilter{VPCID: r.VPCID, SubnetID: r.SubnetID, Limit: window.Limit, Offset: window.Offset}, a.freshness)
+	rows, total, err := a.repository.ListAttachmentConsumers(ctx, tenant, AttachmentConsumerFilter{VPCID: r.VPCID, SubnetID: r.SubnetID, Limit: window.Limit, Offset: window.Offset})
 	if err != nil {
 		return AttachmentConsumerPage{}, err
 	}
@@ -98,7 +98,7 @@ func (a *Attachments) ListInstances(ctx context.Context, r ListAttachmentConsume
 			Addresses: row.Addresses, AttachmentID: row.AttachmentID, SubnetID: row.SubnetID, SubnetName: row.SubnetName,
 			Slot: row.Slot, ConsumerID: canonicalConsumerID(row.ConsumerID), ConsumerType: row.ConsumerType,
 			TenantID: row.TenantID, ConsumerState: ConsumerUnknown, AttachmentState: row.State, AttachmentReason: row.Reason,
-			ObservationStale: row.ObservationStale, ProtocolBlocked: row.ProtocolBlocked,
+			ObservationStale: row.ObservationStale,
 		}
 		if value.ConsumerType == "" {
 			value.ConsumerType = ConsumerUnknown

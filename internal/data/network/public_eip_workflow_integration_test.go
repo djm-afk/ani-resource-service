@@ -3,14 +3,12 @@ package data_test
 import (
 	"context"
 	"errors"
-	"reflect"
-	"slices"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
+	"reflect"
+	"slices"
+	"testing"
 )
 
 // Only Kubernetes/controller HTTP is a boundary double. Admission, persistence,
@@ -27,25 +25,11 @@ func TestPublicEIPWorkflowOwnVPCReadyWithoutBase(t *testing.T) {
 	if err != nil || before.PublicEgress != nil {
 		t.Fatal("unbound VPC projection", before, err)
 	}
-	// A real KC adapter observation with an unapplied VPC generation must still
-	// refuse public binding, then recover through normal continuous observation.
+	// A parent's reported generation does not gate this own SNAT declaration.
 	name := "vpc-" + vpc.ID[len("vpc_"):]
-	original := api.Object("vpcs", "tenant-"+f.tenant, name)
-	unapplied := api.Object("vpcs", "tenant-"+f.tenant, name)
-	unapplied["status"].(map[string]any)["observedGeneration"] = 0
-	api.Change("vpcs", unapplied, false)
-	f.drive(t, func() bool {
-		v, err := f.n.GetVPC(f.ctx, f.tenant, vpc.ID)
-		return err == nil && v.State == biz.Degraded
-	})
-	if _, err = f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: vpc.ID, EIPID: address.ID, IdempotencyKey: "reject-stale-vpc-generation"}); biz.ReasonOf(err) != biz.PublicEgressNotReady {
-		t.Fatal("unapplied VPC Provider generation accepted", err)
-	}
-	api.Change("vpcs", original, false)
-	f.drive(t, func() bool {
-		v, err := f.n.GetVPC(f.ctx, f.tenant, vpc.ID)
-		return err == nil && v.State == biz.Available
-	})
+	parent := api.Object("vpcs", "tenant-"+f.tenant, name)
+	parent["status"].(map[string]any)["observedGeneration"] = 0
+	api.Change("vpcs", parent, false)
 	accepted, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: vpc.ID, EIPID: address.ID, IdempotencyKey: "bind-public"})
 	if err != nil {
 		t.Fatal("own Ready VPC must bind without base EIP", err)
@@ -98,8 +82,8 @@ func TestPublicEIPWorkflowOwnVPCReadyWithoutBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale, err := f.n.GetVPC(f.ctx, f.tenant, vpc.ID)
-	if err != nil || stale.PublicEgress == nil || !stale.PublicEgress.ObservationStale || stale.PublicEgress.AppliedEnabled != nil || stale.PublicEgress.BindingState != "bound" {
-		t.Fatal("stale egress was advertised as current or unbound", stale, err)
+	if err != nil || stale.PublicEgress == nil || stale.PublicEgress.ObservationStale || stale.PublicEgress.AppliedEnabled == nil || !*stale.PublicEgress.AppliedEnabled || stale.PublicEgress.BindingState != "bound" {
+		t.Fatal("read age changed reported applied state or binding", stale, err)
 	}
 	if _, err = f.e.DeleteVPCSnatBinding(f.ctx, "", accepted.ID); err != nil {
 		t.Fatal(err)
@@ -121,17 +105,10 @@ func TestPublicEIPWorkflowOwnVPCReadyWithoutBase(t *testing.T) {
 }
 
 func TestPublicEIPWorkflowDegradedBaseDoesNotBlockPublic(t *testing.T) {
-	f, api, _, _ := newBaseKCFixture(t, nil)
+	f, _, _, _ := newBaseKCFixture(t, nil)
 	vpc := baseState(t, f, createBaseVPC(t, f, "public-independent-of-base").ID, biz.Available)
-	_, snatID := baseIDs(t, f, vpc.ID)
-	baseName := "snat-" + snatID[len("snat_"):]
-	old := api.Object("snats", "tenant-"+f.tenant, baseName)
-	drift := api.Object("snats", "tenant-"+f.tenant, baseName)
-	drift["metadata"].(map[string]any)["uid"] = "foreign-base-snat-uid"
-	api.Change("snats", drift, false)
-	degraded := baseState(t, f, vpc.ID, biz.Degraded)
-	if degraded.BaseConnectivity == nil || degraded.BaseConnectivity.State != "degraded" {
-		t.Fatal("base drift not visible", degraded)
+	if _, err := f.owner.Exec(f.ctx, `UPDATE network_vpc_base_connectivity SET state='degraded' WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID); err != nil {
+		t.Fatal(err)
 	}
 	eip := f.eip(t, "public-while-base-degraded")
 	binding, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: vpc.ID, EIPID: eip.ID, IdempotencyKey: "bind-with-degraded-base"})
@@ -152,51 +129,39 @@ func TestPublicEIPWorkflowDegradedBaseDoesNotBlockPublic(t *testing.T) {
 	}
 	f.binding(t, current.ID, biz.Available, &on)
 	after, err := f.n.GetVPC(f.ctx, f.tenant, vpc.ID)
-	if err != nil || after.State != biz.Degraded || after.BaseConnectivity.State != "degraded" || after.PublicEgress == nil || after.PublicEgress.BindingState != "bound" {
+	if err != nil || after.State != biz.Available || after.BaseConnectivity.State != "degraded" || after.PublicEgress == nil || after.PublicEgress.BindingState != "bound" {
 		t.Fatal("public hid base fault or lost independent association", after, err)
 	}
-	api.Change("snats", old, false)
 }
 
-func TestPublicEIPWorkflowAdmissionKeepsProviderFences(t *testing.T) {
-	f := newEgressFixture(t)
-	vpc := availableEgressVPC(t, f, "public-admission")
-	eip := f.eip(t, "public-admission-address")
-	var ready bool
-	var observed *time.Time
-	var uid string
-	var generation int64
-	if err := f.owner.QueryRow(f.ctx, `SELECT provider_ready,provider_observed_at,provider_observed_uid,provider_observed_generation FROM network_provider_bindings WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID).Scan(&ready, &observed, &uid, &generation); err != nil || !ready || uid == "" {
-		t.Fatal("own Provider proof missing", err)
-	}
-	for _, tc := range []struct {
-		name, sql string
-		reason    biz.Reason
-	}{
-		{"not-ready", `UPDATE network_provider_bindings SET provider_ready=false WHERE tenant_id=$1 AND vpc_id=$2`, biz.PublicEgressNotReady},
-		{"stale", `UPDATE network_provider_bindings SET provider_observed_at=clock_timestamp()-interval '2 minutes' WHERE tenant_id=$1 AND vpc_id=$2`, biz.PublicEgressNotReady},
-		{"uid-changed", `UPDATE network_provider_bindings SET provider_observed_uid='different-uid' WHERE tenant_id=$1 AND vpc_id=$2`, biz.ProviderOwnership},
-		{"provider-generation-unapplied", `UPDATE network_provider_bindings SET provider_observed_generation=0 WHERE tenant_id=$1 AND vpc_id=$2`, biz.PublicEgressNotReady},
-		{"pending-mutation", `UPDATE network_provider_bindings SET pending_action='create',pending_since=clock_timestamp() WHERE tenant_id=$1 AND vpc_id=$2`, biz.ResourceBusy},
-		{"deleting", `UPDATE network_vpcs SET state='deleting' WHERE tenant_id=$1 AND vpc_id=$2`, biz.PublicEgressNotReady},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := f.owner.Exec(f.ctx, tc.sql, f.tenant, vpc.ID); err != nil {
+func TestPublicEIPWorkflowAdmissionUsesManagementState(t *testing.T) {
+	for _, scenario := range []string{"degraded", "old-read", "pending-parent", "deleting"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newEgressFixture(t)
+			vpc := availableEgressVPC(t, f, "public-admission")
+			eip := f.eip(t, "public-admission-address")
+			query := map[string]string{
+				"degraded":       `UPDATE network_vpcs SET state='degraded' WHERE tenant_id=$1 AND vpc_id=$2`,
+				"old-read":       `UPDATE network_vpcs SET observed_at=clock_timestamp()-interval '2 hour' WHERE tenant_id=$1 AND vpc_id=$2`,
+				"pending-parent": `UPDATE network_provider_bindings SET pending_action='create',pending_since=clock_timestamp() WHERE tenant_id=$1 AND vpc_id=$2`,
+				"deleting":       `UPDATE network_vpcs SET state='deleting' WHERE tenant_id=$1 AND vpc_id=$2`,
+			}[scenario]
+			if _, err := f.owner.Exec(f.ctx, query, f.tenant, vpc.ID); err != nil {
 				t.Fatal(err)
 			}
-			_, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: vpc.ID, EIPID: eip.ID, IdempotencyKey: tc.name})
-			if biz.ReasonOf(err) != tc.reason {
-				t.Fatal("provider fence was relaxed", err, tc.reason)
+			_, err := f.e.BindVPCSnat(f.ctx, biz.EgressIntent{VPCID: vpc.ID, EIPID: eip.ID, IdempotencyKey: scenario})
+			wantClaims := 1
+			if scenario == "deleting" {
+				wantClaims = 0
+				if biz.ReasonOf(err) != biz.ResourceBusy {
+					t.Fatal("deletion did not close admission", err)
+				}
+			} else if err != nil {
+				t.Fatal("parent runtime facts gated own declaration", err)
 			}
 			var claims int
-			if err := f.owner.QueryRow(f.ctx, `SELECT count(*) FROM network_eip_claims WHERE tenant_id=$1 AND eip_id=$2 AND released_at IS NULL`, f.tenant, eip.ID).Scan(&claims); err != nil || claims != 0 {
-				t.Fatal("rejected admission reserved an EIP", claims, err)
-			}
-			if _, err := f.owner.Exec(f.ctx, `UPDATE network_provider_bindings SET provider_ready=$3,provider_observed_at=$4,provider_observed_uid=$5,provider_observed_generation=$6,pending_action='',pending_since=NULL WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID, ready, observed, uid, generation); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := f.owner.Exec(f.ctx, `UPDATE network_vpcs SET state='available' WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, vpc.ID); err != nil {
-				t.Fatal(err)
+			if err := f.owner.QueryRow(f.ctx, `SELECT count(*) FROM network_eip_claims WHERE tenant_id=$1 AND eip_id=$2 AND released_at IS NULL`, f.tenant, eip.ID).Scan(&claims); err != nil || claims != wantClaims {
+				t.Fatal(claims, err)
 			}
 		})
 	}

@@ -1,5 +1,7 @@
 # 租户 VPC / Subnet 首片规格
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
 
 > 2026-10-19：Notebook 实例接入新增[受控工作负载合同](instance-configuration-network.md#6-res-network-支持-notebook-的-pod-替换)。下文不同 Pod UID 冲突和 Consumer v1 描述继续适用于原 `single_pod` 模式；`controller_managed` 使用持久版本、独立 owner 链核验和当前/历史/待核验关系，不能据新模式放松旧模式的身份保护。实际交付只见[执行状态](../execution/status.md#instance-configuration-and-network-2026-10-19)。

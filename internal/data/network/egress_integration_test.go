@@ -4,18 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 // Test dependency only. All acceptance, leases, constraints and histories below
@@ -38,12 +37,8 @@ func (p *egressProvider) Observe(ctx context.Context, t biz.ProviderTarget) (biz
 	v := p.objects[t.ResourceID]
 	if v.Exists && t.Kind == "snat" && t.Egress != nil && v.Egress != nil {
 		v.NeedsUpdate = v.Egress.AppliedEnabled == nil || *v.Egress.AppliedEnabled != t.Egress.DesiredEnabled
-		v.Ready = !v.NeedsUpdate
+		v.Ready = egressReportedReady(!v.NeedsUpdate)
 	}
-	if v.Exists && t.Kind == "public_pool" {
-		v.Egress = &biz.EgressAppliedFacts{ProviderImages: append([]string{}, p.images...)}
-	}
-	v.Proof = biz.ObservationProof{CollectedAt: time.Now(), Hash: fmt.Sprint(v.Exists, v.Identity, v.NeedsUpdate), CoveredGeneration: t.Requirement.RequestedGeneration}
 	return v, nil
 }
 func (p *egressProvider) EnsureEgress(ctx context.Context, t biz.ProviderTarget) (biz.ProviderObservation, error) {
@@ -55,20 +50,16 @@ func (p *egressProvider) EnsureEgress(ctx context.Context, t biz.ProviderTarget)
 	v, exists := p.objects[t.ResourceID]
 	if !exists {
 		p.creates++
-		v = biz.ProviderObservation{Exists: true, Ready: true, Identity: uuid.NewString(), Egress: &biz.EgressAppliedFacts{}}
+		v = biz.ProviderObservation{Exists: true, Ready: egressReportedReady(true), Identity: uuid.NewString(), Egress: &biz.EgressAppliedFacts{}}
 		switch t.Kind {
 		case "eip":
 			v.Egress.Address = fmt.Sprintf("192.0.2.%d", p.creates+10)
 		case "snat":
 			enabled := t.Egress.DesiredEnabled
 			v.Egress.AppliedEnabled = &enabled
-			v.Egress.TargetGeneration = 1
-		case "public_pool":
-			v.Egress.ProviderImages = append([]string{}, p.images...)
 		}
 		p.objects[t.ResourceID] = v
 	}
-	v.Proof = biz.ObservationProof{CollectedAt: time.Now(), CoveredGeneration: t.Requirement.RequestedGeneration}
 	return v, nil
 }
 func (p *egressProvider) UpdateEgress(ctx context.Context, t biz.ProviderTarget) (biz.ProviderObservation, error) {
@@ -79,9 +70,9 @@ func (p *egressProvider) UpdateEgress(ctx context.Context, t biz.ProviderTarget)
 		return v, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
 	enabled := t.Egress.DesiredEnabled
-	v.Egress = &biz.EgressAppliedFacts{AppliedEnabled: &enabled, TargetGeneration: v.Egress.TargetGeneration + 1}
+	v.Egress = &biz.EgressAppliedFacts{AppliedEnabled: &enabled}
 	p.updates++
-	v.Ready = true
+	v.Ready = egressReportedReady(true)
 	v.NeedsUpdate = false
 	p.objects[t.ResourceID] = v
 	lost := p.lostUpdate
@@ -95,8 +86,8 @@ func (p *egressProvider) UpdateEgress(ctx context.Context, t biz.ProviderTarget)
 
 type testEgressInfrastructure struct{}
 
-func (testEgressInfrastructure) ValidatePublicPool(context.Context, biz.PublicPoolConfig) error {
-	return nil
+func (testEgressInfrastructure) GetIntranetPoolDefaults(context.Context) (biz.PublicPoolConfig, error) {
+	return biz.PublicPoolConfig{DefaultVPCName: "kcn-cluster", DefaultVPCUID: "fixture-default"}, nil
 }
 
 type egressFixture struct {
@@ -147,7 +138,7 @@ func (f *egressFixture) platform(t *testing.T, i biz.PlatformIntent) biz.Platfor
 	t.Helper()
 	v, err := f.e.CreatePlatform(f.ctx, i)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create platform: %v; cause: %v", err, errors.Unwrap(err))
 	}
 	f.drive(t, func() bool {
 		v, err = f.e.GetPlatform(f.ctx, v.Kind, v.ID)
@@ -179,8 +170,7 @@ func newEgressFixtureWithPublicVerification(t *testing.T, verify bool) *egressFi
 	t.Helper()
 	p, owner := database(t)
 	infra := testEgressInfrastructure{}
-	p.UseEgressInfrastructure(infra)
-	e, err := biz.NewEgress(p, infra, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	e, err := biz.NewEgress(p, infra, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +189,7 @@ func newEgressFixtureWithPublicVerification(t *testing.T, verify bool) *egressFi
 	gateway := f.platform(t, biz.PlatformIntent{Kind: "create_egress_gateway", Name: "fixture-gateway", IdempotencyKey: "gateway"})
 	f.pool = f.platform(t, biz.PlatformIntent{Kind: "create_public_pool", Name: "fixture-pool", IdempotencyKey: "pool", Pool: &biz.PublicPoolConfig{Mode: "overlay", GatewayID: gateway.ID, CIDR: "192.0.2.0/24", OVNGatewayIP: "192.0.2.1"}})
 	if verify {
-		evidence := &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: f.provider.images, TopologyFingerprint: f.pool.TopologyFingerprint, EvidenceReference: "controlled unit provider only, no live data plane claim", Scope: "automated repository test", VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}
+		evidence := &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: f.provider.images, TopologyFingerprint: strings.Repeat("c", 64), EvidenceReference: "controlled unit provider only, no live data plane claim", Scope: "automated repository test", VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}
 		f.setPool(t, biz.PlatformIntent{Kind: "verify_public_pool", ID: f.pool.ID, IdempotencyKey: "verify", Verification: evidence})
 	}
 	f.setPool(t, biz.PlatformIntent{Kind: "set_pool_allocation", ID: f.pool.ID, Enabled: true, IdempotencyKey: "open"})
@@ -304,8 +294,8 @@ func TestEgressPostgresLifecycleIsolationAndPermanentReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale, err := f.e.GetVPCSnat(f.ctx, "", binding.ID, false)
-	if err != nil || !stale.ObservationStale || stale.AppliedEnabled != nil {
-		t.Fatal("old applied fact stayed authoritative", err)
+	if err != nil || stale.ObservationStale || stale.AppliedEnabled == nil || !*stale.AppliedEnabled {
+		t.Fatal("read age changed the last reported applied fact", stale, err)
 	}
 	if _, err = f.e.DeleteVPCSnatBinding(f.ctx, "", binding.ID); err != nil {
 		t.Fatal(err)
@@ -384,7 +374,7 @@ func TestEgressUnknownCreateRecoveryAndFencing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Keep platform audits out of this explicit one-resource lease schedule.
+	// Keep unrelated platform tasks out of this explicit one-resource lease schedule.
 	if _, err = f.owner.Exec(f.ctx, "UPDATE network_platform_reconciliations SET next_run_at=clock_timestamp()+interval '1 hour'"); err != nil {
 		t.Fatal(err)
 	}
@@ -404,17 +394,11 @@ func TestEgressUnknownCreateRecoveryAndFencing(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := f.e.GetEIP(f.ctx, "", v.ID)
-	if err != nil || got.Reason != biz.ProviderUnknown || f.provider.creates != before {
-		t.Fatal("unknown absence retried POST", got, err)
+	if err != nil || got.State != biz.Available || f.provider.creates != before+1 {
+		t.Fatal("unknown fixed-name CREATE did not recover", got, err)
 	}
 	if err = f.p.Finish(f.ctx, old, biz.Progress{State: biz.Available, OperationState: biz.Succeeded, Identity: "late-old-writer"}); !errors.Is(err, biz.ErrLeaseLost) {
 		t.Fatal("expired executor wrote", err)
-	}
-	// The original external POST finally lands; restarted worker adopts only that
-	// stable product mapping, never another resource or address pool.
-	_, err = f.provider.EnsureEgress(f.ctx, biz.ProviderTarget{ResourceID: v.ID, Kind: "eip"})
-	if err != nil {
-		t.Fatal(err)
 	}
 	f.drive(t, func() bool {
 		current, err := f.e.GetEIP(f.ctx, "", v.ID)
@@ -429,7 +413,7 @@ func TestEgressUnknownCreateRecoveryAndFencing(t *testing.T) {
 func TestEgressUnderlayPlatformOccupancyAndRetirement(t *testing.T) {
 	f := newEgressFixture(t)
 	boundary := &switchBoundary{}
-	f.p.UseEgressInfrastructure(boundary)
+	f.p.UseVirtualSwitchInfrastructure(boundary)
 	sw, err := f.e.CreateVirtualSwitch(f.ctx, biz.VirtualSwitchIntent{Name: "underlay-occupancy", IdempotencyKey: "underlay-switch"})
 	if err != nil {
 		t.Fatal(err)
@@ -500,39 +484,19 @@ func TestEgressUnderlayPlatformOccupancyAndRetirement(t *testing.T) {
 	if next.ID == vlan.ID {
 		t.Fatal("retired VLAN reused identity")
 	}
-	// Public allocation uses current provider health without requiring manual
-	// evidence. Historical evidence must still fail explicit re-registration
-	// after the observed provider image changes.
+	// Administrator materials remain an archive even when their source is old.
 	before, err := f.e.GetPlatform(f.ctx, "public_pool", f.pool.ID)
 	if err != nil || before.Verification == nil {
-		t.Fatal("missing original manual evidence", before, err)
+		t.Fatal(before, err)
 	}
-	f.provider.mu.Lock()
-	f.provider.images = []string{"sha256:" + strings.Repeat("b", 64)}
-	f.provider.mu.Unlock()
-	f.drive(t, func() bool {
-		v, err := f.e.GetPlatform(f.ctx, "public_pool", f.pool.ID)
-		return err == nil && len(v.ObservedProviderImages) == 1 && v.ObservedProviderImages[0] == "sha256:"+strings.Repeat("b", 64)
-	})
-	changed, err := f.e.GetPlatform(f.ctx, "public_pool", f.pool.ID)
-	if err != nil {
+	if _, err = f.e.SetPool(f.ctx, biz.PlatformIntent{Kind: "verify_public_pool", ID: before.ID, ExpectedVersion: before.Version, IdempotencyKey: "archive-again", Verification: before.Verification}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.e.SetPool(f.ctx, biz.PlatformIntent{Kind: "verify_public_pool", ID: changed.ID, ExpectedVersion: changed.Version, IdempotencyKey: "reject-old-provider-evidence", Verification: before.Verification}); biz.ReasonOf(err) != biz.PublicEgressNotReady {
-		t.Fatal("old evidence re-registered after provider image change", err)
-	}
-	eip, err := f.e.CreateEIP(f.ctx, biz.EgressIntent{Name: "changed-provider", IdempotencyKey: "changed-provider"})
-	if err != nil {
-		t.Fatal("healthy public pool required manual evidence renewal", err)
-	}
-	f.drive(t, func() bool {
-		v, err := f.e.GetEIP(f.ctx, "", eip.ID)
-		return err == nil && v.State == biz.Available
-	})
 	after, err := f.e.GetPlatform(f.ctx, "public_pool", f.pool.ID)
 	if err != nil || !reflect.DeepEqual(after.Verification, before.Verification) {
-		t.Fatal("provider image observation silently re-signed manual evidence", after.Verification, err)
+		t.Fatal(after, err)
 	}
+
 }
 
 func TestEgressUnknownUpdateKeepsOccupancyAndRecoversExactDesiredState(t *testing.T) {
@@ -552,7 +516,9 @@ func TestEgressUnknownUpdateKeepsOccupancyAndRecoversExactDesiredState(t *testin
 	}
 	f.drive(t, func() bool {
 		v, err := f.e.GetVPCSnat(f.ctx, "", bound.ID, false)
-		return err == nil && v.Reason == biz.ProviderUnknown && v.AppliedEnabled == nil
+		var reason string
+		queryErr := f.owner.QueryRow(f.ctx, `SELECT reason FROM network_operations WHERE tenant_id=$1 AND operation_id=$2`, f.tenant, accepted.LastOperationID).Scan(&reason)
+		return err == nil && queryErr == nil && reason == string(biz.ProviderUnknown) && v.AppliedEnabled != nil && *v.AppliedEnabled
 	})
 	if _, err = f.e.DeleteEIP(f.ctx, "", eip.ID); biz.ReasonOf(err) != biz.EIPInUse {
 		t.Fatal("unknown update released EIP", err)
@@ -567,3 +533,5 @@ func TestEgressUnknownUpdateKeepsOccupancyAndRecoversExactDesiredState(t *testin
 		t.Fatal("update recovery repeated provider write or changed operation", current, f.provider.updates)
 	}
 }
+
+func egressReportedReady(value bool) *bool { return &value }

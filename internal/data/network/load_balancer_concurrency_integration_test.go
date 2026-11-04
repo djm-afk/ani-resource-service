@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"sync"
+	"testing"
+	"time"
 )
 
 func TestLBConcurrentSNATClaimBothArrivalOrders(t *testing.T) {
@@ -137,7 +136,6 @@ func TestLBNewRelationsRejectCrossTenantSQLAndAPI(t *testing.T) {
 		`INSERT INTO network_lb_listeners(tenant_id,cluster_id,namespace,lb_id,listener_id,port) VALUES($1,'test-cluster',$2,$3,gen_random_uuid(),8080)`,
 		`INSERT INTO network_lb_configurations(tenant_id,cluster_id,namespace,lb_id,config_version,name,description,interval_seconds,timeout_seconds,unhealthy_threshold,healthy_threshold) VALUES($1,'test-cluster',$2,$3,1,'foreign','',5,3,3,1)`,
 		`INSERT INTO network_lb_components(tenant_id,cluster_id,namespace,lb_id,component_id,kind,provider_name,listener_id) VALUES($1,'test-cluster',$2,$3,gen_random_uuid(),'route','foreign-route',(SELECT listener_id FROM network_lb_listeners WHERE lb_id=$3 AND name='http'))`,
-		`INSERT INTO network_lb_generated_resources(tenant_id,cluster_id,namespace,lb_id,kind,provider_name,provider_uid,gateway_uid,observed_at) VALUES($1,'test-cluster',$2,$3,'Service','foreign-svc','uid','gw',clock_timestamp())`,
 	} {
 		_, err := f.f.owner.Exec(f.f.ctx, statement, other, ns, r.LoadBalancer.ID)
 		var pg *pgconn.PgError
@@ -146,7 +144,7 @@ func TestLBNewRelationsRejectCrossTenantSQLAndAPI(t *testing.T) {
 		}
 	}
 	lbState(t, f, r.LoadBalancer.ID, biz.Available)
-	for _, table := range []string{"network_load_balancers", "network_lb_listeners", "network_lb_configurations", "network_lb_members", "network_lb_configuration_members", "network_lb_configuration_listeners", "network_lb_listener_members", "network_lb_subnet_refs", "network_lb_components", "network_lb_generated_resources", "network_lb_vip_intents", "network_provider_bindings", "network_operations", "network_reconciliations", "network_idempotency", "network_resource_history"} {
+	for _, table := range []string{"network_load_balancers", "network_lb_listeners", "network_lb_configurations", "network_lb_members", "network_lb_configuration_members", "network_lb_configuration_listeners", "network_lb_listener_members", "network_lb_subnet_refs", "network_lb_components", "network_lb_vip_intents", "network_provider_bindings", "network_operations", "network_reconciliations", "network_idempotency", "network_resource_history"} {
 		t.Run(table, func(t *testing.T) {
 			var count int
 			if err := f.f.owner.QueryRow(f.f.ctx, "SELECT count(*) FROM "+table+" WHERE tenant_id=$1 AND lb_id=$2", f.f.tenant, r.LoadBalancer.ID).Scan(&count); err != nil || count == 0 {

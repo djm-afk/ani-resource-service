@@ -99,6 +99,9 @@ func (p *Postgres) SetEIPSecurityGroups(ctx context.Context, i biz.SecurityGroup
 			return biz.SecurityGroupMutation{}, databaseFailure(e)
 		}
 	}
+	if e = q.ReleaseSecurityGroupReferences(ctx, db.ReleaseSecurityGroupReferencesParams{TenantID: i.TenantID, TargetType: "eip", TargetID: i.ID, KeepIds: i.SecurityGroupIDs}); e != nil {
+		return biz.SecurityGroupMutation{}, databaseFailure(e)
+	}
 	result := biz.SecurityGroupMutation{Binding: v, Operation: op}
 	if e = sgAccept(ctx, q, i, result, a); e != nil {
 		return result, databaseFailure(e)
@@ -126,7 +129,7 @@ func (p *Postgres) ClaimSecurityGroup(ctx context.Context, owner string, duratio
 	if e != nil {
 		return biz.SecurityGroupWork{}, false, databaseFailure(e)
 	}
-	w := biz.SecurityGroupWork{TenantID: r.TenantID, TargetType: r.TargetType, TargetID: r.TargetID, Version: task.RequestedVersion, Epoch: task.LeaseEpoch, Owner: owner}
+	w := biz.SecurityGroupWork{TenantID: r.TenantID, TargetType: r.TargetType, TargetID: r.TargetID, Version: task.RequestedVersion, Epoch: task.LeaseEpoch, Owner: owner, ClaimedGeneration: task.RequestedGeneration}
 	var op string
 	if r.TargetType == "security_group" {
 		row, e := q.GetSecurityGroupRow(ctx, db.GetSecurityGroupRowParams{TenantID: r.TenantID, SecurityGroupID: r.TargetID})
@@ -139,7 +142,7 @@ func (p *Postgres) ClaimSecurityGroup(ctx context.Context, owner string, duratio
 		}
 		op = w.Group.LastOperationID
 	} else {
-		row, e := q.GetSecurityGroupTarget(ctx, db.GetSecurityGroupTargetParams{TenantID: r.TenantID, TargetType: "eip", TargetID: r.TargetID})
+		row, e := q.GetSecurityGroupTarget(ctx, db.GetSecurityGroupTargetParams{TenantID: r.TenantID, TargetType: r.TargetType, TargetID: r.TargetID})
 		if e != nil {
 			return w, false, databaseFailure(e)
 		}
@@ -149,135 +152,144 @@ func (p *Postgres) ClaimSecurityGroup(ctx context.Context, owner string, duratio
 		}
 		op = w.Binding.LastOperationID
 	}
-	body, e := q.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: r.TenantID, OperationID: op})
-	if e != nil {
-		return w, false, databaseFailure(e)
-	}
-	if e = json.Unmarshal(body, &w.Operation); e != nil {
-		return w, false, databaseFailure(e)
+	if op != "" {
+		body, err := q.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: r.TenantID, OperationID: op})
+		if err != nil {
+			return w, false, databaseFailure(err)
+		}
+		if err = json.Unmarshal(body, &w.Operation); err != nil {
+			return w, false, databaseFailure(err)
+		}
 	}
 	return w, true, databaseFailure(tx.Commit(ctx))
 }
-func (p *Postgres) FinishSecurityGroup(ctx context.Context, w biz.SecurityGroupWork, r biz.SecurityGroupResult, applyErr error) error {
-	tx, e := p.pool.Begin(ctx)
-	if e != nil {
-		return databaseFailure(e)
+func (p *Postgres) FinishSecurityGroup(ctx context.Context, work biz.SecurityGroupWork, result biz.SecurityGroupResult, applyErr error) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return databaseFailure(err)
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	// Same lock order as admission: resource/target, then reconciliation.
-	if w.TargetType == "security_group" {
-		row, e := q.LockSecurityGroupRow(ctx, db.LockSecurityGroupRowParams{TenantID: w.TenantID, SecurityGroupID: w.TargetID})
-		if e != nil {
-			return databaseFailure(e)
+	// Management versions and the execution lease fence concurrent submissions.
+	if work.TargetType == "security_group" {
+		row, err := q.LockSecurityGroupRow(ctx, db.LockSecurityGroupRowParams{TenantID: work.TenantID, SecurityGroupID: work.TargetID})
+		if err != nil {
+			return databaseFailure(err)
 		}
-		if row.Version != w.Version {
+		if row.Version != work.Version {
 			return biz.ErrLeaseLost
 		}
 	} else {
-		row, e := q.LockSecurityGroupTarget(ctx, db.LockSecurityGroupTargetParams{TenantID: w.TenantID, TargetType: "eip", TargetID: w.TargetID})
-		if e != nil {
-			return databaseFailure(e)
+		row, err := q.LockSecurityGroupTarget(ctx, db.LockSecurityGroupTargetParams{TenantID: work.TenantID, TargetType: work.TargetType, TargetID: work.TargetID})
+		if err != nil {
+			return databaseFailure(err)
 		}
-		if row.Version != w.Version {
+		if row.Version != work.Version {
 			return biz.ErrLeaseLost
 		}
 	}
-	now, e := q.DatabaseTime(ctx)
-	if e != nil {
-		return databaseFailure(e)
+	now, err := q.DatabaseTime(ctx)
+	if err != nil {
+		return databaseFailure(err)
 	}
-	delay := 10 * time.Second
-	task, e := q.LockSecurityGroupTask(ctx, db.LockSecurityGroupTaskParams{TenantID: w.TenantID, TargetType: w.TargetType, TargetID: w.TargetID})
-	if e != nil {
-		return databaseFailure(e)
+	task, err := q.LockSecurityGroupTask(ctx, db.LockSecurityGroupTaskParams{TenantID: work.TenantID, TargetType: work.TargetType, TargetID: work.TargetID})
+	if err != nil {
+		return databaseFailure(err)
 	}
-	if task.LeaseOwner == nil || *task.LeaseOwner != w.Owner || task.LeaseEpoch != w.Epoch || task.RequestedVersion != w.Version || task.LeaseUntil == nil || !task.LeaseUntil.After(now) {
+	if task.LeaseOwner == nil || *task.LeaseOwner != work.Owner || task.LeaseEpoch != work.Epoch || task.RequestedVersion != work.Version || task.LeaseUntil == nil || !task.LeaseUntil.After(now) {
 		return biz.ErrLeaseLost
 	}
-	op := w.Operation
-	op.UpdatedAt = now
-	if applyErr != nil {
-		r.State = "degraded"
-		r.Reason = string(biz.ProviderUnavailable)
-		var pe *biz.ProviderError
-		if errors.As(applyErr, &pe) {
-			switch pe.Kind {
-			case biz.ProviderConflict:
-				r.Reason = string(biz.ProviderOwnership)
-			case biz.ProviderReject:
-				r.Reason = string(biz.ProviderRejected)
-			case biz.ProviderUncertain:
-				r.Reason = string(biz.ProviderUnknown)
-			case biz.ProviderInUse:
-				r.Reason = string(biz.ResourceInUse)
-			}
-			if pe.Kind == biz.ProviderConflict || pe.Kind == biz.ProviderReject {
-				r.State = "failed"
-			}
-		}
-		op.Reason = biz.Reason(r.Reason)
-		if op.CompletedAt == nil {
-			op.State = biz.Retrying
-		}
-	}
-	if r.Complete && op.CompletedAt == nil {
-		op.State = biz.Succeeded
-		op.Reason = ""
-		op.CompletedAt = &now
-	}
-	if !r.Complete && op.CompletedAt == nil && applyErr == nil {
+	op := work.Operation
+	activeOperation := securityGroupOperationActive(work)
+	if activeOperation {
+		op.UpdatedAt, op.Reason = now, result.OperationReason
 		op.State = biz.Running
+		op.NextAttemptAt = nil
+		if applyErr != nil {
+			op.State = biz.Retrying
+			var provider *biz.ProviderError
+			if errors.As(applyErr, &provider) {
+				switch provider.Kind {
+				case biz.ProviderConflict, biz.ProviderInUse:
+					op.State = biz.Blocked
+				case biz.ProviderReject:
+					// A rejected management write finishes this operation, while
+					// the resource keeps the projection of its successful read.
+					if work.TargetType == "security_group" && work.Group.State == biz.Deleting {
+						op.State = biz.Blocked
+					} else if result.ObservationError == "" {
+						op.State, op.CompletedAt = biz.OpFailed, &now
+					}
+				}
+			}
+		} else if result.Complete {
+			op.State, op.Reason, op.CompletedAt = biz.Succeeded, "", &now
+		} else if result.OperationReason == biz.ProviderMissing {
+			op.State = biz.Blocked
+		}
+		if op.CompletedAt == nil {
+			next := now.Add(result.NextDelay)
+			op.NextAttemptAt = &next
+		}
+		if err = affected(q.UpdateSecurityGroupOperation(ctx, db.UpdateSecurityGroupOperationParams{TenantID: work.TenantID, OperationID: op.ID, Payload: sgJSON(op)})); err != nil {
+			return err
+		}
 	}
-	if w.TargetType == "security_group" {
-		v := w.Group
-		if r.ProviderUID != "" {
-			v.ProviderUID = r.ProviderUID
-		}
-		if r.State != "" {
-			v.State = biz.ResourceState(r.State)
-		}
-		if v.State != biz.Deleted && w.Group.State == biz.Deleting {
-			v.State = biz.Deleting
-		}
-		v.Reason = biz.Reason(r.Reason)
-		v.UpdatedAt = now
-		if applyErr == nil {
-			v.ObservedAt = &now
-		}
-		if e = affected(q.UpdateSecurityGroupRow(ctx, db.UpdateSecurityGroupRowParams{TenantID: w.TenantID, SecurityGroupID: w.TargetID, ExpectedVersion: w.Version, NewVersion: w.Version, State: string(v.State), Payload: sgJSON(v)})); e != nil {
-			return e
-		}
-	} else {
-		v := w.Binding
-		if r.State != "" {
-			v.State = r.State
-		}
-		v.Reason = r.Reason
-		if applyErr == nil {
-			v.ObservedAt = &now
-		}
-		if r.Complete {
-			v.AppliedSecurityGroupIDs = slices.Clone(r.AppliedIDs)
-			if e = q.ReleaseSecurityGroupReferences(ctx, db.ReleaseSecurityGroupReferencesParams{TenantID: w.TenantID, TargetType: "eip", TargetID: w.TargetID, KeepIds: r.AppliedIDs}); e != nil {
-				return databaseFailure(e)
+	// A failed read has no replacement projection. Local configuration/release
+	// results need no provider read and leave the last observed timestamp alone.
+	project := result.Observed || applyErr == nil
+	terminal := false
+	if work.TargetType == "security_group" {
+		value := work.Group
+		if project {
+			if result.ProviderUID != "" {
+				value.ProviderUID = result.ProviderUID
+			}
+			if result.State != "" {
+				value.State = biz.ResourceState(result.State)
+			}
+			value.Reason, value.UpdatedAt = biz.Reason(result.Reason), now
+			if result.Observed {
+				value.ObservedAt = &now
+			}
+			if err = affected(q.UpdateSecurityGroupRow(ctx, db.UpdateSecurityGroupRowParams{TenantID: work.TenantID, SecurityGroupID: work.TargetID, ExpectedVersion: work.Version, NewVersion: work.Version, State: string(value.State), Payload: sgJSON(value)})); err != nil {
+				return err
 			}
 		}
-		if e = sgSaveTarget(ctx, q, v); e != nil {
-			return databaseFailure(e)
+		terminal = value.State == biz.Deleted
+	} else {
+		value := work.Binding
+		if project {
+			if result.State != "" {
+				value.State = result.State
+			}
+			value.Reason = result.Reason
+			value.AppliedSecurityGroupIDs = slices.Clone(result.AppliedIDs)
+			if result.Observed {
+				value.ObservedAt = &now
+			}
+			if err = sgSaveTarget(ctx, q, value); err != nil {
+				return databaseFailure(err)
+			}
+		}
+		terminal = value.State == "released" || value.State == "deleted"
+		keepIDs := value.SecurityGroupIDs
+		if terminal {
+			keepIDs = nil
+		}
+		if err = q.ReleaseSecurityGroupReferences(ctx, db.ReleaseSecurityGroupReferencesParams{TenantID: work.TenantID, TargetType: work.TargetType, TargetID: work.TargetID, KeepIds: keepIDs}); err != nil {
+			return databaseFailure(err)
 		}
 	}
-	if _, e = q.UpdateSecurityGroupOperation(ctx, db.UpdateSecurityGroupOperationParams{TenantID: w.TenantID, OperationID: op.ID, Payload: sgJSON(op)}); e != nil {
-		return databaseFailure(e)
-	}
-	if r.State == "deleted" || r.State == "released" {
-		delay = 24 * time.Hour
-	}
-	return affectedCommit(ctx, tx, q.FinishSecurityGroupTask, db.FinishSecurityGroupTaskParams{TenantID: w.TenantID, TargetType: w.TargetType, TargetID: w.TargetID, Version: w.Version, Owner: w.Owner, Epoch: w.Epoch, DelayMicros: delay.Microseconds()})
-}
-func affectedCommit(ctx context.Context, tx pgx.Tx, finish func(context.Context, db.FinishSecurityGroupTaskParams) (int64, error), args db.FinishSecurityGroupTaskParams) error {
-	if e := affected(finish(ctx, args)); e != nil {
-		return e
+	unfinishedOperation := activeOperation && op.CompletedAt == nil
+	park := terminal || applyErr == nil && !result.Backoff && !unfinishedOperation && (result.Observed || result.Complete)
+	if err = affected(q.FinishSecurityGroupTask(ctx, db.FinishSecurityGroupTaskParams{
+		TenantID: work.TenantID, TargetType: work.TargetType, TargetID: work.TargetID, Version: work.Version,
+		Owner: work.Owner, Epoch: work.Epoch, ClaimedGeneration: work.ClaimedGeneration,
+		Observed: result.Observed, ObservationError: string(result.ObservationError),
+		DelayMicros: result.NextDelay.Microseconds(), Backoff: result.Backoff, Park: park, Terminal: terminal, Now: now,
+	})); err != nil {
+		return err
 	}
 	return databaseFailure(tx.Commit(ctx))
 }

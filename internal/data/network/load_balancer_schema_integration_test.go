@@ -6,16 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/migrations"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
+	"strings"
+	"testing"
 )
 
 func TestLBSchemaFrom0006PreservesAllOldColumnsAndDormantReservations(t *testing.T) {
@@ -78,7 +76,7 @@ func TestLBSchemaFrom0006PreservesAllOldColumnsAndDormantReservations(t *testing
 		}
 	}
 	auth := biz.WithEgressCaller(ctx, biz.EgressCaller{TenantID: legacy.Tenant})
-	lbs, err := biz.NewLoadBalancers(db.Repository, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)), time.Minute, time.Now)
+	lbs, err := biz.NewLoadBalancers(db.Repository, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +91,7 @@ func TestLBSchemaFrom0006PreservesAllOldColumnsAndDormantReservations(t *testing
 	if err = db.Owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM network_lb_vip_intents WHERE tenant_id=$1 AND lb_id=$2 AND released_at IS NULL),(SELECT count(*) FROM network_reconciliations WHERE tenant_id=$1 AND lb_id=$2)`, legacy.Tenant, lbID).Scan(&occupied, &tasks); err != nil || occupied != 1 || tasks != 0 {
 		t.Fatal("upgrade lost reservation or invented work", occupied, tasks, err)
 	}
-	for _, table := range []string{"network_lb_listeners", "network_lb_configurations", "network_lb_members", "network_lb_configuration_members", "network_lb_subnet_refs", "network_lb_components", "network_lb_generated_resources", "network_lb_capabilities"} {
+	for _, table := range []string{"network_lb_listeners", "network_lb_configurations", "network_lb_members", "network_lb_configuration_members", "network_lb_subnet_refs", "network_lb_components", "network_lb_capabilities"} {
 		var safe bool
 		if err = db.Owner.QueryRow(ctx, `SELECT has_table_privilege($1,$2,'SELECT') AND has_table_privilege($1,$2,'INSERT') AND has_table_privilege($1,$2,'UPDATE') AND NOT has_table_privilege($1,$2,'DELETE')`, db.RuntimeRole, table).Scan(&safe); err != nil || !safe {
 			t.Fatal("new runtime grant contract", table, err)
@@ -163,7 +161,7 @@ func TestLBListenersUpgradeFrom0008AndReplay(t *testing.T) {
 	if err := db.Owner.QueryRow(ctx, `SELECT count(*) FROM network_lb_components WHERE tenant_id=$1 AND lb_id=$2 AND listener_id=$3 AND provider_name='legacy-'||kind AND provider_uid='legacy-'||kind||'-uid'`, legacy.Tenant, lbID, listenerID).Scan(&count); err != nil || count != 2 {
 		t.Fatal("old Route/Policy identity changed", count, err)
 	}
-	result, err := db.Repository.AcceptLoadBalancer(ctx, intent, biz.Attribution{}, time.Minute)
+	result, err := db.Repository.AcceptLoadBalancer(ctx, intent, biz.Attribution{})
 	if err != nil {
 		t.Fatal(err)
 	}

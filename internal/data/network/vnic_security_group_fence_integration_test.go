@@ -3,9 +3,9 @@ package data_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 )
 
@@ -68,98 +69,86 @@ func TestManualVNicPGSecurityGroupVersionFence(t *testing.T) {
 	}
 }
 
-// The SGs are pre-existing fixtures. Real VNIC acceptance, reservation, owner
-// selection, adapter confirmation and reference release run against PostgreSQL.
-func TestManualVNicPGSecurityGroupMembershipIsApplicationReceipt(t *testing.T) {
+// Configuration confirmation is local; application is projected later from
+// the single current VNic's native appliedSecurityGroups field.
+func TestManualVNicSGConfigurationAndNativeApplicationAreSeparate(t *testing.T) {
 	f := newAttachmentFixture(t)
 	ctx := context.Background()
 	v := manualVNic(t, f, "sg-receipt")
 	consumer := "vm-membership-owner"
-	if _, e := f.n.ReserveVNic(ctx, biz.VNicReservation{TenantID: v.TenantID, VNicID: v.ID, ConsumerKind: "vm", ConsumerID: consumer, Slot: "primary", OperationID: uuid.NewString(), SubnetID: v.SubnetID, Revision: 1}); e != nil {
-		t.Fatal(e)
+	if _, err := f.n.ReserveVNic(ctx, biz.VNicReservation{TenantID: v.TenantID, VNicID: v.ID, ConsumerKind: "vm", ConsumerID: consumer, Slot: "primary", OperationID: uuid.NewString(), SubnetID: v.SubnetID, Revision: 1}); err != nil {
+		t.Fatal(err)
 	}
-	g := biz.SecurityGroup{EgressMetadata: biz.EgressMetadata{ID: "sg_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Name: "receipt-group", Version: 1, State: biz.Available}, TenantID: v.TenantID, ClusterID: v.ClusterID, Namespace: v.Namespace, ProviderName: "ani-sg-receipt", ProviderUID: uuid.NewString(), BindingID: uuid.NewString()}
-	payload, e := json.Marshal(g)
-	if e != nil {
-		t.Fatal(e)
+	group := biz.SecurityGroup{EgressMetadata: biz.EgressMetadata{ID: "sg_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Name: "receipt-group", Version: 1, State: biz.Provisioning}, TenantID: v.TenantID, ClusterID: v.ClusterID, Namespace: v.Namespace, ProviderName: "ani-sg-receipt", ProviderUID: uuid.NewString(), BindingID: uuid.NewString()}
+	payload, err := json.Marshal(group)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, e = f.owner.Exec(ctx, `INSERT INTO network_security_groups(tenant_id,security_group_id,version,state,payload) VALUES($1,$2,1,'available',$3)`, g.TenantID, g.ID, payload); e != nil {
-		t.Fatal(e)
+	if _, err = f.owner.Exec(ctx, `INSERT INTO network_security_groups(tenant_id,security_group_id,version,state,payload) VALUES($1,$2,1,'provisioning',$3)`, group.TenantID, group.ID, payload); err != nil {
+		t.Fatal(err)
 	}
-	if _, e = f.p.SyncSecurityGroupBinding(ctx, v.TenantID, "vm", consumer, v.VPCID, v.Namespace, 4, []string{g.ID}); e != nil {
-		t.Fatal(e)
+	if _, err = f.p.SyncSecurityGroupBinding(ctx, v.TenantID, "vm", consumer, v.VPCID, v.Namespace, 4, []string{group.ID}); err != nil {
+		t.Fatal("nonready SG declaration blocked own configuration", err)
 	}
-	var groupResponse atomic.Value
-	setGroupStatus := func(members []string, observed int64, ready string) {
-		o := map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "SecurityGroup", "metadata": map[string]any{"name": g.ProviderName, "namespace": g.Namespace, "uid": g.ProviderUID, "resourceVersion": "1", "generation": 1, "labels": map[string]any{"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": g.TenantID, "network.ani.io/resource-id": g.ID, "network.ani.io/binding-id": g.BindingID}}, "spec": map[string]any{"allowSameGroupTraffic": false}, "status": map[string]any{"observedGeneration": observed, "allowSameGroupTraffic": false, "appliedVNics": members, "conditions": []any{map[string]any{"type": "Valid", "status": "True", "observedGeneration": 1}, map[string]any{"type": "Ready", "status": ready, "observedGeneration": 1}}}}
-		raw, e := json.Marshal(o)
-		if e != nil {
-			t.Fatal(e)
-		}
-		groupResponse.Store(raw)
-	}
-	setVNicSelection := func(names []any, version string) {
-		f.api.Mu.Lock()
-		defer f.api.Mu.Unlock()
-		o := f.api.Objects["vnics/"+v.Namespace+"/"+v.ProviderName]
-		o["spec"].(map[string]any)["securityGroups"] = names
-		ann := o["metadata"].(map[string]any)["annotations"].(map[string]any)
-		ann["network.ani.io/vnic-consumer"] = "vm:" + consumer
-		ann["network.ani.io/vnic-security-groups-version"] = version
-		delete(o["status"].(map[string]any), "appliedSecurityGroups") // KCN does not promise this receipt.
-	}
-	setVNicSelection([]any{g.ProviderName}, "4")
-	setGroupStatus([]string{v.ProviderName}, 1, "True")
-	var patches atomic.Int32
-	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/securitygroups/"+g.ProviderName) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(groupResponse.Load().([]byte))
+	var reverseReads atomic.Int32
+	var failRead atomic.Bool
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/securitygroups") {
+			reverseReads.Add(1)
+			http.Error(w, "unexpected reverse read", 500)
 			return
 		}
-		if r.Method == "PATCH" {
-			patches.Add(1)
+		if failRead.Load() && r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/vnics/"+v.ProviderName) {
+			http.Error(w, "temporary read failure", 503)
+			return
 		}
 		f.api.ServeHTTP(w, r)
 	}))
-	defer endpoint.Close()
-	if _, e = data.NewKCProvider(f.p, &rest.Config{Host: endpoint.URL, QPS: 1000, Burst: 1000}); e != nil {
-		t.Fatal(e)
+	defer host.Close()
+	provider, err := data.NewKCProvider(f.p, &rest.Config{Host: host.URL, QPS: 1000, Burst: 1000})
+	if err != nil {
+		t.Fatal(err)
 	}
-	confirmed, e := f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, []string{g.ID})
-	if e != nil || len(confirmed.SecurityGroupIDs) != 1 || confirmed.SecurityGroupIDs[0] != g.ID {
-		t.Fatal("SG appliedVNics did not confirm application without a VNIC status receipt", confirmed.SecurityGroupIDs, e)
+	if _, err = f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, []string{group.ID}); err != nil {
+		t.Fatal("configuration waited for application", err)
 	}
-	expectPending := func(ids []string) {
+	read := func() biz.SecurityGroupBinding {
 		t.Helper()
-		_, e := f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, ids)
-		var providerErr *biz.ProviderError
-		if !errors.As(e, &providerErr) || providerErr.Kind != biz.ProviderTemporary {
-			t.Fatal("unconfirmed SG application was accepted", e)
+		var raw []byte
+		if err := f.owner.QueryRow(ctx, `SELECT payload FROM network_security_group_targets WHERE tenant_id=$1 AND target_type='vnic' AND target_id=$2`, v.TenantID, v.ID).Scan(&raw); err != nil {
+			t.Fatal(err)
 		}
+		var binding biz.SecurityGroupBinding
+		if err := json.Unmarshal(raw, &binding); err != nil {
+			t.Fatal(err)
+		}
+		return binding
 	}
-	setGroupStatus([]string{v.ProviderName}, 0, "True")
-	if _, e = f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, []string{g.ID}); e != nil {
-		t.Fatal("membership receipt incorrectly waited for SG observedGeneration", e)
+	configured := read()
+	if configured.State != "configured" || len(configured.AppliedSecurityGroupIDs) != 0 || configured.ObservedAt != nil {
+		t.Fatal("configuration fabricated application", configured)
 	}
-	setGroupStatus([]string{v.ProviderName}, 1, "False")
-	if _, e = f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, []string{g.ID}); e != nil {
-		t.Fatal("membership receipt incorrectly waited for SG Ready", e)
+	f.api.Mu.Lock()
+	object := f.api.Objects["vnics/"+v.Namespace+"/"+v.ProviderName]
+	object["status"].(map[string]any)["appliedSecurityGroups"] = map[string]any{group.ProviderName: int64(1)}
+	f.api.Mu.Unlock()
+	worker := biz.NewSecurityGroupWorker(f.p, provider, uuid.NewString(), biz.DefaultWorkerPolicy())
+	if found, err := worker.Step(ctx); err != nil || !found {
+		t.Fatal(found, err)
 	}
-	setGroupStatus([]string{}, 1, "True")
-	expectPending([]string{g.ID})
-	setGroupStatus([]string{v.ProviderName}, 1, "True")
-	if _, e = f.p.SyncSecurityGroupBinding(ctx, v.TenantID, "vm", consumer, v.VPCID, v.Namespace, 5, []string{}); e != nil {
-		t.Fatal(e)
+	applied := read()
+	if applied.State != "applied" || len(applied.AppliedSecurityGroupIDs) != 1 || applied.AppliedSecurityGroupIDs[0] != group.ID || applied.ObservedAt == nil || reverseReads.Load() != 0 {
+		t.Fatal("native VNic application was not projected", applied, reverseReads.Load())
 	}
-	setVNicSelection([]any{}, "5")
-	expectPending([]string{}) // Old SG still contains this VNIC.
-	setGroupStatus([]string{}, 0, "False")
-	cleared, e := f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, []string{})
-	if e != nil || len(cleared.SecurityGroupIDs) != 0 {
-		t.Fatal("old SG removal did not confirm clearing", cleared.SecurityGroupIDs, e)
+	failRead.Store(true)
+	if err = f.p.NotifyObservedObject(ctx, schema.GroupVersionResource{Group: "networking.kubercloud.com", Version: "v1", Resource: "vnics"}, v.Namespace, v.ProviderName); err != nil {
+		t.Fatal(err)
 	}
-	if patches.Load() != 0 {
-		t.Fatal("confirmation rewrote the already applied VNIC declaration", patches.Load())
+	if found, err := worker.Step(ctx); err != nil || !found {
+		t.Fatal(found, err)
+	}
+	after := read()
+	if after.State != applied.State || after.Reason != applied.Reason || !slices.Equal(after.AppliedSecurityGroupIDs, applied.AppliedSecurityGroupIDs) || !after.ObservedAt.Equal(*applied.ObservedAt) {
+		t.Fatal("read error rewrote native application", after, applied)
 	}
 }

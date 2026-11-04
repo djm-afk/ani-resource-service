@@ -21,7 +21,7 @@ UPDATE network_vpcs SET base_connectivity_required=true WHERE tenant_id=$1 AND v
 
 -- name: SetBaseObservation :exec
 UPDATE network_vpc_base_connectivity SET state=sqlc.arg(state),reason=sqlc.arg(reason),
- provider_ready=sqlc.arg(provider_ready),provider_observed_at=sqlc.narg(provider_observed_at),observed_at=sqlc.narg(observed_at),version=version+1
+ observed_at=sqlc.narg(observed_at),version=version+1
 WHERE tenant_id=sqlc.arg(tenant_id) AND vpc_id=sqlc.arg(vpc_id);
 
 -- name: TerminateBase :exec

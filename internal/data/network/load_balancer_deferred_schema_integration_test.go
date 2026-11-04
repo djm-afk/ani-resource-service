@@ -5,13 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"testing"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhangzhe-ctrl/ani-resource-service/migrations"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
+	"testing"
 )
 
 // Migration-only fixtures use actual schema 13 bytes. They do not claim product

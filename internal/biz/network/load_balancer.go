@@ -3,13 +3,12 @@ package biz
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -65,8 +64,7 @@ type LoadBalancer struct {
 	Health                                                                             LoadBalancerHealth
 	DesiredVersion, AppliedVersion                                                     int64
 	ProviderTargetVersion                                                              int64 `json:",omitempty"`
-	ConfigurationState, DataPlaneState                                                 string
-	DataPlaneObservedAt                                                                *time.Time
+	ConfigurationState                                                                 string
 }
 type LoadBalancerResult struct {
 	LoadBalancer LoadBalancer
@@ -118,7 +116,7 @@ type ListLoadBalancers struct {
 	VPCID, SubnetID, Exposure string
 }
 type LoadBalancerRepository interface {
-	AcceptLoadBalancer(context.Context, LoadBalancerIntent, Attribution, time.Duration) (LoadBalancerResult, error)
+	AcceptLoadBalancer(context.Context, LoadBalancerIntent, Attribution) (LoadBalancerResult, error)
 	GetLoadBalancer(context.Context, string, string) (LoadBalancer, error)
 	ListLoadBalancers(context.Context, string, LoadBalancerFilter) ([]LoadBalancer, int64, error)
 	DeleteLoadBalancer(context.Context, string, string, Attribution) (LoadBalancerResult, error)
@@ -128,15 +126,13 @@ type LoadBalancers struct {
 	repository    LoadBalancerRepository
 	authorization EgressAuthorization
 	cursor        *Network
-	freshness     time.Duration
-	now           func() time.Time
 }
 
-func NewLoadBalancers(r LoadBalancerRepository, a EgressAuthorization, key []byte, freshness time.Duration, now func() time.Time) (*LoadBalancers, error) {
-	if r == nil || a == nil || len(key) < 32 || freshness <= 0 || now == nil {
-		return nil, fmt.Errorf("load balancer repository, authorization, cursor key, freshness and clock are required")
+func NewLoadBalancers(r LoadBalancerRepository, a EgressAuthorization, key []byte) (*LoadBalancers, error) {
+	if r == nil || a == nil || len(key) < 32 {
+		return nil, fmt.Errorf("load balancer repository, authorization and cursor key are required")
 	}
-	return &LoadBalancers{repository: r, authorization: a, cursor: &Network{cursorKey: slices.Clone(key)}, freshness: freshness, now: now}, nil
+	return &LoadBalancers{repository: r, authorization: a, cursor: &Network{cursorKey: slices.Clone(key)}}, nil
 }
 func lbDefault(v *uint32, fallback uint32) uint32 {
 	if v == nil {
@@ -263,7 +259,7 @@ func (l *LoadBalancers) Create(ctx context.Context, r CreateLoadBalancer) (LoadB
 	if err = normalizeLBInput(&i, r.LoadBalancerMutableInput, true); err != nil {
 		return LoadBalancerResult{}, err
 	}
-	return l.repository.AcceptLoadBalancer(ctx, i, a, l.freshness)
+	return l.repository.AcceptLoadBalancer(ctx, i, a)
 }
 func (l *LoadBalancers) Update(ctx context.Context, r UpdateLoadBalancer) (LoadBalancerResult, error) {
 	tenant, a, err := l.authorization.Tenant(ctx, r.TenantID)
@@ -280,36 +276,9 @@ func (l *LoadBalancers) Update(ctx context.Context, r UpdateLoadBalancer) (LoadB
 	if err = normalizeLBInput(&i, r.LoadBalancerMutableInput, false); err != nil {
 		return LoadBalancerResult{}, err
 	}
-	return l.repository.AcceptLoadBalancer(ctx, i, a, l.freshness)
+	return l.repository.AcceptLoadBalancer(ctx, i, a)
 }
-func (l *LoadBalancers) observation(v LoadBalancer) LoadBalancer {
-	now := l.now()
-	stale := func(t *time.Time) bool { return t == nil || t.After(now) || now.Sub(*t) > l.freshness }
-	v.ObservationStale = v.Reason == ProviderUnavailable || stale(v.ObservedAt)
-	if v.ObservationStale || stale(v.DataPlaneObservedAt) {
-		v.DataPlaneState = "unknown"
-		v.DataPlaneObservedAt = nil
-	}
-	v.Backends = slices.Clone(v.Backends)
-	for j := range v.Backends {
-		v.Backends[j].ObservationStale = stale(v.Backends[j].ObservedAt)
-		if v.Backends[j].ObservationStale {
-			v.Backends[j].State = "unknown"
-		}
-	}
-	v.Listeners = slices.Clone(v.Listeners)
-	for j := range v.Listeners {
-		v.Listeners[j].Backends = slices.Clone(v.Listeners[j].Backends)
-		for k := range v.Listeners[j].Backends {
-			b := &v.Listeners[j].Backends[k]
-			b.ObservationStale = stale(b.ObservedAt)
-			if b.ObservationStale {
-				b.State = "unknown"
-			}
-		}
-	}
-	return v
-}
+func (l *LoadBalancers) observation(v LoadBalancer) LoadBalancer { return v }
 func (l *LoadBalancers) Get(ctx context.Context, tenant, id string) (LoadBalancer, error) {
 	tenant, _, err := l.authorization.Tenant(ctx, tenant)
 	if err != nil {

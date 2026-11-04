@@ -71,12 +71,21 @@ func NewObserver(repo ObservationRepository, source ObservationSource) (*Observe
 }
 
 func (o *Observer) Step(ctx context.Context) (bool, error) {
+	// Notification retries share this loop but never prevent the VM owner's
+	// native state observation from running or alter its result.
+	var notified bool
+	var notifyErr error
+	if dispatcher, ok := o.repo.(interface {
+		DispatchNetworkNotification(context.Context) (bool, error)
+	}); ok {
+		notified, notifyErr = dispatcher.DispatchNetworkNotification(ctx)
+	}
 	work, v, err := o.repo.ClaimObservation(ctx, uuid.NewString(), 15*time.Second)
 	if errors.Is(err, ErrNotFound) {
-		return false, nil
+		return notified, notifyErr
 	}
 	if err != nil {
-		return false, err
+		return notified, errors.Join(notifyErr, err)
 	}
 	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	observed, readErr := o.source.ObserveState(readCtx, v)
@@ -85,7 +94,7 @@ func (o *Observer) Step(ctx context.Context) (bool, error) {
 	// stop the service supervisor or cancel an independent operation worker.
 	err = o.repo.SaveObservation(ctx, work, observed, readErr)
 	if errors.Is(err, ErrVersion) || errors.Is(err, ErrLease) {
-		return true, nil
+		return true, notifyErr
 	}
-	return true, err
+	return true, errors.Join(notifyErr, err)
 }

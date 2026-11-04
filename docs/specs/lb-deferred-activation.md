@@ -1,5 +1,7 @@
 # LB 监听器延迟下发方案
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 日期：2026-10-13。本文件是 LB-DEFERRED-01 的业务合同。实施范围按本次 LB-DEFERRED-01 目标文件授权；实际实现、验证、阻塞与发布状态只见 [唯一执行状态](../execution/status.md#lb-deferred-01)。现有合同与历史证据仍见 [LB 现行规格](vpc-connectivity-lb.md)。
 
 ## 1. 业务目标与依据

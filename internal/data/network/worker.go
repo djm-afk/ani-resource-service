@@ -74,9 +74,19 @@ func (p *Postgres) Claim(ctx context.Context, owner string, duration time.Durati
 	if err != nil {
 		return biz.Work{}, false, databaseFailure(err)
 	}
-	gateReason, err := p.baseWorkGate(ctx, q, resource, now)
-	if err != nil {
-		return biz.Work{}, false, err
+	cleanupPending := false
+	if resource.Kind == "vpc" && (resource.State == biz.Deleting || resource.State == biz.Deleted) {
+		base, baseErr := q.GetBaseConnectivity(ctx, sqlcgen.GetBaseConnectivityParams{TenantID: resource.TenantID, VpcID: resource.ID})
+		if baseErr != nil && !errors.Is(baseErr, pgx.ErrNoRows) {
+			return biz.Work{}, false, databaseFailure(baseErr)
+		}
+		if baseErr == nil {
+			done, cleanupErr := p.prepareBaseCleanup(ctx, q, base, now)
+			if cleanupErr != nil {
+				return biz.Work{}, false, cleanupErr
+			}
+			cleanupPending = !done
+		}
 	}
 	cancelUnsent := (resource.State == biz.Deleting || resource.State == biz.Deleted) && resource.SystemManaged && !binding.CreateDispatched && binding.ProviderUid == "" && binding.PendingAction == ""
 	if resource.Kind == "load_balancer" && (resource.State == biz.Deleting || resource.State == biz.Deleted) {
@@ -90,11 +100,7 @@ func (p *Postgres) Claim(ctx context.Context, owner string, duration time.Durati
 	if err := tx.Commit(ctx); err != nil {
 		return biz.Work{}, false, databaseFailure(err)
 	}
-	requirement := biz.ObservationRequirement{RequestedGeneration: lease.RequestedGeneration, AppliedAt: lease.EvidenceAppliedAt, Hash: lease.EvidenceHash}
-	if resource.ObservedAt != nil {
-		requirement.PreviousCollectedAt = *resource.ObservedAt
-	}
-	return biz.Work{GateReason: gateReason, CancelUnsent: cancelUnsent, Requirement: requirement, Resource: resource, Operation: operation(op), ActiveOperation: active, BindingID: binding.BindingID,
+	return biz.Work{CleanupPending: cleanupPending, CancelUnsent: cancelUnsent, ClaimedGeneration: lease.RequestedGeneration, Resource: resource, Operation: operation(op), ActiveOperation: active, BindingID: binding.BindingID,
 		KnownIdentity: binding.ProviderUid, PendingAction: binding.PendingAction, Owner: owner, Epoch: lease.LeaseEpoch, Attempt: op.Attempt, Now: now}, true, nil
 }
 
@@ -171,64 +177,43 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 	if err := lockedWork(ctx, q, work); err != nil {
 		return err
 	}
-	if progress.Observed && !progress.Proof.Covers(work.Requirement) {
-		return biz.ErrLeaseLost
-	}
-	// Admission and completion hold the same parent lock. A generated MAC must
-	// also respect manual reservations, including an accepted custom request.
-	if work.Resource.Kind == "vnic" && progress.Observed && progress.VNic != nil && progress.VNic.MACAddress != "" && progress.State != biz.Deleted {
-		var conflict bool
-		queryErr := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM network_vnics WHERE tenant_id=$1 AND subnet_id=$2 AND vnic_id<>$3 AND state<>'deleted' AND lower(COALESCE(NULLIF(requested_mac,''),mac_address))=lower($4))`, work.Resource.TenantID, work.Resource.SubnetID, work.Resource.ID, progress.VNic.MACAddress).Scan(&conflict)
-		if queryErr != nil {
-			return databaseFailure(queryErr)
-		}
-		if conflict && progress.State != biz.Deleting {
-			progress.State, progress.Reason = biz.Failed, biz.AddressConflict
-			if work.ActiveOperation {
-				progress.OperationState = biz.OpFailed
-			}
-		}
-		if conflict {
-			progress.VNic = nil
-		}
-	}
 	now, err := q.DatabaseTime(ctx)
 	if err != nil {
 		return databaseFailure(err)
 	}
-	if work.Resource.Kind == "vpc" && (progress.Observed || progress.Reason == biz.ProviderOwnership) {
-		var observed *time.Time
-		if progress.Observed {
-			observed = &progress.Proof.CollectedAt
-		}
-		if err = affected(q.SaveVPCProviderReadiness(ctx, sqlcgen.SaveVPCProviderReadinessParams{TenantID: work.Resource.TenantID, VpcID: work.Resource.ID, BindingID: work.BindingID, Ready: progress.Observed && progress.State == biz.Available && progress.Identity != "", ObservedAt: observed, Identity: progress.Identity, Generation: progress.ProviderGeneration, ObservedGeneration: progress.ProviderObservedGeneration})); err != nil {
-			return err
-		}
-	}
-	if err = p.finishBaseConnectivity(ctx, q, work, &progress, now); err != nil {
-		return err
+	var observedAt *time.Time
+	if progress.Observed {
+		observedAt = &now
 	}
 	if work.Resource.Kind == "load_balancer" {
-		if err = p.finishLB(ctx, q, work, progress); err != nil {
+		if err = p.finishLB(ctx, q, work, progress, observedAt); err != nil {
 			return databaseFailure(err)
 		}
 	}
-	if work.Resource.Kind == "vnic" && progress.State == biz.Deleted && progress.Observed {
+	if work.Resource.Kind == "vnic" && progress.State == biz.Deleted {
 		if err = q.ReleaseSecurityGroupReferences(ctx, sqlcgen.ReleaseSecurityGroupReferencesParams{TenantID: work.Resource.TenantID, TargetType: "vnic", TargetID: work.Resource.ID, KeepIds: []string{}}); err != nil {
 			return databaseFailure(err)
 		}
 		if _, err = tx.Exec(ctx, `UPDATE network_security_group_targets SET payload=jsonb_set(payload,'{State}','"deleted"'::jsonb) WHERE tenant_id=$1 AND target_type='vnic' AND target_id=$2`, work.Resource.TenantID, work.Resource.ID); err != nil {
 			return databaseFailure(err)
 		}
+		if err = q.RetireSecurityGroupTask(ctx, sqlcgen.RetireSecurityGroupTaskParams{TenantID: work.Resource.TenantID, TargetType: "vnic", TargetID: work.Resource.ID}); err != nil {
+			return databaseFailure(err)
+		}
 	}
-	row, err := advanceResource(ctx, q, work.Resource, progress)
+	row, err := advanceResource(ctx, q, work.Resource, progress, observedAt)
 	if err != nil {
 		return databaseFailure(err)
+	}
+	// Child completion advances the next Res-owned cleanup even when the
+	// original VPC already disappeared and its own task has retired.
+	if err = p.finishBaseConnectivity(ctx, q, work, &progress, now); err != nil {
+		return err
 	}
 	if work.ActiveOperation {
 		if err := affected(q.CompleteAttempt(ctx, sqlcgen.CompleteAttemptParams{
 			TenantID: row.TenantID, ResourceID: row.ID, OperationID: work.Operation.ID, Epoch: work.Epoch,
-			State: string(progress.OperationState), Reason: string(progress.Reason), DelayMicros: progress.NextDelay.Microseconds(),
+			State: string(progress.OperationState), Reason: string(progress.OperationReason), DelayMicros: progress.NextDelay.Microseconds(),
 		})); err != nil {
 			return err
 		}
@@ -274,27 +259,18 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 		if work.ActiveOperation {
 			entry.OperationID = &work.Operation.ID
 			entry.OperationState = string(progress.OperationState)
+			entry.Reason = string(progress.OperationReason)
 		}
 		if err := q.InsertHistory(ctx, entry); err != nil {
 			return databaseFailure(err)
 		}
 	}
-	if work.CancelUnsent && progress.State == biz.Deleted {
-		if err := affected(q.RetireCancelledResource(ctx, sqlcgen.RetireCancelledResourceParams{TenantID: row.TenantID, ResourceID: &row.ID, Owner: work.Owner, Epoch: work.Epoch})); err != nil {
-			return err
-		}
-		return databaseFailure(tx.Commit(ctx))
-	}
 	if err := affected(q.ReleaseLease(ctx, sqlcgen.ReleaseLeaseParams{
 		TenantID: row.TenantID, ResourceID: row.ID, Owner: &work.Owner, Epoch: work.Epoch, DelayMicros: progress.NextDelay.Microseconds(),
-		CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, work.Requirement), Observed: progress.Observed, EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, Park: p.parkResource(work, progress),
+		ClaimedGeneration: work.ClaimedGeneration, Observed: progress.Observed, ObservationError: string(progress.ObservationError), Backoff: progress.Backoff, Park: p.parkResource(work, progress),
+		Terminal: progress.State == biz.Deleted && progress.ClearPending && (!work.ActiveOperation || progress.OperationState == biz.Succeeded), Now: now,
 	})); err != nil {
 		return err
-	}
-	if lbWaiting {
-		if err := affected(q.ParkLBReconciliation(ctx, sqlcgen.ParkLBReconciliationParams{TenantID: row.TenantID, LbID: row.ID})); err != nil {
-			return err
-		}
 	}
 	return databaseFailure(tx.Commit(ctx))
 }
@@ -375,16 +351,17 @@ func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, e
 	return vpc(row), nil
 }
 
-// A successful cleanup retires only its timer. The original binding stays in
-// the observer index so an actual late object can still wake its management task.
-func (p *Postgres) parkResource(w biz.Work, v biz.Progress) bool {
-	// Preserve the historical anomaly without asserting cleanup. Only an exact
-	// object event or an explicit recovery action can change an identity conflict.
-	if p.sharedObservation && w.Resource.State == biz.Deleted && !w.ActiveOperation && w.PendingAction == "" && v.Reason == biz.ProviderOwnership {
-		return true
+// Successful reads with no outstanding operation or mutation wait for an
+// exact object event. Retired lifecycles are excluded from event routing.
+func (p *Postgres) parkResource(work biz.Work, progress biz.Progress) bool {
+	if progress.State == biz.Deleted && progress.ClearPending {
+		return !work.ActiveOperation || progress.OperationState == biz.Succeeded
 	}
-	if !v.Observed || v.Backoff || v.Reason != "" || (w.ActiveOperation && v.OperationState != biz.Succeeded) || (w.PendingAction != "" && !v.ClearPending) {
+	if !progress.Observed || progress.ObservationError != "" || progress.Backoff || progress.State == biz.Deleting {
 		return false
 	}
-	return (v.State == biz.Deleted && v.ClearPending && v.Identity != "") || (p.sharedObservation && v.State == biz.Available)
+	if work.ActiveOperation && progress.OperationState != biz.Succeeded && progress.OperationState != biz.OpFailed {
+		return false
+	}
+	return work.PendingAction == "" || progress.ClearPending
 }

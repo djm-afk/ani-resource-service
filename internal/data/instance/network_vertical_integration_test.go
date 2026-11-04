@@ -228,7 +228,11 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	if err = nrepo.ConfigureVPCCIDRPresets([]string{"10.42.0.0/16"}); err != nil {
 		t.Fatal(err)
 	}
-	api := &testenv.KC{}
+	api := &testenv.KC{Objects: map[string]map[string]any{
+		"namespaces//" + c.Spec.Namespace: {"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{
+			"name": c.Spec.Namespace, "uid": uuid.NewString(), "labels": map[string]any{
+				"network.ani.io/managed-by": "ani-network-service", "network.ani.io/tenant-id": c.TenantID}}, "status": map[string]any{"phase": "Active"}},
+	}, Creates: map[string]int{}, Deletes: map[string]int{}}
 	httpServer := httptest.NewServer(api)
 	defer httpServer.Close()
 	nprovider, err := networkdata.NewKCProvider(nrepo, &rest.Config{Host: httpServer.URL, QPS: 1000, Burst: 1000})
@@ -238,7 +242,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	policy := networkbiz.DefaultWorkerPolicy()
 	policy.ObserveEvery = time.Millisecond
 	policy.RetryMin = time.Millisecond
-	networkUC, err := networkbiz.NewNetwork(nrepo, make([]byte, 32), time.Minute, time.Now)
+	networkUC, err := networkbiz.NewNetwork(nrepo, make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,8 +294,9 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	if _, err = f.repo.AcceptCreate(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	attachments := networkbiz.NewAttachments(nrepo, time.Minute)
-	adapter, err := data.NewInstanceNetwork(networkUC, attachments, c.Spec.ClusterID, "tenant-", time.Minute)
+	attachments := networkbiz.NewAttachments(nrepo)
+	f.repo.UseNetworkNotifier(attachments.Notify)
+	adapter, err := data.NewInstanceNetwork(networkUC, attachments, c.Spec.ClusterID, "tenant-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,6 +305,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	configureVerticalPullSecret(t, f, c, boundary, notebook)
 	worker, err := biz.NewWorker(f.repo, notebook, "vertical-instance")
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +318,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nworker, err := networkbiz.NewAttachmentWorker(nrepo, nprovider, consumer, uuid.NewString(), policy)
+	nworker, err := networkbiz.NewAttachmentWorker(nrepo, consumer, nprovider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +398,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	if err = worker.UseNetwork(adapter); err != nil {
 		t.Fatal(err)
 	}
-	nworker, err = networkbiz.NewAttachmentWorker(nrepo, nprovider, consumer, uuid.NewString(), policy)
+	nworker, err = networkbiz.NewAttachmentWorker(nrepo, consumer, nprovider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +409,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 	}
 	command(t, f, c, i, "delete")
 	i = drive(biz.Deleted)
-	if !i.ComputeCleaned || !i.WorkspaceCleaned || !i.QuotaReturned || !i.Network.Cleaned || !i.Network.ReleaseAcknowledged || i.Network.State != "closed" {
+	if !i.ComputeCleaned || !i.WorkspaceCleaned || !i.QuotaReturned || !i.Network.Cleaned || i.Network.State != "closed" {
 		t.Fatal("final release omitted real cleanup or called GPU quota", i.Network)
 	}
 	if _, err := boundary.client.Resource(verticalPVCGVR).Namespace(c.Spec.Namespace).Get(ctx, c.Spec.PVCName, metav1.GetOptions{}); !apierrors.IsNotFound(err) {

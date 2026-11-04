@@ -19,7 +19,19 @@ func TestNET05AMigrationUpgradesAllThreeHistoricalChecksums(t *testing.T) {
 	var historicalSchema string
 	facts := map[string]string{}
 	tenant, leaseOwner := uuid.NewString(), uuid.NewString()
+	columns := map[string]string{
+		"network_vpcs":               "tenant_id,vpc_id,name,description,cidr,state,reason,version,created_at,updated_at,observed_at,last_operation_id",
+		"network_subnets":            "tenant_id,subnet_id,vpc_id,name,description,cidr,gateway,state,reason,version,created_at,updated_at,observed_at,last_operation_id",
+		"network_operations":         "tenant_id,operation_id,vpc_id,subnet_id,kind,state,reason,attempt,execution_epoch,created_at,updated_at,completed_at,next_attempt_at",
+		"network_reconciliations":    "tenant_id,vpc_id,subnet_id",
+		"network_provider_bindings":  "tenant_id,vpc_id,subnet_id,binding_id,resource_kind,cluster_id,namespace,provider_name,provider_uid,pending_action,pending_since",
+		"network_attachments":        "tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,state,reason,version,pod_name,pod_uid,confirm_uid,finalization_id,created_at,updated_at,observed_at,released_at",
+		"network_attachment_history": "tenant_id,history_id,attachment_id,version,event,state,reason,pod_uid,finalization_id,created_at",
+	}
 	tables := []string{"network_vpcs", "network_subnets", "network_operations", "network_reconciliations", "network_provider_bindings", "network_attachments", "network_attachment_history"}
+	projection := func(table string) string {
+		return "SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]')::text FROM (SELECT " + columns[table] + " FROM " + table + ") t"
+	}
 	ctx := context.Background()
 	f := testenv.NewDatabase(t, func(owner *pgxpool.Pool, _ string) {
 		tx, e := owner.Begin(ctx)
@@ -53,7 +65,7 @@ func TestNET05AMigrationUpgradesAllThreeHistoricalChecksums(t *testing.T) {
 		}
 		for _, table := range tables {
 			var body string
-			if e = owner.QueryRow(ctx, "SELECT coalesce(jsonb_agg(to_jsonb(t)),'[]')::text FROM (SELECT * FROM "+table+" ORDER BY tenant_id) t").Scan(&body); e != nil {
+			if e = owner.QueryRow(ctx, projection(table)).Scan(&body); e != nil {
 				t.Fatal(e)
 			}
 			facts[table] = body
@@ -61,12 +73,16 @@ func TestNET05AMigrationUpgradesAllThreeHistoricalChecksums(t *testing.T) {
 	})
 	for _, table := range tables {
 		var body string
-		if e := f.Owner.QueryRow(ctx, "SELECT coalesce(jsonb_agg(to_jsonb(t)-'eip_id'-'snat_id'-'lb_id'-'requested_generation'-'processed_generation'-'retry_not_before'-'evidence_hash'-'evidence_applied_at'-'base_connectivity_required'-'create_dispatched'-'retired'-'provider_ready'-'provider_observed_at'-'provider_observed_uid'-'provider_generation'-'provider_observed_generation'-'available_ip_count'-'used_ip_count'-'available_ip_range'-'used_ip_range'),'[]')::text FROM (SELECT * FROM "+table+" ORDER BY tenant_id) t").Scan(&body); e != nil {
+		if e := f.Owner.QueryRow(ctx, projection(table)).Scan(&body); e != nil {
 			t.Fatal(e)
 		}
 		if body != facts[table] {
-			t.Fatalf("upgrade changed existing facts/lease: %s", table)
+			t.Fatalf("upgrade changed existing product facts: %s", table)
 		}
+	}
+	var leasesRetired bool
+	if err := f.Owner.QueryRow(ctx, `SELECT bool_and(lease_owner IS NULL AND lease_until IS NULL AND lease_epoch=CASE WHEN vpc_id IS NOT NULL THEN 14 ELSE 18 END) FROM network_reconciliations WHERE tenant_id=$1`, tenant).Scan(&leasesRetired); err != nil || !leasesRetired {
+		t.Fatal("coordinated upgrade did not fence pre-upgrade workers", leasesRetired, err)
 	}
 	var nonnullIPCounts int
 	if e := f.Owner.QueryRow(ctx, "SELECT count(*) FROM network_subnets WHERE available_ip_count IS NOT NULL OR used_ip_count IS NOT NULL").Scan(&nonnullIPCounts); e != nil || nonnullIPCounts != 0 {
@@ -84,7 +100,7 @@ func TestNET05AMigrationUpgradesAllThreeHistoricalChecksums(t *testing.T) {
 	}
 	for _, table := range []string{"network_reconciliations", "network_attachments"} {
 		var valid bool
-		if e := f.Owner.QueryRow(ctx, "SELECT bool_and(requested_generation=1 AND processed_generation=0 AND evidence_hash='') FROM "+table).Scan(&valid); e != nil || !valid {
+		if e := f.Owner.QueryRow(ctx, "SELECT bool_and(requested_generation=1 AND processed_generation=0 AND observation_error='') FROM "+table).Scan(&valid); e != nil || !valid {
 			t.Fatalf("unsafe upgrade defaults %s %v", table, e)
 		}
 	}
@@ -120,9 +136,9 @@ func TestNET05AMigrationUpgradesAllThreeHistoricalChecksums(t *testing.T) {
 	}
 }
 
-// Seed exact schema-3 records, including live execution leases, unknown create
-// intent, preserved orphan relation, public versions and history. No executor
-// exists during migration; upgrading must not erase any recovery state.
+// Seed exact schema-3 records with live leases, unknown create intent and
+// durable public history. The coordinated upgrade resets execution leases;
+// it preserves the accepted command and original provider identity.
 func seedNET05AUpgrade(t *testing.T, tx pgx.Tx, tenant, lease string) {
 	t.Helper()
 	ctx := context.Background()

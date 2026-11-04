@@ -77,7 +77,8 @@ type DNS struct {
 type NetworkPlan struct {
 	AttachmentID, SubmissionID, BindingRevision         string
 	Generation, Version, SnapshotRevision               int64
-	Consumer                                            json.RawMessage
+	NotifiedSnapshotRevision                            int64
+	Consumer                                            *NetworkConsumerState
 	Namespace, NADName, NADUID, NADDigest, KCNSubnetRef string
 	Labels                                              map[string]string
 }
@@ -245,7 +246,8 @@ type NativePort interface {
 }
 type NetworkPort interface {
 	Prepare(context.Context, VM) (NetworkPlan, error)
-	Observe(context.Context, VM, Observation) ([]Address, error)
+	Confirm(context.Context, VM, Observation) error
+	CurrentAddresses(context.Context, VM) ([]Address, error)
 	Release(context.Context, VM) (bool, error)
 }
 type EnvironmentPort interface {

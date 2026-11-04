@@ -3,50 +3,45 @@ package data
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"regexp"
-	"sort"
-	"strings"
-	"time"
-
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
-	"k8s.io/apimachinery/pkg/api/resource"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
+	"regexp"
 	"sigs.k8s.io/yaml"
+	"sort"
+	"strings"
 )
 
-// Pinned deployment input, also consumed by the explicit installation check.
-// Runtime resources do not repeatedly audit the platform installation.
+// Optional input for the explicit installation diagnostic only. Runtime
+// resource reconciliation does not consume installation proofs.
 type LoadBalancerInstallation struct {
 	Fingerprint, ControllerImageID, EnvoyImageID, ShutdownImageID, KCImageID string
 }
 
+var lbDeployments = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+var lbReplicaSets = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}
+var lbEndpointSlices = schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}
 var lbCRDs = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
 var lbReviews = schema.GroupVersionResource{Group: "authorization.k8s.io", Version: "v1", Resource: "subjectaccessreviews"}
-var lbObservationGVRs = []schema.GroupVersionResource{lbGateways, lbRoutes, lbBackends, lbPolicies, lbDeployments, lbReplicaSets, lbEndpointSlices, lbGatewayClasses, lbEnvoyProxies}
+var lbInstallationResources = []schema.GroupVersionResource{lbGateways, lbRoutes, lbBackends, lbPolicies, lbDeployments, lbReplicaSets, lbEndpointSlices, lbGatewayClasses, lbEnvoyProxies}
 
-func (p *KCProvider) ConfigureLoadBalancer(expected LoadBalancerInstallation) error {
-	if p.observation != nil {
-		return fmt.Errorf("LB installation must be configured before starting observation")
-	}
+func validateLoadBalancerInstallation(expected LoadBalancerInstallation) error {
 	if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(expected.Fingerprint) {
 		return fmt.Errorf("LB installation fingerprint must be sha256")
 	}
 	for _, id := range []string{expected.ControllerImageID, expected.EnvoyImageID, expected.ShutdownImageID, expected.KCImageID} {
 		if !regexp.MustCompile(`^(?:[^\s@]+@)?sha256:[a-f0-9]{64}$`).MatchString(id) {
-			return fmt.Errorf("LB expected running image IDs must have fixed sha256 digests")
+			return fmt.Errorf("LB expected image IDs must have fixed sha256 digests")
 		}
 	}
-	p.loadBalancerInstallation = &expected
 	return nil
 }
-func lbViewObject(v *auditView, gvr schema.GroupVersionResource, ns, name string) *unstructured.Unstructured {
+func lbViewObject(v *lbInstallationView, gvr schema.GroupVersionResource, ns, name string) *unstructured.Unstructured {
 	index := v.indices[gvr]
 	if index == nil {
 		return nil
@@ -61,7 +56,7 @@ func lbViewObject(v *auditView, gvr schema.GroupVersionResource, ns, name string
 	}
 	return obj.(*unstructured.Unstructured)
 }
-func lbInstallationBundle(v *auditView) map[string]any {
+func lbInstallationBundle(v *lbInstallationView) map[string]any {
 	bundle := map[string]any{}
 	add := func(gvr schema.GroupVersionResource, ns, name string) {
 		obj := lbViewObject(v, gvr, ns, name)
@@ -83,8 +78,7 @@ func lbInstallationBundle(v *auditView) map[string]any {
 	}
 	return bundle
 }
-func (p *KCProvider) inspectLBCapability(ctx context.Context, v *auditView) (bool, string, []string) {
-	expected := p.loadBalancerInstallation
+func (p *KCProvider) inspectLBCapability(ctx context.Context, v *lbInstallationView, expected *LoadBalancerInstallation) (bool, string, []string) {
 	fingerprint := contentHash(lbInstallationBundle(v))
 	if expected == nil || fingerprint != expected.Fingerprint {
 		return false, fingerprint, nil
@@ -112,7 +106,7 @@ func (p *KCProvider) inspectLBCapability(ctx context.Context, v *auditView) (boo
 		return false, fingerprint, nil
 	}
 	conditions, _, _ := unstructured.NestedSlice(class.Object, "status", "conditions")
-	if !lbConditions(conditions, class.GetGeneration(), "Accepted") || crString(class, "spec", "controllerName") != lbController || crString(class, "spec", "parametersRef", "group") != lbEnvoyProxies.Group || crString(class, "spec", "parametersRef", "kind") != "EnvoyProxy" || crString(class, "spec", "parametersRef", "namespace") != "envoy-gateway-system" || crString(class, "spec", "parametersRef", "name") != proxy.GetName() {
+	if !lbInstallationAccepted(conditions, class.GetGeneration()) || crString(class, "spec", "controllerName") != lbController || crString(class, "spec", "parametersRef", "group") != lbEnvoyProxies.Group || crString(class, "spec", "parametersRef", "kind") != "EnvoyProxy" || crString(class, "spec", "parametersRef", "namespace") != "envoy-gateway-system" || crString(class, "spec", "parametersRef", "name") != proxy.GetName() {
 		return false, fingerprint, nil
 	}
 	// Capacity and Service type belong to a dedicated tenant Proxy; the common
@@ -227,7 +221,7 @@ func (p *KCProvider) inspectLBCapability(ctx context.Context, v *auditView) (boo
 	}
 	return true, fingerprint, images
 }
-func lbInstalledProxyPod(v *auditView, pod *unstructured.Unstructured) bool {
+func lbInstalledProxyPod(v *lbInstallationView, pod *unstructured.Unstructured) bool {
 	ns := pod.GetNamespace()
 	gwName := pod.GetLabels()["gateway.envoyproxy.io/owning-gateway-name"]
 	if gwName == "" || pod.GetLabels()["gateway.envoyproxy.io/owning-gateway-namespace"] != ns {
@@ -252,126 +246,23 @@ func lbInstalledProxyPod(v *auditView, pod *unstructured.Unstructured) bool {
 	}
 	return false
 }
-func (o *KCObservation) collectLB(ctx context.Context, v *auditView) (result error) {
-	if o.provider.loadBalancerInstallation == nil {
-		return nil
-	}
-	defer func() {
-		if result != nil {
-			// A partially listed LB scope cannot prove cleanup or absence. Do
-			// not carry old optional objects into a newly dated base audit.
-			for _, gvr := range append(append([]schema.GroupVersionResource{}, lbObservationGVRs...), lbExtendedObservationGVRs...) {
-				delete(v.indices, gvr)
-			}
-		}
-	}()
-	// Leave time to persist capability failure and publish mandatory facts.
-	// A late optional LIST must not consume the whole shared audit deadline.
-	budget := 4 * time.Second
-	if deadline, ok := ctx.Deadline(); ok {
-		budget = min(budget, time.Until(deadline)/2)
-	}
-	optional, cancel := context.WithTimeout(ctx, budget)
-	defer cancel()
-	complete := true
-	var readErr error
-	for _, gvr := range lbObservationGVRs {
-		objects, err := o.provider.listAll(optional, gvr)
-		if err != nil {
-			complete = false
-			readErr = fmt.Errorf("optional LB audit LIST %s: %w", gvr.String(), err)
-			break
-		}
-		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
-		for _, obj := range objects {
-			if err = index.Add(obj.DeepCopy()); err != nil {
-				return err
-			}
-		}
-		v.indices[gvr] = index
-	}
-	// Extra listener CRDs are observed by the existing periodic audit. A missing
-	// optional source blocks only LBs using it, preserving the HTTP baseline.
-	for _, gvr := range lbExtendedObservationGVRs {
-		if !complete || optional.Err() != nil {
-			break
-		}
-		objects, err := o.provider.listAll(optional, gvr)
-		if err != nil {
-			continue
-		}
-		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
-		for _, obj := range objects {
-			if err = index.Add(obj.DeepCopy()); err != nil {
-				return err
-			}
-		}
-		v.indices[gvr] = index
-	}
-	// Runtime capability describes API access and the GatewayClass controller
-	// acknowledgement. Image/CRD/RBAC acceptance belongs to the deployment check.
-	class := lbViewObject(v, lbGatewayClasses, "", biz.LoadBalancerGatewayClass)
-	ready := complete && class != nil && class.GetDeletionTimestamp() == nil && crString(class, "spec", "controllerName") == lbController
-	if class != nil {
-		conditions, _, _ := unstructured.NestedSlice(class.Object, "status", "conditions")
-		ready = ready && lbConditions(conditions, class.GetGeneration(), "Accepted")
-	}
-	reason := ""
-	if !complete {
-		reason = "PROVIDER_UNAVAILABLE"
-	} else if !ready {
-		reason = "PROVIDER_NOT_READY"
-	}
-	// Persistence is optional to base observation too. Its own bounded context
-	// cannot consume all time left after a failed optional API request.
-	persistBudget := 500 * time.Millisecond
-	if deadline, ok := ctx.Deadline(); ok {
-		persistBudget = min(persistBudget, time.Until(deadline)/2)
-	}
-	persist, persistCancel := context.WithTimeout(ctx, persistBudget)
-	defer persistCancel()
-	if err := o.provider.repository.queries.SaveLBCapability(persist, sqlcgen.SaveLBCapabilityParams{ClusterID: o.provider.repository.placement.ClusterID, Ready: ready, Reason: reason, ObservedAt: v.collected, Fingerprint: o.provider.loadBalancerInstallation.Fingerprint, ProviderImages: []string{}}); err != nil {
-		return errors.Join(readErr, fmt.Errorf("optional LB capability persistence: %w", err))
-	}
-	return readErr
-}
-func (p *KCProvider) observationResources() []schema.GroupVersionResource {
-	values := append([]schema.GroupVersionResource{}, observationGVRs...)
-	if p.loadBalancerInstallation != nil {
-		values = append(values, lbObservationGVRs...)
-	}
-	return values
-}
+
 func lbImageDigest(id string) string { _, digest, _ := strings.Cut(id, "@sha256:"); return digest }
 
-func lbQuantityEquals(obj *unstructured.Unstructured, expected string, fields ...string) bool {
-	value, found, err := unstructured.NestedFieldNoCopy(obj.Object, fields...)
-	if err != nil || !found {
-		return false
-	}
-	switch value.(type) {
-	case string, int64, float64:
-	default:
-		return false
-	}
-	quantity, err := resource.ParseQuantity(fmt.Sprint(value))
-	return err == nil && quantity.Cmp(resource.MustParse(expected)) == 0
-}
-
 // VerifyLoadBalancerInstallation is invoked explicitly by the deployment driver;
-// it is never called by resource reconciliation or the shared recovery audit.
+// it is never called by resource reconciliation or startup task recovery.
 func VerifyLoadBalancerInstallation(ctx context.Context, client dynamic.Interface, expected LoadBalancerInstallation) (bool, error) {
 	p := &KCProvider{client: client, repository: &Postgres{placement: Placement{NamespacePrefix: "tenant-"}}}
-	if err := p.ConfigureLoadBalancer(expected); err != nil {
+	if err := validateLoadBalancerInstallation(expected); err != nil {
 		return false, err
 	}
-	v := &auditView{indices: map[schema.GroupVersionResource]cache.Indexer{}}
-	for _, gvr := range append(append([]schema.GroupVersionResource{}, lbObservationGVRs...), lbCRDs, kcConfigMaps, pods) {
+	v := &lbInstallationView{indices: map[schema.GroupVersionResource]cache.Indexer{}}
+	for _, gvr := range append(append([]schema.GroupVersionResource{}, lbInstallationResources...), lbCRDs, kcConfigMaps, pods) {
 		objects, err := p.listAll(ctx, gvr)
 		if err != nil {
 			return false, err
 		}
-		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
+		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
 		for _, obj := range objects {
 			if err := index.Add(obj.DeepCopy()); err != nil {
 				return false, err
@@ -379,6 +270,55 @@ func VerifyLoadBalancerInstallation(ctx context.Context, client dynamic.Interfac
 		}
 		v.indices[gvr] = index
 	}
-	ready, _, _ := p.inspectLBCapability(ctx, v)
+	ready, _, _ := p.inspectLBCapability(ctx, v, &expected)
 	return ready, nil
+}
+
+// The explicit diagnostic owns this temporary collection. It is never stored
+// in the runtime observer or used as a resource admission requirement.
+type lbInstallationView struct {
+	indices map[schema.GroupVersionResource]cache.Indexer
+}
+
+func lbInstallationAccepted(conditions []any, generation int64) bool {
+	ready, _ := lbConditions(conditions, generation, "Accepted")
+	return ready != nil && *ready
+}
+
+func (p *KCProvider) ReadLoadBalancerCapability(ctx context.Context) (*bool, biz.Reason, error) {
+	class, err := p.client.Resource(lbGatewayClasses).Get(ctx, biz.LoadBalancerGatewayClass, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil, biz.ProviderMissing, nil
+	}
+	if err != nil {
+		return nil, "", readFailure(err)
+	}
+	ready, reason := primaryCondition(class, "Accepted")
+	return ready, reason, nil
+}
+
+func lbOwnedBy(o *unstructured.Unstructured, kind, name, uid string) bool {
+	if o == nil || uid == "" {
+		return false
+	}
+	for _, ref := range o.GetOwnerReferences() {
+		if ref.Kind == kind && ref.Name == name && string(ref.UID) == uid && ref.APIVersion == lbOwnerAPIVersion(kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func lbOwnerAPIVersion(kind string) string {
+	switch kind {
+	case "Gateway":
+		return "gateway.networking.k8s.io/v1"
+	case "Pod", "Service":
+		return "v1"
+	case "Deployment", "ReplicaSet":
+		return "apps/v1"
+	case "VNic":
+		return "networking.kubercloud.com/v1"
+	}
+	return ""
 }

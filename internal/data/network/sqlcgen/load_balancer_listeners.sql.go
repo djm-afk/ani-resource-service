@@ -147,7 +147,7 @@ func (q *Queries) ListLBConfigurationListeners(ctx context.Context, arg ListLBCo
 }
 
 const listLBListenerMembers = `-- name: ListLBListenerMembers :many
-SELECT m.tenant_id, m.cluster_id, m.namespace, m.lb_id, m.member_id, m.vpc_id, m.subnet_id, m.attachment_id, m.address, m.port, m.pod_uid, m.vnic_name, m.vnic_uid, m.vnicip_name, m.vnicip_uid, m.state, m.reason, m.observed_at,lm.weight FROM network_lb_listener_members lm
+SELECT m.tenant_id, m.cluster_id, m.namespace, m.lb_id, m.member_id, m.vpc_id, m.subnet_id, m.attachment_id, m.address, m.port, m.pod_uid, m.state, m.reason, m.observed_at,lm.weight FROM network_lb_listener_members lm
 JOIN network_lb_members m USING(tenant_id,lb_id,member_id)
 WHERE lm.tenant_id=$1 AND lm.lb_id=$2 AND lm.config_version=$3 AND lm.listener_id=$4 ORDER BY m.member_id
 `
@@ -190,10 +190,6 @@ func (q *Queries) ListLBListenerMembers(ctx context.Context, arg ListLBListenerM
 			&i.NetworkLbMember.Address,
 			&i.NetworkLbMember.Port,
 			&i.NetworkLbMember.PodUid,
-			&i.NetworkLbMember.VnicName,
-			&i.NetworkLbMember.VnicUid,
-			&i.NetworkLbMember.VnicipName,
-			&i.NetworkLbMember.VnicipUid,
 			&i.NetworkLbMember.State,
 			&i.NetworkLbMember.Reason,
 			&i.NetworkLbMember.ObservedAt,

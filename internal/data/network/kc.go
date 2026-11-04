@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"net/http"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -34,15 +32,14 @@ const bindingLabel = "network.ani.io/binding-id"
 // KCProvider implements only the fixed networking.kubercloud.com/v1 VPC
 // contract. It does not import the kc repository or operate on OVN.
 type KCProvider struct {
-	namespaceIdentityReader  func(context.Context, string) (tenantnamespace.Identity, error)
-	vmAutoNetwork            *VMAutoNetworkConfig
-	vmNetworks               map[string]ManagedVMNAD
-	loadBalancerInstallation *LoadBalancerInstallation
-	repository               *Postgres
-	client                   dynamic.Interface
-	watchClient              dynamic.Interface
-	observation              *KCObservation
-	io                       *providerIO
+	namespaceIdentityReader func(context.Context, string) (tenantnamespace.Identity, error)
+	vmAutoNetwork           *VMAutoNetworkConfig
+	vmNetworks              map[string]ManagedVMNAD
+	repository              *Postgres
+	client                  dynamic.Interface
+	watchClient             dynamic.Interface
+	observation             *KCObservation
+	io                      *providerIO
 }
 
 type KCClientPolicy struct {
@@ -111,9 +108,6 @@ func (p *KCProvider) binding(ctx context.Context, target biz.ProviderTarget) (sq
 		(value.ProviderUid != "" && target.KnownIdentity != "" && value.ProviderUid != target.KnownIdentity) {
 		return value, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	if err := p.verifyTenantNamespace(ctx, value); err != nil {
-		return value, err
-	}
 	return value, nil
 }
 
@@ -124,11 +118,7 @@ func (p *KCProvider) observeDirect(ctx context.Context, target biz.ProviderTarge
 	}
 	object, err := p.client.Resource(kcResource(binding)).Namespace(binding.Namespace).Get(ctx, binding.ProviderName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		if !target.Deleting || binding.ResourceKind == "vnic" {
-			return biz.ProviderObservation{}, nil
-		}
-		dependencies, err := p.hasDependencies(ctx, binding)
-		return biz.ProviderObservation{HasDependencies: dependencies}, err
+		return biz.ProviderObservation{}, nil
 	}
 	if err != nil {
 		return biz.ProviderObservation{}, readFailure(err)
@@ -136,80 +126,73 @@ func (p *KCProvider) observeDirect(ctx context.Context, target biz.ProviderTarge
 	return p.inspect(ctx, object, binding, target)
 }
 
-func inspectResource(object *unstructured.Unstructured, binding sqlcgen.NetworkProviderBinding, target biz.ProviderTarget, parentRef string) (biz.ProviderObservation, error) {
+// managedObjectExists identifies the original object owned by this binding.
+// A replacement with the same name is never adopted. During deletion its
+// presence does not extend the lifetime of the original UID.
+func managedObjectExists(object *unstructured.Unstructured, binding sqlcgen.NetworkProviderBinding, target biz.ProviderTarget, kind string) (bool, error) {
+	if object == nil {
+		return false, &biz.ProviderError{Kind: biz.ProviderConflict}
+	}
+	known := target.KnownIdentity
+	if known == "" {
+		known = binding.ProviderUid
+	}
+	if known != "" && string(object.GetUID()) != known {
+		if target.Deleting {
+			return false, nil
+		}
+		return false, &biz.ProviderError{Kind: biz.ProviderConflict}
+	}
 	labels := object.GetLabels()
-	expectedKind := "VPC"
-	if binding.ResourceKind == "subnet" {
-		expectedKind = "Subnet"
+	if object.GetAPIVersion() != "networking.kubercloud.com/v1" || object.GetKind() != kind ||
+		object.GetName() != binding.ProviderName || object.GetNamespace() != binding.Namespace || object.GetUID() == "" ||
+		labels[ownerLabel] != "ani-network-service" || labels[tenantLabel] != target.TenantID ||
+		labels[resourceLabel] != target.ResourceID || labels[bindingLabel] != binding.BindingID {
+		return false, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	if object.GetAPIVersion() != "networking.kubercloud.com/v1" || object.GetKind() != expectedKind {
-		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	if object.GetName() != binding.ProviderName || object.GetNamespace() != binding.Namespace || object.GetUID() == "" || object.GetResourceVersion() == "" ||
-		labels[ownerLabel] != "ani-network-service" || labels[tenantLabel] != target.TenantID || labels[resourceLabel] != target.ResourceID || labels[bindingLabel] != binding.BindingID ||
-		(target.KnownIdentity != "" && string(object.GetUID()) != target.KnownIdentity) ||
-		(binding.ProviderUid != "" && string(object.GetUID()) != binding.ProviderUid) {
-		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	cidr, _, _ := unstructured.NestedString(object.Object, "spec", "cidrBlock")
-	ip, _, _ := unstructured.NestedString(object.Object, "spec", "ipVersion")
-	allowed, _, _ := unstructured.NestedString(object.Object, "spec", "allowedNamespaces", "from")
-	route, _, _ := unstructured.NestedString(object.Object, "spec", "routeTable")
-	routes, _, _ := unstructured.NestedSlice(object.Object, "spec", "policyRoutes")
-	selector, _, _ := unstructured.NestedMap(object.Object, "spec", "allowedNamespaces", "selector")
-	if cidr != target.CIDR || ip != "IPv4" || allowed != "Same" || route != "" || len(routes) > 0 || len(selector) > 0 {
-		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
-	if binding.ResourceKind == "subnet" {
-		kind, _, _ := unstructured.NestedString(object.Object, "spec", "type")
-		parent, _, _ := unstructured.NestedString(object.Object, "spec", "gateway")
-		gateway, _, _ := unstructured.NestedString(object.Object, "spec", "gatewayIP")
-		underlay, _, _ := unstructured.NestedMap(object.Object, "spec", "underlayConfig")
-		exclusions, _, exclusionsErr := unstructured.NestedStringSlice(object.Object, "spec", "excludeIPs")
-		dhcp, _, dhcpErr := unstructured.NestedBool(object.Object, "spec", "enableDHCP")
-		dns, _, dnsErr := unstructured.NestedStringSlice(object.Object, "spec", "dnsServers")
-		nat, _, _ := unstructured.NestedBool(object.Object, "spec", "natOutgoing")
-		options := biz.SubnetOptions{}
-		if target.SubnetOptions != nil {
-			options = *target.SubnetOptions
-		}
-		if kind != "VPC" || parentRef == "" || parent != parentRef || gateway != target.Gateway || len(underlay) > 0 || nat || exclusionsErr != nil || dhcpErr != nil || dnsErr != nil || !sameStrings(exclusions, options.ExcludeIPs) || dhcp != options.EnableDHCP || !slices.Equal(dns, options.DNSServers) {
-			return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
-		}
-	}
-	observed, _, _ := unstructured.NestedInt64(object.Object, "status", "observedGeneration")
-	router, _, _ := unstructured.NestedString(object.Object, "status", "boundResources", "router")
-	if binding.ResourceKind == "subnet" {
-		switchName, _, _ := unstructured.NestedString(object.Object, "status", "boundResources", "switch")
-		port, _, _ := unstructured.NestedString(object.Object, "status", "boundResources", "gatewayPort")
-		router = ""
-		if switchName != "" && port != "" {
-			router = switchName
-		}
-	}
+	return true, nil
+}
+
+// primaryCondition projects the controller's own result without reconstructing
+// readiness from generations, subordinate conditions, or generated resources.
+func primaryCondition(object *unstructured.Unstructured, conditionType string) (*bool, biz.Reason) {
 	conditions, _, _ := unstructured.NestedSlice(object.Object, "status", "conditions")
-	good := map[string]bool{}
 	for _, raw := range conditions {
 		condition, ok := raw.(map[string]any)
-		if !ok {
+		if !ok || condition["type"] != conditionType {
 			continue
 		}
-		kind, _ := condition["type"].(string)
-		generation, _, _ := unstructured.NestedInt64(condition, "observedGeneration")
-		// The fixed kc helper does not populate condition.observedGeneration;
-		// use status.observedGeneration, and reject a contradictory nonzero value.
-		good[kind] = condition["status"] == "True" && (generation == 0 || generation == object.GetGeneration())
+		reason, _ := condition["reason"].(string)
+		switch condition["status"] {
+		case "True":
+			ready := true
+			return &ready, biz.Reason(reason)
+		case "False":
+			ready := false
+			return &ready, biz.Reason(reason)
+		default:
+			return nil, biz.Reason(reason)
+		}
 	}
-	subnets, _, _ := unstructured.NestedMap(object.Object, "status", "subnets")
-	eips, _, _ := unstructured.NestedMap(object.Object, "status", "eips")
-	used, _, _ := unstructured.NestedInt64(object.Object, "status", "v4usingIPs")
-	ranges := biz.SubnetIPRanges{}
-	if binding.ResourceKind == "subnet" && object.GetGeneration() > 0 && observed == object.GetGeneration() {
-		ranges.Available = subnetIPRange(object, "v4availableIPrange")
-		ranges.Used = subnetIPRange(object, "v4usingIPrange")
+	return nil, ""
+}
+
+func inspectResource(object *unstructured.Unstructured, binding sqlcgen.NetworkProviderBinding, target biz.ProviderTarget) (biz.ProviderObservation, error) {
+	kind := "VPC"
+	if binding.ResourceKind == "subnet" {
+		kind = "Subnet"
 	}
-	return biz.ProviderObservation{Generation: object.GetGeneration(), ObservedGeneration: observed, SubnetIPRanges: ranges, Exists: true, Identity: string(object.GetUID()), HasDependencies: len(subnets) > 0 || len(eips) > 0 || used > 0,
-		Ready: object.GetDeletionTimestamp() == nil && object.GetGeneration() > 0 && observed == object.GetGeneration() && router != "" && good["Valid"] && good["Initialized"] && good["Ready"]}, nil
+	exists, err := managedObjectExists(object, binding, target, kind)
+	if err != nil || !exists {
+		return biz.ProviderObservation{}, err
+	}
+	ready, reason := primaryCondition(object, "Ready")
+	value := biz.ProviderObservation{Exists: true, Identity: string(object.GetUID()), Ready: ready, StatusReason: reason}
+	if binding.ResourceKind == "subnet" {
+		value.SubnetIPRanges.Available = subnetIPRange(object, "v4availableIPrange")
+		value.SubnetIPRanges.Used = subnetIPRange(object, "v4usingIPrange")
+	}
+	return value, nil
 }
 
 // subnetIPRange preserves the provider's comma-separated IPv4 ranges verbatim.
@@ -321,9 +304,6 @@ func (p *KCProvider) Delete(ctx context.Context, target biz.ProviderTarget) erro
 	if err != nil {
 		return err
 	}
-	if target.KnownIdentity == "" {
-		return &biz.ProviderError{Kind: biz.ProviderConflict}
-	}
 	resource := p.client.Resource(kcResource(binding)).Namespace(binding.Namespace)
 	object, err := resource.Get(ctx, binding.ProviderName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -332,24 +312,14 @@ func (p *KCProvider) Delete(ctx context.Context, target biz.ProviderTarget) erro
 	if err != nil {
 		return readFailure(err)
 	}
+	target.Deleting = true
 	observed, err := p.inspect(ctx, object, binding, target)
-	if err != nil {
+	if err != nil || !observed.Exists || object.GetDeletionTimestamp() != nil {
 		return err
 	}
-	if observed.HasDependencies {
-		return &biz.ProviderError{Kind: biz.ProviderInUse}
-	}
-	dependencies, err := p.hasDependencies(ctx, binding)
-	if err != nil {
-		return err
-	}
-	if dependencies {
-		return &biz.ProviderError{Kind: biz.ProviderInUse}
-	}
-	uid := types.UID(target.KnownIdentity)
+	uid := types.UID(observed.Identity)
 	revision := object.GetResourceVersion()
-	orphan := metav1.DeletePropagationOrphan
-	err = resource.Delete(ctx, binding.ProviderName, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &revision}, PropagationPolicy: &orphan})
+	err = resource.Delete(ctx, binding.ProviderName, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &revision}})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
@@ -392,77 +362,14 @@ func (p *KCProvider) parentReference(ctx context.Context, b sqlcgen.NetworkProvi
 	if err != nil {
 		return "", readFailure(err)
 	}
-	if parent.ResourceKind != "vpc" || parent.ClusterID != b.ClusterID || parent.Namespace != b.Namespace || parent.ProviderUid == "" {
+	if parent.ResourceKind != "vpc" || parent.ClusterID != b.ClusterID || parent.Namespace != b.Namespace || parent.ProviderName == "" {
 		return "", &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
 	return parent.Namespace + "/" + parent.ProviderName, nil
 }
-func (p *KCProvider) inspect(ctx context.Context, o *unstructured.Unstructured, b sqlcgen.NetworkProviderBinding, t biz.ProviderTarget) (biz.ProviderObservation, error) {
-	if b.ResourceKind == "vnic" {
-		return p.inspectVNic(ctx, o, b, t)
+func (p *KCProvider) inspect(ctx context.Context, object *unstructured.Unstructured, binding sqlcgen.NetworkProviderBinding, target biz.ProviderTarget) (biz.ProviderObservation, error) {
+	if binding.ResourceKind == "vnic" {
+		return p.inspectVNic(ctx, object, binding, target)
 	}
-	parent := ""
-	if b.ResourceKind == "subnet" {
-		var err error
-		parent, err = p.parentReference(ctx, b, t)
-		if err != nil {
-			return biz.ProviderObservation{}, err
-		}
-	}
-	return inspectResource(o, b, t, parent)
-}
-
-// Inspect status and actual references independently. A missing Subnet CR does
-// not prove its VNic/VNicIP resources have been released.
-func (p *KCProvider) hasDependencies(ctx context.Context, b sqlcgen.NetworkProviderBinding) (bool, error) {
-	if b.ResourceKind == "vpc" {
-		count, err := p.repository.queries.CountBlockingSubnets(ctx, sqlcgen.CountBlockingSubnetsParams{TenantID: b.TenantID, VpcID: textValue(b.VpcID)})
-		if err != nil {
-			return false, readFailure(err)
-		}
-		if count > 0 {
-			return true, nil
-		}
-	}
-	if b.ResourceKind == "subnet" {
-		count, err := p.repository.queries.CountAttachments(ctx, sqlcgen.CountAttachmentsParams{TenantID: b.TenantID, SubnetID: textValue(b.SubnetID)})
-		if err != nil {
-			return false, readFailure(err)
-		}
-		if count != 0 {
-			return true, nil
-		}
-	}
-	if p.observation != nil {
-		return p.completeDependencies(ctx, b)
-	}
-	resources := []string{"subnets"}
-	field := "gateway"
-	if b.ResourceKind == "subnet" {
-		resources = []string{"vnics", "vnicips", "eips"}
-		field = "subnet"
-	}
-	for _, kind := range resources {
-		continuation := ""
-		for {
-			children, err := p.client.Resource(schema.GroupVersionResource{Group: kcVPCs.Group, Version: kcVPCs.Version, Resource: kind}).List(ctx, metav1.ListOptions{Limit: 500, Continue: continuation})
-			if err != nil {
-				return false, readFailure(err)
-			}
-			for _, child := range children.Items {
-				ref, _, _ := unstructured.NestedString(child.Object, "spec", field)
-				if ref != "" && !strings.Contains(ref, "/") {
-					ref = child.GetNamespace() + "/" + ref
-				}
-				if ref == b.Namespace+"/"+b.ProviderName {
-					return true, nil
-				}
-			}
-			continuation = children.GetContinue()
-			if continuation == "" {
-				break
-			}
-		}
-	}
-	return false, nil
+	return inspectResource(object, binding, target)
 }

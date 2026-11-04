@@ -1,5 +1,7 @@
 # 虚拟机一期规格 v2
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 日期：2026-10-23。本文件定义目标行为；当前实施结果仅见[唯一状态](../execution/status.md#vm-mvp)。本文件定义业务规则；接口见[正式合同](../contracts/vm-v1.md)，实施顺序见[执行计划](../plans/vm-mvp.md)，验收见[验收矩阵](../verification/vm-mvp-acceptance.md)。本包内新增 API、表和方法均为拟实施设计，不能当作仓库已有能力。
 
 ## S01 目标、范围与模块边界

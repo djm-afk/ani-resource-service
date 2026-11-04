@@ -24,18 +24,19 @@ func (n *vmNADBoundary) ResolveVMNetwork(_ context.Context, s biz.VMNetworkSelec
 	return biz.VMPrimaryPlan{FormatVersion: 1, Namespace: s.Namespace, NADName: e.NADName, NADUID: e.NADUID, NADConfigDigest: e.NADConfigDigest, KCNSubnetRef: s.KCNSubnetRef}, nil
 }
 
-type vmNetworkBoundary struct{ value biz.AttachmentObservation }
+type vmNetworkBoundary struct {
+	value biz.AttachmentAddressObservation
+	calls int
+}
 
-func (p *vmNetworkBoundary) ObserveAttachment(_ context.Context, w biz.AttachmentWork) (biz.AttachmentObservation, error) {
-	o := p.value
-	o.Proof = biz.ObservationProof{CollectedAt: w.Now, CoveredGeneration: w.Requirement.RequestedGeneration}
-	return o, nil
+func (p *vmNetworkBoundary) ObserveAttachmentAddresses(context.Context, biz.Attachment, biz.ConsumerSubmission) (biz.AttachmentAddressObservation, error) {
+	p.calls++
+	return p.value, nil
 }
 
 func vmConsumerFor(a biz.Attachment) biz.ConsumerSubmission {
-	root := biz.WorkloadReference{APIVersion: "kubevirt.io/v1", Kind: "VirtualMachine", Namespace: a.Namespace, Name: "vm", UID: "vm-uid"}
 	vmi := biz.WorkloadReference{APIVersion: "kubevirt.io/v1", Kind: "VirtualMachineInstance", Namespace: a.Namespace, Name: "vm", UID: "vmi-uid"}
-	return biz.ConsumerSubmission{ProtocolVersion: 3, SnapshotRevision: 1, DesiredRunState: "running", TenantID: a.TenantID, InstanceID: a.InstanceID, SubmissionID: a.SubmissionID, Generation: a.Generation, AttachmentID: a.ID, ClusterID: a.ClusterID, Namespace: a.Namespace, State: "open", RootController: root, Controllers: []biz.ControllerReference{{Reference: vmi, Owner: root}}, CurrentPods: []biz.PodReference{{Reference: biz.WorkloadReference{APIVersion: "v1", Kind: "Pod", Namespace: a.Namespace, Name: "launcher", UID: "launcher-uid"}, Owner: vmi}}}
+	return biz.ConsumerSubmission{ProtocolVersion: 3, SnapshotRevision: 1, DesiredRunState: "running", TenantID: a.TenantID, InstanceID: a.InstanceID, SubmissionID: a.SubmissionID, Generation: a.Generation, AttachmentID: a.ID, ClusterID: a.ClusterID, Namespace: a.Namespace, State: "open", CurrentPods: []biz.PodReference{{Reference: biz.WorkloadReference{APIVersion: "v1", Kind: "Pod", Namespace: a.Namespace, Name: "launcher", UID: "launcher-uid"}, Owner: vmi}}}
 }
 
 func TestVMAttachmentPGReplayStopAndRelease(t *testing.T) {
@@ -43,7 +44,7 @@ func TestVMAttachmentPGReplayStopAndRelease(t *testing.T) {
 	f.r.WorkloadMode = "vm_managed"
 	f.r.VMExpectation = &biz.VMNetworkExpectation{NADName: "main", NADUID: "nad-uid", NADConfigDigest: strings.Repeat("a", 64)}
 	nad := &vmNADBoundary{}
-	if err := f.p.SetVMNetworkResolver(nad, time.Minute); err != nil {
+	if err := f.p.SetVMNetworkResolver(nad); err != nil {
 		t.Fatal(err)
 	}
 	a := f.prepare(t)
@@ -63,27 +64,24 @@ func TestVMAttachmentPGReplayStopAndRelease(t *testing.T) {
 	}
 	c := vmConsumerFor(a)
 	setManagedConsumer(f, c)
-	provider := &vmNetworkBoundary{value: biz.AttachmentObservation{Exists: true, VerifiedCurrent: true, PodName: "launcher", PodUID: "launcher-uid", Relations: []byte(`[{"Kind":"VNicIP","Address":"10.42.1.2","Current":true,"AddressEligible":true}]`)}}
+	provider := &vmNetworkBoundary{value: biz.AttachmentAddressObservation{CurrentIPs: []string{"10.42.1.2"}}}
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = 5 * time.Millisecond
 	policy.RetryMin = time.Millisecond
-	f.worker, err = biz.NewAttachmentWorker(f.p, provider, f.consumer, uuid.NewString(), policy)
+	f.worker, err = biz.NewAttachmentWorker(f.p, f.consumer, provider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a = f.step(t, a.ID)
-	if a.State != biz.Attached || a.SnapshotRevision != 1 || a.RootController != c.RootController || len(a.VMCurrentAddresses) != 1 || a.VMCurrentAddresses[0].VMIUID != "vmi-uid" {
+	if a.State != biz.Attached || a.SnapshotRevision != 1 || len(a.VMCurrentAddresses) != 1 || a.VMCurrentAddresses[0].VMIUID != "vmi-uid" {
 		t.Fatal("VM PG snapshot/address projection", a)
 	}
-	old := c.CurrentPods[0]
 	c.SnapshotRevision++
 	c.DesiredRunState = "stopped"
-	c.RetiredPods = []biz.PodReference{old}
 	c.CurrentPods = nil
 	setManagedConsumer(f, c)
-	// The native KC provider always serializes an array, including no live
-	// relations. Keep this external boundary faithful to the persisted contract.
-	provider.value = biz.AttachmentObservation{Relations: []byte("[]")}
+	// Stopped management state withdraws addresses without a provider call.
+	provider.value = biz.AttachmentAddressObservation{}
 	a = f.step(t, a.ID)
 	if a.State != biz.Reserved || a.PodUID != "" || len(a.VMCurrentAddresses) != 0 || a.ID != replay.ID {
 		t.Fatal("Stop released Attachment or kept an old address", a)

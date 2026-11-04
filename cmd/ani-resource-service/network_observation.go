@@ -15,16 +15,7 @@ func openNetworkProvider(repository *data.Postgres, network *conf.Network) (*dat
 	if err != nil {
 		return nil, nil, err
 	}
-	options := data.DefaultObservationOptions()
-	if lb := network.LoadBalancer; lb != nil {
-		if err = provider.ConfigureLoadBalancer(data.LoadBalancerInstallation{Fingerprint: lb.InstallationFingerprint, ControllerImageID: lb.ControllerImageId, EnvoyImageID: lb.EnvoyImageId, ShutdownImageID: lb.ShutdownImageId, KCImageID: lb.KcImageId}); err != nil {
-			return nil, nil, err
-		}
-	}
-	if o := network.Observation; o != nil {
-		options = data.ObservationOptions{AuditInterval: o.AuditInterval.AsDuration(), AuditJitter: o.AuditJitter.AsDuration(), AuditTimeout: o.AuditTimeout.AsDuration(), FlushInterval: o.FlushInterval.AsDuration(), QueueCapacity: int(o.QueueCapacity)}
-	}
-	observation, err := provider.EnableObservation(options)
+	observation, err := provider.EnableObservation(network.Worker.RequestTimeout.AsDuration())
 	if err != nil {
 		return nil, nil, err
 	}

@@ -8,16 +8,13 @@ import (
 // state through the existing worker. Provider namespace/name/UID are resolved
 // from durable mappings by the infrastructure adapter, never by callers.
 type EgressWorkSpec struct {
-	EIPID, PoolID    string
-	DesiredEnabled   bool
-	TargetGeneration int64
-	Platform         *PlatformResource
+	EIPID, PoolID  string
+	DesiredEnabled bool
+	Platform       *PlatformResource
 }
 type EgressAppliedFacts struct {
-	ProviderImages   []string
-	Address          string
-	AppliedEnabled   *bool
-	TargetGeneration int64
+	Address        string
+	AppliedEnabled *bool
 }
 type EgressResourceProvider interface {
 	EnsureEgress(context.Context, ProviderTarget) (ProviderObservation, error)

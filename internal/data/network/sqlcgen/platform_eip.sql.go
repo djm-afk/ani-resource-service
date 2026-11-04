@@ -184,7 +184,7 @@ func (q *Queries) ListPlatformEIPs(ctx context.Context, arg ListPlatformEIPsPara
 }
 
 const listPlatformSystemEIPsByIDs = `-- name: ListPlatformSystemEIPsByIDs :many
-SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.pool_provider_uid, r.admission_hash, r.admitted_at, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.target_generation, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id,p.name AS pool_name FROM network_default_vpc_egresses r
+SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,p.name AS pool_name FROM network_default_vpc_egresses r
 JOIN network_platform_resources p ON p.cluster_id=r.cluster_id AND p.resource_id=r.pool_id
 WHERE r.cluster_id=$1 AND r.eip_id=ANY($2::text[])
 `
@@ -218,9 +218,6 @@ func (q *Queries) ListPlatformSystemEIPsByIDs(ctx context.Context, arg ListPlatf
 			&i.NetworkDefaultVpcEgress.Name,
 			&i.NetworkDefaultVpcEgress.PoolID,
 			&i.NetworkDefaultVpcEgress.PoolRevision,
-			&i.NetworkDefaultVpcEgress.PoolProviderUid,
-			&i.NetworkDefaultVpcEgress.AdmissionHash,
-			&i.NetworkDefaultVpcEgress.AdmittedAt,
 			&i.NetworkDefaultVpcEgress.State,
 			&i.NetworkDefaultVpcEgress.Phase,
 			&i.NetworkDefaultVpcEgress.Reason,
@@ -234,7 +231,6 @@ func (q *Queries) ListPlatformSystemEIPsByIDs(ctx context.Context, arg ListPlatf
 			&i.NetworkDefaultVpcEgress.SnatBindingID,
 			&i.NetworkDefaultVpcEgress.Address,
 			&i.NetworkDefaultVpcEgress.AppliedEnabled,
-			&i.NetworkDefaultVpcEgress.TargetGeneration,
 			&i.NetworkDefaultVpcEgress.PendingAction,
 			&i.NetworkDefaultVpcEgress.PendingUnknown,
 			&i.NetworkDefaultVpcEgress.PendingSince,
@@ -247,6 +243,10 @@ func (q *Queries) ListPlatformSystemEIPsByIDs(ctx context.Context, arg ListPlatf
 			&i.NetworkDefaultVpcEgress.ObservedAt,
 			&i.NetworkDefaultVpcEgress.RetiredAt,
 			&i.NetworkDefaultVpcEgress.EipID,
+			&i.NetworkDefaultVpcEgress.ObservationError,
+			&i.NetworkDefaultVpcEgress.RequestedGeneration,
+			&i.NetworkDefaultVpcEgress.ProcessedGeneration,
+			&i.NetworkDefaultVpcEgress.RetryNotBefore,
 			&i.PoolName,
 		); err != nil {
 			return nil, err

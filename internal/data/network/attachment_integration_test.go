@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -76,17 +75,25 @@ func newAttachmentFixture(t *testing.T) attachmentFixture {
 		t.Fatal(e)
 	}
 	s = driveSubnet(t, n, w, s, biz.Available)
-	a := biz.NewAttachments(p, time.Minute)
+	a := biz.NewAttachments(p)
 	r := biz.PrepareAttachment{TenantID: tenant, VPCID: v.ID, SubnetID: s.ID, InstanceID: "inst_" + uuid.NewString(), Slot: "primary", RequestKey: "primary", SubmissionID: uuid.NewString(), Generation: 1, ClusterID: "test-cluster", Namespace: "tenant-" + tenant}
 	c := &attachmentConsumer{err: fmt.Errorf("consumer unavailable")}
-	aw, e := biz.NewAttachmentWorker(p, provider, c, uuid.NewString(), policy)
+	aw, e := biz.NewAttachmentWorker(p, c, provider, uuid.NewString(), policy)
 	if e != nil {
 		t.Fatal(e)
 	}
 	return attachmentFixture{p, owner, n, a, provider, api, r, c, aw, w}
 }
-func (f attachmentFixture) prepare(t *testing.T) biz.Attachment {
+func (f *attachmentFixture) prepare(t *testing.T) biz.Attachment {
 	t.Helper()
+	if f.r.ConsumerType == "" {
+		switch f.r.WorkloadMode {
+		case "controller_managed":
+			f.r.ConsumerType = biz.ConsumerContainerInstance
+		case "vm_managed":
+			f.r.ConsumerType = biz.ConsumerVirtualMachine
+		}
+	}
 	a, e := f.a.Prepare(context.Background(), f.r)
 	if e != nil {
 		t.Fatal(e)
@@ -95,6 +102,9 @@ func (f attachmentFixture) prepare(t *testing.T) biz.Attachment {
 }
 func (f attachmentFixture) step(t *testing.T, id string) biz.Attachment {
 	t.Helper()
+	if err := f.p.NotifyAttachment(context.Background(), f.r.TenantID, id); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(6 * time.Millisecond)
 	if _, e := f.worker.Step(context.Background()); e != nil {
 		t.Fatal(e)
@@ -182,19 +192,15 @@ func TestAttachmentPermanentIdentityTenantScopeAndParentDeletion(t *testing.T) {
 		t.Fatal("dynamic state invalidated permanent replay")
 	}
 }
-func TestAttachmentConfirmRecoveryReleaseAndResidualUIDs(t *testing.T) {
+func TestAttachmentLegacyConfirmAndClosedReleaseUseManagementState(t *testing.T) {
 	f := newAttachmentFixture(t)
 	ctx := context.Background()
 	a := f.prepare(t)
-	original := a
-	// Actual Provider HTTP observation recovers Confirm loss without a caller RPC.
-	podUID, vnicUID, ipUID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	podName := "durable-pod"
-	f.api.Mu.Lock()
-	f.api.Objects["pods/"+a.Namespace+"/"+podName] = attachmentPod(a, podName, podUID)
-	f.api.Objects["vnics/"+a.Namespace+"/nic"] = map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNic", "metadata": map[string]any{"name": "nic", "namespace": a.Namespace, "uid": vnicUID, "resourceVersion": "1", "ownerReferences": []any{map[string]any{"apiVersion": "v1", "kind": "Pod", "name": podName, "uid": podUID}}}, "spec": map[string]any{"type": "VETH", "subnet": a.Plan.PrimaryNetworkRef}}
-	f.api.Objects["vnicips/"+a.Namespace+"/ip"] = map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNicIP", "metadata": map[string]any{"name": "ip", "namespace": a.Namespace, "uid": ipUID, "resourceVersion": "1", "ownerReferences": []any{map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNic", "name": "nic", "uid": vnicUID}}}, "spec": map[string]any{"vNic": "nic", "subnet": a.Plan.PrimaryNetworkRef}}
-	f.api.Mu.Unlock()
+	podName, podUID := "durable-pod", uuid.NewString()
+	a, err := f.a.Confirm(ctx, biz.ConfirmAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: a.Version, ClusterID: a.ClusterID, Namespace: a.Namespace, PodName: podName, PodUID: podUID})
+	if err != nil || a.State != biz.Attached {
+		t.Fatal(a, err)
+	}
 	f.consumer.mu.Lock()
 	f.consumer.err = nil
 	f.consumer.value = consumerFor(a, "open", "")
@@ -202,84 +208,32 @@ func TestAttachmentConfirmRecoveryReleaseAndResidualUIDs(t *testing.T) {
 	f.consumer.mu.Unlock()
 	a = f.step(t, a.ID)
 	if a.State != biz.Attached || a.PodUID != podUID {
-		t.Fatal("lost confirm did not recover", a)
-	}
-	confirm := biz.ConfirmAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: 1, ClusterID: a.ClusterID, Namespace: a.Namespace, PodName: podName, PodUID: podUID}
-	if _, e := f.a.Confirm(ctx, confirm); e != nil {
-		t.Fatal("identity replay did not precede version", e)
-	}
-	confirm.PodUID = uuid.NewString()
-	if _, e := f.a.Confirm(ctx, confirm); biz.ReasonOf(e) != biz.AttachmentConflict {
-		t.Fatal("different UID accepted", e)
+		t.Fatal("provider absence changed management relationship", a)
 	}
 	finalization := uuid.NewString()
-	a, e := f.a.Release(ctx, biz.ReleaseAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: a.Version, FinalizationID: finalization})
-	if e != nil {
-		t.Fatal(e)
-	}
-	replay, e := f.a.Release(ctx, biz.ReleaseAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: 1, FinalizationID: finalization})
-	if e != nil || replay.State != biz.Releasing {
-		t.Fatal("release identity replay failed", e)
+	a, err = f.a.Release(ctx, biz.ReleaseAttachment{TenantID: a.TenantID, AttachmentID: a.ID, ExpectedVersion: a.Version, FinalizationID: finalization})
+	if err != nil || a.State != biz.Releasing {
+		t.Fatal(a, err)
 	}
 	f.consumer.mu.Lock()
-	f.consumer.value = consumerFor(a, "closing", finalization)
-	f.consumer.value.PodUIDs = []string{podUID}
+	f.consumer.value = consumerFor(a, "closed", finalization)
 	f.consumer.mu.Unlock()
 	a = f.step(t, a.ID)
-	if a.State != biz.Releasing {
-		t.Fatal("unclosed consumer released")
+	if a.State != biz.Released || a.ReleasedAt == nil {
+		t.Fatal(a)
 	}
-	f.api.Mu.Lock()
-	delete(f.api.Objects, "pods/"+a.Namespace+"/"+podName)
-	delete(f.api.Objects, "vnics/"+a.Namespace+"/nic")
-	f.api.Mu.Unlock()
-	now := time.Now()
-	f.consumer.mu.Lock()
-	f.consumer.value.State = "closed"
-	f.consumer.value.ClosedAt = &now
-	f.consumer.mu.Unlock()
-	// Persisted VNic identity still attributes its IP after the VNic disappears.
-	a = f.step(t, a.ID)
-	if a.State != biz.Releasing || a.Reason != biz.CleanupPending {
-		t.Fatal("orphan IP released attachment", a)
-	}
-	f.api.Mu.Lock()
-	delete(f.api.Objects, "vnicips/"+a.Namespace+"/ip")
-	f.api.Mu.Unlock()
-	a = f.step(t, a.ID)
-	if a.State != biz.Released || a.Plan != nil || a.ReleasedAt == nil {
-		t.Fatal("closed clean consumer did not release", a)
-	}
-	replay = f.prepare(t)
+	replay := f.prepare(t)
 	if replay.ID != a.ID || replay.State != biz.Released || replay.Plan != nil {
-		t.Fatal("released replay resurrected plan", replay)
-	}
-	// A tombstone continues observation without reactivating the attachment.
-	f.api.Mu.Lock()
-	f.api.Objects["pods/"+a.Namespace+"/"+podName] = attachmentPod(original, podName, podUID)
-	f.api.Mu.Unlock()
-	if e := f.p.NotifyAttachment(ctx, a.TenantID, a.ID); e != nil {
-		t.Fatal(e)
-	}
-	a = f.step(t, a.ID)
-	if a.State != biz.Released || a.Reason != biz.AttachmentProtocol || a.Plan != nil {
-		t.Fatal("late object escaped tombstone", a)
-	}
-	if _, e := f.n.DeleteSubnet(ctx, a.TenantID, a.SubnetID); biz.ReasonOf(e) != biz.ResourceInUse {
-		t.Fatal("late object failed to protect parent", e)
-	}
-	f.api.Mu.Lock()
-	defer f.api.Mu.Unlock()
-	if f.api.Creates["pods"] != 0 || f.api.Deletes["pods"] != 0 || f.api.Invalid != "" {
-		t.Fatal("Network wrote Pod or used invalid Provider", f.api.Invalid)
+		t.Fatal(replay)
 	}
 }
+
 func TestAttachmentUnknownConsumerDoesNotExpireAndEpochRejectsLateWrite(t *testing.T) {
 	f := newAttachmentFixture(t)
 	ctx := context.Background()
 	a := f.prepare(t)
 	a = f.step(t, a.ID)
-	if a.State != biz.Reserved || a.Reason != biz.ConsumerUnavailable {
+	if a.State != biz.Reserved || a.Reason != "" {
 		t.Fatal("reserved was guessed unused", a)
 	}
 	time.Sleep(6 * time.Millisecond)
@@ -292,7 +246,7 @@ func TestAttachmentUnknownConsumerDoesNotExpireAndEpochRejectsLateWrite(t *testi
 	if e != nil || !found || successor.Epoch <= work.Epoch {
 		t.Fatal("lease recovery missing", e)
 	}
-	e = f.p.FinishAttachment(ctx, work, biz.AttachmentProgress{State: biz.Released, FinalizationID: uuid.NewString(), Relations: []byte("[]"), NextDelay: time.Second})
+	e = f.p.FinishAttachment(ctx, work, biz.AttachmentProgress{State: biz.Released, FinalizationID: uuid.NewString(), NextDelay: time.Second})
 	if !errors.Is(e, biz.ErrLeaseLost) {
 		t.Fatal("old attachment lease wrote", e)
 	}
@@ -336,79 +290,55 @@ func TestAttachmentPrepareRacesDeleteSubnet(t *testing.T) {
 	}
 }
 
-func TestAttachmentLateAfterSubnetDeletedProtectsCIDRAndVPC(t *testing.T) {
+func TestReleasedAttachmentDoesNotReopenForLateObjects(t *testing.T) {
 	f := newAttachmentFixture(t)
 	ctx := context.Background()
 	a := f.prepare(t)
 	original := a
-	finalization := uuid.NewString()
-	now := time.Now()
 	f.consumer.mu.Lock()
-	f.consumer.value = consumerFor(a, "closed", finalization)
-	f.consumer.value.ClosedAt = &now
-	f.consumer.err = nil
+	f.consumer.value, f.consumer.err = consumerFor(a, "closed", uuid.NewString()), nil
 	f.consumer.mu.Unlock()
 	a = f.step(t, a.ID)
 	if a.State != biz.Released {
-		a = f.step(t, a.ID)
+		t.Fatal(a)
 	}
-	if a.State != biz.Released {
-		t.Fatal("closed unused submission not released", a)
-	}
-	subnet, e := f.n.DeleteSubnet(ctx, a.TenantID, a.SubnetID)
-	if e != nil {
-		t.Fatal(e)
+	subnet, err := f.n.DeleteSubnet(ctx, a.TenantID, a.SubnetID)
+	if err != nil {
+		t.Fatal(err)
 	}
 	driveSubnet(t, f.n, f.resourceWorker, subnet, biz.Deleted)
 	f.api.Mu.Lock()
 	f.api.Objects["pods/"+a.Namespace+"/late"] = attachmentPod(original, "late", uuid.NewString())
 	f.api.Mu.Unlock()
-	if e := f.p.NotifyAttachment(ctx, a.TenantID, a.ID); e != nil {
-		t.Fatal(e)
-	}
 	a = f.step(t, a.ID)
-	if a.State != biz.Released || a.Reason != biz.AttachmentProtocol {
-		t.Fatal("late tombstone protocol not detected", a)
+	if a.State != biz.Released || a.Reason != "" {
+		t.Fatal(a)
 	}
-	if _, e = f.n.DeleteVPC(ctx, a.TenantID, a.VPCID); biz.ReasonOf(e) != biz.ResourceInUse {
-		t.Fatal("late tombstone allowed VPC deletion", e)
-	}
-	if _, e = f.n.CreateSubnet(ctx, biz.CreateSubnet{TenantID: a.TenantID, VPCID: a.VPCID, Name: "reuse", CIDR: subnet.CIDR, IdempotencyKey: "reuse"}); biz.ReasonOf(e) != biz.CIDROverlap {
-		t.Fatal("late tombstone allowed address reuse", e)
+	if _, err = f.n.CreateSubnet(ctx, biz.CreateSubnet{TenantID: a.TenantID, VPCID: a.VPCID, Name: "reuse", CIDR: subnet.CIDR, IdempotencyKey: "reuse"}); err != nil {
+		t.Fatal("late provider object blocked local CIDR reuse", err)
 	}
 }
 
-func TestAttachmentPodReadsUseTrustedTenantNamespace(t *testing.T) {
-	for _, mode := range []string{"single_pod", "controller_managed"} {
-		t.Run(mode, func(t *testing.T) {
-			f := newAttachmentFixture(t)
-			f.r.WorkloadMode = mode
-			a := f.prepare(t)
-			var scoped atomic.Int64
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/pods") {
-					if r.URL.Path != "/api/v1/namespaces/"+a.Namespace+"/pods" || r.URL.Query().Get("labelSelector") != "" || r.URL.Query().Get("limit") != "500" {
-						t.Errorf("attachment Pod read escaped frozen namespace or hid historic Pods: path=%s selector=%s", r.URL.Path, r.URL.Query().Get("labelSelector"))
-						http.Error(w, "read scope denied", http.StatusForbidden)
-						return
-					}
-					scoped.Add(1)
-				}
-				f.api.ServeHTTP(w, r)
-			}))
-			defer server.Close()
-			provider, err := data.NewKCProvider(f.p, &rest.Config{Host: server.URL, QPS: 1000, Burst: 1000})
-			if err != nil {
-				t.Fatal(err)
-			}
-			work := biz.AttachmentWork{Attachment: a, Plan: *a.Plan, Now: time.Now(), Relations: []byte("[]")}
-			if _, err = provider.ObserveAttachment(context.Background(), work); err != nil || scoped.Load() != 1 {
-				t.Fatal("trusted attachment namespace could not be observed", err, scoped.Load())
-			}
-			work.Attachment.Namespace = "untrusted-input"
-			if _, err = provider.ObserveAttachment(context.Background(), work); err == nil || scoped.Load() != 1 {
-				t.Fatal("untrusted namespace bypassed saved binding verification", err, scoped.Load())
-			}
-		})
+func TestAttachmentAddressReadUsesExactCurrentPod(t *testing.T) {
+	f := newAttachmentFixture(t)
+	a := f.prepare(t)
+	a.State, a.PodName, a.PodUID = biz.Attached, "current", "current-uid"
+	var reads atomic.Int64
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/api/v1/namespaces/"+a.Namespace+"/pods/current" {
+			t.Errorf("unexpected provider request: %s %s", r.Method, r.URL.Path)
+		}
+		reads.Add(1)
+		f.api.ServeHTTP(w, r)
+	}))
+	defer host.Close()
+	provider, err := data.NewKCProvider(f.p, &rest.Config{Host: host.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := consumerFor(a, "open", "")
+	value, err := provider.ObserveAttachmentAddresses(context.Background(), a, c)
+	if err != nil || reads.Load() != 1 || len(value.CurrentIPs) != 0 {
+		t.Fatal(value, err, reads.Load())
 	}
 }

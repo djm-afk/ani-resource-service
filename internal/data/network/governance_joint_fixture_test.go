@@ -88,7 +88,7 @@ func TestNetworkGovernanceFixture(t *testing.T) {
 	if _, err := f.f.owner.Exec(f.f.ctx, "DELETE FROM network_lb_capabilities WHERE cluster_id='test-cluster'"); err != nil {
 		t.Fatal(err)
 	}
-	expected := seedLBInstallation(f.api)
+	seedLBInstallation(f.api)
 	cfg, err := clientcmd.BuildConfigFromFlags("", f.kubeconfig)
 	if err != nil {
 		t.Fatal(err)
@@ -98,14 +98,8 @@ func TestNetworkGovernanceFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = provider.ConfigureLoadBalancer(expected); err != nil {
-		t.Fatal(err)
-	}
-	options := data.DefaultObservationOptions()
-	options.AuditInterval = 80 * time.Millisecond
-	options.AuditJitter = time.Millisecond
-	options.FlushInterval = 10 * time.Millisecond
-	observer, err := provider.EnableObservation(options)
+	f.f.p.UseLoadBalancerCapabilityReader(provider)
+	observer, err := provider.EnableObservation(5 * time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,10 +113,10 @@ func TestNetworkGovernanceFixture(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	awaitNET05A(t, 5*time.Second, func() bool {
-		var ready bool
-		return f.f.owner.QueryRow(ctx, "SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1", expected.Fingerprint).Scan(&ready) == nil && ready
-	})
+	capabilities, err := f.f.p.GetPlatformCapabilities(ctx)
+	if err != nil || !capabilities.LoadBalancer.Ready {
+		t.Fatalf("GatewayClass diagnostic: %+v %v", capabilities.LoadBalancer, err)
+	}
 	policy := biz.DefaultWorkerPolicy()
 	policy.ObserveEvery = 100 * time.Millisecond
 	policy.RetryMin = 5 * time.Millisecond
@@ -142,7 +136,6 @@ func TestNetworkGovernanceFixture(t *testing.T) {
 			t.Fatalf("disable optional new-VPC base connectivity: %v", err)
 		}
 	}
-	f.f.p.UseSecurityGroupObserver(provider)
 	securityGroupWorker := biz.NewSecurityGroupWorker(f.f.p, provider, uuid.NewString(), policy)
 	attachmentWorker := networkJointBackendObserver(t, f, provider, policy)
 	aggregates := wireNetworkJointAggregates(t, f, provider, policy)
@@ -222,7 +215,7 @@ func TestNetworkGovernanceFixture(t *testing.T) {
 	}
 	// The HTTP suite deletes its tenant resources first. Internal instance-owner
 	// fixture resources follow the production Attachment release protocol.
-	attachments := biz.NewAttachments(f.f.p, time.Minute)
+	attachments := biz.NewAttachments(f.f.p)
 	closed := lbFinalizedOwners{}
 	ids := []string{}
 	for _, name := range []string{"lb-backend", "lb-second"} {
@@ -250,7 +243,7 @@ func TestNetworkGovernanceFixture(t *testing.T) {
 		closed[a.ID] = value
 		ids = append(ids, a.ID)
 	}
-	aw, err := biz.NewAttachmentWorker(f.f.p, provider, closed, uuid.NewString(), policy)
+	aw, err := biz.NewAttachmentWorker(f.f.p, closed, provider, uuid.NewString(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}

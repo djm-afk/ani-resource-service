@@ -13,8 +13,8 @@ import (
 )
 
 const admitLBDeletion = `-- name: AdmitLBDeletion :one
-UPDATE network_load_balancers SET state='deleting',reason='',version=version+1,updated_at=clock_timestamp(),last_operation_id=$1,data_plane_state='unknown',data_plane_observed_at=NULL
-WHERE tenant_id=$2 AND lb_id=$3 AND version=$4 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+UPDATE network_load_balancers SET state='deleting',reason='',version=version+1,updated_at=clock_timestamp(),last_operation_id=$1
+WHERE tenant_id=$2 AND lb_id=$3 AND version=$4 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type AdmitLBDeletionParams struct {
@@ -52,14 +52,10 @@ func (q *Queries) AdmitLBDeletion(ctx context.Context, arg AdmitLBDeletionParams
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -69,34 +65,27 @@ func (q *Queries) AdmitLBDeletion(ctx context.Context, arg AdmitLBDeletionParams
 
 const advanceLB = `-- name: AdvanceLB :one
 UPDATE network_load_balancers SET state=$1,reason=$2,version=version+1,updated_at=clock_timestamp(),
-vip_occupied_revision=CASE WHEN $3::text<>'' THEN $3 ELSE vip_occupied_revision END,
-vip_absence_revision=CASE WHEN vip_absence_revision='' THEN $4::text ELSE vip_absence_revision END,
-observed_at=CASE WHEN $5::boolean THEN $6::timestamptz ELSE observed_at END,
-configuration_state=CASE WHEN $5::boolean THEN $7 ELSE configuration_state END,applied_version=greatest(applied_version,$8::bigint),
-data_plane_state='unknown',data_plane_observed_at=NULL
-WHERE tenant_id=$9 AND lb_id=$10 AND version=$11 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+observed_at=CASE WHEN $3::boolean THEN $4::timestamptz ELSE observed_at END,
+configuration_state=CASE WHEN $3::boolean THEN $5 ELSE configuration_state END,applied_version=greatest(applied_version,$6::bigint)
+WHERE tenant_id=$7 AND lb_id=$8 AND version=$9 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type AdvanceLBParams struct {
-	State               string
-	Reason              string
-	VipOccupiedRevision string
-	VipAbsenceRevision  string
-	Observed            bool
-	ObservedAt          *time.Time
-	ConfigurationState  string
-	AppliedVersion      int64
-	TenantID            string
-	LbID                string
-	Version             int64
+	State              string
+	Reason             string
+	Observed           bool
+	ObservedAt         *time.Time
+	ConfigurationState string
+	AppliedVersion     int64
+	TenantID           string
+	LbID               string
+	Version            int64
 }
 
 func (q *Queries) AdvanceLB(ctx context.Context, arg AdvanceLBParams) (NetworkLoadBalancer, error) {
 	row := q.db.QueryRow(ctx, advanceLB,
 		arg.State,
 		arg.Reason,
-		arg.VipOccupiedRevision,
-		arg.VipAbsenceRevision,
 		arg.Observed,
 		arg.ObservedAt,
 		arg.ConfigurationState,
@@ -126,14 +115,10 @@ func (q *Queries) AdvanceLB(ctx context.Context, arg AdvanceLBParams) (NetworkLo
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -143,7 +128,7 @@ func (q *Queries) AdvanceLB(ctx context.Context, arg AdvanceLBParams) (NetworkLo
 
 const advanceLBProviderTarget = `-- name: AdvanceLBProviderTarget :one
 UPDATE network_load_balancers SET provider_target_version=desired_version,configuration_state='pending'
-WHERE tenant_id=$1 AND lb_id=$2 AND version=$3 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+WHERE tenant_id=$1 AND lb_id=$2 AND version=$3 RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type AdvanceLBProviderTargetParams struct {
@@ -175,14 +160,10 @@ func (q *Queries) AdvanceLBProviderTarget(ctx context.Context, arg AdvanceLBProv
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -196,7 +177,7 @@ create_dispatched=create_dispatched OR $1::text='create',target_version=$2,
 provider_uid=CASE WHEN provider_uid='' THEN $3::text ELSE provider_uid END
 WHERE tenant_id=$4 AND lb_id=$5 AND component_id=$6 AND deleted_at IS NULL
 AND (provider_uid='' OR provider_uid=$3)
-AND (($1::text='create' AND pending_action='' AND provider_uid='')
+AND (($1::text='create' AND pending_action IN ('','create') AND provider_uid='')
  OR ($1::text='update' AND provider_uid<>'' AND pending_action IN ('','update'))
  OR ($1::text='delete' AND $3::text<>''))
 `
@@ -243,8 +224,7 @@ const canDeleteLBWithoutProvider = `-- name: CanDeleteLBWithoutProvider :one
 SELECT NOT EXISTS(SELECT 1 FROM network_provider_bindings b WHERE b.tenant_id=$1 AND b.lb_id=$2::text
  AND (b.create_dispatched OR b.pending_action<>'' OR b.provider_uid<>''))
 AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=$1 AND c.lb_id=$2
- AND (c.create_dispatched OR c.pending_action<>'' OR c.provider_uid<>''))
-AND NOT EXISTS(SELECT 1 FROM network_lb_generated_resources g WHERE g.tenant_id=$1 AND g.lb_id=$2) AS safe
+ AND (c.create_dispatched OR c.pending_action<>'' OR c.provider_uid<>'')) AS safe
 `
 
 type CanDeleteLBWithoutProviderParams struct {
@@ -261,27 +241,18 @@ func (q *Queries) CanDeleteLBWithoutProvider(ctx context.Context, arg CanDeleteL
 
 const canParkLBWaitingWithoutProvider = `-- name: CanParkLBWaitingWithoutProvider :one
 SELECT EXISTS (
- SELECT 1 FROM network_load_balancers l
- JOIN network_provider_bindings b USING(tenant_id,cluster_id,namespace,lb_id)
+ SELECT 1 FROM network_load_balancers l JOIN network_provider_bindings b USING(tenant_id,cluster_id,namespace,lb_id)
  JOIN network_operations o ON o.tenant_id=l.tenant_id AND o.lb_id=l.lb_id AND o.operation_id=l.last_operation_id
  WHERE l.tenant_id=$1 AND l.lb_id=$2
  AND l.state='provisioning' AND l.configuration_state='waiting_for_backends' AND o.completed_at IS NOT NULL AND o.state='succeeded'
- AND b.pending_action=''
- AND (
-  (NOT b.create_dispatched AND b.provider_uid=''
-   AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id
-    AND (c.create_dispatched OR c.pending_action<>'' OR c.provider_uid<>''))
-   AND NOT EXISTS(SELECT 1 FROM network_lb_generated_resources g WHERE g.tenant_id=l.tenant_id AND g.lb_id=l.lb_id))
-  OR
-  (l.applied_version=l.provider_target_version
-   AND EXISTS(SELECT 1 FROM network_lb_retired_bindings r WHERE r.tenant_id=l.tenant_id AND r.cluster_id=l.cluster_id AND r.namespace=l.namespace AND r.lb_id=l.lb_id
-    AND r.binding_id=b.binding_id AND r.provider_name=b.provider_name AND r.provider_uid=b.provider_uid
-    AND r.cleanup_target_version=l.provider_target_version
-    AND r.vip_occupied_revision=l.vip_occupied_revision AND r.vip_absence_revision=l.vip_absence_revision)
-   AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id AND c.deleted_at IS NULL)
-   AND NOT EXISTS(SELECT 1 FROM network_lb_generated_resources g WHERE g.tenant_id=l.tenant_id AND g.lb_id=l.lb_id AND g.gateway_uid=b.provider_uid AND g.released_at IS NULL))
- )
-) AS safe
+ AND b.pending_action='' AND (
+  (NOT b.create_dispatched AND b.provider_uid='' AND NOT EXISTS(SELECT 1 FROM network_lb_components c
+   WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id AND (c.create_dispatched OR c.pending_action<>'' OR c.provider_uid<>'')))
+  OR (l.applied_version=l.provider_target_version AND EXISTS(SELECT 1 FROM network_lb_retired_bindings r
+   WHERE r.tenant_id=l.tenant_id AND r.cluster_id=l.cluster_id AND r.namespace=l.namespace AND r.lb_id=l.lb_id
+   AND r.binding_id=b.binding_id AND r.provider_name=b.provider_name AND r.provider_uid=b.provider_uid AND r.cleanup_target_version=l.provider_target_version)
+   AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id AND c.deleted_at IS NULL))
+ )) AS safe
 `
 
 type CanParkLBWaitingWithoutProviderParams struct {
@@ -326,14 +297,12 @@ func (q *Queries) ClaimEIPForLB(ctx context.Context, arg ClaimEIPForLBParams) (i
 }
 
 const completeLBDatabaseDeletion = `-- name: CompleteLBDatabaseDeletion :one
-UPDATE network_load_balancers l SET state='deleted',reason='',version=version+1,updated_at=clock_timestamp(),data_plane_state='unknown',data_plane_observed_at=NULL
+UPDATE network_load_balancers l SET state='deleted',reason='',version=version+1,updated_at=clock_timestamp()
 WHERE l.tenant_id=$1 AND l.lb_id=$2 AND l.version=$3 AND l.state='deleting'
 AND NOT EXISTS(SELECT 1 FROM network_provider_bindings b WHERE b.tenant_id=l.tenant_id AND b.lb_id=l.lb_id
  AND (b.create_dispatched OR b.pending_action<>'' OR b.provider_uid<>''))
 AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id
- AND (c.create_dispatched OR c.pending_action<>'' OR c.provider_uid<>''))
-AND NOT EXISTS(SELECT 1 FROM network_lb_generated_resources g WHERE g.tenant_id=l.tenant_id AND g.lb_id=l.lb_id)
-RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+ AND (c.create_dispatched OR c.pending_action<>'' OR c.provider_uid<>'')) RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type CompleteLBDatabaseDeletionParams struct {
@@ -365,14 +334,10 @@ func (q *Queries) CompleteLBDatabaseDeletion(ctx context.Context, arg CompleteLB
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -400,23 +365,19 @@ func (q *Queries) CompleteLBDatabaseOperation(ctx context.Context, arg CompleteL
 }
 
 const completeLBRetiredDatabaseDeletion = `-- name: CompleteLBRetiredDatabaseDeletion :one
-UPDATE network_load_balancers l SET state='deleted',reason='',version=version+1,updated_at=clock_timestamp(),data_plane_state='unknown',data_plane_observed_at=NULL
+UPDATE network_load_balancers l SET state='deleted',reason='',version=version+1,updated_at=clock_timestamp()
 WHERE l.tenant_id=$1 AND l.lb_id=$2 AND l.version=$3 AND l.state='deleting'
 AND l.configuration_state='waiting_for_backends' AND l.provider_target_version>0 AND l.applied_version=l.provider_target_version
 AND EXISTS (
- SELECT 1 FROM network_provider_bindings b
- JOIN network_lb_retired_bindings r ON (r.tenant_id,r.cluster_id,r.namespace,r.lb_id,r.binding_id)=(b.tenant_id,b.cluster_id,b.namespace,b.lb_id,b.binding_id)
+ SELECT 1 FROM network_provider_bindings b JOIN network_lb_retired_bindings r
+ ON (r.tenant_id,r.cluster_id,r.namespace,r.lb_id,r.binding_id)=(b.tenant_id,b.cluster_id,b.namespace,b.lb_id,b.binding_id)
  JOIN network_operations o ON o.tenant_id=r.tenant_id AND o.lb_id=r.lb_id AND o.operation_id=r.operation_id
  WHERE (b.tenant_id,b.cluster_id,b.namespace,b.lb_id)=(l.tenant_id,l.cluster_id,l.namespace,l.lb_id)
  AND b.provider_uid<>'' AND b.pending_action='' AND b.pending_since IS NULL
  AND r.provider_uid=b.provider_uid AND r.provider_name=b.provider_name AND r.cleanup_target_version=l.provider_target_version
- AND r.vip_occupied_revision=l.vip_occupied_revision AND r.vip_absence_revision=l.vip_absence_revision
- AND (l.private_ip IS NULL OR r.vip_absence_revision<>'')
- AND o.state='succeeded' AND o.completed_at IS NOT NULL
-)
-AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id AND (c.deleted_at IS NULL OR c.pending_action<>'' OR c.pending_since IS NOT NULL))
-AND NOT EXISTS(SELECT 1 FROM network_lb_generated_resources g WHERE g.tenant_id=l.tenant_id AND g.lb_id=l.lb_id AND g.released_at IS NULL)
-RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+ AND o.state='succeeded' AND o.completed_at IS NOT NULL)
+AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id
+ AND (c.deleted_at IS NULL OR c.pending_action<>'' OR c.pending_since IS NOT NULL)) RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type CompleteLBRetiredDatabaseDeletionParams struct {
@@ -425,10 +386,6 @@ type CompleteLBRetiredDatabaseDeletionParams struct {
 	Version  int64
 }
 
-// A confirmed retired incarnation can release product reservations without
-// rechecking whether an unrelated consumer has since allocated its freed VIP.
-// Keep this separate from never-dispatched deletion: the latter has no need to
-// read the retired fact table and must retain its existing privilege contract.
 func (q *Queries) CompleteLBRetiredDatabaseDeletion(ctx context.Context, arg CompleteLBRetiredDatabaseDeletionParams) (NetworkLoadBalancer, error) {
 	row := q.db.QueryRow(ctx, completeLBRetiredDatabaseDeletion, arg.TenantID, arg.LbID, arg.Version)
 	var i NetworkLoadBalancer
@@ -452,14 +409,10 @@ func (q *Queries) CompleteLBRetiredDatabaseDeletion(ctx context.Context, arg Com
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -499,8 +452,57 @@ func (q *Queries) CountLBs(ctx context.Context, arg CountLBsParams) (int64, erro
 	return count, err
 }
 
+const getLB = `-- name: GetLB :one
+SELECT l.tenant_id, l.lb_id, l.cluster_id, l.namespace, l.vpc_id, l.subnet_id, l.exposure, l.public_eip_id, l.public_scope, l.private_ip, l.state, l.version, l.created_at, l.name, l.description, l.flavor, l.reason, l.updated_at, l.observed_at, l.last_operation_id, l.desired_version, l.applied_version, l.configuration_state, l.accepted_config_version, l.applied_config_version, l.provider_target_version,coalesce(r.observation_error,'')::text AS observation_error FROM network_load_balancers l LEFT JOIN network_reconciliations r ON r.tenant_id=l.tenant_id AND r.lb_id=l.lb_id WHERE l.tenant_id=$1 AND l.lb_id=$2
+`
+
+type GetLBParams struct {
+	TenantID string
+	LbID     string
+}
+
+type GetLBRow struct {
+	NetworkLoadBalancer NetworkLoadBalancer
+	ObservationError    string
+}
+
+func (q *Queries) GetLB(ctx context.Context, arg GetLBParams) (GetLBRow, error) {
+	row := q.db.QueryRow(ctx, getLB, arg.TenantID, arg.LbID)
+	var i GetLBRow
+	err := row.Scan(
+		&i.NetworkLoadBalancer.TenantID,
+		&i.NetworkLoadBalancer.LbID,
+		&i.NetworkLoadBalancer.ClusterID,
+		&i.NetworkLoadBalancer.Namespace,
+		&i.NetworkLoadBalancer.VpcID,
+		&i.NetworkLoadBalancer.SubnetID,
+		&i.NetworkLoadBalancer.Exposure,
+		&i.NetworkLoadBalancer.PublicEipID,
+		&i.NetworkLoadBalancer.PublicScope,
+		&i.NetworkLoadBalancer.PrivateIp,
+		&i.NetworkLoadBalancer.State,
+		&i.NetworkLoadBalancer.Version,
+		&i.NetworkLoadBalancer.CreatedAt,
+		&i.NetworkLoadBalancer.Name,
+		&i.NetworkLoadBalancer.Description,
+		&i.NetworkLoadBalancer.Flavor,
+		&i.NetworkLoadBalancer.Reason,
+		&i.NetworkLoadBalancer.UpdatedAt,
+		&i.NetworkLoadBalancer.ObservedAt,
+		&i.NetworkLoadBalancer.LastOperationID,
+		&i.NetworkLoadBalancer.DesiredVersion,
+		&i.NetworkLoadBalancer.AppliedVersion,
+		&i.NetworkLoadBalancer.ConfigurationState,
+		&i.NetworkLoadBalancer.AcceptedConfigVersion,
+		&i.NetworkLoadBalancer.AppliedConfigVersion,
+		&i.NetworkLoadBalancer.ProviderTargetVersion,
+		&i.ObservationError,
+	)
+	return i, err
+}
+
 const getLBCapability = `-- name: GetLBCapability :one
-SELECT cluster_id, ready, reason, observed_at, fingerprint, provider_images FROM network_lb_capabilities WHERE cluster_id=$1
+SELECT cluster_id, ready, reason, observed_at FROM network_lb_capabilities WHERE cluster_id=$1
 `
 
 type GetLBCapabilityParams struct {
@@ -515,8 +517,6 @@ func (q *Queries) GetLBCapability(ctx context.Context, arg GetLBCapabilityParams
 		&i.Ready,
 		&i.Reason,
 		&i.ObservedAt,
-		&i.Fingerprint,
-		&i.ProviderImages,
 	)
 	return i, err
 }
@@ -553,7 +553,7 @@ func (q *Queries) GetLBConfiguration(ctx context.Context, arg GetLBConfiguration
 }
 
 const getLBInternal = `-- name: GetLBInternal :one
-SELECT tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2
+SELECT tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2
 `
 
 type GetLBInternalParams struct {
@@ -584,14 +584,10 @@ func (q *Queries) GetLBInternal(ctx context.Context, arg GetLBInternalParams) (N
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -625,7 +621,7 @@ func (q *Queries) GetLBListener(ctx context.Context, arg GetLBListenerParams) (N
 }
 
 const getLBMember = `-- name: GetLBMember :one
-SELECT tenant_id, cluster_id, namespace, lb_id, member_id, vpc_id, subnet_id, attachment_id, address, port, pod_uid, vnic_name, vnic_uid, vnicip_name, vnicip_uid, state, reason, observed_at FROM network_lb_members WHERE tenant_id=$1 AND lb_id=$2 AND member_id=$3
+SELECT tenant_id, cluster_id, namespace, lb_id, member_id, vpc_id, subnet_id, attachment_id, address, port, pod_uid, state, reason, observed_at FROM network_lb_members WHERE tenant_id=$1 AND lb_id=$2 AND member_id=$3
 `
 
 type GetLBMemberParams struct {
@@ -649,10 +645,6 @@ func (q *Queries) GetLBMember(ctx context.Context, arg GetLBMemberParams) (Netwo
 		&i.Address,
 		&i.Port,
 		&i.PodUid,
-		&i.VnicName,
-		&i.VnicUid,
-		&i.VnicipName,
-		&i.VnicipUid,
 		&i.State,
 		&i.Reason,
 		&i.ObservedAt,
@@ -661,7 +653,7 @@ func (q *Queries) GetLBMember(ctx context.Context, arg GetLBMemberParams) (Netwo
 }
 
 const getLBRetiredBinding = `-- name: GetLBRetiredBinding :one
-SELECT tenant_id, cluster_id, namespace, lb_id, binding_id, provider_name, provider_uid, cleanup_target_version, operation_id, operation_state, vip_occupied_revision, vip_absence_revision, cleanup_completed_at FROM network_lb_retired_bindings WHERE tenant_id=$1 AND lb_id=$2 AND binding_id=$3
+SELECT tenant_id, cluster_id, namespace, lb_id, binding_id, provider_name, provider_uid, cleanup_target_version, operation_id, operation_state, cleanup_completed_at FROM network_lb_retired_bindings WHERE tenant_id=$1 AND lb_id=$2 AND binding_id=$3
 `
 
 type GetLBRetiredBindingParams struct {
@@ -684,8 +676,6 @@ func (q *Queries) GetLBRetiredBinding(ctx context.Context, arg GetLBRetiredBindi
 		&i.CleanupTargetVersion,
 		&i.OperationID,
 		&i.OperationState,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.CleanupCompletedAt,
 	)
 	return i, err
@@ -693,7 +683,7 @@ func (q *Queries) GetLBRetiredBinding(ctx context.Context, arg GetLBRetiredBindi
 
 const insertLB = `-- name: InsertLB :one
 INSERT INTO network_load_balancers(tenant_id,lb_id,cluster_id,namespace,vpc_id,subnet_id,exposure,flavor,public_eip_id,private_ip,state,name,description,created_at,updated_at,last_operation_id)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9::text,''),NULLIF($10::text,''),'provisioning',$11,$12,$13,$13,$14) RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9::text,''),NULLIF($10::text,''),'provisioning',$11,$12,$13,$13,$14) RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type InsertLBParams struct {
@@ -751,14 +741,10 @@ func (q *Queries) InsertLB(ctx context.Context, arg InsertLBParams) (NetworkLoad
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -921,8 +907,8 @@ func (q *Queries) InsertLBListener(ctx context.Context, arg InsertLBListenerPara
 }
 
 const insertLBMember = `-- name: InsertLBMember :exec
-INSERT INTO network_lb_members(tenant_id,cluster_id,namespace,lb_id,member_id,vpc_id,subnet_id,attachment_id,address,port,pod_uid,vnic_name,vnic_uid,vnicip_name,vnicip_uid,state,observed_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'available',$16)
+INSERT INTO network_lb_members(tenant_id,cluster_id,namespace,lb_id,member_id,vpc_id,subnet_id,attachment_id,address,port,pod_uid,state,observed_at)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'available',$12)
 `
 
 type InsertLBMemberParams struct {
@@ -937,10 +923,6 @@ type InsertLBMemberParams struct {
 	Address      string
 	Port         int32
 	PodUid       string
-	VnicName     string
-	VnicUid      string
-	VnicipName   string
-	VnicipUid    string
 	ObservedAt   *time.Time
 }
 
@@ -957,25 +939,19 @@ func (q *Queries) InsertLBMember(ctx context.Context, arg InsertLBMemberParams) 
 		arg.Address,
 		arg.Port,
 		arg.PodUid,
-		arg.VnicName,
-		arg.VnicUid,
-		arg.VnicipName,
-		arg.VnicipUid,
 		arg.ObservedAt,
 	)
 	return err
 }
 
 const insertLBRetiredBinding = `-- name: InsertLBRetiredBinding :execrows
-INSERT INTO network_lb_retired_bindings(tenant_id,cluster_id,namespace,lb_id,binding_id,provider_name,provider_uid,cleanup_target_version,operation_id,vip_occupied_revision,vip_absence_revision,cleanup_completed_at)
-SELECT l.tenant_id,l.cluster_id,l.namespace,l.lb_id,b.binding_id,b.provider_name,b.provider_uid,l.provider_target_version,$1,l.vip_occupied_revision,l.vip_absence_revision,clock_timestamp()
+INSERT INTO network_lb_retired_bindings(tenant_id,cluster_id,namespace,lb_id,binding_id,provider_name,provider_uid,cleanup_target_version,operation_id,cleanup_completed_at)
+SELECT l.tenant_id,l.cluster_id,l.namespace,l.lb_id,b.binding_id,b.provider_name,b.provider_uid,l.provider_target_version,$1,clock_timestamp()
 FROM network_load_balancers l JOIN network_provider_bindings b USING(tenant_id,cluster_id,namespace,lb_id)
 WHERE l.tenant_id=$2 AND l.lb_id=$3 AND l.version=$4
 AND l.configuration_state='waiting_for_backends' AND l.applied_version=l.provider_target_version
 AND b.binding_id=$5 AND b.provider_uid=$6 AND b.provider_uid<>'' AND b.pending_action=''
-AND (l.private_ip IS NULL OR l.vip_absence_revision<>'')
 AND NOT EXISTS(SELECT 1 FROM network_lb_components c WHERE c.tenant_id=l.tenant_id AND c.lb_id=l.lb_id AND c.deleted_at IS NULL)
-AND NOT EXISTS(SELECT 1 FROM network_lb_generated_resources g WHERE g.tenant_id=l.tenant_id AND g.lb_id=l.lb_id AND g.gateway_uid=b.provider_uid AND g.released_at IS NULL)
 ON CONFLICT (tenant_id,lb_id,binding_id) DO NOTHING
 `
 
@@ -1004,7 +980,7 @@ func (q *Queries) InsertLBRetiredBinding(ctx context.Context, arg InsertLBRetire
 }
 
 const listLBBackendAttachments = `-- name: ListLBBackendAttachments :many
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, protocol_blocked, version, pod_name, pod_uid, confirm_uid, finalization_id, provider_relations, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at, consumer_type FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' AND NOT protocol_blocked AND reason IN ('','PROVIDER_UNAVAILABLE') ORDER BY attachment_id
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state='attached' ORDER BY attachment_id
 `
 
 type ListLBBackendAttachmentsParams struct {
@@ -1039,13 +1015,11 @@ func (q *Queries) ListLBBackendAttachments(ctx context.Context, arg ListLBBacken
 			&i.Plan,
 			&i.State,
 			&i.Reason,
-			&i.ProtocolBlocked,
 			&i.Version,
 			&i.PodName,
 			&i.PodUid,
 			&i.ConfirmUid,
 			&i.FinalizationID,
-			&i.ProviderRelations,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ObservedAt,
@@ -1057,9 +1031,12 @@ func (q *Queries) ListLBBackendAttachments(ctx context.Context, arg ListLBBacken
 			&i.RequestedGeneration,
 			&i.ProcessedGeneration,
 			&i.RetryNotBefore,
-			&i.EvidenceHash,
-			&i.EvidenceAppliedAt,
 			&i.ConsumerType,
+			&i.ObservationError,
+			&i.CurrentVnicName,
+			&i.CurrentVnicUid,
+			&i.CurrentMacAddress,
+			&i.CurrentIps,
 		); err != nil {
 			return nil, err
 		}
@@ -1118,104 +1095,8 @@ func (q *Queries) ListLBComponents(ctx context.Context, arg ListLBComponentsPara
 	return items, nil
 }
 
-const listLBGenerated = `-- name: ListLBGenerated :many
-SELECT tenant_id, cluster_id, namespace, lb_id, kind, provider_name, provider_uid, gateway_uid, observed_at, released_at FROM network_lb_generated_resources WHERE tenant_id=$1 AND lb_id=$2 ORDER BY kind,provider_name
-`
-
-type ListLBGeneratedParams struct {
-	TenantID string
-	LbID     string
-}
-
-func (q *Queries) ListLBGenerated(ctx context.Context, arg ListLBGeneratedParams) ([]NetworkLbGeneratedResource, error) {
-	rows, err := q.db.Query(ctx, listLBGenerated, arg.TenantID, arg.LbID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []NetworkLbGeneratedResource{}
-	for rows.Next() {
-		var i NetworkLbGeneratedResource
-		if err := rows.Scan(
-			&i.TenantID,
-			&i.ClusterID,
-			&i.Namespace,
-			&i.LbID,
-			&i.Kind,
-			&i.ProviderName,
-			&i.ProviderUid,
-			&i.GatewayUid,
-			&i.ObservedAt,
-			&i.ReleasedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listLBMemberIdentities = `-- name: ListLBMemberIdentities :many
-SELECT m.tenant_id, m.cluster_id, m.namespace, m.lb_id, m.member_id, m.vpc_id, m.subnet_id, m.attachment_id, m.address, m.port, m.pod_uid, m.vnic_name, m.vnic_uid, m.vnicip_name, m.vnicip_uid, m.state, m.reason, m.observed_at,a.pod_name FROM network_lb_members m JOIN network_attachments a
-ON a.tenant_id=m.tenant_id AND a.attachment_id=m.attachment_id
-WHERE m.tenant_id=$1 AND m.lb_id=$2 ORDER BY m.member_id
-`
-
-type ListLBMemberIdentitiesParams struct {
-	TenantID string
-	LbID     string
-}
-
-type ListLBMemberIdentitiesRow struct {
-	NetworkLbMember NetworkLbMember
-	PodName         string
-}
-
-func (q *Queries) ListLBMemberIdentities(ctx context.Context, arg ListLBMemberIdentitiesParams) ([]ListLBMemberIdentitiesRow, error) {
-	rows, err := q.db.Query(ctx, listLBMemberIdentities, arg.TenantID, arg.LbID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListLBMemberIdentitiesRow{}
-	for rows.Next() {
-		var i ListLBMemberIdentitiesRow
-		if err := rows.Scan(
-			&i.NetworkLbMember.TenantID,
-			&i.NetworkLbMember.ClusterID,
-			&i.NetworkLbMember.Namespace,
-			&i.NetworkLbMember.LbID,
-			&i.NetworkLbMember.MemberID,
-			&i.NetworkLbMember.VpcID,
-			&i.NetworkLbMember.SubnetID,
-			&i.NetworkLbMember.AttachmentID,
-			&i.NetworkLbMember.Address,
-			&i.NetworkLbMember.Port,
-			&i.NetworkLbMember.PodUid,
-			&i.NetworkLbMember.VnicName,
-			&i.NetworkLbMember.VnicUid,
-			&i.NetworkLbMember.VnicipName,
-			&i.NetworkLbMember.VnicipUid,
-			&i.NetworkLbMember.State,
-			&i.NetworkLbMember.Reason,
-			&i.NetworkLbMember.ObservedAt,
-			&i.PodName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listLBMembers = `-- name: ListLBMembers :many
-SELECT m.tenant_id, m.cluster_id, m.namespace, m.lb_id, m.member_id, m.vpc_id, m.subnet_id, m.attachment_id, m.address, m.port, m.pod_uid, m.vnic_name, m.vnic_uid, m.vnicip_name, m.vnicip_uid, m.state, m.reason, m.observed_at,cm.weight FROM network_lb_members m JOIN network_lb_configuration_members cm
+SELECT m.tenant_id, m.cluster_id, m.namespace, m.lb_id, m.member_id, m.vpc_id, m.subnet_id, m.attachment_id, m.address, m.port, m.pod_uid, m.state, m.reason, m.observed_at,cm.weight FROM network_lb_members m JOIN network_lb_configuration_members cm
 ON (m.tenant_id,m.lb_id,m.member_id)=(cm.tenant_id,cm.lb_id,cm.member_id)
 WHERE cm.tenant_id=$1 AND cm.lb_id=$2 AND cm.config_version=$3 ORDER BY m.member_id
 `
@@ -1252,10 +1133,6 @@ func (q *Queries) ListLBMembers(ctx context.Context, arg ListLBMembersParams) ([
 			&i.NetworkLbMember.Address,
 			&i.NetworkLbMember.Port,
 			&i.NetworkLbMember.PodUid,
-			&i.NetworkLbMember.VnicName,
-			&i.NetworkLbMember.VnicUid,
-			&i.NetworkLbMember.VnicipName,
-			&i.NetworkLbMember.VnicipUid,
 			&i.NetworkLbMember.State,
 			&i.NetworkLbMember.Reason,
 			&i.NetworkLbMember.ObservedAt,
@@ -1309,14 +1186,14 @@ func (q *Queries) ListLBSubnetRefs(ctx context.Context, arg ListLBSubnetRefsPara
 }
 
 const listLBs = `-- name: ListLBs :many
-SELECT tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version FROM network_load_balancers l WHERE tenant_id=$1 AND last_operation_id IS NOT NULL
-AND ($2::text='' OR name=$2)
-AND ($3::text='' OR vpc_id=$3)
-AND ($4::text='' OR subnet_id=$4)
-AND ($5::text='' OR exposure=$5)
-AND (($6::text='' AND state<>'deleted') OR state=$6)
-AND ($7::text='' OR (created_at,lb_id)<($8::timestamptz,$7::text))
-ORDER BY created_at DESC,lb_id DESC LIMIT $9::integer
+SELECT l.tenant_id, l.lb_id, l.cluster_id, l.namespace, l.vpc_id, l.subnet_id, l.exposure, l.public_eip_id, l.public_scope, l.private_ip, l.state, l.version, l.created_at, l.name, l.description, l.flavor, l.reason, l.updated_at, l.observed_at, l.last_operation_id, l.desired_version, l.applied_version, l.configuration_state, l.accepted_config_version, l.applied_config_version, l.provider_target_version,coalesce(r.observation_error,'')::text AS observation_error FROM network_load_balancers l LEFT JOIN network_reconciliations r ON r.tenant_id=l.tenant_id AND r.lb_id=l.lb_id WHERE l.tenant_id=$1 AND l.last_operation_id IS NOT NULL
+AND ($2::text='' OR l.name=$2)
+AND ($3::text='' OR l.vpc_id=$3)
+AND ($4::text='' OR l.subnet_id=$4)
+AND ($5::text='' OR l.exposure=$5)
+AND (($6::text='' AND l.state<>'deleted') OR l.state=$6)
+AND ($7::text='' OR (l.created_at,l.lb_id)<($8::timestamptz,$7::text))
+ORDER BY l.created_at DESC,l.lb_id DESC LIMIT $9::integer
 `
 
 type ListLBsParams struct {
@@ -1331,7 +1208,12 @@ type ListLBsParams struct {
 	MaxResults     int32
 }
 
-func (q *Queries) ListLBs(ctx context.Context, arg ListLBsParams) ([]NetworkLoadBalancer, error) {
+type ListLBsRow struct {
+	NetworkLoadBalancer NetworkLoadBalancer
+	ObservationError    string
+}
+
+func (q *Queries) ListLBs(ctx context.Context, arg ListLBsParams) ([]ListLBsRow, error) {
 	rows, err := q.db.Query(ctx, listLBs,
 		arg.TenantID,
 		arg.NameFilter,
@@ -1347,40 +1229,37 @@ func (q *Queries) ListLBs(ctx context.Context, arg ListLBsParams) ([]NetworkLoad
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NetworkLoadBalancer{}
+	items := []ListLBsRow{}
 	for rows.Next() {
-		var i NetworkLoadBalancer
+		var i ListLBsRow
 		if err := rows.Scan(
-			&i.TenantID,
-			&i.LbID,
-			&i.ClusterID,
-			&i.Namespace,
-			&i.VpcID,
-			&i.SubnetID,
-			&i.Exposure,
-			&i.PublicEipID,
-			&i.PublicScope,
-			&i.PrivateIp,
-			&i.State,
-			&i.Version,
-			&i.CreatedAt,
-			&i.Name,
-			&i.Description,
-			&i.Flavor,
-			&i.Reason,
-			&i.UpdatedAt,
-			&i.ObservedAt,
-			&i.VipOccupiedRevision,
-			&i.VipAbsenceRevision,
-			&i.LastOperationID,
-			&i.DesiredVersion,
-			&i.AppliedVersion,
-			&i.ConfigurationState,
-			&i.DataPlaneState,
-			&i.DataPlaneObservedAt,
-			&i.AcceptedConfigVersion,
-			&i.AppliedConfigVersion,
-			&i.ProviderTargetVersion,
+			&i.NetworkLoadBalancer.TenantID,
+			&i.NetworkLoadBalancer.LbID,
+			&i.NetworkLoadBalancer.ClusterID,
+			&i.NetworkLoadBalancer.Namespace,
+			&i.NetworkLoadBalancer.VpcID,
+			&i.NetworkLoadBalancer.SubnetID,
+			&i.NetworkLoadBalancer.Exposure,
+			&i.NetworkLoadBalancer.PublicEipID,
+			&i.NetworkLoadBalancer.PublicScope,
+			&i.NetworkLoadBalancer.PrivateIp,
+			&i.NetworkLoadBalancer.State,
+			&i.NetworkLoadBalancer.Version,
+			&i.NetworkLoadBalancer.CreatedAt,
+			&i.NetworkLoadBalancer.Name,
+			&i.NetworkLoadBalancer.Description,
+			&i.NetworkLoadBalancer.Flavor,
+			&i.NetworkLoadBalancer.Reason,
+			&i.NetworkLoadBalancer.UpdatedAt,
+			&i.NetworkLoadBalancer.ObservedAt,
+			&i.NetworkLoadBalancer.LastOperationID,
+			&i.NetworkLoadBalancer.DesiredVersion,
+			&i.NetworkLoadBalancer.AppliedVersion,
+			&i.NetworkLoadBalancer.ConfigurationState,
+			&i.NetworkLoadBalancer.AcceptedConfigVersion,
+			&i.NetworkLoadBalancer.AppliedConfigVersion,
+			&i.NetworkLoadBalancer.ProviderTargetVersion,
+			&i.ObservationError,
 		); err != nil {
 			return nil, err
 		}
@@ -1393,7 +1272,7 @@ func (q *Queries) ListLBs(ctx context.Context, arg ListLBsParams) ([]NetworkLoad
 }
 
 const lockLB = `-- name: LockLB :one
-SELECT tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2 FOR UPDATE
+SELECT tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version FROM network_load_balancers WHERE tenant_id=$1 AND lb_id=$2 FOR UPDATE
 `
 
 type LockLBParams struct {
@@ -1424,14 +1303,10 @@ func (q *Queries) LockLB(ctx context.Context, arg LockLBParams) (NetworkLoadBala
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -1441,7 +1316,7 @@ func (q *Queries) LockLB(ctx context.Context, arg LockLBParams) (NetworkLoadBala
 
 const markLBWaitingForBackends = `-- name: MarkLBWaitingForBackends :one
 UPDATE network_load_balancers SET configuration_state='waiting_for_backends'
-WHERE tenant_id=$1 AND lb_id=$2 AND version=$3 AND provider_target_version IS NULL RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+WHERE tenant_id=$1 AND lb_id=$2 AND version=$3 AND provider_target_version IS NULL RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type MarkLBWaitingForBackendsParams struct {
@@ -1473,14 +1348,10 @@ func (q *Queries) MarkLBWaitingForBackends(ctx context.Context, arg MarkLBWaitin
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,
@@ -1633,36 +1504,6 @@ func (q *Queries) ReserveLBVIP(ctx context.Context, arg ReserveLBVIPParams) (int
 	return result.RowsAffected(), nil
 }
 
-const resetLBRetiredVIPProof = `-- name: ResetLBRetiredVIPProof :execrows
-UPDATE network_load_balancers l SET vip_occupied_revision='',vip_absence_revision=''
-WHERE l.tenant_id=$1 AND l.lb_id=$2 AND l.version=$3
-AND EXISTS(SELECT 1 FROM network_lb_retired_bindings r WHERE r.tenant_id=l.tenant_id AND r.lb_id=l.lb_id
- AND r.binding_id=$4 AND r.provider_uid=$5 AND r.cleanup_target_version=l.applied_version
- AND r.vip_occupied_revision=l.vip_occupied_revision AND r.vip_absence_revision=l.vip_absence_revision)
-`
-
-type ResetLBRetiredVIPProofParams struct {
-	TenantID    string
-	LbID        string
-	Version     int64
-	BindingID   string
-	ProviderUid string
-}
-
-func (q *Queries) ResetLBRetiredVIPProof(ctx context.Context, arg ResetLBRetiredVIPProofParams) (int64, error) {
-	result, err := q.db.Exec(ctx, resetLBRetiredVIPProof,
-		arg.TenantID,
-		arg.LbID,
-		arg.Version,
-		arg.BindingID,
-		arg.ProviderUid,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const retireLBMutation = `-- name: RetireLBMutation :exec
 UPDATE network_operations SET state='failed',reason='LOAD_BALANCER_MUTATION_TERMINATED',completed_at=clock_timestamp(),updated_at=clock_timestamp(),next_attempt_at=NULL
 WHERE tenant_id=$1 AND lb_id=$2::text AND operation_id=$3 AND completed_at IS NULL AND kind IN ('create_load_balancer','update_load_balancer')
@@ -1695,18 +1536,15 @@ func (q *Queries) RetireLBUndispatchedComponents(ctx context.Context, arg Retire
 }
 
 const saveLBCapability = `-- name: SaveLBCapability :exec
-INSERT INTO network_lb_capabilities(cluster_id,ready,reason,observed_at,fingerprint,provider_images) VALUES($1,$2,$3,$4,$5,$6)
-ON CONFLICT(cluster_id) DO UPDATE SET ready=EXCLUDED.ready,reason=EXCLUDED.reason,observed_at=EXCLUDED.observed_at,fingerprint=EXCLUDED.fingerprint,provider_images=EXCLUDED.provider_images
-WHERE network_lb_capabilities.observed_at<=EXCLUDED.observed_at
+INSERT INTO network_lb_capabilities(cluster_id,ready,reason,observed_at) VALUES($1,coalesce($2::boolean,false),$3,$4)
+ON CONFLICT(cluster_id) DO UPDATE SET ready=coalesce($2::boolean,network_lb_capabilities.ready),reason=EXCLUDED.reason,observed_at=EXCLUDED.observed_at
 `
 
 type SaveLBCapabilityParams struct {
-	ClusterID      string
-	Ready          bool
-	Reason         string
-	ObservedAt     time.Time
-	Fingerprint    string
-	ProviderImages []string
+	ClusterID  string
+	Ready      pgtype.Bool
+	Reason     string
+	ObservedAt time.Time
 }
 
 func (q *Queries) SaveLBCapability(ctx context.Context, arg SaveLBCapabilityParams) error {
@@ -1715,8 +1553,6 @@ func (q *Queries) SaveLBCapability(ctx context.Context, arg SaveLBCapabilityPara
 		arg.Ready,
 		arg.Reason,
 		arg.ObservedAt,
-		arg.Fingerprint,
-		arg.ProviderImages,
 	)
 	return err
 }
@@ -1758,46 +1594,6 @@ func (q *Queries) SaveLBComponentObservation(ctx context.Context, arg SaveLBComp
 	return result.RowsAffected(), nil
 }
 
-const saveLBGenerated = `-- name: SaveLBGenerated :execrows
-INSERT INTO network_lb_generated_resources(tenant_id,cluster_id,namespace,lb_id,kind,provider_name,provider_uid,gateway_uid,observed_at,released_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $10::boolean THEN $9::timestamptz ELSE NULL END)
-ON CONFLICT(tenant_id,lb_id,kind,provider_uid) DO UPDATE SET observed_at=EXCLUDED.observed_at,released_at=EXCLUDED.released_at
-WHERE network_lb_generated_resources.gateway_uid=EXCLUDED.gateway_uid AND network_lb_generated_resources.namespace=EXCLUDED.namespace
-AND network_lb_generated_resources.provider_name=EXCLUDED.provider_name AND network_lb_generated_resources.observed_at<=EXCLUDED.observed_at
-`
-
-type SaveLBGeneratedParams struct {
-	TenantID     string
-	ClusterID    string
-	Namespace    string
-	LbID         string
-	Kind         string
-	ProviderName string
-	ProviderUid  string
-	GatewayUid   string
-	ObservedAt   time.Time
-	Released     bool
-}
-
-func (q *Queries) SaveLBGenerated(ctx context.Context, arg SaveLBGeneratedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, saveLBGenerated,
-		arg.TenantID,
-		arg.ClusterID,
-		arg.Namespace,
-		arg.LbID,
-		arg.Kind,
-		arg.ProviderName,
-		arg.ProviderUid,
-		arg.GatewayUid,
-		arg.ObservedAt,
-		arg.Released,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const saveLBMemberObservation = `-- name: SaveLBMemberObservation :execrows
 UPDATE network_lb_members SET state=CASE WHEN $1::boolean THEN 'available' ELSE 'unavailable' END,
 reason=$2,observed_at=$3
@@ -1832,10 +1628,8 @@ func (q *Queries) SaveLBMemberObservation(ctx context.Context, arg SaveLBMemberO
 const updateLBIntent = `-- name: UpdateLBIntent :one
 UPDATE network_load_balancers SET name=$1,description=$2,desired_version=desired_version+1,
 configuration_state=CASE WHEN $3::boolean THEN 'pending' ELSE configuration_state END,
-data_plane_state=CASE WHEN $3::boolean THEN 'unknown' ELSE data_plane_state END,
-data_plane_observed_at=CASE WHEN $3::boolean THEN NULL ELSE data_plane_observed_at END,
 version=version+1,updated_at=clock_timestamp(),last_operation_id=$4
-WHERE tenant_id=$5 AND lb_id=$6 AND version=$7 AND state NOT IN ('deleting','deleted') RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, vip_occupied_revision, vip_absence_revision, last_operation_id, desired_version, applied_version, configuration_state, data_plane_state, data_plane_observed_at, accepted_config_version, applied_config_version, provider_target_version
+WHERE tenant_id=$5 AND lb_id=$6 AND version=$7 AND state NOT IN ('deleting','deleted') RETURNING tenant_id, lb_id, cluster_id, namespace, vpc_id, subnet_id, exposure, public_eip_id, public_scope, private_ip, state, version, created_at, name, description, flavor, reason, updated_at, observed_at, last_operation_id, desired_version, applied_version, configuration_state, accepted_config_version, applied_config_version, provider_target_version
 `
 
 type UpdateLBIntentParams struct {
@@ -1879,14 +1673,10 @@ func (q *Queries) UpdateLBIntent(ctx context.Context, arg UpdateLBIntentParams) 
 		&i.Reason,
 		&i.UpdatedAt,
 		&i.ObservedAt,
-		&i.VipOccupiedRevision,
-		&i.VipAbsenceRevision,
 		&i.LastOperationID,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
 		&i.ConfigurationState,
-		&i.DataPlaneState,
-		&i.DataPlaneObservedAt,
 		&i.AcceptedConfigVersion,
 		&i.AppliedConfigVersion,
 		&i.ProviderTargetVersion,

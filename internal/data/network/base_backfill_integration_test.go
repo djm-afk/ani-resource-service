@@ -97,12 +97,11 @@ func newBackfillFixture(t *testing.T) (*egressFixture, *testenv.Database) {
 	db := testenv.NewDatabase(t)
 	configureRepositoryVPCPresets(t, db.Repository)
 	infra := testEgressInfrastructure{}
-	db.Repository.UseEgressInfrastructure(infra)
-	e, err := biz.NewEgress(db.Repository, infra, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	e, err := biz.NewEgress(db.Repository, infra, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &egressFixture{p: db.Repository, owner: db.Owner, e: e, n: newNetwork(t, db.Repository, time.Minute), tenant: uuid.NewString(), provider: &egressProvider{images: []string{"sha256:" + strings.Repeat("a", 64)}}}
+	f := &egressFixture{p: db.Repository, owner: db.Owner, e: e, n: newNetwork(t, db.Repository, time.Minute), tenant: uuid.NewString(), provider: &egressProvider{}}
 	f.w = egressWorker(t, f.p, f.provider)
 	f.ctx = biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: f.tenant, PlatformAdministrator: true})
 	f.pool = readyIntranetPool(t, f, f.platform(t, intranetIntent("backfill-pool", "10.234.254.0/24", "10.234.254.1")))
@@ -330,7 +329,7 @@ func TestBaseBackfillRejectsChangedProviderIdentityAndRacesDeletion(t *testing.T
 	})
 }
 
-func TestBaseBackfillLegacyAggregationRequiresAllFreshDependencies(t *testing.T) {
+func TestBaseBackfillLegacyActivationRequiresOwnDeclarations(t *testing.T) {
 	f, _ := newBackfillFixture(t)
 	v := availableVPC(t, f.n, f.w, f.tenant, "legacy")
 	history := historicalCreateSnapshot(t, f)
@@ -357,18 +356,10 @@ func TestBaseBackfillLegacyAggregationRequiresAllFreshDependencies(t *testing.T)
 	if history != historicalCreateSnapshot(t, f) {
 		t.Fatal("ensure completion changed historic create")
 	}
-	// Staleness is checked from current facts, never inferred from ensure success.
+	// Old observation timestamps do not veto an accepted management declaration.
 	if _, err = f.owner.Exec(f.ctx, "UPDATE network_vpc_base_connectivity SET observed_at=clock_timestamp()-interval '2 minutes' WHERE tenant_id=$1 AND vpc_id=$2", f.tenant, v.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.p.ActivateLegacyBaseAggregation(f.ctx); biz.ReasonOf(err) != biz.BaseConnectivityNotReady {
-		t.Fatal("stale dependency accepted", err)
-	}
-	f.drive(t, func() bool {
-		var ready bool
-		err := f.owner.QueryRow(f.ctx, "SELECT observed_at>clock_timestamp()-interval '1 minute' FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2", f.tenant, v.ID).Scan(&ready)
-		return err == nil && ready
-	})
 	rollout, err := f.p.ActivateLegacyBaseAggregation(f.ctx)
 	if err != nil || !rollout.LegacyAggregationEnabled {
 		t.Fatal(rollout, err)

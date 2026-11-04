@@ -3,6 +3,9 @@ package data_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 	"io"
 	"net/http"
 	"net/netip"
@@ -10,10 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/google/uuid"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 )
 
 // This adds only the new Intranet contract to the existing controlled server.
@@ -75,76 +74,67 @@ func intranetProviderInterceptor(w http.ResponseWriter, r *http.Request, api *co
 func fmtString(v any) string { s, _ := v.(string); return s }
 func seedIntranetInfrastructure(api *controlled.Server) string {
 	uid := uuid.NewString()
-	api.Change("vpcs", map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VPC", "metadata": map[string]any{"namespace": "kcn-system", "name": "kcn-cluster", "uid": uid, "generation": 1}, "spec": map[string]any{"allowedNamespaces": map[string]any{"from": "All"}}, "status": map[string]any{"observedGeneration": 1, "boundResources": map[string]any{"router": "controlled-default-router"}, "conditions": []any{map[string]any{"type": "Valid", "status": "True"}, map[string]any{"type": "Initialized", "status": "True"}, map[string]any{"type": "Ready", "status": "True"}}}}, false)
-	api.Change("configmaps", map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"namespace": "kcn-system", "name": "kcn-config", "uid": uuid.NewString()}, "data": map[string]any{"intranetNetworks": "- 10.0.0.0/8\n"}}, false)
-	controller := api.Object("pods", "kcn-system", "controller")
-	controller["spec"].(map[string]any)["containers"] = []any{map[string]any{"name": "controller", "command": []any{"/kc-networking/start-controller.sh"}, "args": []any{"--cluster-router=kcn-cluster"}}}
-	api.Change("pods", controller, false)
+	api.Change("vpcs", map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VPC", "metadata": map[string]any{"namespace": "kcn-system", "name": "kcn-cluster", "uid": uid}, "status": map[string]any{"default": true}}, false)
 	return uid
 }
-func TestIntranetKCPlatformActualAdapterObservationAndRecovery(t *testing.T) {
+func TestIntranetKCPlatformUsesItsOwnNativeStatus(t *testing.T) {
 	f, api, _, _ := newEgressKCFixture(t, intranetProviderInterceptor)
 	uid := seedIntranetInfrastructure(api)
 	intent := intranetIntent("controlled-intranet", "10.232.254.0/24", "10.232.254.1")
 	intent.Pool.DefaultVPCUID = uid
-	pool := f.platform(t, intent)
-	pool = readyIntranetPool(t, f, pool)
+	pool := readyIntranetPool(t, f, f.platform(t, intent))
 	setIntranetPool(t, f, biz.PlatformIntent{Kind: "set_default_intranet_pool", ID: pool.ID, IdempotencyKey: "default-controlled"})
-	caps, err := f.e.GetPlatformCapabilities(f.ctx)
-	if err != nil || !caps.BaseConnectivity.Ready || !caps.PublicAddress.Ready || caps.LoadBalancer.Ready {
-		t.Fatal(caps, err)
-	}
 	name := strings.Replace(pool.ID, "_", "-", 1)
 	object := api.Object("subnets", "kcn-system", name)
 	spec := object["spec"].(map[string]any)
 	if spec["type"] != "Intranet" || spec["gateway"] != "kcn-system/kcn-cluster" || spec["underlayConfig"] != nil {
-		t.Fatal("actual adapter emitted wrong intranet spec", spec)
+		t.Fatal(spec)
 	}
+	// The parent can report different runtime facts without replacing this
+	// Subnet controller's own Ready status.
 	gateway := api.Object("vpcs", "kcn-system", "kcn-cluster")
-	conditions := gateway["status"].(map[string]any)["conditions"].([]any)
-	conditions[2].(map[string]any)["status"] = "False"
+	gateway["metadata"].(map[string]any)["uid"] = uuid.NewString()
+	gateway["status"].(map[string]any)["conditions"] = []any{map[string]any{"type": "Ready", "status": "False"}}
 	api.Change("vpcs", gateway, false)
+	current, err := f.e.GetPlatform(f.ctx, "intranet_pool", pool.ID)
+	if err != nil || current.State != biz.Available {
+		t.Fatal(current, err)
+	}
+	object["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "False", "reason": "ControllerPending"}}}
+	api.Change("subnets", object, false)
 	f.drive(t, func() bool {
 		v, err := f.e.GetPlatform(f.ctx, "intranet_pool", pool.ID)
 		return err == nil && v.State == biz.Degraded
 	})
-	caps, err = f.e.GetPlatformCapabilities(f.ctx)
+	caps, err := f.e.GetPlatformCapabilities(f.ctx)
 	if err != nil || caps.BaseConnectivity.Ready || !caps.PublicAddress.Ready {
-		t.Fatal("intranet route loss coupled public capability", caps, err)
+		t.Fatal(caps, err)
 	}
-	conditions[2].(map[string]any)["status"] = "True"
-	api.Change("vpcs", gateway, false)
+	object["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "True"}}}
+	api.Change("subnets", object, false)
 	f.drive(t, func() bool {
 		v, err := f.e.GetPlatform(f.ctx, "intranet_pool", pool.ID)
 		return err == nil && v.State == biz.Available
 	})
-	after := api.Object("subnets", "kcn-system", name)
-	if after["metadata"].(map[string]any)["uid"] != object["metadata"].(map[string]any)["uid"] {
-		t.Fatal("observation recovery recreated pool")
+	if after := api.Object("subnets", "kcn-system", name); after["metadata"].(map[string]any)["uid"] != object["metadata"].(map[string]any)["uid"] {
+		t.Fatal("status recovery recreated pool")
 	}
-	gateway = api.Object("vpcs", "kcn-system", "kcn-cluster")
-	gateway["metadata"].(map[string]any)["uid"] = uuid.NewString()
-	api.Change("vpcs", gateway, false)
-	f.drive(t, func() bool {
-		v, err := f.e.GetPlatform(f.ctx, "intranet_pool", pool.ID)
-		return err == nil && v.State == biz.Degraded
-	})
 	if api.Backend.Invalid != "" {
 		t.Fatal(api.Backend.Invalid)
 	}
 }
 
-func TestIntranetPoolDefaultsUsesActualGatewayAndRouteFacts(t *testing.T) {
+func TestIntranetPoolDefaultsUsesNativeDefaultFlag(t *testing.T) {
 	f, api, _, _ := newEgressKCFixture(t, intranetProviderInterceptor)
 	uid := seedIntranetInfrastructure(api)
 	got, err := f.e.GetIntranetPoolDefaults(f.ctx)
-	if err != nil || got.DefaultVPCName != "kcn-cluster" || got.DefaultVPCUID != uid || len(got.IntranetNetworks) != 1 || got.IntranetNetworks[0] != "10.0.0.0/8" {
-		t.Fatal("defaults must come from actual provider facts", got, err)
+	if err != nil || got.DefaultVPCName != "kcn-cluster" || got.DefaultVPCUID != uid || len(got.IntranetNetworks) != 0 {
+		t.Fatal(got, err)
 	}
-	config := api.Object("configmaps", "kcn-system", "kcn-config")
-	config["data"].(map[string]any)["intranetNetworks"] = "- 192.168.0.0/16\n"
-	api.Change("configmaps", config, false)
+	object := api.Object("vpcs", "kcn-system", "kcn-cluster")
+	object["status"].(map[string]any)["default"] = false
+	api.Change("vpcs", object, false)
 	if _, err = f.e.GetIntranetPoolDefaults(f.ctx); err == nil {
-		t.Fatal("defaults accepted missing service network coverage")
+		t.Fatal("missing native default returned a reference")
 	}
 }

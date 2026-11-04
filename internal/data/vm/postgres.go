@@ -18,8 +18,9 @@ import (
 )
 
 type Postgres struct {
-	pool        *pgxpool.Pool
-	guestCipher *guestCredentialCipher
+	pool          *pgxpool.Pool
+	guestCipher   *guestCredentialCipher
+	notifyNetwork func(context.Context, string, string) error
 }
 
 func schemaChecksum() (string, error) {
@@ -521,12 +522,19 @@ func (p *Postgres) save(ctx context.Context, o biz.Operation, v biz.VM, release 
 		v.Network.Consumer = current.Network.Consumer
 		v.Network.SnapshotRevision = current.Network.SnapshotRevision
 	}
+	if current.Network.AttachmentID == v.Network.AttachmentID && current.Network.NotifiedSnapshotRevision > v.Network.NotifiedSnapshotRevision {
+		v.Network.NotifiedSnapshotRevision = current.Network.NotifiedSnapshotRevision
+	}
 	// Independent observation may have completed after this operation claimed
 	// its VM snapshot. A failure preserves the last evidence time, so an equal
 	// timestamp also cannot authorize an old checkpoint to replace current facts.
 	if current.Native == v.Native && !current.ObservedAt.Before(v.ObservedAt) {
 		v.Observed, v.Reason, v.ObservedAt = current.Observed, current.Reason, current.ObservedAt
 		v.Addresses = current.Addresses
+		if current.Network.SnapshotRevision >= v.Network.SnapshotRevision {
+			v.Network.Consumer = current.Network.Consumer
+			v.Network.SnapshotRevision = current.Network.SnapshotRevision
+		}
 	}
 	o.ObservedAt = time.Now().UTC()
 	tag, e := tx.Exec(ctx, `UPDATE vm.operations SET state=$4,record=$5,lease_token=CASE WHEN $7 THEN NULL ELSE lease_token END,lease_until=CASE WHEN $7 THEN NULL ELSE lease_until END,next_attempt_at=now()+interval '1 second',updated_at=now() WHERE tenant_id=$1 AND id=$2 AND vm_id=$3 AND lease_token=$6 AND lease_until>now()`, o.TenantID, o.ID, o.VMID, o.State, encode(o), o.Lease, release)
@@ -556,7 +564,10 @@ func (p *Postgres) save(ctx context.Context, o biz.Operation, v biz.VM, release 
 			return e
 		}
 	}
-	return tx.Commit(ctx)
+	if e = tx.Commit(ctx); e != nil {
+		return e
+	}
+	return p.notifyNetworkSubmission(ctx, v)
 }
 func (p *Postgres) UpdateNetwork(ctx context.Context, v biz.VM, n biz.NetworkPlan) error {
 	tx, e := p.pool.Begin(ctx)
@@ -577,5 +588,8 @@ func (p *Postgres) UpdateNetwork(ctx context.Context, v biz.VM, n biz.NetworkPla
 	if e != nil {
 		return e
 	}
-	return tx.Commit(ctx)
+	if e = tx.Commit(ctx); e != nil {
+		return e
+	}
+	return p.notifyNetworkSubmission(ctx, current)
 }

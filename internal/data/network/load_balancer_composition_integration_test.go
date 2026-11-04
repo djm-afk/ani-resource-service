@@ -1,14 +1,13 @@
 package data_test
 
 import (
+	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 )
 
 func TestLBPinsExistingAddressesAcrossBothDefaultPoolSwitchesAndClosure(t *testing.T) {
@@ -39,7 +38,7 @@ func TestLBPinsExistingAddressesAcrossBothDefaultPoolSwitchesAndClosure(t *testi
 	nextIntranet := readyIntranetPool(t, f.f, f.f.platform(t, intent))
 	setIntranetPool(t, f.f, biz.PlatformIntent{Kind: "set_default_intranet_pool", ID: nextIntranet.ID, IdempotencyKey: "lb-switch-intranet"})
 	nextPublic := f.f.platform(t, biz.PlatformIntent{Kind: "create_public_pool", Name: "lb-next-public", IdempotencyKey: "lb-next-public", Pool: &biz.PublicPoolConfig{Mode: "overlay", GatewayID: f.f.pool.Pool.GatewayID, CIDR: "198.51.100.0/24", OVNGatewayIP: "198.51.100.1"}})
-	f.f.setPool(t, biz.PlatformIntent{Kind: "verify_public_pool", ID: nextPublic.ID, IdempotencyKey: "lb-next-public-verify", Verification: &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: []string{"sha256:" + strings.Repeat("a", 64)}, TopologyFingerprint: nextPublic.TopologyFingerprint, EvidenceReference: "controlled HTTP fixture only", Scope: "adapter test", VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}})
+	f.f.setPool(t, biz.PlatformIntent{Kind: "verify_public_pool", ID: nextPublic.ID, IdempotencyKey: "lb-next-public-verify", Verification: &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: []string{"sha256:" + strings.Repeat("a", 64)}, TopologyFingerprint: strings.Repeat("c", 64), EvidenceReference: "controlled HTTP fixture only", Scope: "adapter test", VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}})
 	f.f.setPool(t, biz.PlatformIntent{Kind: "set_default_pool", ID: nextPublic.ID, IdempotencyKey: "lb-switch-public"})
 	for _, id := range []string{oldIntranet, nextIntranet.ID} {
 		setIntranetPool(t, f.f, biz.PlatformIntent{Kind: "set_intranet_pool_allocation", ID: id, IdempotencyKey: "lb-close-" + id, Enabled: false})

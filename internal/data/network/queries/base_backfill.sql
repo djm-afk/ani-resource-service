@@ -68,7 +68,7 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND run_id=sqlc.arg(run_id) AND vpc_id=sqlc.
 -- name: AdmitBaseBackfillVPC :execrows
 UPDATE network_vpcs SET last_operation_id=sqlc.arg(operation_id),version=version+1,updated_at=clock_timestamp()
 WHERE tenant_id=sqlc.arg(tenant_id) AND vpc_id=sqlc.arg(vpc_id) AND version=sqlc.arg(version)
- AND state IN ('available','degraded') AND NOT base_connectivity_required;
+ AND state NOT IN ('deleting','deleted') AND NOT base_connectivity_required;
 
 -- name: ScheduleBaseBackfill :execrows
 UPDATE network_reconciliations SET next_run_at=clock_timestamp(),lease_owner=NULL,
@@ -96,21 +96,8 @@ LEFT JOIN network_provider_bindings b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.
 WHERE (b.cluster_id=sqlc.arg(cluster_id) OR b.binding_id IS NULL) AND v.state NOT IN ('deleting','deleted')
 ORDER BY v.tenant_id,v.vpc_id FOR UPDATE OF v;
 
--- Recheck wall-clock freshness after the per-resource verification loop. A long
--- activation cannot accept facts that expired while earlier VPC rows were locked.
--- name: CountStaleLegacyBaseEvidence :one
-SELECT count(*)::bigint FROM network_vpcs v
-JOIN network_tenant_namespaces ns ON ns.tenant_id=v.tenant_id AND ns.cluster_id=sqlc.arg(cluster_id)
-LEFT JOIN network_provider_bindings placement ON placement.tenant_id=v.tenant_id AND placement.vpc_id=v.vpc_id
-LEFT JOIN network_vpc_base_connectivity b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id
-LEFT JOIN network_eips e ON e.tenant_id=b.tenant_id AND e.eip_id=b.eip_id
-LEFT JOIN network_snat_bindings s ON s.tenant_id=b.tenant_id AND s.snat_id=b.snat_id
-WHERE (placement.cluster_id=sqlc.arg(cluster_id) OR placement.binding_id IS NULL)
- AND v.state NOT IN ('deleting','deleted')
- AND (b.observed_at IS NULL OR b.provider_observed_at IS NULL OR e.observed_at IS NULL OR s.observed_at IS NULL
- OR least(b.observed_at,b.provider_observed_at,e.observed_at,s.observed_at)<clock_timestamp()-sqlc.arg(freshness_micros)::bigint*interval '1 microsecond'
- OR greatest(b.observed_at,b.provider_observed_at,e.observed_at,s.observed_at)>clock_timestamp());
-
+-- Activate only the Res rollout setting after its registered product intents
+-- have been checked under the same management lock.
 -- name: ActivateLegacyBaseAggregation :execrows
 UPDATE network_connectivity_rollout SET legacy_aggregation_enabled=true,updated_at=clock_timestamp()
 WHERE cluster_id=$1 AND new_vpcs_enabled;

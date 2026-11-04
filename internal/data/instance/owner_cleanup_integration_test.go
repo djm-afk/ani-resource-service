@@ -206,7 +206,7 @@ func TestInstanceLegacyCleanupFlagsCannotSealAfterFailedObservation(t *testing.T
 			// Only this pre-upgrade fixture is injected: its historical booleans
 			// cannot establish this version's new owner cleanup fact.
 			i.ComputeCleaned, i.WorkspaceCleaned, i.VolumeReferencesReleased = true, true, true
-			i.Network.Cleaned, i.Network.ReleaseAcknowledged = true, true
+			i.Network.Cleaned = true
 			i.ExternalComputeStarted = true
 			raw, err := json.Marshal(i)
 			if err != nil {

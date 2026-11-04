@@ -45,18 +45,11 @@ func (c *InstanceConsumer) GetSubmission(ctx context.Context, a biz.Attachment) 
 		return biz.ConsumerSubmission{}, e
 	}
 	states := map[networkv1.SubmissionState]string{networkv1.SubmissionState_SUBMISSION_STATE_OPEN: "open", networkv1.SubmissionState_SUBMISSION_STATE_CLOSING: "closing", networkv1.SubmissionState_SUBMISSION_STATE_CLOSED: "closed"}
-	value := biz.ConsumerSubmission{ProtocolVersion: r.GetProtocolVersion(), TenantID: r.GetTenantId(), InstanceID: r.GetInstanceId(), SubmissionID: r.GetSubmissionId(), AttachmentID: r.GetAttachmentId(), ClusterID: r.GetClusterId(), Namespace: r.GetNamespace(), Generation: r.GetGeneration(), State: states[r.GetState()], FinalizationID: r.GetFinalizationId(), PodUIDs: r.GetPodUids(), ControllerUIDs: r.GetControllerUids()}
+	value := biz.ConsumerSubmission{ProtocolVersion: r.GetProtocolVersion(), TenantID: r.GetTenantId(), InstanceID: r.GetInstanceId(), SubmissionID: r.GetSubmissionId(), AttachmentID: r.GetAttachmentId(), ClusterID: r.GetClusterId(), Namespace: r.GetNamespace(), Generation: r.GetGeneration(), State: states[r.GetState()], FinalizationID: r.GetFinalizationId(), PodUIDs: r.GetPodUids()}
 	value.SnapshotRevision = r.GetSnapshotRevision()
 	value.DesiredRunState = r.GetDesiredRunState()
-	value.RootController = consumerWorkload(r.GetRootController())
-	for _, set := range r.GetControllers() {
-		value.Controllers = append(value.Controllers, biz.ControllerReference{Reference: consumerWorkload(set.GetReference()), Owner: consumerWorkload(set.GetOwner())})
-	}
 	for _, pod := range r.GetCurrentPods() {
 		value.CurrentPods = append(value.CurrentPods, biz.PodReference{Reference: consumerWorkload(pod.GetReference()), Owner: consumerWorkload(pod.GetOwner())})
-	}
-	for _, pod := range r.GetRetiredPods() {
-		value.RetiredPods = append(value.RetiredPods, biz.PodReference{Reference: consumerWorkload(pod.GetReference()), Owner: consumerWorkload(pod.GetOwner())})
 	}
 	if r.ClosedAt != nil {
 		if e := r.ClosedAt.CheckValid(); e != nil {

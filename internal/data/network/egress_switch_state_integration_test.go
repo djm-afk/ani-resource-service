@@ -2,15 +2,14 @@ package data_test
 
 import (
 	"errors"
-	"strings"
-	"testing"
-
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"k8s.io/client-go/rest"
+	"strings"
+	"testing"
 )
 
-func TestEgressDependencyUnavailableIsNotOwnershipConflict(t *testing.T) {
+func TestEgressObservationReadsTargetDespiteSwitchRuntimeState(t *testing.T) {
 	f, _ := switchEgress(t)
 	sw, err := f.e.CreateVirtualSwitch(f.ctx, biz.VirtualSwitchIntent{Name: "dependency-state", IdempotencyKey: "switch"})
 	if err != nil {
@@ -20,8 +19,7 @@ func TestEgressDependencyUnavailableIsNotOwnershipConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The physical boundary is controlled; the dependency, pool and provider
-	// bindings remain the real persisted product objects.
+	// Management references remain persisted while switch state changes independently.
 	if _, err = f.owner.Exec(f.ctx, "UPDATE network_virtual_switches SET state='available',binding_state='configured' WHERE resource_id=$1", sw.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +44,8 @@ func TestEgressDependencyUnavailableIsNotOwnershipConflict(t *testing.T) {
 			}
 			_, err := provider.Observe(f.ctx, target)
 			var failure *biz.ProviderError
-			if !errors.As(err, &failure) || failure.Kind != biz.ProviderTemporary || failure.Cause == nil || !strings.Contains(failure.Cause.Error(), "virtual switch") {
-				t.Fatalf("unavailable dependency must not claim ownership conflict: %#v", err)
+			if !errors.As(err, &failure) || failure.Kind != biz.ProviderTemporary || failure.Cause == nil || strings.Contains(failure.Cause.Error(), "virtual switch") {
+				t.Fatalf("observation did not read its target directly: %#v", err)
 			}
 		})
 	}
@@ -60,7 +58,7 @@ func TestEgressDependencyUnavailableIsNotOwnershipConflict(t *testing.T) {
 	}
 	_, err = provider.Observe(f.ctx, target)
 	var conflict *biz.ProviderError
-	if !errors.As(err, &conflict) || conflict.Kind != biz.ProviderConflict {
-		t.Fatalf("retired device must still conflict: %#v", err)
+	if !errors.As(err, &conflict) || conflict.Kind != biz.ProviderTemporary {
+		t.Fatalf("unrelated retired device replaced the target read error: %#v", err)
 	}
 }

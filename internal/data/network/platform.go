@@ -5,22 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/netip"
-	"slices"
-	"strings"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"net/netip"
+	"strings"
+	"time"
 )
 
-func (p *Postgres) UseEgressInfrastructure(infra biz.EgressInfrastructure) {
-	p.egressInfrastructure = infra
+func (p *Postgres) UseVirtualSwitchInfrastructure(infra biz.VirtualSwitchInfrastructure) {
+	p.virtualSwitchInfrastructure = infra
 }
 func platformMetadata(r sqlcgen.NetworkPlatformResource) biz.PlatformResource {
-	return biz.PlatformResource{EgressMetadata: biz.EgressMetadata{ID: r.ResourceID, Name: r.Name, Description: r.Description, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, LastOperationID: r.LastOperationID}, Kind: r.Kind, ClusterID: r.ClusterID}
+	return biz.PlatformResource{EgressMetadata: biz.EgressMetadata{ID: r.ResourceID, Name: r.Name, Description: r.Description, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ObservedAt: r.ObservedAt, ObservationStale: r.ObservedAt == nil, LastOperationID: r.LastOperationID}, Kind: r.Kind, ClusterID: r.ClusterID}
 }
 func poolConfig(p sqlcgen.NetworkPublicPool) biz.PublicPoolConfig {
 	c := biz.PublicPoolConfig{Mode: p.Mode, GatewayID: textValue(p.GatewayID), CIDR: p.Cidr, OVNGatewayIP: p.OvnGatewayIp, ExcludedIPs: p.ExcludedIps, VlanNetworkID: textValue(p.VlanNetworkID), UpstreamGatewayIP: textValue(p.UpstreamGatewayIp), DefaultVPCName: p.DefaultVpcName, DefaultVPCUID: p.DefaultVpcUid, IntranetNetworks: p.IntranetNetworks}
@@ -39,10 +37,11 @@ func platformSnapshot(ctx context.Context, q *sqlcgen.Queries, r sqlcgen.Network
 		}
 		v.Vlan = &biz.VlanConfig{DeviceID: d.DeviceID, VlanID: d.VlanID}
 		if d.VirtualSwitchID != nil {
-			s, err := q.GetVirtualSwitch(ctx, sqlcgen.GetVirtualSwitchParams{ResourceID: *d.VirtualSwitchID})
+			switchRow, err := q.GetVirtualSwitch(ctx, sqlcgen.GetVirtualSwitchParams{ResourceID: *d.VirtualSwitchID})
 			if err != nil {
 				return v, databaseFailure(err)
 			}
+			s := switchRow.NetworkVirtualSwitch
 			device, err := q.GetDeviceAdoption(ctx, sqlcgen.GetDeviceAdoptionParams{ClusterID: r.ClusterID, ResourceID: d.DeviceID})
 			if err != nil {
 				return v, databaseFailure(err)
@@ -63,16 +62,8 @@ func platformSnapshot(ctx context.Context, q *sqlcgen.Queries, r sqlcgen.Network
 		config := poolConfig(d)
 		v.Pool = &config
 		v.ConfigRevision = d.ConfigRevision
-		topology, err := q.PublicPoolTopology(ctx, sqlcgen.PublicPoolTopologyParams{ClusterID: r.ClusterID, ResourceID: r.ResourceID})
-		if err != nil {
-			return v, databaseFailure(err)
-		}
-		v.TopologyFingerprint, err = addressPoolTopologyFor(ctx, q, d, topology)
-		if err != nil {
-			return v, err
-		}
-		v.ObservedProviderImages = r.ProviderImages
 		v.AllocationEnabled = d.AllocationEnabled
+
 		if len(d.Verification) > 0 {
 			var verification biz.PublicPoolVerification
 			if err = json.Unmarshal(d.Verification, &verification); err != nil {
@@ -115,7 +106,8 @@ func (p *Postgres) GetPlatform(ctx context.Context, kind, id string) (biz.Platfo
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
-	v, err := platformSnapshot(ctx, q, r)
+	v, err := platformSnapshot(ctx, q, r.NetworkPlatformResource)
+	v.ObservationStale = v.ObservedAt == nil || r.ObservationError != ""
 	if err == nil && v.Kind != kind {
 		return biz.PlatformResource{}, biz.Fail(biz.ResourceNotFound, "platform resource not found")
 	}
@@ -128,31 +120,45 @@ func (p *Postgres) ListPlatform(ctx context.Context, kind string, f biz.VPCFilte
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	var rows []sqlcgen.NetworkPlatformResource
+	values := []biz.PlatformResource{}
+	appendRow := func(r sqlcgen.NetworkPlatformResource, readError string) error {
+		v, err := platformSnapshot(ctx, q, r)
+		if err != nil {
+			return err
+		}
+		v.ObservationStale = v.ObservedAt == nil || readError != ""
+		values = append(values, v)
+		return nil
+	}
 	var total int64
 	if kind == "intranet_pool" {
 		total, err = q.CountIntranetPools(ctx, sqlcgen.CountIntranetPoolsParams{ClusterID: p.placement.ClusterID, NameFilter: f.Name, StateFilter: f.State})
 		if err != nil {
 			return nil, 0, databaseFailure(err)
 		}
-		rows, err = q.ListIntranetPools(ctx, sqlcgen.ListIntranetPoolsParams{ClusterID: p.placement.ClusterID, NameFilter: f.Name, StateFilter: f.State, AfterID: f.AfterID, AfterCreatedAt: f.AfterCreatedAt, MaxResults: f.Limit})
+		rows, err := q.ListIntranetPools(ctx, sqlcgen.ListIntranetPoolsParams{ClusterID: p.placement.ClusterID, NameFilter: f.Name, StateFilter: f.State, AfterID: f.AfterID, AfterCreatedAt: f.AfterCreatedAt, MaxResults: f.Limit})
+		if err != nil {
+			return nil, 0, databaseFailure(err)
+		}
+		for _, r := range rows {
+			if err = appendRow(r.NetworkPlatformResource, r.ObservationError); err != nil {
+				return nil, 0, err
+			}
+		}
 	} else {
 		total, err = q.CountPlatform(ctx, sqlcgen.CountPlatformParams{ClusterID: p.placement.ClusterID, Kind: kind, NameFilter: f.Name, StateFilter: f.State})
 		if err != nil {
 			return nil, 0, databaseFailure(err)
 		}
-		rows, err = q.ListPlatform(ctx, sqlcgen.ListPlatformParams{ClusterID: p.placement.ClusterID, Kind: kind, NameFilter: f.Name, StateFilter: f.State, AfterID: f.AfterID, AfterCreatedAt: f.AfterCreatedAt, MaxResults: f.Limit})
-	}
-	if err != nil {
-		return nil, 0, databaseFailure(err)
-	}
-	values := make([]biz.PlatformResource, 0, len(rows))
-	for _, r := range rows {
-		v, err := platformSnapshot(ctx, q, r)
+		rows, err := q.ListPlatform(ctx, sqlcgen.ListPlatformParams{ClusterID: p.placement.ClusterID, Kind: kind, NameFilter: f.Name, StateFilter: f.State, AfterID: f.AfterID, AfterCreatedAt: f.AfterCreatedAt, MaxResults: f.Limit})
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, databaseFailure(err)
 		}
-		values = append(values, v)
+		for _, r := range rows {
+			if err = appendRow(r.NetworkPlatformResource, r.ObservationError); err != nil {
+				return nil, 0, err
+			}
+		}
 	}
 	return values, total, nil
 }
@@ -182,41 +188,37 @@ func platformReplay(ctx context.Context, q *sqlcgen.Queries, cluster string, i b
 	if err = json.Unmarshal(prior.Response, &v); err != nil {
 		return v, false, databaseFailure(err)
 	}
-	if v.ID != prior.ResourceID || v.ClusterID != cluster || v.LastOperationID != prior.OperationID {
+	if v.ID != prior.ResourceID || v.ClusterID != cluster {
 		return v, false, databaseFailure(fmt.Errorf("invalid platform acceptance snapshot"))
+	}
+	if i.Kind == "verify_public_pool" || i.Kind == "verify_intranet_pool" {
+		// The archive command has its own completed receipt, while the resource
+		// continues to expose its original running/current operation.
+		original, err := q.GetPlatformOperation(ctx, sqlcgen.GetPlatformOperationParams{ClusterID: cluster, OperationID: v.LastOperationID})
+		if err != nil {
+			return v, false, databaseFailure(err)
+		}
+		if original.ResourceID != v.ID {
+			return v, false, databaseFailure(fmt.Errorf("invalid verification resource operation"))
+		}
+	} else if v.LastOperationID != prior.OperationID {
+		return v, false, databaseFailure(fmt.Errorf("invalid platform acceptance operation"))
 	}
 	return v, true, nil
 }
-func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a biz.Attribution, freshness time.Duration) (biz.PlatformResource, error) {
+func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a biz.Attribution) (biz.PlatformResource, error) {
 	// Replay is checked before dynamic infrastructure. Slow provider calls occur
 	// before the write transaction, then admission rechecks the key and parents.
 	if v, found, err := platformReplay(ctx, p.queries, p.placement.ClusterID, i); found || err != nil {
 		return v, err
 	}
 	if i.Kind == "create_vlan" && i.FingerprintVersion() == 2 {
-		return p.acceptSwitchVlan(ctx, i, a, freshness)
+		return p.acceptSwitchVlan(ctx, i, a)
 	}
 	if i.Kind == "create_vlan" {
 		return biz.PlatformResource{}, biz.Fail(biz.InvalidArgument, "new VLAN creation requires a virtual switch; legacy exact replay remains supported")
 	}
-	if i.Kind == "create_public_pool" || i.Kind == "create_intranet_pool" {
-		if p.egressInfrastructure == nil {
-			return biz.PlatformResource{}, biz.Fail(biz.DependencyUnavailable, "platform facts are unavailable")
-		}
-		if i.Kind == "create_intranet_pool" {
-			infra, ok := p.egressInfrastructure.(biz.IntranetPoolInfrastructure)
-			if !ok {
-				return biz.PlatformResource{}, biz.Fail(biz.DependencyUnavailable, "intranet infrastructure facts are unavailable")
-			}
-			if err := infra.ValidateIntranetPool(ctx, *i.Pool); err != nil {
-				return biz.PlatformResource{}, err
-			}
-		} else {
-			if err := p.egressInfrastructure.ValidatePublicPool(ctx, *i.Pool); err != nil {
-				return biz.PlatformResource{}, err
-			}
-		}
-	}
+
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
@@ -243,7 +245,7 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if i.ID != "" {
-		return p.acceptPoolChange(ctx, tx, q, i, a, now, freshness)
+		return p.acceptPoolChange(ctx, tx, q, i, a, now)
 	}
 	kind, prefix := "", ""
 	switch i.Kind {
@@ -259,8 +261,8 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 		if err != nil {
 			return databaseFailure(err)
 		}
-		if !freshResource(r.State, r.ObservedAt, now, freshness) {
-			return biz.Fail(biz.PublicEgressNotReady, "platform parent is not ready")
+		if r.State == "deleting" || r.State == "deleted" {
+			return biz.Fail(biz.PublicEgressNotReady, "platform parent is being removed")
 		}
 		return nil
 	}
@@ -356,7 +358,7 @@ func savePlatformAcceptance(ctx context.Context, q *sqlcgen.Queries, i biz.Platf
 	}
 	return databaseFailure(q.InsertPlatformHistory(ctx, sqlcgen.InsertPlatformHistoryParams{HistoryID: uuid.NewString(), ResourceID: v.ID, OperationID: &v.LastOperationID, Event: i.Kind + "_accepted", ResourceState: string(v.State), OperationState: state, ActorRef: a.Actor, CallerRef: a.DirectCaller, CreatedAt: now}))
 }
-func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Queries, i biz.PlatformIntent, a biz.Attribution, now time.Time, freshness time.Duration) (biz.PlatformResource, error) {
+func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Queries, i biz.PlatformIntent, a biz.Attribution, now time.Time) (biz.PlatformResource, error) {
 	row, err := q.LockPlatform(ctx, sqlcgen.LockPlatformParams{ClusterID: p.placement.ClusterID, Kind: "public_pool", ResourceID: i.ID})
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
@@ -367,13 +369,6 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 	if row.State == "deleted" || row.State == "deleting" {
 		return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "pool is being removed")
 	}
-	op, err := q.GetPlatformOperation(ctx, sqlcgen.GetPlatformOperationParams{ClusterID: p.placement.ClusterID, OperationID: row.LastOperationID})
-	if err != nil {
-		return biz.PlatformResource{}, databaseFailure(err)
-	}
-	if op.CompletedAt == nil {
-		return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "pool has unfinished work")
-	}
 	pool, err := q.LockPublicPool(ctx, sqlcgen.LockPublicPoolParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID})
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
@@ -381,29 +376,58 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 	if (strings.Contains(i.Kind, "intranet") && pool.Scope != "intranet") || (!strings.Contains(i.Kind, "intranet") && pool.Scope != "public") {
 		return biz.PlatformResource{}, biz.Fail(biz.ResourceNotFound, "pool not found")
 	}
-	topology, err := q.PublicPoolTopology(ctx, sqlcgen.PublicPoolTopologyParams{ClusterID: row.ClusterID, ResourceID: row.ResourceID})
-	if err != nil {
-		return biz.PlatformResource{}, databaseFailure(err)
-	}
-	topologyHash, err := addressPoolTopologyFor(ctx, q, pool, topology)
-	if err != nil {
-		return biz.PlatformResource{}, err
-	}
-	switch i.Kind {
-	case "verify_public_pool", "verify_intranet_pool":
-		if !freshResource(row.State, row.ObservedAt, now, freshness) || i.Verification == nil || i.Verification.TopologyFingerprint != topologyHash || !sameProviderImages(i.Verification.ProviderImageDigests, row.ProviderImages) {
-			return biz.PlatformResource{}, biz.Fail(poolUnavailableReason(pool.Scope), "verification does not match ready pool topology")
+
+	if i.Kind == "verify_public_pool" || i.Kind == "verify_intranet_pool" {
+		if i.Verification == nil {
+			return biz.PlatformResource{}, biz.Fail(biz.InvalidArgument, "verification material is required")
 		}
 		if err = biz.ValidatePoolVerificationForScope(*i.Verification, pool.Scope, now); err != nil {
 			return biz.PlatformResource{}, err
 		}
-		b, _ := json.Marshal(i.Verification)
-		if err = affected(q.SavePoolVerification(ctx, sqlcgen.SavePoolVerificationParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID, Verification: b, VerificationExpiresAt: &i.Verification.ExpiresAt})); err != nil {
+		body, err := json.Marshal(i.Verification)
+		if err != nil {
 			return biz.PlatformResource{}, err
 		}
+		if err = affected(q.SavePoolVerification(ctx, sqlcgen.SavePoolVerificationParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID, Verification: body, VerificationExpiresAt: &i.Verification.ExpiresAt})); err != nil {
+			return biz.PlatformResource{}, err
+		}
+		// Bump the management version without replacing active work or its status.
+		row, err = q.AdvancePlatform(ctx, sqlcgen.AdvancePlatformParams{ResourceID: row.ResourceID, Version: row.Version, State: row.State, Reason: row.Reason, Identity: row.ProviderUid})
+		if err != nil {
+			return biz.PlatformResource{}, databaseFailure(err)
+		}
+		v, err := platformSnapshot(ctx, q, row)
+		if err != nil {
+			return v, err
+		}
+		body, err = json.Marshal(v)
+		if err != nil {
+			return v, err
+		}
+		archiveID := uuid.NewString()
+		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: v.ID, OperationID: archiveID, Kind: i.Kind, State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now}); err != nil {
+			return v, databaseFailure(err)
+		}
+		if err = q.InsertPlatformIdempotency(ctx, sqlcgen.InsertPlatformIdempotencyParams{ClusterID: v.ClusterID, OperationKind: i.Kind, IdempotencyKey: i.IdempotencyKey, Fingerprint: i.VersionedFingerprint(), FingerprintVersion: i.FingerprintVersion(), ResourceID: v.ID, OperationID: archiveID, Response: body, CreatedAt: now}); err != nil {
+			return v, databaseFailure(err)
+		}
+		if err = q.InsertPlatformHistory(ctx, sqlcgen.InsertPlatformHistoryParams{HistoryID: uuid.NewString(), ResourceID: v.ID, OperationID: &archiveID, Event: "verification_recorded", ResourceState: string(v.State), ActorRef: a.Actor, CallerRef: a.DirectCaller, CreatedAt: now}); err != nil {
+			return v, databaseFailure(err)
+		}
+		return v, databaseFailure(tx.Commit(ctx))
+	}
+
+	op, err := q.GetPlatformOperation(ctx, sqlcgen.GetPlatformOperationParams{ClusterID: p.placement.ClusterID, OperationID: row.LastOperationID})
+	if err != nil {
+		return biz.PlatformResource{}, databaseFailure(err)
+	}
+	if op.CompletedAt == nil {
+		return biz.PlatformResource{}, biz.Fail(biz.ResourceBusy, "pool has unfinished work")
+	}
+	switch i.Kind {
 	case "set_pool_allocation", "set_intranet_pool_allocation":
 		if i.Enabled {
-			if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
+			if err = p.poolAllocationAllowed(ctx, q, pool, false); err != nil {
 				return biz.PlatformResource{}, err
 			}
 		}
@@ -416,7 +440,7 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
 		if rollout.NewVpcsEnabled {
-			if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
+			if err = p.poolAllocationAllowed(ctx, q, pool, false); err != nil {
 				return biz.PlatformResource{}, err
 			}
 			if err = affected(q.SetPoolAllocation(ctx, sqlcgen.SetPoolAllocationParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID, AllocationEnabled: true})); err != nil {
@@ -428,7 +452,7 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 		}
 	case "set_intranet_pool_auto_allocation":
 		if i.Enabled {
-			if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
+			if err = p.poolAllocationAllowed(ctx, q, pool, false); err != nil {
 				return biz.PlatformResource{}, err
 			}
 			if err = affected(q.SetPoolAllocation(ctx, sqlcgen.SetPoolAllocationParams{ClusterID: p.placement.ClusterID, ResourceID: i.ID, AllocationEnabled: true})); err != nil {
@@ -487,65 +511,17 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 	}
 	return v, nil
 }
-func sameProviderImages(a, b []string) bool {
-	a = slices.Clone(a)
-	b = slices.Clone(b)
-	slices.Sort(a)
-	slices.Sort(b)
-	return len(a) > 0 && slices.Equal(slices.Compact(a), slices.Compact(b))
-}
-func (p *Postgres) poolReady(ctx context.Context, q *sqlcgen.Queries, pool sqlcgen.NetworkPublicPool, now time.Time, freshness time.Duration, allocation bool) error {
-	unavailable := func() error {
-		return biz.Fail(poolUnavailableReason(pool.Scope), "address pool configuration or evidence is not ready")
+
+func (p *Postgres) poolAllocationAllowed(ctx context.Context, q *sqlcgen.Queries, pool sqlcgen.NetworkPublicPool, requireEnabled bool) error {
+	if pool.Retired || (requireEnabled && !pool.AllocationEnabled) {
+		return biz.Fail(poolUnavailableReason(pool.Scope), "address pool allocation is closed")
 	}
-	if allocation && !pool.AllocationEnabled {
-		return unavailable()
-	}
-	topology, err := q.PublicPoolTopology(ctx, sqlcgen.PublicPoolTopologyParams{ClusterID: pool.ClusterID, ResourceID: pool.ResourceID})
+	row, err := q.LockPlatform(ctx, sqlcgen.LockPlatformParams{ClusterID: pool.ClusterID, Kind: "public_pool", ResourceID: pool.ResourceID})
 	if err != nil {
 		return databaseFailure(err)
 	}
-	// Current provider health remains mandatory. Manual forwarding evidence is
-	// diagnostic metadata for both public and intranet pools.
-	if len(topology.ProviderImages) == 0 {
-		return unavailable()
-	}
-	refs := [][2]string{{"public_pool", pool.ResourceID}}
-	if pool.Scope != "intranet" {
-		refs = append(refs, [2]string{"egress_gateway", textValue(pool.GatewayID)})
-	}
-	if pool.VlanNetworkID != nil {
-		refs = append(refs, [2]string{"vlan", *pool.VlanNetworkID})
-		vlan, err := q.GetVlanNetwork(ctx, sqlcgen.GetVlanNetworkParams{ClusterID: pool.ClusterID, ResourceID: *pool.VlanNetworkID})
-		if err != nil {
-			return databaseFailure(err)
-		}
-		refs = append(refs, [2]string{"device", vlan.DeviceID})
-	}
-	for _, ref := range refs {
-		if ref[0] == "device" {
-			d, err := q.GetDeviceAdoption(ctx, sqlcgen.GetDeviceAdoptionParams{ClusterID: pool.ClusterID, ResourceID: ref[1]})
-			if err != nil {
-				return databaseFailure(err)
-			}
-			if d.VirtualSwitchID != nil {
-				s, err := q.GetVirtualSwitch(ctx, sqlcgen.GetVirtualSwitchParams{ResourceID: *d.VirtualSwitchID})
-				if err != nil {
-					return databaseFailure(err)
-				}
-				if d.Retired || s.State != "available" || s.BindingState != "configured" || s.UpdatedAt.After(now) || now.Sub(s.UpdatedAt) > freshness || textValue(d.SwitchBindingID) != textValue(s.BindingID) {
-					return unavailable()
-				}
-				continue // The fresh VLAN observation above proves actual wiring.
-			}
-		}
-		r, err := q.GetPlatform(ctx, sqlcgen.GetPlatformParams{ClusterID: pool.ClusterID, Kind: ref[0], ResourceID: ref[1]})
-		if err != nil {
-			return databaseFailure(err)
-		}
-		if !freshResource(r.State, r.ObservedAt, now, freshness) || r.ProviderUid == "" {
-			return unavailable()
-		}
+	if row.State == "deleting" || row.State == "deleted" {
+		return biz.Fail(biz.ResourceBusy, "address pool is being removed")
 	}
 	return nil
 }
@@ -673,30 +649,3 @@ func poolUnavailableReason(scope string) biz.Reason {
 
 // Public hashing retains the legacy JSON shape, including nil optional fields.
 // Intranet evidence additionally pins the default router and destination intent.
-func addressPoolTopologyHash(pool sqlcgen.NetworkPublicPool, topology sqlcgen.PublicPoolTopologyRow) string {
-	if pool.Scope != "intranet" {
-		return contentHash(topology)
-	}
-	return contentHash(struct {
-		Topology                             sqlcgen.PublicPoolTopologyRow
-		Scope, DefaultVPCName, DefaultVPCUID string
-		IntranetNetworks                     []string
-	}{topology, pool.Scope, pool.DefaultVpcName, pool.DefaultVpcUid, pool.IntranetNetworks})
-}
-
-func addressPoolTopologyFor(ctx context.Context, q *sqlcgen.Queries, pool sqlcgen.NetworkPublicPool, topology sqlcgen.PublicPoolTopologyRow) (string, error) {
-	legacy := addressPoolTopologyHash(pool, topology)
-	s, err := q.PublicPoolVirtualSwitchTopology(ctx, sqlcgen.PublicPoolVirtualSwitchTopologyParams{ClusterID: pool.ClusterID, ResourceID: pool.ResourceID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return legacy, nil
-	}
-	if err != nil {
-		return "", databaseFailure(err)
-	}
-	// Dynamic patch/RV progress is deliberately absent from this identity proof.
-	// It binds the immutable switch/device membership and actual v0.9 mapping.
-	return contentHash(struct {
-		LegacyFingerprint, ProviderProfile, SwitchID, BindingID, GroupName, MembershipFingerprint, DeviceFingerprint string
-		BindingVersion                                                                                               int64
-	}{legacy, "kcn-v0.9-vcluster.device:br-device", s.SwitchID, textValue(s.BindingID), s.GroupName, s.MembershipFingerprint, s.DeviceFingerprint, s.BindingVersion}), nil
-}

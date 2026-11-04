@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
-	"time"
 )
 
 func (p *Postgres) ClaimAttachment(ctx context.Context, owner string, lease time.Duration) (biz.AttachmentWork, bool, error) {
@@ -50,7 +52,7 @@ func (p *Postgres) ClaimAttachment(ctx context.Context, owner string, lease time
 	if e != nil {
 		return biz.AttachmentWork{}, false, databaseFailure(e)
 	}
-	work := biz.AttachmentWork{Now: now, Requirement: biz.ObservationRequirement{RequestedGeneration: a.RequestedGeneration, AppliedAt: a.EvidenceAppliedAt, Hash: a.EvidenceHash}, Attachment: value, Owner: owner, Epoch: a.Epoch, Relations: a.ProviderRelations, ProtocolBlocked: a.ProtocolBlocked}
+	work := biz.AttachmentWork{Now: now, ClaimedGeneration: a.RequestedGeneration, Attachment: value, Owner: owner, Epoch: a.Epoch}
 	if e = json.Unmarshal(a.Plan, &work.Plan); e != nil {
 		return biz.AttachmentWork{}, false, databaseFailure(e)
 	}
@@ -60,92 +62,82 @@ func (p *Postgres) ClaimAttachment(ctx context.Context, owner string, lease time
 	return work, true, nil
 }
 func (p *Postgres) FinishAttachment(ctx context.Context, w biz.AttachmentWork, progress biz.AttachmentProgress) error {
-	tx, e := p.pool.Begin(ctx)
-	if e != nil {
-		return databaseFailure(e)
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return databaseFailure(err)
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	a, e := lockAttachmentParents(ctx, q, w.Attachment.TenantID, w.Attachment.ID)
-	if e != nil {
-		return databaseFailure(e)
+	row, err := lockAttachmentParents(ctx, q, w.Attachment.TenantID, w.Attachment.ID)
+	if err != nil {
+		return databaseFailure(err)
 	}
-	if a.Version != w.Attachment.Version || a.Epoch != w.Epoch || textValue(a.LeaseOwner) != w.Owner {
+	if row.Version != w.Attachment.Version || row.Epoch != w.Epoch || textValue(row.LeaseOwner) != w.Owner {
 		return biz.ErrLeaseLost
 	}
-	if progress.Observed && !progress.Proof.Covers(w.Requirement) {
+	old := biz.AttachmentState(row.State)
+	valid := old == progress.State ||
+		(old == biz.Reserved && (progress.State == biz.Attached || progress.State == biz.Releasing || progress.State == biz.Released)) ||
+		(old == biz.Attached && (progress.State == biz.Reserved || progress.State == biz.Releasing || progress.State == biz.Released)) ||
+		(old == biz.Releasing && progress.State == biz.Released)
+	if !valid || (row.FinalizationID != nil && *row.FinalizationID != progress.FinalizationID) {
 		return biz.ErrLeaseLost
 	}
-	old := biz.AttachmentState(a.State)
-	valid := old == progress.State || (old == biz.Reserved && (progress.State == biz.Attached || progress.State == biz.Releasing || progress.State == biz.Released)) || (old == biz.Attached && (progress.State == biz.Releasing || progress.State == biz.Released)) || (old == biz.Releasing && progress.State == biz.Released)
-	managed, e := managedAttachment(ctx, tx, a)
-	if e != nil {
-		return e
+	current, err := managedAttachment(ctx, tx, row)
+	if err != nil {
+		return err
 	}
-	isManaged := (managed.WorkloadMode == "controller_managed" || managed.WorkloadMode == "vm_managed")
-	if isManaged && old == biz.Attached && progress.State == biz.Reserved {
-		valid = true
-	}
-	if !valid || (!isManaged && a.PodUid != "" && a.PodUid != progress.PodUID) || (a.FinalizationID != nil && *a.FinalizationID != progress.FinalizationID) {
-		return biz.ErrLeaseLost
-	}
-	protocolBlocked := a.ProtocolBlocked || progress.ProtocolBlocked
-	if progress.ProtocolRecovered {
-		// Recheck the existing high water and Confirm ACK while the attachment
-		// parents/version/lease are locked. No caller can clear a fence merely
-		// by setting ProtocolBlocked=false in a stale progress value.
-		openRecovery, closedRecovery := false, false
-		if progress.ConsumerSnapshot != nil {
-			recoveryWork := w
-			recoveryWork.Attachment = managed
-			recoveryWork.Requirement.AppliedAt = a.EvidenceAppliedAt
-			openRecovery = progress.State == biz.Attached && biz.ManagedProtocolRecoveryMatches(managed, *progress.ConsumerSnapshot, progress.PodName, progress.PodUID)
-			closedRecovery = progress.State == biz.Released && progress.PodName == "" && progress.PodUID == "" && biz.ClosedProtocolRecoveryProof(recoveryWork, progress.Proof) && biz.ClosedProtocolRecoveryMatches(managed, *progress.ConsumerSnapshot)
-			if closedRecovery {
-				var relations []attachmentRelation
-				if len(progress.Relations) == 0 || json.Unmarshal(progress.Relations, &relations) != nil {
-					closedRecovery = false
-				}
-				for _, relation := range relations {
-					if relation.Current || relation.AddressEligible {
-						closedRecovery = false
-					}
-				}
-			}
-		}
-		if !isManaged || !a.ProtocolBlocked || progress.ProtocolBlocked || !progress.Observed || progress.Reason != "" || (!openRecovery && !closedRecovery) {
-			return biz.ErrLeaseLost
-		}
-		protocolBlocked = false
-	}
-	if isManaged {
-		if progress.ConsumerSnapshot != nil {
-			if e = persistConsumerSnapshot(ctx, tx, managed, *progress.ConsumerSnapshot); e != nil {
-				return e
-			}
-		}
-		if a.ConfirmUid != "" && a.ConfirmUid != progress.PodUID {
-			if _, e = tx.Exec(ctx, `UPDATE network_attachments SET confirm_uid='' WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.AttachmentID); e != nil {
-				return databaseFailure(e)
-			}
+	if progress.ConsumerSnapshot != nil && (current.WorkloadMode == "controller_managed" || current.WorkloadMode == "vm_managed") {
+		if err = persistConsumerSnapshot(ctx, tx, current, *progress.ConsumerSnapshot); err != nil {
+			return err
 		}
 	}
 	var finalization *string
 	if progress.FinalizationID != "" {
 		finalization = &progress.FinalizationID
 	}
-	stoppedReservation := progress.State == biz.Reserved && w.Attachment.WorkloadMode == "vm_managed" && progress.ConsumerSnapshot != nil && progress.ConsumerSnapshot.State == "open" && progress.ConsumerSnapshot.DesiredRunState == "stopped"
-	park := progress.Observed && progress.Reason == "" && !protocolBlocked && !progress.Backoff && (progress.State == biz.Released || (p.sharedObservation && (progress.State == biz.Attached || stoppedReservation)))
-	row, e := q.FinishAttachment(ctx, sqlcgen.FinishAttachmentParams{TenantID: a.TenantID, AttachmentID: a.AttachmentID, Version: a.Version, Epoch: w.Epoch, Owner: w.Owner, State: string(progress.State), Reason: string(progress.Reason), ProtocolBlocked: protocolBlocked, PodName: progress.PodName, PodUid: progress.PodUID, FinalizationID: finalization, ProviderRelations: progress.Relations, Observed: progress.Observed, ObservedAt: proofTime(progress.Observed, progress.Proof), CoveredGeneration: coveredGeneration(progress.Observed, progress.Proof, w.Requirement), EvidenceHash: progress.Proof.Hash, Backoff: progress.Backoff, Park: park, DelayMicros: progress.NextDelay.Microseconds()})
-	if errors.Is(e, pgx.ErrNoRows) {
+	now, err := q.DatabaseTime(ctx)
+	if err != nil {
+		return databaseFailure(err)
+	}
+	addresses := attachmentAddresses(current)
+	if progress.Addresses != nil {
+		addresses = *progress.Addresses
+	}
+	park := progress.State == biz.Released || (progress.Observed && !progress.Backoff && (progress.State == biz.Attached || progress.State == biz.Reserved))
+	updated, err := q.FinishAttachment(ctx, sqlcgen.FinishAttachmentParams{
+		TenantID: row.TenantID, AttachmentID: row.AttachmentID, Version: row.Version, Epoch: w.Epoch, Owner: w.Owner,
+		State: string(progress.State), Reason: string(progress.Reason), PodName: progress.PodName, PodUid: progress.PodUID, FinalizationID: finalization,
+		Observed: progress.Observed, Now: now, ObservationError: string(progress.ObservationError), ClaimedGeneration: w.ClaimedGeneration,
+		UpdateAddresses: progress.Addresses != nil, CurrentVnicName: addresses.CurrentVNicName, CurrentVnicUid: addresses.CurrentVNicUID,
+		CurrentMacAddress: addresses.CurrentMACAddress, CurrentIps: append([]string{}, addresses.CurrentIPs...),
+		Backoff: progress.Backoff, Park: park, DelayMicros: progress.NextDelay.Microseconds(),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return biz.ErrLeaseLost
 	}
-	if e != nil {
-		return databaseFailure(e)
+	if err != nil {
+		return databaseFailure(err)
 	}
-	if row.State != a.State || row.Reason != a.Reason || row.PodUid != a.PodUid || textValue(row.FinalizationID) != textValue(a.FinalizationID) || string(row.ProviderRelations) != string(a.ProviderRelations) {
-		if e = attachmentHistory(ctx, q, row, "observed"); e != nil {
-			return databaseFailure(e)
+	changed := updated.State != row.State || updated.Reason != row.Reason || updated.PodUid != row.PodUid || textValue(updated.FinalizationID) != textValue(row.FinalizationID) ||
+		updated.CurrentVnicName != row.CurrentVnicName || updated.CurrentVnicUid != row.CurrentVnicUid || updated.CurrentMacAddress != row.CurrentMacAddress || !slices.Equal(updated.CurrentIps, row.CurrentIps)
+	if changed {
+		if err = attachmentHistory(ctx, q, updated, "observed"); err != nil {
+			return databaseFailure(err)
+		}
+	}
+	if updated.CurrentVnicName != row.CurrentVnicName || updated.CurrentVnicUid != row.CurrentVnicUid || updated.PodUid != row.PodUid || updated.State != row.State {
+		targetType := ""
+		switch updated.ConsumerType {
+		case biz.ConsumerContainerInstance:
+			targetType = "container"
+		case biz.ConsumerVirtualMachine:
+			targetType = "vm"
+		}
+		if targetType != "" {
+			if _, err = q.NotifySecurityGroupTarget(ctx, sqlcgen.NotifySecurityGroupTargetParams{TenantID: row.TenantID, TargetType: targetType, TargetID: row.InstanceID}); err != nil {
+				return databaseFailure(err)
+			}
 		}
 	}
 	return databaseFailure(tx.Commit(ctx))

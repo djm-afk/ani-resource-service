@@ -19,11 +19,7 @@ func (e *Egress) GetIntranetPoolDefaults(ctx context.Context) (PublicPoolConfig,
 	if _, err := e.authorization.Platform(ctx); err != nil {
 		return PublicPoolConfig{}, err
 	}
-	infra, ok := e.infrastructure.(IntranetPoolDefaultsInfrastructure)
-	if !ok {
-		return PublicPoolConfig{}, Fail(DependencyUnavailable, "intranet infrastructure facts are unavailable")
-	}
-	return infra.GetIntranetPoolDefaults(ctx)
+	return e.defaults.GetIntranetPoolDefaults(ctx)
 }
 
 func NormalizeIntranetPool(p PublicPoolConfig) (PublicPoolConfig, error) {
@@ -44,7 +40,7 @@ func NormalizeIntranetPool(p PublicPoolConfig) (PublicPoolConfig, error) {
 	if err != nil || !gw.Is4() || gw.String() != p.OVNGatewayIP || !cidr.Contains(gw) || gw == cidr.Addr() || gw == lastPoolAddress(cidr) {
 		return bad()
 	}
-	if len(p.ExcludedIPs) > 1024 || len(p.IntranetNetworks) == 0 || len(p.IntranetNetworks) > 1024 {
+	if len(p.ExcludedIPs) > 1024 || len(p.IntranetNetworks) > 1024 {
 		return bad()
 	}
 	p.ExcludedIPs = append(slices.Clone(p.ExcludedIPs), p.OVNGatewayIP)
@@ -92,5 +88,5 @@ func (e *Egress) GetPlatformCapabilities(ctx context.Context) (PlatformNetworkCa
 	if !ok {
 		return PlatformNetworkCapabilities{}, Fail(DependencyUnavailable, "platform capability repository is unavailable")
 	}
-	return repository.GetPlatformCapabilities(ctx, e.freshness)
+	return repository.GetPlatformCapabilities(ctx)
 }

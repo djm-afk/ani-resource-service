@@ -22,6 +22,7 @@ import (
 
 type Postgres struct {
 	pool                  *pgxpool.Pool
+	notifyNetwork         func(context.Context, string, string) error
 	newIntentsEnabled     bool
 	pvcReferenceConflicts atomic.Uint64
 	pvcUnknownWrites      atomic.Uint64
@@ -575,6 +576,9 @@ func (p *Postgres) Finish(ctx context.Context, w biz.Work, progress biz.Progress
 		if !i.CleanupCompletedAt.IsZero() {
 			progress.Instance.CleanupCompletedAt = i.CleanupCompletedAt
 		}
+		if i.Network != nil && progress.Instance.Network != nil && i.Network.AttachmentID == progress.Instance.Network.AttachmentID && i.Network.NotifiedSnapshotRevision > progress.Instance.Network.NotifiedSnapshotRevision {
+			progress.Instance.Network.NotifiedSnapshotRevision = i.Network.NotifiedSnapshotRevision
+		}
 		i = progress.Instance
 		if e = tx.QueryRow(ctx, "SELECT NOT EXISTS(SELECT 1 FROM instance.borrowed_volume_references WHERE tenant_id=$1 AND instance_id=$2 AND state IN ('pending','active','retiring'))", i.TenantID, i.ID).Scan(&i.VolumeReferencesReleased); e != nil {
 			return e
@@ -666,10 +670,18 @@ func (p *Postgres) Finish(ctx context.Context, w biz.Work, progress biz.Progress
 	if progress.Next == 0 {
 		delay = int64((365 * 24 * time.Hour) / time.Millisecond)
 	}
+	// Reserve the retry before committing the snapshot. A crash between commit
+	// and notification must leave the ordinary owner task runnable.
+	if p.notifyNetwork != nil && networkNotificationPending(i.Network) && delay > 1000 {
+		delay = 1000
+	}
 	if _, e = tx.Exec(ctx, "UPDATE instance.instance_work SET lease_until='-infinity',lease_owner='',due_at=clock_timestamp()+($3::bigint*interval '1 millisecond') WHERE tenant_id=$1 AND instance_id=$2", i.TenantID, i.ID, delay); e != nil {
 		return e
 	}
-	return tx.Commit(ctx)
+	if e = tx.Commit(ctx); e != nil {
+		return e
+	}
+	return p.notifyNetworkSubmission(ctx, i)
 }
 
 var _ biz.Repository = (*Postgres)(nil)

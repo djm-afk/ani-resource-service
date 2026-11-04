@@ -42,9 +42,11 @@ func (n *powerVMNative) Restart(context.Context, biz.VM) error { n.restarts++; r
 
 type powerVMNetwork struct{ preparingVMNetwork }
 
-func (n powerVMNetwork) Observe(context.Context, biz.VM, biz.Observation) ([]biz.Address, error) {
+func (n powerVMNetwork) CurrentAddresses(context.Context, biz.VM) ([]biz.Address, error) {
 	return nil, nil
 }
+
+func (n powerVMNetwork) Confirm(context.Context, biz.VM, biz.Observation) error { return nil }
 
 func TestVMPowerUnknownRecoveryDoesNotRepeatRestart(t *testing.T) {
 	ctx := context.Background()

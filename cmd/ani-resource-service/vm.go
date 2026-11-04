@@ -55,7 +55,7 @@ func runVMMigration() error {
 	defer cancel()
 	return data.Migrate(ctx, strings.TrimSpace(string(raw)), os.Getenv("ANI_VM_RUNTIME_ROLE"))
 }
-func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, repository *networkdata.Postgres, provider *networkdata.KCProvider, attachments *networkbiz.Attachments, instances *instanceComponents, legacy networkbiz.InstanceConsumer, freshness time.Duration, manualNetwork *networkbiz.Network) (*vmComponents, networkbiz.InstanceConsumer, error) {
+func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, repository *networkdata.Postgres, provider *networkdata.KCProvider, attachments *networkbiz.Attachments, instances *instanceComponents, legacy networkbiz.InstanceConsumer, manualNetwork *networkbiz.Network) (*vmComponents, networkbiz.InstanceConsumer, error) {
 	path := os.Getenv("ANI_VM_CONFIG_FILE")
 	if path == "" {
 		return nil, networkbiz.NewVMConsumerRouter(legacy, nil), nil
@@ -77,7 +77,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	if e = provider.ConfigureVMAutoNetwork(networkdata.VMAutoNetworkConfig{ServiceAccount: cfg.Service.ServiceAccount, ServerSocket: cfg.NetworkServerSocket}); e != nil {
 		return nil, nil, e
 	}
-	if e = repository.SetVMNetworkResolver(provider, freshness); e != nil {
+	if e = repository.SetVMNetworkResolver(provider); e != nil {
 		return nil, nil, e
 	}
 	dsn, e := readImagePrivateFile(cfg.DatabaseDSNFile)
@@ -89,6 +89,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	if e != nil {
 		return nil, nil, e
 	}
+	repo.UseNetworkNotifier(attachments.Notify)
 	valid := false
 	defer func() {
 		if !valid {
@@ -122,7 +123,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	if e = native.ConfigureLogs(clientConfig, cfg.Service.LogLimits); e != nil {
 		return nil, nil, e
 	}
-	networkPort, e := data.NewNetwork(attachments, repo, native)
+	networkPort, e := data.NewNetwork(attachments, repo)
 	if e != nil {
 		return nil, nil, e
 	}
@@ -144,7 +145,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 			slog.WarnContext(ctx, "VM network preflight failed", "tenant_id", tenant, "vpc_id", s.VPCID, "subnet_id", s.SubnetID, "stage", "network_selection", "reason", "VM_DEPENDENCY_CHANGED")
 			return biz.NetworkSelection{}, biz.ErrChanged
 		}
-		plan, e := repository.ResolveVMNetworkSelection(ctx, networkbiz.PrepareAttachment{TenantID: tenant, VPCID: s.VPCID, SubnetID: s.SubnetID, ClusterID: cluster, Namespace: namespace, WorkloadMode: "vm_managed", VMExpectation: &networkbiz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}}, freshness)
+		plan, e := repository.ResolveVMNetworkSelection(ctx, networkbiz.PrepareAttachment{TenantID: tenant, VPCID: s.VPCID, SubnetID: s.SubnetID, ClusterID: cluster, Namespace: namespace, WorkloadMode: "vm_managed", VMExpectation: &networkbiz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}})
 		if e != nil {
 			return biz.NetworkSelection{}, e
 		}

@@ -99,6 +99,7 @@ message VPC {
   google.protobuf.Timestamp updated_at = 9;
   int64 version = 10;
   google.protobuf.Timestamp observed_at = 11;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 12;
   string last_operation_id = 13;
   // Non-deleted subnets counted in the same query snapshot.
@@ -121,6 +122,7 @@ message VPCPublicEgress {
   bool desired_enabled = 8;
   optional bool applied_enabled = 9;
   google.protobuf.Timestamp observed_at = 10;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 11;
   int64 version = 12;
   string last_operation_id = 13;
@@ -129,10 +131,11 @@ message VPCPublicEgress {
 // address-pool selection are deliberately not tenant-configurable or exposed.
 message VPCBaseConnectivity {
   // missing, pending, ready, degraded, deleting, deleted or unknown.
-  // ready means fresh configuration evidence, not traffic health.
+  // Configuration state reported by KCN; the timestamp is diagnostic only.
   string state = 1;
   string reason = 2;
   google.protobuf.Timestamp observed_at = 3;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 4;
   string reason_message = 5;
 }
@@ -210,6 +213,7 @@ message Subnet {
   google.protobuf.Timestamp updated_at = 9;
   int64 version = 10;
   google.protobuf.Timestamp observed_at = 11;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 12;
   string last_operation_id = 13;
   string vpc_id = 14;
@@ -327,7 +331,7 @@ message Attachment {
  google.protobuf.Timestamp released_at = 22;
  string workload_mode = 23;
  int64 snapshot_revision = 24;
- WorkloadReference root_controller = 25;
+ WorkloadReference root_controller = 25 [deprecated = true];
  VMPrimaryPlan vm_primary = 26;
  repeated VMCurrentAddress vm_current_addresses = 27;
 }
@@ -368,7 +372,7 @@ message ConfirmAttachmentResponse { Attachment attachment = 1; }
 message ReleaseAttachmentResponse { Attachment attachment = 1; }
 
 // One current address observed by Network for a consumer. Empty always means
-// Network has no eligible observation, never "not attached to the network".
+// Network has no current address output; the management attachment remains independent.
 message NetworkAddress {
  string nic_name = 1;
  string address = 2;
@@ -387,6 +391,7 @@ message AssociatedInstance {
  string attachment_id = 8;
  string attachment_state = 9;
  string attachment_reason = 10;
+ // Last read failed or no successful observation is recorded; never an age or admission gate.
  bool observation_stale = 11;
  google.protobuf.Timestamp observed_at = 12;
  repeated NetworkAddress addresses = 13;
@@ -437,14 +442,14 @@ message GetSubmissionResponse {
  SubmissionState state = 9;
  string finalization_id = 10;
  repeated string pod_uids = 11;
- repeated string controller_uids = 12;
+ repeated string controller_uids = 12 [deprecated = true];
  google.protobuf.Timestamp closed_at = 13;
  int64 snapshot_revision = 14;
  string desired_run_state = 15;
- WorkloadReference root_controller = 16;
- repeated ControllerReference controllers = 17;
+ WorkloadReference root_controller = 16 [deprecated = true];
+ repeated ControllerReference controllers = 17 [deprecated = true];
  repeated PodReference current_pods = 18;
- repeated PodReference retired_pods = 19;
+ repeated PodReference retired_pods = 19 [deprecated = true];
 }
 
 message ListVPCCIDRPresetsRequest { string tenant_id = 1; }

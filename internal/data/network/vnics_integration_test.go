@@ -2,7 +2,6 @@ package data_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -56,6 +55,9 @@ func manualVNic(t *testing.T, f attachmentFixture, key string) biz.VNic {
 			o["spec"].(map[string]any)["macAddress"] = fmt.Sprintf("02:%s:%s:%s:%s:%s", mac[0:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10])
 			o["status"] = map[string]any{"primaryIP": "10.42.1.42", "ips": map[string]any{"allocated-ip": "10.42.1.42"}, "conditions": []any{map[string]any{"type": "Valid", "status": "True"}, map[string]any{"type": "Initialized", "status": "True"}, map[string]any{"type": "Ready", "status": "True"}}}
 			f.api.Mu.Unlock()
+			if e := f.p.NotifyResource(ctx, got.TenantID, got.ID); e != nil {
+				t.Fatal(e)
+			}
 			for time.Now().Before(deadline) {
 				time.Sleep(2 * time.Millisecond)
 				if _, e = f.resourceWorker.Step(ctx); e != nil {
@@ -233,7 +235,6 @@ func TestManualVNicPGCurrentProjectionUsesRetainedIdentity(t *testing.T) {
 	c := managedConsumerFor(a, "manual-pod", 1)
 	c.ManualVNics = []biz.ManualVNicReference{{VNicID: v.ID, ProviderName: v.ProviderName, ProviderUID: v.ProviderUID}}
 	f.api.Mu.Lock()
-	managedControllerObjects(f, a, c)
 	pod := managedPodObject(a, "manual-pod")
 	pod["metadata"].(map[string]any)["annotations"].(map[string]any)["networking.kubercloud.com/vnic"] = v.ProviderName
 	pod["status"].(map[string]any)["podIP"] = v.PrimaryIP
@@ -244,18 +245,5 @@ func TestManualVNicPGCurrentProjectionUsesRetainedIdentity(t *testing.T) {
 	a = f.step(t, a.ID)
 	if a.State != biz.Attached || a.CurrentVNicName != v.ProviderName || a.CurrentVNicUID != v.ProviderUID || a.CurrentMACAddress != v.MACAddress || len(a.CurrentIPs) != 1 || a.CurrentIPs[0] != v.PrimaryIP {
 		t.Fatal("manual current view lost the verified runtime VNIC identity", a)
-	}
-	var raw []byte
-	if e := f.owner.QueryRow(ctx, `SELECT provider_relations FROM network_attachments WHERE tenant_id=$1 AND attachment_id=$2`, a.TenantID, a.ID).Scan(&raw); e != nil {
-		t.Fatal(e)
-	}
-	var relations []map[string]any
-	if e := json.Unmarshal(raw, &relations); e != nil {
-		t.Fatal(e)
-	}
-	for _, r := range relations {
-		if r["Kind"] == "VNic" && r["UID"] == v.ProviderUID && r["OwnerUID"] != "" {
-			t.Fatal("manual VNIC was assigned a fabricated Pod owner", r)
-		}
 	}
 }

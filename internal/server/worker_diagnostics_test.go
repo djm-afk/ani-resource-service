@@ -59,7 +59,7 @@ func TestLoadBalancerWorkerObservationFailureReachesFormalDiagnostics(t *testing
 		if finishErr != nil || !errors.Is(progress.ProviderError, cause) {
 			t.Errorf("observation cause did not survive persistence: %v, %v", progress.ProviderError, finishErr)
 		}
-		if progress.State != biz.Available || progress.Reason != biz.ProviderUnavailable || !progress.Backoff || progress.Observed || !progress.Proof.CollectedAt.IsZero() {
+		if progress.State != biz.Available || progress.Reason != "" || progress.ObservationError != biz.ProviderUnavailable || !progress.Backoff || progress.Observed {
 			t.Errorf("diagnostics changed observation failure behavior: %+v", progress)
 		}
 		o.ObserveWork(ctx, logger, work, progress, finishErr)
@@ -86,7 +86,7 @@ func TestWorkerDiagnosticsLogProviderCauseAndResourceContext(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&output, nil))
 	work := biz.Work{Resource: biz.ResourceWork{Kind: "vlan", ID: "vlan-id"}, BindingID: "binding-id", Operation: biz.Operation{ID: "operation-id"}}
-	o.ObserveWork(context.Background(), logger, work, biz.Progress{Reason: biz.ProviderUnavailable, ProviderError: &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("client rate limiter wait: context deadline exceeded")}}, nil)
+	o.ObserveWork(context.Background(), logger, work, biz.Progress{ObservationError: biz.ProviderUnavailable, ProviderError: &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("client rate limiter wait: context deadline exceeded")}}, nil)
 	for _, want := range []string{"client rate limiter wait: context deadline exceeded", "vlan-id", "binding-id", "operation-id"} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing diagnostic %q: %s", want, output.String())
@@ -103,9 +103,9 @@ func TestVirtualSwitchDiagnosticsLogNodeCauseWithoutClaimingObservation(t *testi
 	var output bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&output, nil))
 	work := biz.VirtualSwitchWork{Switch: biz.VirtualSwitch{EgressMetadata: biz.EgressMetadata{ID: "switch-id", LastOperationID: "operation-id"}, BindingID: "binding-id", BindingState: "configured"}}
-	progress := biz.VirtualSwitchProgress{BindingState: "configured", Reason: biz.ProviderUnavailable, Action: "inspect", NodeName: "node-a", NodeUID: "node-uid", ProviderError: &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("node network audit invalidated after one fresh collection")}}
+	progress := biz.VirtualSwitchProgress{BindingState: "configured", ObservationError: biz.ProviderUnavailable, Action: "inspect", NodeName: "node-a", NodeUID: "node-uid", ProviderError: &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("node GET timed out")}}
 	o.ObserveVirtualSwitchWork(context.Background(), logger, work, progress, nil)
-	for _, want := range []string{"node network audit invalidated after one fresh collection", "switch-id", "binding-id", "operation-id", "node-a", "node-uid", `"action":"inspect"`, `"observed":false`, `"result":"provider_error"`} {
+	for _, want := range []string{"node GET timed out", "switch-id", "binding-id", "operation-id", "node-a", "node-uid", `"action":"inspect"`, `"observed":false`, `"result":"read_error"`} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing diagnostic %q: %s", want, output.String())
 		}

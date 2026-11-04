@@ -1,12 +1,12 @@
 -- Platform tables do not carry a synthetic tenant. Cluster scope is mandatory.
 -- name: GetPlatform :one
-SELECT * FROM network_platform_resources WHERE cluster_id=$1 AND kind=$2 AND resource_id=$3;
+SELECT sqlc.embed(p),coalesce(r.observation_error,'')::text AS observation_error FROM network_platform_resources p LEFT JOIN network_platform_reconciliations r USING(resource_id) WHERE p.cluster_id=$1 AND p.kind=$2 AND p.resource_id=$3;
 
 -- name: LockPlatform :one
 SELECT * FROM network_platform_resources WHERE cluster_id=$1 AND kind=$2 AND resource_id=$3 FOR UPDATE;
 
 -- name: ListPlatform :many
-SELECT r.* FROM network_platform_resources r WHERE r.cluster_id=sqlc.arg(cluster_id) AND r.kind=sqlc.arg(kind)
+SELECT sqlc.embed(r),coalesce(task.observation_error,'')::text AS observation_error FROM network_platform_resources r LEFT JOIN network_platform_reconciliations task USING(resource_id) WHERE r.cluster_id=sqlc.arg(cluster_id) AND r.kind=sqlc.arg(kind)
  AND (r.kind<>'public_pool' OR EXISTS (SELECT 1 FROM network_public_pools pool WHERE pool.cluster_id=r.cluster_id AND pool.resource_id=r.resource_id AND pool.scope='public'))
  AND (sqlc.arg(name_filter)::text='' OR r.name=sqlc.arg(name_filter))
  AND ((sqlc.arg(state_filter)::text='' AND r.state<>'deleted') OR r.state=sqlc.arg(state_filter))
@@ -133,7 +133,7 @@ WHERE operation_id=sqlc.arg(operation_id) AND resource_id=sqlc.arg(resource_id) 
 UPDATE network_platform_resources SET pending_action=sqlc.arg(action),pending_since=clock_timestamp(),
  provider_uid=CASE WHEN provider_uid='' THEN sqlc.arg(identity)::text ELSE provider_uid END
 WHERE resource_id=sqlc.arg(resource_id) AND binding_id=sqlc.arg(binding_id) AND (provider_uid='' OR provider_uid=sqlc.arg(identity))
- AND ((sqlc.arg(action)::text='create' AND pending_action='') OR
+ AND ((sqlc.arg(action)::text='create' AND (pending_action='' OR (pending_action='create' AND provider_uid=''))) OR
  (sqlc.arg(action)='delete' AND (pending_action IN ('','delete') OR sqlc.arg(identity)::text<>'')));
 
 -- name: AdvancePlatform :one
@@ -152,34 +152,14 @@ WHERE operation_id=sqlc.arg(operation_id) AND resource_id=sqlc.arg(resource_id) 
 
 -- name: ReleasePlatformLease :execrows
 UPDATE network_platform_reconciliations SET lease_owner=NULL,lease_until=NULL,
- processed_generation=greatest(processed_generation,sqlc.arg(covered_generation)::bigint),
- evidence_hash=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.arg(evidence_hash)::text ELSE evidence_hash END,
- evidence_applied_at=CASE WHEN sqlc.arg(observed)::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
- retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
- next_run_at=CASE WHEN requested_generation>sqlc.arg(covered_generation)::bigint AND NOT sqlc.arg(backoff)::boolean THEN clock_timestamp() WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
+ processed_generation=greatest(processed_generation,sqlc.arg(claimed_generation)::bigint),
+ observation_error=CASE WHEN sqlc.arg(observed)::boolean THEN '' WHEN sqlc.arg(observation_error)::text<>'' THEN sqlc.arg(observation_error)::text ELSE observation_error END,
+ retry_not_before=CASE WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN sqlc.arg(terminal)::boolean THEN 'infinity'::timestamptz
+   WHEN sqlc.arg(backoff)::boolean THEN sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond'
+   WHEN requested_generation>sqlc.arg(claimed_generation)::bigint THEN sqlc.arg(now)::timestamptz
+   WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
 WHERE resource_id=sqlc.arg(resource_id) AND lease_owner=sqlc.arg(owner)::uuid AND lease_epoch=sqlc.arg(epoch) AND lease_until>clock_timestamp();
-
--- name: NotifyPlatform :execrows
-UPDATE network_platform_reconciliations SET requested_generation=requested_generation+1,
- next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp())) WHERE resource_id=$1;
-
--- name: ObservationPlatformResources :many
-SELECT p.*,r.requested_generation,(p.state<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id WHERE p.cluster_id=$1;
-
--- name: PublicPoolTopology :one
-SELECT p.resource_id,p.cluster_id,p.config_revision,p.mode,p.gateway_id,p.cidr,p.ovn_gateway_ip,p.excluded_ips,p.vlan_network_id,p.upstream_gateway_ip,
- r.provider_uid AS pool_uid,r.provider_images,COALESCE(g.provider_uid,'')::text AS gateway_uid,COALESCE(v.provider_uid,'')::text AS vlan_uid,
- COALESCE(d.provider_uid,'')::text AS device_config_uid
-FROM network_public_pools p
-JOIN network_platform_resources r ON r.cluster_id=p.cluster_id AND r.resource_id=p.resource_id
-LEFT JOIN network_platform_resources g ON g.cluster_id=p.cluster_id AND g.resource_id=p.gateway_id
-LEFT JOIN network_platform_resources v ON v.cluster_id=p.cluster_id AND v.resource_id=p.vlan_network_id
-LEFT JOIN network_vlan_networks vl ON vl.cluster_id=p.cluster_id AND vl.resource_id=p.vlan_network_id
-LEFT JOIN network_platform_resources d ON d.cluster_id=vl.cluster_id AND d.resource_id=vl.device_id
-WHERE p.cluster_id=$1 AND p.resource_id=$2;
-
--- name: SavePlatformImages :execrows
-UPDATE network_platform_resources SET provider_images=$3 WHERE cluster_id=$1 AND resource_id=$2;
 
 -- name: RetireVlanSlot :execrows
 UPDATE network_vlan_networks SET retired=true WHERE cluster_id=$1 AND resource_id=$2;
@@ -199,7 +179,7 @@ INSERT INTO network_default_intranet_pools(cluster_id,pool_id) VALUES($1,$2)
 ON CONFLICT(cluster_id) DO UPDATE SET pool_id=excluded.pool_id,version=network_default_intranet_pools.version+1;
 
 -- name: ListIntranetPools :many
-SELECT r.* FROM network_platform_resources r JOIN network_public_pools p ON p.cluster_id=r.cluster_id AND p.resource_id=r.resource_id
+SELECT sqlc.embed(r),coalesce(task.observation_error,'')::text AS observation_error FROM network_platform_resources r LEFT JOIN network_platform_reconciliations task USING(resource_id) JOIN network_public_pools p ON p.cluster_id=r.cluster_id AND p.resource_id=r.resource_id
 WHERE r.cluster_id=sqlc.arg(cluster_id) AND p.scope='intranet'
  AND (sqlc.arg(name_filter)::text='' OR r.name=sqlc.arg(name_filter))
  AND ((sqlc.arg(state_filter)::text='' AND r.state<>'deleted') OR r.state=sqlc.arg(state_filter))

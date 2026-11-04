@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/netip"
-	"slices"
-	"strings"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"net/netip"
+	"slices"
+	"strings"
+	"time"
 )
 
 var _ biz.LoadBalancerRepository = (*Postgres)(nil)
@@ -47,10 +46,10 @@ func loadLBVersion(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.NetworkL
 	if err != nil {
 		return biz.LoadBalancer{}, databaseFailure(err)
 	}
-	v := biz.LoadBalancer{EgressMetadata: biz.EgressMetadata{ID: row.LbID, Name: row.Name, Description: row.Description, State: biz.ResourceState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, LastOperationID: *row.LastOperationID}, TenantID: row.TenantID, VPCID: row.VpcID, SubnetID: row.SubnetID, Exposure: row.Exposure, Flavor: row.Flavor, PublicEIPID: textValue(row.PublicEipID), PrivateIP: textValue(row.PrivateIp), Listener: biz.LoadBalancerListener{ID: l.ListenerID, Port: uint32(l.Port)}, Health: biz.LoadBalancerHealth{Port: uint32(c.HealthCheckPort), IntervalSeconds: uint32(c.IntervalSeconds), TimeoutSeconds: uint32(c.TimeoutSeconds), UnhealthyThreshold: uint32(c.UnhealthyThreshold), HealthyThreshold: uint32(c.HealthyThreshold)}, DesiredVersion: row.DesiredVersion, ProviderTargetVersion: lbProviderTargetVersion(row), AppliedVersion: row.AppliedVersion, ConfigurationState: row.ConfigurationState, DataPlaneState: row.DataPlaneState, DataPlaneObservedAt: row.DataPlaneObservedAt, Backends: make([]biz.LoadBalancerBackend, 0, len(members))}
+	v := biz.LoadBalancer{EgressMetadata: biz.EgressMetadata{ID: row.LbID, Name: row.Name, Description: row.Description, State: biz.ResourceState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, ObservationStale: row.ObservedAt == nil, LastOperationID: *row.LastOperationID}, TenantID: row.TenantID, VPCID: row.VpcID, SubnetID: row.SubnetID, Exposure: row.Exposure, Flavor: row.Flavor, PublicEIPID: textValue(row.PublicEipID), PrivateIP: textValue(row.PrivateIp), Listener: biz.LoadBalancerListener{ID: l.ListenerID, Port: uint32(l.Port)}, Health: biz.LoadBalancerHealth{Port: uint32(c.HealthCheckPort), IntervalSeconds: uint32(c.IntervalSeconds), TimeoutSeconds: uint32(c.TimeoutSeconds), UnhealthyThreshold: uint32(c.UnhealthyThreshold), HealthyThreshold: uint32(c.HealthyThreshold)}, DesiredVersion: row.DesiredVersion, ProviderTargetVersion: lbProviderTargetVersion(row), AppliedVersion: row.AppliedVersion, ConfigurationState: row.ConfigurationState, Backends: make([]biz.LoadBalancerBackend, 0, len(members))}
 	for _, item := range members {
 		m := item.NetworkLbMember
-		v.Backends = append(v.Backends, biz.LoadBalancerBackend{ID: m.MemberID, SubnetID: m.SubnetID, Address: m.Address, Port: uint32(m.Port), Weight: uint32(item.Weight), AttachmentID: m.AttachmentID, State: m.State, Reason: biz.Reason(m.Reason), ObservedAt: m.ObservedAt})
+		v.Backends = append(v.Backends, biz.LoadBalancerBackend{ID: m.MemberID, SubnetID: m.SubnetID, Address: m.Address, Port: uint32(m.Port), Weight: uint32(item.Weight), AttachmentID: m.AttachmentID, State: m.State, Reason: biz.Reason(m.Reason), ObservedAt: m.ObservedAt, ObservationStale: m.ObservedAt == nil})
 	}
 	if err = loadLBListenersVersion(ctx, q, row, configVersion, &v); err != nil {
 		return v, err
@@ -98,6 +97,22 @@ func lbResult(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.NetworkLoadBa
 	}
 	return biz.LoadBalancerResult{LoadBalancer: v, Operation: operation(op)}, nil
 }
+func lbReadDiagnostics(v biz.LoadBalancer, readError string) biz.LoadBalancer {
+	v.ObservationStale = v.ObservedAt == nil || readError != ""
+	for i := range v.Backends {
+		v.Backends[i].ObservationStale = v.Backends[i].ObservedAt == nil || readError != ""
+	}
+	for i := range v.Listeners {
+		for j := range v.Listeners[i].Backends {
+			member := &v.Listeners[i].Backends[j]
+			member.ObservationStale = member.ObservedAt == nil || readError != ""
+		}
+	}
+	if len(v.Listeners) != 0 {
+		v.Listener = v.Listeners[0]
+	}
+	return v
+}
 func (p *Postgres) GetLoadBalancer(ctx context.Context, tenant, id string) (biz.LoadBalancer, error) {
 	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -105,11 +120,12 @@ func (p *Postgres) GetLoadBalancer(ctx context.Context, tenant, id string) (biz.
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	row, err := q.GetLBInternal(ctx, sqlcgen.GetLBInternalParams{TenantID: tenant, LbID: id})
+	row, err := q.GetLB(ctx, sqlcgen.GetLBParams{TenantID: tenant, LbID: id})
 	if err != nil {
 		return biz.LoadBalancer{}, databaseFailure(err)
 	}
-	return loadLB(ctx, q, row)
+	v, err := loadLB(ctx, q, row.NetworkLoadBalancer)
+	return lbReadDiagnostics(v, row.ObservationError), err
 }
 func (p *Postgres) ListLoadBalancers(ctx context.Context, tenant string, f biz.LoadBalancerFilter) ([]biz.LoadBalancer, int64, error) {
 	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
@@ -128,11 +144,11 @@ func (p *Postgres) ListLoadBalancers(ctx context.Context, tenant string, f biz.L
 	}
 	out := make([]biz.LoadBalancer, 0, len(rows))
 	for _, row := range rows {
-		v, err := loadLB(ctx, q, row)
+		v, err := loadLB(ctx, q, row.NetworkLoadBalancer)
 		if err != nil {
 			return nil, 0, err
 		}
-		out = append(out, v)
+		out = append(out, lbReadDiagnostics(v, row.ObservationError))
 	}
 	return out, total, nil
 }
@@ -171,40 +187,33 @@ func lbReplay(ctx context.Context, q *sqlcgen.Queries, i biz.LoadBalancerIntent)
 }
 
 // The parent VPC lock serializes acceptance with all Attachment writes. These
-// are previously applied, fresh Pod -> VNic -> VNicIP identity facts. No remote
-// IO occurs in the transaction, and CIDR membership cannot stand in for identity.
-func lbBackendIdentity(ctx context.Context, q *sqlcgen.Queries, tenant, cluster, namespace, vpc string, b biz.LoadBalancerBackend, now time.Time, freshness time.Duration) (sqlcgen.InsertLBMemberParams, error) {
+// match the current Res consumer and its address projection. No remote IO
+// occurs in the transaction.
+func lbBackendIdentity(ctx context.Context, q *sqlcgen.Queries, tenant, cluster, namespace, vpc string, b biz.LoadBalancerBackend) (sqlcgen.InsertLBMemberParams, error) {
 	rows, err := q.ListLBBackendAttachments(ctx, sqlcgen.ListLBBackendAttachmentsParams{TenantID: tenant, SubnetID: b.SubnetID})
 	if err != nil {
 		return sqlcgen.InsertLBMemberParams{}, databaseFailure(err)
 	}
 	var found []sqlcgen.InsertLBMemberParams
 	for _, a := range rows {
-		if a.ClusterID != cluster || a.Namespace != namespace || a.VpcID != vpc || a.PodUid == "" || !freshTime(a.ObservedAt, now, freshness) {
+		if a.State != "attached" || a.ClusterID != cluster || a.Namespace != namespace || a.VpcID != vpc || a.PodUid == "" {
 			continue
 		}
-		var refs []attachmentRelation
-		if err = json.Unmarshal(a.ProviderRelations, &refs); err != nil {
-			return sqlcgen.InsertLBMemberParams{}, databaseFailure(err)
-		}
-		for _, ip := range refs {
-			if ip.Kind != "VNicIP" || ip.Namespace != namespace || ip.UID == "" || !ip.Current || !ip.AddressEligible || ip.Address != b.Address {
+		for _, address := range a.CurrentIps {
+			if address != b.Address {
 				continue
 			}
-			for _, nic := range refs {
-				if nic.Kind == "VNic" && nic.Namespace == namespace && nic.Current && nic.UID == ip.OwnerUID && nic.OwnerUID == a.PodUid {
-					found = append(found, sqlcgen.InsertLBMemberParams{TenantID: tenant, ClusterID: cluster, Namespace: namespace, VpcID: vpc, SubnetID: b.SubnetID, AttachmentID: a.AttachmentID, Address: b.Address, Port: int32(b.Port), PodUid: a.PodUid, VnicName: nic.Name, VnicUid: nic.UID, VnicipName: ip.Name, VnicipUid: ip.UID, ObservedAt: a.ObservedAt})
-				}
-			}
+			found = append(found, sqlcgen.InsertLBMemberParams{TenantID: tenant, ClusterID: cluster, Namespace: namespace, VpcID: vpc, SubnetID: b.SubnetID, AttachmentID: a.AttachmentID, Address: b.Address, Port: int32(b.Port), PodUid: a.PodUid, ObservedAt: a.ObservedAt})
+			break
 		}
 	}
 	if len(found) != 1 {
-		return sqlcgen.InsertLBMemberParams{}, biz.Fail(biz.BackendIdentityMismatch, "backend requires one fresh allocated Attachment address identity")
+		return sqlcgen.InsertLBMemberParams{}, biz.Fail(biz.BackendIdentityMismatch, "backend requires one current Attachment address")
 	}
 	return found[0], nil
 }
 func sameLBMember(m sqlcgen.NetworkLbMember, c sqlcgen.InsertLBMemberParams) bool {
-	return m.SubnetID == c.SubnetID && m.Address == c.Address && m.Port == c.Port && m.AttachmentID == c.AttachmentID && m.PodUid == c.PodUid && m.VnicName == c.VnicName && m.VnicUid == c.VnicUid && m.VnicipName == c.VnicipName && m.VnicipUid == c.VnicipUid
+	return m.SubnetID == c.SubnetID && m.Address == c.Address && m.Port == c.Port && m.AttachmentID == c.AttachmentID && m.PodUid == c.PodUid
 }
 func lockLBSubnets(ctx context.Context, q *sqlcgen.Queries, tenant, vpc string, ids []string) (map[string]sqlcgen.NetworkSubnet, error) {
 	slices.Sort(ids)
@@ -222,7 +231,7 @@ func lockLBSubnets(ctx context.Context, q *sqlcgen.Queries, tenant, vpc string, 
 	}
 	return out, nil
 }
-func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerIntent, a biz.Attribution, freshness time.Duration) (biz.LoadBalancerResult, error) {
+func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerIntent, a biz.Attribution) (biz.LoadBalancerResult, error) {
 	acceptedFingerprint := i.Fingerprint()
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -267,7 +276,6 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		}
 		projectionChanged = !biz.LoadBalancerProjectionEqual(current.Listeners, i.Listeners)
 	}
-	requireRuntimeReady := projectionChanged && len(projection) > 0
 	ids := []string{subnetID}
 	for _, b := range i.Backends {
 		ids = append(ids, b.SubnetID)
@@ -317,23 +325,12 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	if parent.State == "deleting" || parent.State == "deleted" {
 		return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "VPC has closed admission")
 	}
-	if requireRuntimeReady {
-		if err = p.requireLBVPCProviderReady(ctx, q, i.TenantID, vpcID, now, freshness); err != nil {
-			return biz.LoadBalancerResult{}, err
-		}
-	}
 	pb, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: i.TenantID, ResourceID: vpcID})
 	if err != nil {
 		return biz.LoadBalancerResult{}, databaseFailure(err)
 	}
-	if pb.ClusterID != p.placement.ClusterID || (requireRuntimeReady && (pb.ProviderUid == "" || pb.PendingAction != "")) {
-		return biz.LoadBalancerResult{}, biz.Fail(biz.ProviderOwnership, "parent placement or identity is not ready")
-	}
-	if requireRuntimeReady && p.networkProvider != nil {
-		ctx, err = p.networkProvider.namespaceContext(ctx, pb)
-		if err != nil {
-			return biz.LoadBalancerResult{}, err
-		}
+	if pb.ClusterID != p.placement.ClusterID {
+		return biz.LoadBalancerResult{}, biz.Fail(biz.ProviderOwnership, "parent placement differs")
 	}
 	// Only entry and new desired backend subnets must be available. Retired
 	// configuration references remain locked/occupied until Provider cleanup.
@@ -350,17 +347,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		if s.State == "deleting" || s.State == "deleted" {
 			return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "subnet has closed admission")
 		}
-		if requireRuntimeReady && p.networkProvider != nil {
-			observation, err := p.networkProvider.currentNetworkResource(ctx, q, i.TenantID, id)
-			if err != nil {
-				return biz.LoadBalancerResult{}, err
-			}
-			s.AvailableIpRange, s.UsedIpRange = observation.SubnetIPRanges.Available, observation.SubnetIPRanges.Used
-			subnets[id] = s
-		} else if requireRuntimeReady && !freshResource(s.State, s.ObservedAt, now, freshness) {
-			return biz.LoadBalancerResult{}, biz.Fail(biz.ParentNotReady, "subnet is not fresh and ready")
-		}
-		if sb.ClusterID != pb.ClusterID || sb.Namespace != pb.Namespace || (requireRuntimeReady && (sb.ProviderUid == "" || sb.PendingAction != "")) {
+		if sb.ClusterID != pb.ClusterID || sb.Namespace != pb.Namespace {
 			return biz.LoadBalancerResult{}, biz.Fail(biz.ProviderOwnership, "subnet placement or identity differs")
 		}
 	}
@@ -372,8 +359,8 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		if err != nil {
 			return biz.LoadBalancerResult{}, databaseFailure(err)
 		}
-		if eb.ClusterID != pb.ClusterID || eb.Namespace != pb.Namespace || eip.Address == "" || eip.State == "deleting" || eip.State == "deleted" || (requireRuntimeReady && (eb.ProviderUid == "" || eb.PendingAction != "" || !networkManagementOpen(eip.State, eip.Reason))) {
-			return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "Public EIP is not fresh and allocated")
+		if eb.ClusterID != pb.ClusterID || eb.Namespace != pb.Namespace || eip.State == "deleting" || eip.State == "deleted" {
+			return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "Public EIP placement differs or admission is closed")
 		}
 		pool, err := q.GetPublicPool(ctx, sqlcgen.GetPublicPoolParams{ClusterID: eip.ClusterID, ResourceID: eip.PoolID})
 		if err != nil {
@@ -381,27 +368,6 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		}
 		if pool.ConfigRevision != eip.PoolRevision {
 			return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "fixed exit configuration changed")
-		}
-		if err = completedOperation(ctx, q, i.TenantID, eip.LastOperationID); err != nil {
-			return biz.LoadBalancerResult{}, err
-		}
-		if requireRuntimeReady {
-			if p.networkProvider != nil {
-				observation, err := p.networkProvider.observeEgress(ctx, biz.ProviderTarget{Kind: "eip", TenantID: i.TenantID, ResourceID: eipID, BindingID: eb.BindingID, KnownIdentity: eb.ProviderUid, Direct: true})
-				if err != nil {
-					return biz.LoadBalancerResult{}, err
-				}
-				if !observation.Ready {
-					return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "public EIP has not confirmed the current allocation and binding")
-				}
-			} else {
-				if !freshResource(eip.State, eip.ObservedAt, now, freshness) {
-					return biz.LoadBalancerResult{}, biz.Fail(biz.PublicEgressNotReady, "public EIP observation unavailable")
-				}
-				if err = p.poolReady(ctx, q, pool, now, freshness, false); err != nil {
-					return biz.LoadBalancerResult{}, err
-				}
-			}
 		}
 		if creating {
 			count, err := q.BlockingSnatForEIP(ctx, sqlcgen.BlockingSnatForEIPParams{TenantID: i.TenantID, EipID: eipID})
@@ -422,7 +388,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 		}
 	}
 	// Resolve every backend before writing any product intent. Retained member
-	// IDs preserve both endpoint and its accepted workload/VNicIP identity.
+	// IDs preserve the endpoint and its accepted current consumer.
 	identities := make([]sqlcgen.InsertLBMemberParams, len(i.Backends))
 	current := map[string]bool{}
 	if !creating {
@@ -446,7 +412,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 			}
 			continue
 		}
-		c, err := lbBackendIdentity(ctx, q, i.TenantID, pb.ClusterID, pb.Namespace, vpcID, b, now, freshness)
+		c, err := lbBackendIdentity(ctx, q, i.TenantID, pb.ClusterID, pb.Namespace, vpcID, b)
 		if err != nil {
 			return biz.LoadBalancerResult{}, err
 		}
@@ -569,10 +535,6 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	result, err := lbResult(ctx, q, row)
 	if err != nil {
 		return result, err
-	}
-	result.LoadBalancer.ObservationStale = !freshTime(result.LoadBalancer.ObservedAt, now, freshness)
-	for j := range result.LoadBalancer.Backends {
-		result.LoadBalancer.Backends[j].ObservationStale = !freshTime(result.LoadBalancer.Backends[j].ObservedAt, now, freshness)
 	}
 	snapshot, err := json.Marshal(result)
 	if err != nil {
@@ -732,16 +694,13 @@ func reincarnateLB(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.NetworkL
 	}
 	retired, err := q.GetLBRetiredBinding(ctx, sqlcgen.GetLBRetiredBindingParams{TenantID: row.TenantID, LbID: row.LbID, BindingID: binding.BindingID})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return biz.Fail(biz.ResourceBusy, "previous Gateway cleanup has no completed retirement proof")
+		return biz.Fail(biz.ResourceBusy, "previous Gateway cleanup has not completed")
 	}
 	if err != nil {
 		return databaseFailure(err)
 	}
-	if retired.ProviderUid != binding.ProviderUid || retired.ProviderName != binding.ProviderName || retired.CleanupTargetVersion != row.AppliedVersion || retired.CleanupTargetVersion != lbProviderTargetVersion(row) || binding.PendingAction != "" || retired.VipOccupiedRevision != row.VipOccupiedRevision || retired.VipAbsenceRevision != row.VipAbsenceRevision {
-		return biz.Fail(biz.ProviderOwnership, "previous Gateway retirement proof does not match current binding")
-	}
-	if err = affected(q.ResetLBRetiredVIPProof(ctx, sqlcgen.ResetLBRetiredVIPProofParams{TenantID: row.TenantID, LbID: row.LbID, Version: row.Version, BindingID: binding.BindingID, ProviderUid: binding.ProviderUid})); err != nil {
-		return err
+	if retired.ProviderUid != binding.ProviderUid || retired.ProviderName != binding.ProviderName || retired.CleanupTargetVersion != row.AppliedVersion || retired.CleanupTargetVersion != lbProviderTargetVersion(row) || binding.PendingAction != "" {
+		return biz.Fail(biz.ProviderOwnership, "previous Gateway cleanup record does not match current binding")
 	}
 	newBinding := uuid.NewString()
 	return affected(q.ReincarnateLBBinding(ctx, sqlcgen.ReincarnateLBBindingParams{TenantID: row.TenantID, LbID: row.LbID, OldBindingID: binding.BindingID, OldProviderUid: binding.ProviderUid, NewBindingID: newBinding, NewProviderName: "lb-" + strings.ReplaceAll(newBinding, "-", "")}))

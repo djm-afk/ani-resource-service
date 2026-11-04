@@ -7,10 +7,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"time"
 )
 
 func vpcWork(v sqlcgen.NetworkVpc) biz.ResourceWork {
-	return biz.ResourceWork{ID: v.VpcID, TenantID: v.TenantID, Kind: "vpc", BaseRequired: v.BaseConnectivityRequired, CIDR: v.Cidr, State: biz.ResourceState(v.State), Reason: biz.Reason(v.Reason), Version: v.Version, UpdatedAt: v.UpdatedAt, ObservedAt: v.ObservedAt, LastOperationID: v.LastOperationID}
+	return biz.ResourceWork{ID: v.VpcID, TenantID: v.TenantID, Kind: "vpc", CIDR: v.Cidr, State: biz.ResourceState(v.State), Reason: biz.Reason(v.Reason), Version: v.Version, UpdatedAt: v.UpdatedAt, ObservedAt: v.ObservedAt, LastOperationID: v.LastOperationID}
 }
 func subnetWork(s sqlcgen.NetworkSubnet) biz.ResourceWork {
 	return biz.ResourceWork{ID: s.SubnetID, TenantID: s.TenantID, Kind: "subnet", VPCID: s.VpcID, CIDR: s.Cidr, Gateway: s.Gateway, State: biz.ResourceState(s.State), Reason: biz.Reason(s.Reason), Version: s.Version, UpdatedAt: s.UpdatedAt, ObservedAt: s.ObservedAt, LastOperationID: s.LastOperationID, SubnetOptions: &biz.SubnetOptions{ExcludeIPs: s.ExcludeIps, EnableDHCP: s.EnableDhcp, DNSServers: s.DnsServers}}
@@ -73,7 +74,7 @@ func eipWork(e sqlcgen.NetworkEip) biz.ResourceWork {
 	return biz.ResourceWork{ID: e.EipID, TenantID: e.TenantID, Kind: "eip", VPCID: textValue(e.SystemOwnerVpc), SystemManaged: e.ManagedBy == "system", State: biz.ResourceState(e.State), Reason: biz.Reason(e.Reason), Version: e.Version, UpdatedAt: e.UpdatedAt, ObservedAt: e.ObservedAt, LastOperationID: e.LastOperationID, Egress: &biz.EgressWorkSpec{PoolID: e.PoolID}}
 }
 func snatWork(s sqlcgen.NetworkSnatBinding) biz.ResourceWork {
-	return biz.ResourceWork{ID: s.SnatID, TenantID: s.TenantID, Kind: "snat", VPCID: s.VpcID, SystemManaged: s.Purpose == "intranet", State: biz.ResourceState(s.State), Reason: biz.Reason(s.Reason), Version: s.Version, UpdatedAt: s.UpdatedAt, ObservedAt: s.ObservedAt, LastOperationID: s.LastOperationID, Egress: &biz.EgressWorkSpec{EIPID: s.EipID, DesiredEnabled: s.DesiredEnabled, TargetGeneration: s.TargetGeneration}}
+	return biz.ResourceWork{ID: s.SnatID, TenantID: s.TenantID, Kind: "snat", VPCID: s.VpcID, SystemManaged: s.Purpose == "intranet", State: biz.ResourceState(s.State), Reason: biz.Reason(s.Reason), Version: s.Version, UpdatedAt: s.UpdatedAt, ObservedAt: s.ObservedAt, LastOperationID: s.LastOperationID, Egress: &biz.EgressWorkSpec{EIPID: s.EipID, DesiredEnabled: s.DesiredEnabled}}
 }
 func lockResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork) (biz.ResourceWork, error) {
 	if r.Kind == "vnic" {
@@ -132,26 +133,24 @@ func lockResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork) (
 	}
 	return subnetWork(s), err
 }
-func advanceResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork, p biz.Progress) (biz.ResourceWork, error) {
+func advanceResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork, p biz.Progress, observedAt *time.Time) (biz.ResourceWork, error) {
 	if r.Kind == "vnic" {
 		f := biz.VNicFacts{}
 		if p.VNic != nil {
 			f = *p.VNic
 		}
-		v, err := q.AdvanceVNic(ctx, sqlcgen.AdvanceVNicParams{TenantID: r.TenantID, VnicID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof), MacAddress: f.MACAddress, PrimaryIp: f.PrimaryIP, Ips: f.IPs})
+		v, err := q.AdvanceVNic(ctx, sqlcgen.AdvanceVNicParams{TenantID: r.TenantID, VnicID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: observedAt, MacAddress: f.MACAddress, PrimaryIp: f.PrimaryIP, Ips: append([]string{}, f.IPs...)})
 		return vnicWork(v), err
 	}
 
 	if r.Kind == "load_balancer" {
-		occupied, absence := "", ""
 		state := "unknown"
 		applied := int64(0)
 		if p.LoadBalancer != nil && p.Observed {
 			state = p.LoadBalancer.ConfigurationState
 			applied = p.LoadBalancer.AppliedVersion
-			occupied, absence = p.LoadBalancer.VIPOccupiedRevision, p.LoadBalancer.VIPAbsenceRevision
 		}
-		v, err := q.AdvanceLB(ctx, sqlcgen.AdvanceLBParams{TenantID: r.TenantID, LbID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof), ConfigurationState: state, AppliedVersion: applied, VipOccupiedRevision: occupied, VipAbsenceRevision: absence})
+		v, err := q.AdvanceLB(ctx, sqlcgen.AdvanceLBParams{TenantID: r.TenantID, LbID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: observedAt, ConfigurationState: state, AppliedVersion: applied})
 		return lbWork(v), err
 	}
 	facts := biz.EgressAppliedFacts{}
@@ -159,7 +158,7 @@ func advanceResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork
 		facts = *p.Egress
 	}
 	if r.Kind == "eip" {
-		e, err := q.AdvanceEIP(ctx, sqlcgen.AdvanceEIPParams{TenantID: r.TenantID, EipID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof), Address: facts.Address})
+		e, err := q.AdvanceEIP(ctx, sqlcgen.AdvanceEIPParams{TenantID: r.TenantID, EipID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: observedAt, Address: facts.Address})
 		return eipWork(e), err
 	}
 	if r.Kind == "snat" {
@@ -167,14 +166,14 @@ func advanceResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork
 		if facts.AppliedEnabled != nil {
 			applied = pgtype.Bool{Bool: *facts.AppliedEnabled, Valid: true}
 		}
-		s, err := q.AdvanceSnat(ctx, sqlcgen.AdvanceSnatParams{TenantID: r.TenantID, SnatID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof), AppliedEnabled: applied, TargetGeneration: facts.TargetGeneration})
+		s, err := q.AdvanceSnat(ctx, sqlcgen.AdvanceSnatParams{TenantID: r.TenantID, SnatID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: observedAt, AppliedEnabled: applied})
 		return snatWork(s), err
 	}
 
 	if r.Kind == "subnet" {
-		s, err := q.AdvanceSubnet(ctx, sqlcgen.AdvanceSubnetParams{TenantID: r.TenantID, SubnetID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof), AvailableIpRange: p.SubnetIPRanges.Available, UsedIpRange: p.SubnetIPRanges.Used})
+		s, err := q.AdvanceSubnet(ctx, sqlcgen.AdvanceSubnetParams{TenantID: r.TenantID, SubnetID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: observedAt, AvailableIpRange: p.SubnetIPRanges.Available, UsedIpRange: p.SubnetIPRanges.Used})
 		return subnetWork(s), err
 	}
-	v, err := q.AdvanceVPC(ctx, sqlcgen.AdvanceVPCParams{TenantID: r.TenantID, VpcID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: proofTime(p.Observed, p.Proof)})
+	v, err := q.AdvanceVPC(ctx, sqlcgen.AdvanceVPCParams{TenantID: r.TenantID, VpcID: r.ID, Version: r.Version, State: string(p.State), Reason: string(p.Reason), Observed: p.Observed, ObservedAt: observedAt})
 	return vpcWork(v), err
 }

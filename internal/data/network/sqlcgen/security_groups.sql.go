@@ -7,10 +7,11 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
 )
 
 const claimSecurityGroupTask = `-- name: ClaimSecurityGroupTask :one
-SELECT tenant_id, target_type, target_id, requested_version, next_run_at, lease_owner, lease_until, lease_epoch FROM network_security_group_reconciliations WHERE next_run_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+SELECT tenant_id, target_type, target_id, requested_version, next_run_at, lease_owner, lease_until, lease_epoch, observation_error, requested_generation, processed_generation, retry_not_before FROM network_security_group_reconciliations WHERE next_run_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
 ORDER BY next_run_at LIMIT 1 FOR UPDATE SKIP LOCKED
 `
 
@@ -26,6 +27,10 @@ func (q *Queries) ClaimSecurityGroupTask(ctx context.Context) (NetworkSecurityGr
 		&i.LeaseOwner,
 		&i.LeaseUntil,
 		&i.LeaseEpoch,
+		&i.ObservationError,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
 	)
 	return i, err
 }
@@ -51,24 +56,45 @@ func (q *Queries) CountSecurityGroupRows(ctx context.Context, arg CountSecurityG
 
 const finishSecurityGroupTask = `-- name: FinishSecurityGroupTask :execrows
 UPDATE network_security_group_reconciliations SET lease_owner=NULL,lease_until=NULL,
-next_run_at=clock_timestamp()+$1::bigint*interval '1 microsecond'
-WHERE tenant_id=$2 AND target_type=$3 AND target_id=$4
-AND lease_owner=$5::uuid AND lease_epoch=$6 AND requested_version=$7 AND lease_until>clock_timestamp()
+ processed_generation=greatest(processed_generation,$1::bigint),
+ observation_error=CASE WHEN $2::boolean THEN '' WHEN $3::text<>'' THEN $3::text ELSE observation_error END,
+ retry_not_before=CASE WHEN $4::boolean THEN $5::timestamptz+$6::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN $7::boolean THEN 'infinity'::timestamptz
+   WHEN $4::boolean THEN $5::timestamptz+$6::bigint*interval '1 microsecond'
+   WHEN requested_generation>$1::bigint THEN $5::timestamptz
+   WHEN $8::boolean THEN 'infinity'::timestamptz
+   ELSE $5::timestamptz+$6::bigint*interval '1 microsecond' END
+WHERE tenant_id=$9 AND target_type=$10 AND target_id=$11
+AND lease_owner=$12::uuid AND lease_epoch=$13 AND requested_version=$14 AND lease_until>clock_timestamp()
 `
 
 type FinishSecurityGroupTaskParams struct {
-	DelayMicros int64
-	TenantID    string
-	TargetType  string
-	TargetID    string
-	Owner       string
-	Epoch       int64
-	Version     int64
+	ClaimedGeneration int64
+	Observed          bool
+	ObservationError  string
+	Backoff           bool
+	Now               time.Time
+	DelayMicros       int64
+	Terminal          bool
+	Park              bool
+	TenantID          string
+	TargetType        string
+	TargetID          string
+	Owner             string
+	Epoch             int64
+	Version           int64
 }
 
 func (q *Queries) FinishSecurityGroupTask(ctx context.Context, arg FinishSecurityGroupTaskParams) (int64, error) {
 	result, err := q.db.Exec(ctx, finishSecurityGroupTask,
+		arg.ClaimedGeneration,
+		arg.Observed,
+		arg.ObservationError,
+		arg.Backoff,
+		arg.Now,
 		arg.DelayMicros,
+		arg.Terminal,
+		arg.Park,
 		arg.TenantID,
 		arg.TargetType,
 		arg.TargetID,
@@ -80,6 +106,73 @@ func (q *Queries) FinishSecurityGroupTask(ctx context.Context, arg FinishSecurit
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getSecurityGroupConsumerAttachment = `-- name: GetSecurityGroupConsumerAttachment :one
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND cluster_id=$2
+ AND namespace=$3 AND instance_id=$4 AND consumer_type=$5
+ AND slot='primary' AND state='attached' ORDER BY updated_at DESC,attachment_id DESC LIMIT 1
+`
+
+type GetSecurityGroupConsumerAttachmentParams struct {
+	TenantID     string
+	ClusterID    string
+	Namespace    string
+	InstanceID   string
+	ConsumerType string
+}
+
+func (q *Queries) GetSecurityGroupConsumerAttachment(ctx context.Context, arg GetSecurityGroupConsumerAttachmentParams) (NetworkAttachment, error) {
+	row := q.db.QueryRow(ctx, getSecurityGroupConsumerAttachment,
+		arg.TenantID,
+		arg.ClusterID,
+		arg.Namespace,
+		arg.InstanceID,
+		arg.ConsumerType,
+	)
+	var i NetworkAttachment
+	err := row.Scan(
+		&i.TenantID,
+		&i.AttachmentID,
+		&i.VpcID,
+		&i.SubnetID,
+		&i.BindingID,
+		&i.InstanceID,
+		&i.Slot,
+		&i.RequestKey,
+		&i.SubmissionID,
+		&i.Generation,
+		&i.Fingerprint,
+		&i.ClusterID,
+		&i.Namespace,
+		&i.BindingRevision,
+		&i.Plan,
+		&i.State,
+		&i.Reason,
+		&i.Version,
+		&i.PodName,
+		&i.PodUid,
+		&i.ConfirmUid,
+		&i.FinalizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ObservedAt,
+		&i.ReleasedAt,
+		&i.NextCheckAt,
+		&i.LeaseOwner,
+		&i.LeaseUntil,
+		&i.Epoch,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
+		&i.ConsumerType,
+		&i.ObservationError,
+		&i.CurrentVnicName,
+		&i.CurrentVnicUid,
+		&i.CurrentMacAddress,
+		&i.CurrentIps,
+	)
+	return i, err
 }
 
 const getSecurityGroupOperation = `-- name: GetSecurityGroupOperation :one
@@ -239,7 +332,7 @@ func (q *Queries) InsertSecurityGroupRow(ctx context.Context, arg InsertSecurity
 const leaseSecurityGroupTask = `-- name: LeaseSecurityGroupTask :one
 UPDATE network_security_group_reconciliations SET lease_owner=$1::uuid,lease_epoch=lease_epoch+1,
 lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond'
-WHERE tenant_id=$3 AND target_type=$4 AND target_id=$5 RETURNING tenant_id, target_type, target_id, requested_version, next_run_at, lease_owner, lease_until, lease_epoch
+WHERE tenant_id=$3 AND target_type=$4 AND target_id=$5 RETURNING tenant_id, target_type, target_id, requested_version, next_run_at, lease_owner, lease_until, lease_epoch, observation_error, requested_generation, processed_generation, retry_not_before
 `
 
 type LeaseSecurityGroupTaskParams struct {
@@ -268,37 +361,12 @@ func (q *Queries) LeaseSecurityGroupTask(ctx context.Context, arg LeaseSecurityG
 		&i.LeaseOwner,
 		&i.LeaseUntil,
 		&i.LeaseEpoch,
+		&i.ObservationError,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
 	)
 	return i, err
-}
-
-const listSecurityGroupConsumerRelations = `-- name: ListSecurityGroupConsumerRelations :many
-SELECT provider_relations FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2
-`
-
-type ListSecurityGroupConsumerRelationsParams struct {
-	TenantID   string
-	InstanceID string
-}
-
-func (q *Queries) ListSecurityGroupConsumerRelations(ctx context.Context, arg ListSecurityGroupConsumerRelationsParams) ([][]byte, error) {
-	rows, err := q.db.Query(ctx, listSecurityGroupConsumerRelations, arg.TenantID, arg.InstanceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := [][]byte{}
-	for rows.Next() {
-		var provider_relations []byte
-		if err := rows.Scan(&provider_relations); err != nil {
-			return nil, err
-		}
-		items = append(items, provider_relations)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listSecurityGroupRows = `-- name: ListSecurityGroupRows :many
@@ -447,7 +515,7 @@ func (q *Queries) LockSecurityGroupTarget(ctx context.Context, arg LockSecurityG
 }
 
 const lockSecurityGroupTask = `-- name: LockSecurityGroupTask :one
-SELECT tenant_id, target_type, target_id, requested_version, next_run_at, lease_owner, lease_until, lease_epoch FROM network_security_group_reconciliations WHERE tenant_id=$1 AND target_type=$2 AND target_id=$3 FOR UPDATE
+SELECT tenant_id, target_type, target_id, requested_version, next_run_at, lease_owner, lease_until, lease_epoch, observation_error, requested_generation, processed_generation, retry_not_before FROM network_security_group_reconciliations WHERE tenant_id=$1 AND target_type=$2 AND target_id=$3 FOR UPDATE
 `
 
 type LockSecurityGroupTaskParams struct {
@@ -468,8 +536,50 @@ func (q *Queries) LockSecurityGroupTask(ctx context.Context, arg LockSecurityGro
 		&i.LeaseOwner,
 		&i.LeaseUntil,
 		&i.LeaseEpoch,
+		&i.ObservationError,
+		&i.RequestedGeneration,
+		&i.ProcessedGeneration,
+		&i.RetryNotBefore,
 	)
 	return i, err
+}
+
+const mapSecurityGroupProviderNames = `-- name: MapSecurityGroupProviderNames :many
+SELECT security_group_id FROM network_security_groups WHERE tenant_id=$1
+ AND payload->>'ClusterID'=$2::text AND payload->>'Namespace'=$3::text
+ AND payload->>'ProviderName'=ANY($4::text[]) ORDER BY security_group_id
+`
+
+type MapSecurityGroupProviderNamesParams struct {
+	TenantID      string
+	ClusterID     string
+	Namespace     string
+	ProviderNames []string
+}
+
+func (q *Queries) MapSecurityGroupProviderNames(ctx context.Context, arg MapSecurityGroupProviderNamesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, mapSecurityGroupProviderNames,
+		arg.TenantID,
+		arg.ClusterID,
+		arg.Namespace,
+		arg.ProviderNames,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var security_group_id string
+		if err := rows.Scan(&security_group_id); err != nil {
+			return nil, err
+		}
+		items = append(items, security_group_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const releaseSecurityGroupReferences = `-- name: ReleaseSecurityGroupReferences :exec
@@ -515,9 +625,26 @@ func (q *Queries) ReserveSecurityGroupReference(ctx context.Context, arg Reserve
 	return err
 }
 
+const retireSecurityGroupTask = `-- name: RetireSecurityGroupTask :exec
+UPDATE network_security_group_reconciliations SET next_run_at='infinity'::timestamptz,
+ lease_owner=NULL,lease_until=NULL,lease_epoch=lease_epoch+1,processed_generation=requested_generation
+WHERE tenant_id=$1 AND target_type=$2 AND target_id=$3
+`
+
+type RetireSecurityGroupTaskParams struct {
+	TenantID   string
+	TargetType string
+	TargetID   string
+}
+
+func (q *Queries) RetireSecurityGroupTask(ctx context.Context, arg RetireSecurityGroupTaskParams) error {
+	_, err := q.db.Exec(ctx, retireSecurityGroupTask, arg.TenantID, arg.TargetType, arg.TargetID)
+	return err
+}
+
 const scheduleSecurityGroup = `-- name: ScheduleSecurityGroup :exec
 INSERT INTO network_security_group_reconciliations(tenant_id,target_type,target_id,requested_version) VALUES($1,$2,$3,$4)
-ON CONFLICT(tenant_id,target_type,target_id) DO UPDATE SET requested_version=excluded.requested_version,next_run_at=clock_timestamp()
+ON CONFLICT(tenant_id,target_type,target_id) DO UPDATE SET requested_version=excluded.requested_version,requested_generation=network_security_group_reconciliations.requested_generation+1,next_run_at=clock_timestamp()
 `
 
 type ScheduleSecurityGroupParams struct {
@@ -554,7 +681,7 @@ func (q *Queries) SecurityGroupReferenceCount(ctx context.Context, arg SecurityG
 }
 
 const updateSecurityGroupOperation = `-- name: UpdateSecurityGroupOperation :execrows
-UPDATE network_security_group_operations SET payload=$3 WHERE tenant_id=$1 AND operation_id=$2
+UPDATE network_security_group_operations SET payload=$3 WHERE tenant_id=$1 AND operation_id=$2 AND (payload->>'CompletedAt') IS NULL
 `
 
 type UpdateSecurityGroupOperationParams struct {

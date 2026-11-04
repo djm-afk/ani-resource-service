@@ -2,11 +2,10 @@ package data_test
 
 import (
 	"context"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
 
 func (testEgressInfrastructure) ValidateIntranetPool(context.Context, biz.PublicPoolConfig) error {
@@ -30,7 +29,7 @@ func setIntranetPool(t *testing.T, f *egressFixture, i biz.PlatformIntent) biz.P
 }
 func readyIntranetPool(t *testing.T, f *egressFixture, v biz.PlatformResource) biz.PlatformResource {
 	t.Helper()
-	ev := &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: []string{"sha256:" + strings.Repeat("a", 64)}, TopologyFingerprint: v.TopologyFingerprint, EvidenceReference: "controlled platform fixture only", Scope: biz.IntranetVerificationScope, VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}
+	ev := &biz.PublicPoolVerification{ProviderSourceRevision: strings.Repeat("a", 40), ProviderImageDigests: []string{"sha256:" + strings.Repeat("a", 64)}, TopologyFingerprint: strings.Repeat("c", 64), EvidenceReference: "controlled platform fixture only", Scope: biz.IntranetVerificationScope, VerifiedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Hour)}
 	setIntranetPool(t, f, biz.PlatformIntent{Kind: "verify_intranet_pool", ID: v.ID, IdempotencyKey: "verify-" + v.ID, Verification: ev})
 	return setIntranetPool(t, f, biz.PlatformIntent{Kind: "set_intranet_pool_allocation", ID: v.ID, IdempotencyKey: "open-" + v.ID, Enabled: true})
 }
@@ -75,7 +74,7 @@ func TestIntranetPlatformScopesDefaultsAllocationAndIndependentCapabilities(t *t
 	second := readyIntranetPool(t, f, f.platform(t, intranetIntent("second-base-pool", "10.233.254.0/24", "10.233.254.1")))
 	setIntranetPool(t, f, biz.PlatformIntent{Kind: "set_default_intranet_pool", ID: second.ID, IdempotencyKey: "default-second"})
 	firstAfter, err := f.e.GetPlatform(f.ctx, "intranet_pool", first.ID)
-	if err != nil || firstAfter.IsDefault || firstAfter.ConfigRevision != first.ConfigRevision || firstAfter.TopologyFingerprint != first.TopologyFingerprint {
+	if err != nil || firstAfter.IsDefault || firstAfter.ConfigRevision != first.ConfigRevision {
 		t.Fatal("default switch mutated old pool", firstAfter, err)
 	}
 	setIntranetPool(t, f, biz.PlatformIntent{Kind: "set_intranet_pool_allocation", ID: second.ID, IdempotencyKey: "close-second", Enabled: false})

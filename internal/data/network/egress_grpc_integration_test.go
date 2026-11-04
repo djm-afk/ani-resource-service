@@ -2,9 +2,6 @@ package data_test
 
 import (
 	"context"
-	"net"
-	"testing"
-
 	"github.com/google/uuid"
 	networkv1 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
@@ -14,6 +11,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"net"
+	"testing"
 )
 
 func TestEgressGRPCContractAuthorizationAndNullableAppliedState(t *testing.T) {
@@ -49,7 +48,7 @@ func TestEgressGRPCContractAuthorizationAndNullableAppliedState(t *testing.T) {
 	}
 	client, platform, n := connect(&biz.EgressCaller{TenantID: f.tenant, PlatformAdministrator: true, Attribution: biz.Attribution{Actor: "controlled-grpc", DirectCaller: "fixture"}})
 	p, err := platform.GetPublicAddressPool(ctx, &networkv1.GetPublicAddressPoolRequest{PoolId: f.pool.ID})
-	if err != nil || len(p.Resource.GetPool().TopologyFingerprint) != 64 || len(p.Resource.GetPool().ObservedProviderImages) != 1 {
+	if err != nil || p.Resource.GetPool().TopologyFingerprint != "" || len(p.Resource.GetPool().ObservedProviderImages) != 0 {
 		t.Fatal("admin verification identity missing from wire", p, err)
 	}
 	created, err := client.CreateEIP(ctx, &networkv1.CreateEIPRequest{Name: "rpc-address", IdempotencyKey: "rpc-address"})

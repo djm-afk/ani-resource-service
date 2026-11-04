@@ -152,18 +152,17 @@ func serve(args []string) error {
 		return err
 	}
 	defer repository.Close()
-	stale := bc.Network.Worker.StaleAfter.AsDuration()
-	repository.UseBaseConnectivityFreshness(stale)
 	provider, err := data.OpenKCProvider(repository, bc.Network.Kubeconfig, data.KCClientPolicy{QPS: 5, Burst: 10})
 	if err != nil {
 		return err
 	}
-	repository.UseEgressInfrastructure(provider)
+	repository.UseVirtualSwitchInfrastructure(provider)
+	repository.UseLoadBalancerCapabilityReader(provider)
 	key, err := base64.StdEncoding.DecodeString(bc.Network.CursorSigningKey)
 	if err != nil {
 		return errors.New("invalid cursor key")
 	}
-	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, stale, time.Now)
+	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, time.Now)
 	if err != nil {
 		return err
 	}
@@ -171,15 +170,15 @@ func serve(args []string) error {
 	if *platform {
 		networkv1.RegisterPlatformNetworkServiceServer(server, service.NewPlatformNetworkService(egress))
 	} else {
-		network, err := biz.NewNetwork(repository, key, stale, time.Now)
+		network, err := biz.NewNetwork(repository, key)
 		if err != nil {
 			return err
 		}
-		lbs, err := biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, key, stale, time.Now)
+		lbs, err := biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, key)
 		if err != nil {
 			return err
 		}
-		networkv1.RegisterNetworkServiceServer(server, service.NewNetworkService(network, biz.NewAttachments(repository, stale)))
+		networkv1.RegisterNetworkServiceServer(server, service.NewNetworkService(network, biz.NewAttachments(repository)))
 		networkv1.RegisterTenantEgressServiceServer(server, service.NewTenantEgressService(egress))
 		networkv1.RegisterTenantLoadBalancerServiceServer(server, service.NewTenantLoadBalancerService(lbs))
 	}

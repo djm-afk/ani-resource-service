@@ -182,7 +182,7 @@ func TestEgressListTotalsAndPlatformAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	listTotal(t, empty, 0)
-	f.p.UseEgressInfrastructure(&switchBoundary{})
+	f.p.UseVirtualSwitchInfrastructure(&switchBoundary{})
 	sw, err := f.e.CreateVirtualSwitch(f.ctx, biz.VirtualSwitchIntent{Name: "list-totals", IdempotencyKey: "list-switch"})
 	if err != nil {
 		t.Fatal(err)

@@ -4,11 +4,13 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -16,19 +18,15 @@ import (
 // reference fences, worker leases and operation replay below are real code.
 type securityGroupProviderBoundary struct{}
 
-func (securityGroupProviderBoundary) ObserveSecurityGroupConsumer(context.Context, biz.SecurityGroupBinding) (bool, error) {
-	return true, nil
-}
-
 func (securityGroupProviderBoundary) ApplySecurityGroup(_ context.Context, w biz.SecurityGroupWork) (biz.SecurityGroupResult, error) {
-	if w.TargetType == "eip" {
-		return biz.SecurityGroupResult{State: "configured", AppliedIDs: slices.Clone(w.Binding.SecurityGroupIDs), Complete: true}, nil
+	if w.TargetType != "security_group" {
+		return biz.SecurityGroupResult{State: "applied", AppliedIDs: slices.Clone(w.Binding.SecurityGroupIDs), Complete: true, Observed: true}, nil
 	}
 	state := string(biz.Available)
 	if w.Group.State == biz.Deleting {
 		state = string(biz.Deleted)
 	}
-	return biz.SecurityGroupResult{ProviderUID: "provider-" + w.TargetID, State: state, Complete: true}, nil
+	return biz.SecurityGroupResult{ProviderUID: "provider-" + w.TargetID, State: state, Complete: true, Observed: true}, nil
 }
 
 type securityGroupContractFixture struct {
@@ -43,7 +41,6 @@ type securityGroupContractFixture struct {
 func newSecurityGroupContractFixture(t *testing.T) *securityGroupContractFixture {
 	t.Helper()
 	p, owner := database(t)
-	p.UseSecurityGroupObserver(securityGroupProviderBoundary{})
 	tenant := uuid.NewString()
 	ctx := biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: tenant, Attribution: biz.Attribution{Actor: "security-group-test", DirectCaller: "controlled-boundary"}})
 	return &securityGroupContractFixture{p: p, owner: owner, groups: biz.NewSecurityGroups(p), worker: biz.NewSecurityGroupWorker(p, securityGroupProviderBoundary{}, uuid.NewString(), biz.DefaultWorkerPolicy()), ctx: ctx, tenant: tenant}
@@ -156,12 +153,12 @@ func TestSecurityGroupsPostgresConsumerReferenceRevisionFence(t *testing.T) {
 	if _, err := f.p.SyncSecurityGroupBinding(f.ctx, f.tenant, "container", consumer, "", old.Namespace, 2, []string{next.ID}); err != nil {
 		t.Fatal(err)
 	}
-	// A partially updated workload may still run under the old groups. Both
-	// reference sets remain protected until the exact new intent is confirmed.
+	// The pending management submission retains its prior accepted references
+	// until the consumer confirms the exact new configuration revision.
 	for _, id := range []string{old.ID, next.ID} {
 		v, err := f.groups.Get(f.ctx, "", id)
 		if err != nil || v.BoundResourceCount != 1 {
-			t.Fatal("Sync released a still possible runtime group", v, err)
+			t.Fatal("Sync changed references before configuration confirmation", v, err)
 		}
 	}
 	err := f.p.ConfirmSecurityGroupBinding(f.ctx, f.tenant, "container", consumer, 1, []string{old.ID})
@@ -255,4 +252,36 @@ func TestSecurityGroupsPostgresUnboundEIPBindingVersionsAndDeleteProtection(t *t
 	foreign := biz.WithEgressCaller(context.Background(), biz.EgressCaller{TenantID: uuid.NewString(), Attribution: biz.Attribution{Actor: "other", DirectCaller: "test"}})
 	_, err = groups.GetEIP(foreign, "", address.ID)
 	requireSecurityGroupReason(t, err, biz.ResourceNotFound)
+}
+
+func TestSecurityGroupReadFailurePreservesProjectionAndCompletedOperation(t *testing.T) {
+	f := newSecurityGroupContractFixture(t)
+	group := f.create(t, "read-failure")
+	snapshot := func() string {
+		t.Helper()
+		var value string
+		if err := f.owner.QueryRow(f.ctx, `SELECT jsonb_build_array(g.payload,o.payload)::text FROM network_security_groups g JOIN network_security_group_operations o ON o.tenant_id=g.tenant_id AND o.operation_id=$3 WHERE g.tenant_id=$1 AND g.security_group_id=$2`, f.tenant, group.ID, group.LastOperationID).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := snapshot()
+	if err := f.p.NotifyObservedObject(f.ctx, schema.GroupVersionResource{Group: "networking.kubercloud.com", Version: "v1", Resource: "securitygroups"}, group.Namespace, group.ProviderName); err != nil {
+		t.Fatal(err)
+	}
+	work, found, err := f.p.ClaimSecurityGroup(f.ctx, uuid.NewString(), time.Second)
+	if err != nil || !found || work.Operation.CompletedAt == nil {
+		t.Fatal(work, found, err)
+	}
+	failure := &biz.ProviderError{Kind: biz.ProviderTemporary}
+	if err = f.p.FinishSecurityGroup(f.ctx, work, biz.SecurityGroupResult{State: "failed", Reason: "must-not-replace-status", ObservationError: biz.ProviderUnavailable, OperationReason: biz.ProviderUnavailable, Backoff: true, NextDelay: time.Second}, failure); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot() != before {
+		t.Fatal("read failure overwrote resource projection or immutable operation")
+	}
+	var diagnostic string
+	if err = f.owner.QueryRow(f.ctx, `SELECT observation_error FROM network_security_group_reconciliations WHERE tenant_id=$1 AND target_type='security_group' AND target_id=$2`, f.tenant, group.ID).Scan(&diagnostic); err != nil || diagnostic != string(biz.ProviderUnavailable) {
+		t.Fatal(diagnostic, err)
+	}
 }

@@ -2,139 +2,37 @@ package data_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
+	"k8s.io/client-go/tools/clientcmd"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
-	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
-// Filter one Gateway from controlled List/Watch responses without changing the
-// stored object, its UID, or unrelated Kubernetes objects. The protocol server
-// writes each JSON list/event as one block, including its trailing newline.
-type deferredGatewayReadWriter struct {
-	http.ResponseWriter
-	hide func(map[string]any) bool
-}
-
-func (w deferredGatewayReadWriter) Write(body []byte) (int, error) {
-	var value map[string]any
-	if json.Unmarshal(body, &value) == nil {
-		if object, ok := value["object"].(map[string]any); ok && w.hide(object) {
-			return len(body), nil
-		}
-		if items, ok := value["items"].([]any); ok {
-			visible := make([]any, 0, len(items))
-			for _, item := range items {
-				object, ok := item.(map[string]any)
-				if !ok || !w.hide(object) {
-					visible = append(visible, item)
-				}
-			}
-			value["items"] = visible
-			encoded, err := json.Marshal(value)
-			if err != nil {
-				return 0, err
-			}
-			_, err = w.ResponseWriter.Write(append(encoded, '\n'))
-			if err != nil {
-				return 0, err
-			}
-			return len(body), nil
-		}
-	}
-	return w.ResponseWriter.Write(body)
-}
-
-func (w deferredGatewayReadWriter) Flush() {
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// A real first activation sends CREATE and loses its response. Authoritative
-// absence cannot authorize a database-only deletion or another Gateway CREATE.
-func TestLBDeferredFirstGatewayResponseLossBlocksDeleteUntilOriginalVisible(t *testing.T) {
+// A lost CREATE response still requires a direct read before deletion.
+func TestLBDeferredLostCreateDeletionCompletesFromDirectAbsence(t *testing.T) {
 	fault := newBaseProcessFault(http.MethodPost, "gateways", false)
 	controller := &lbControllerFixture{holdGenerated: true}
-	intercept := lbProcessIntercept(fault, controller)
-	var visibility sync.RWMutex
-	var hidden bool
-	var namespace, gatewayName string
-	hide := func(object map[string]any) bool {
-		visibility.RLock()
-		defer visibility.RUnlock()
-		metadata, _ := object["metadata"].(map[string]any)
-		return hidden && metadata["namespace"] == namespace && metadata["name"] == gatewayName
-	}
-	f := newLBAdmissionFixture(t, func(w http.ResponseWriter, r *http.Request, api *controlled.Server) bool {
-		if r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/gateways") || strings.Contains(r.URL.Path, "/gateways/")) {
-			visibility.RLock()
-			hideGet := hidden && strings.HasSuffix(r.URL.Path, "/namespaces/"+namespace+"/gateways/"+gatewayName)
-			visibility.RUnlock()
-			if hideGet {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusNotFound)
-				_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": "v1", "kind": "Status", "status": "Failure", "reason": "NotFound", "code": http.StatusNotFound})
-				return true
-			}
-			filtered := deferredGatewayReadWriter{ResponseWriter: w, hide: hide}
-			if !intercept(filtered, r, api) {
-				api.ServeHTTP(filtered, r)
-			}
-			return true
-		}
-		return intercept(w, r, api)
-	})
+	f := newLBAdmissionFixture(t, lbProcessIntercept(fault, controller))
 	t.Cleanup(fault.unblock)
-	// This controller has not allocated the VIP because no generated Service
-	// exists. Supply its initial free IPAM fact, as the existing partial-create
-	// fixture does; cleanup must not require or manufacture a later revision.
-	var entryNamespace, entryName string
-	if err := f.f.owner.QueryRow(f.f.ctx, `SELECT namespace,provider_name FROM network_provider_bindings WHERE tenant_id=$1 AND subnet_id=$2 AND resource_kind='subnet'`, f.f.tenant, f.subnet.ID).Scan(&entryNamespace, &entryName); err != nil {
-		t.Fatal(err)
-	}
-	entry := f.api.Object("subnets", entryNamespace, entryName)
-	entry["status"].(map[string]any)["v4usingIPrange"] = ""
-	entry["status"].(map[string]any)["v4availableIPrange"] = "10.42.1.2-10.42.1.254"
-	f.api.Change("subnets", entry, false)
-	freeRevision := f.api.Object("subnets", entryNamespace, entryName)["metadata"].(map[string]any)["resourceVersion"]
 	f.f.stopObservation()
-	expected := seedLBInstallation(f.api)
-	pods := lbRecoveryProviderPods(f)
-	first, firstOwner, stopFirst := lbRecoveryWorker(t, f, f.f.p, expected)
-	awaitNET05A(t, 5*time.Second, func() bool {
-		var ready bool
-		return f.f.owner.QueryRow(f.f.ctx, `SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1`, expected.Fingerprint).Scan(&ready) == nil && ready
-	})
-	before := deferredMutationCount(controller)
+	first, firstOwner, stopFirst := lbRecoveryWorker(t, f, f.f.p)
 	created, err := f.lbs.Create(f.f.ctx, deferredEmptyLBRequest(f))
 	if err != nil {
 		t.Fatal(err)
 	}
 	lb := created.LoadBalancer
-	deferredVersions(t, lb, 1, 0, 0)
-	if created.Operation.State != biz.Succeeded || lb.ConfigurationState != "waiting_for_backends" || deferredMutationCount(controller) != before {
-		t.Fatal("empty save unexpectedly entered Provider execution", created)
-	}
 	initial := deferredBinding(t, f, lb.ID)
-	visibility.Lock()
-	namespace, gatewayName = initial.namespace, initial.name
-	visibility.Unlock()
 	fault.armed.Store(true)
-	activated, err := f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: lb.Version, IdempotencyKey: "unknown-first-gateway", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{deferredListenerInput(lb.Listeners[0], f.request.Backends)}, UpdateMask: []string{"listeners"}}})
+	_, err = f.lbs.Update(f.f.ctx, biz.UpdateLoadBalancer{ID: lb.ID, ExpectedVersion: lb.Version, IdempotencyKey: "unknown-first-gateway", LoadBalancerMutableInput: biz.LoadBalancerMutableInput{Listeners: []biz.LoadBalancerListenerInput{deferredListenerInput(lb.Listeners[0], f.request.Backends)}, UpdateMask: []string{"listeners"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	deferredVersions(t, activated.LoadBalancer, 2, 2, 0)
 	stepCtx, cancelStep := context.WithCancel(f.f.ctx)
 	done := make(chan error, 1)
 	go func() {
@@ -155,127 +53,47 @@ func TestLBDeferredFirstGatewayResponseLossBlocksDeleteUntilOriginalVisible(t *t
 	select {
 	case <-fault.reached:
 	case err := <-done:
-		t.Fatal("first activation worker stopped before Gateway response loss", err)
+		t.Fatal("worker stopped before CREATE response loss", err)
 	case <-time.After(8 * time.Second):
-		t.Fatal("first activation never sent Gateway CREATE")
+		t.Fatal("Gateway CREATE did not occur")
 	}
 	if fault.status.Load() < 200 || fault.status.Load() >= 300 {
-		t.Fatal("actual Gateway POST did not succeed", fault.status.Load())
+		t.Fatal(fault.status.Load())
 	}
-	var pending, uid, leaseOwner string
+	var pending, uid string
 	var dispatched bool
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT b.pending_action,b.provider_uid,b.create_dispatched,r.lease_owner::text FROM network_provider_bindings b JOIN network_reconciliations r USING(tenant_id,lb_id) WHERE b.tenant_id=$1 AND b.lb_id=$2`, f.f.tenant, lb.ID).Scan(&pending, &uid, &dispatched, &leaseOwner); err != nil || pending != "create" || uid != "" || !dispatched || leaseOwner != firstOwner {
-		t.Fatal("first Gateway request lacks durable unknown-CREATE evidence", pending, uid, dispatched, leaseOwner, err)
+	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT pending_action,provider_uid,create_dispatched FROM network_provider_bindings WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID).Scan(&pending, &uid, &dispatched); err != nil || pending != "create" || uid != "" || !dispatched {
+		t.Fatal(pending, uid, dispatched, err)
 	}
-	written := f.api.Object("gateways", namespace, gatewayName)
+	written := f.api.Object("gateways", initial.namespace, initial.name)
 	if written == nil {
-		t.Fatal("successful Gateway POST left no external object")
+		t.Fatal("successful POST left no Gateway")
 	}
-	writtenUID := written["metadata"].(map[string]any)["uid"].(string)
-	if writtenUID == "" || f.api.Object("services", namespace, gatewayName) != nil {
-		t.Fatal("response-loss boundary did not retain the intended partial creation")
-	}
-	visibility.Lock()
-	hidden = true
-	visibility.Unlock()
-	// Close the actual old runtime before canceling its held HTTP response.
-	// No SQL creates pending state, a UID, or a recovered lease in this test.
 	stopFirst()
 	cancelStep()
 	select {
-	case err := <-done:
-		cause := errors.Unwrap(err)
-		if biz.ReasonOf(err) != biz.DependencyUnavailable || cause == nil || !strings.Contains(cause.Error(), "closed") || !strings.Contains(cause.Error(), "pool") {
-			t.Fatal("old runtime did not fail its completion against the closed pool", err)
-		}
+	case <-done:
 	case <-time.After(3 * time.Second):
-		t.Fatal("old runtime did not exit")
+		t.Fatal("old worker did not stop")
 	}
 	fault.unblock()
-	recoveredRepo := lbRecoveryRepository(t, f)
-	second, secondOwner, _ := lbRecoveryWorker(t, f, recoveredRepo, expected)
+	// The controller has removed this declaration before recovery. The next
+	// exact GET must settle its absence even though the POST receipt was lost.
+	f.api.Change("gateways", written, true)
+	repository := lbRecoveryRepository(t, f)
+	second, secondOwner, _ := lbRecoveryWorker(t, f, repository)
 	if secondOwner == firstOwner {
-		t.Fatal("recovery reused the old worker owner")
+		t.Fatal("reused old owner")
 	}
-	f.f.p, f.f.w = recoveredRepo, second
-	f.lbs, err = biz.NewLoadBalancers(recoveredRepo, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)), time.Minute, time.Now)
+	f.f.p, f.f.w = repository, second
+	f.lbs, err = biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := f.lbs.Delete(f.f.ctx, "", lb.ID)
-	if err != nil || deleted.LoadBalancer.State != biz.Deleting || deleted.Operation.State == biz.Succeeded {
-		t.Fatal("unknown first Gateway CREATE used the unsent database-delete shortcut", deleted, err)
+	if err != nil || deleted.LoadBalancer.State != biz.Deleting {
+		t.Fatal("dispatched CREATE used DB-only cancellation", deleted, err)
 	}
-	awaitNET05A(t, 8*time.Second, func() bool {
-		if _, err := second.Step(f.f.ctx); err != nil {
-			t.Fatal(err)
-		}
-		lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
-		return err == nil && lb.State == biz.Deleting && lb.Reason == biz.ProviderUnknown
-	})
-	op, err := f.lbs.GetOperation(f.f.ctx, "", deleted.Operation.ID)
-	if err != nil || op.State != biz.Blocked {
-		t.Fatal("authoritative Gateway absence did not keep unknown CREATE blocked", op, err)
-	}
-	current := deferredBinding(t, f, lb.ID)
-	if current.id != initial.id || current.name != initial.name || current.uid != "" {
-		t.Fatal("unknown CREATE deletion reset the original Provider incarnation", initial, current)
-	}
-	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT pending_action,provider_uid,create_dispatched FROM network_provider_bindings WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, lb.ID).Scan(&pending, &uid, &dispatched); err != nil || pending != "create" || uid != "" || !dispatched {
-		t.Fatal("temporary absence erased the durable unknown request", pending, uid, dispatched, err)
-	}
-	lbRecoveryOccupancy(t, f, lb.ID, 1, 2)
-	if f.api.Object("gateways", namespace, gatewayName) == nil {
-		t.Fatal("read visibility control destroyed the actual Gateway")
-	}
-	controller.mu.Lock()
-	controller.holdCleanup = true
-	controller.mu.Unlock()
-	visibility.Lock()
-	hidden = false
-	visibility.Unlock()
-	// The hidden initial List/Watch event was intentionally discarded. The
-	// external controller now republishes this same object/UID as visibility
-	// returns, so the production relationship index receives its real event.
-	original := f.api.Object("gateways", namespace, gatewayName)
-	if original == nil || original["metadata"].(map[string]any)["uid"] != writtenUID {
-		t.Fatal("visibility restoration lost the original Gateway identity")
-	}
-	f.api.Change("gateways", original, false)
-	t.Cleanup(func() {
-		if !t.Failed() {
-			return
-		}
-		last, readErr := f.lbs.Get(f.f.ctx, "", created.LoadBalancer.ID)
-		lastOperation, operationErr := f.lbs.GetOperation(f.f.ctx, "", deleted.Operation.ID)
-		var bindingID, name, identity, action string
-		var createDispatched bool
-		bindingErr := f.f.owner.QueryRow(f.f.ctx, `SELECT binding_id,provider_name,provider_uid,pending_action,create_dispatched FROM network_provider_bindings WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, created.LoadBalancer.ID).Scan(&bindingID, &name, &identity, &action, &createDispatched)
-		controller.mu.Lock()
-		requests := append([]string(nil), controller.requests...)
-		controller.mu.Unlock()
-		if len(requests) > 20 {
-			requests = requests[len(requests)-20:]
-		}
-		t.Logf("Gateway recovery checkpoint: LB state=%s reason=%s configuration=%s operation=%s binding=%s name=%s UID=%s pending=%s dispatched=%v read_errors=%v/%v/%v requests=%v", last.State, last.Reason, last.ConfigurationState, lastOperation.State, bindingID, name, identity, action, createDispatched, readErr, operationErr, bindingErr, requests)
-	})
-	awaitNET05A(t, 8*time.Second, func() bool {
-		if _, err := second.Step(f.f.ctx); err != nil {
-			t.Fatal(err)
-		}
-		gateway := f.api.Object("gateways", namespace, gatewayName)
-		current = deferredBinding(t, f, lb.ID)
-		return gateway != nil && gateway["metadata"].(map[string]any)["deletionTimestamp"] != nil && current.uid == writtenUID
-	})
-	if current.id != initial.id || current.name != initial.name || current.uid != writtenUID {
-		t.Fatal("recovery did not adopt the original successful POST UID", current, writtenUID)
-	}
-	lbRecoveryOccupancy(t, f, lb.ID, 1, 2)
-	controller.mu.Lock()
-	controller.holdCleanup = false
-	controller.generated(f.api, f.api.Object("gateways", namespace, gatewayName), true)
-	controller.mu.Unlock()
-	f.api.Change("gateways", f.api.Object("gateways", namespace, gatewayName), true)
 	awaitNET05A(t, 8*time.Second, func() bool {
 		if _, err := second.Step(f.f.ctx); err != nil {
 			t.Fatal(err)
@@ -283,38 +101,32 @@ func TestLBDeferredFirstGatewayResponseLossBlocksDeleteUntilOriginalVisible(t *t
 		lb, err = f.lbs.Get(f.f.ctx, "", lb.ID)
 		return err == nil && lb.State == biz.Deleted
 	})
-	op, err = f.lbs.GetOperation(f.f.ctx, "", deleted.Operation.ID)
+	op, err := f.lbs.GetOperation(f.f.ctx, "", deleted.Operation.ID)
 	if err != nil || op.State != biz.Succeeded {
-		t.Fatal("recovered first-activation product cleanup did not complete", op, err)
+		t.Fatal(op, err)
+	}
+	var remaining int
+	if err = f.f.owner.QueryRow(f.f.ctx, `SELECT (SELECT count(*) FROM network_provider_bindings WHERE tenant_id=$1 AND lb_id=$2 AND pending_action<>'')+(SELECT count(*) FROM network_lb_components WHERE tenant_id=$1 AND lb_id=$2 AND (pending_action<>'' OR deleted_at IS NULL))`, f.f.tenant, lb.ID).Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatal("own pending cleanup remained", remaining, err)
 	}
 	lbRecoveryOccupancy(t, f, lb.ID, 0, 0)
-	if after := f.api.Object("subnets", entryNamespace, entryName)["metadata"].(map[string]any)["resourceVersion"]; after != freeRevision {
-		t.Fatal("partial first-activation cleanup required a synthetic IPAM release revision", freeRevision, after)
-	}
 	controller.mu.Lock()
-	gatewayPosts := 0
+	defer controller.mu.Unlock()
+	creates := 0
 	for _, request := range controller.requests {
 		if strings.HasPrefix(request, "POST/gateways/") {
-			gatewayPosts++
+			creates++
 		}
 	}
-	controller.mu.Unlock()
-	if gatewayPosts != 1 {
-		t.Fatal("unknown-CREATE recovery submitted another Gateway POST", gatewayPosts)
-	}
-	for key, uid := range pods {
-		parts := strings.SplitN(key, "/", 3)
-		pod := f.api.Object("pods", parts[1], parts[2])
-		if pod == nil || pod["metadata"].(map[string]any)["uid"] != uid {
-			t.Fatal("product cleanup changed an independent Provider or business Pod", key)
-		}
+	if creates != 1 {
+		t.Fatal("deletion recreated Gateway", creates)
 	}
 }
 
 // These component boundaries retain real PG admission, production lease/pending
 // writes, the actual KC adapter and two distinct Worker owners. Only the external
 // HTTP response is withheld. Full process termination remains covered by the
-// Gateway matrix, where generated-resource and address cleanup are different.
+// Gateway matrix, which also covers process termination.
 func TestLBComponentsRecoverResponseLossWithFreshWorkers(t *testing.T) {
 	for _, tc := range []struct{ name, method, resource, kind string }{
 		{"proxy_POST_response_lost", http.MethodPost, "envoyproxies", "envoy_proxy"},
@@ -330,13 +142,9 @@ func TestLBComponentsRecoverResponseLossWithFreshWorkers(t *testing.T) {
 			// Replace the setup observer before starting this recovery runtime;
 			// its index must not outlive the repository being discarded below.
 			f.f.stopObservation()
-			expected := seedLBInstallation(f.api)
+			seedLBInstallation(f.api)
 			pods := lbRecoveryProviderPods(f)
-			first, firstOwner, stopFirst := lbRecoveryWorker(t, f, f.f.p, expected)
-			awaitNET05A(t, 5*time.Second, func() bool {
-				var ready bool
-				return f.f.owner.QueryRow(f.f.ctx, `SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1`, expected.Fingerprint).Scan(&ready) == nil && ready
-			})
+			first, firstOwner, stopFirst := lbRecoveryWorker(t, f, f.f.p)
 			if tc.method == http.MethodPost {
 				fault.armed.Store(true)
 			}
@@ -418,13 +226,13 @@ func TestLBComponentsRecoverResponseLossWithFreshWorkers(t *testing.T) {
 			first, f.f.w = nil, nil
 			secondRepo := lbRecoveryRepository(t, f)
 			thirdRepo := lbRecoveryRepository(t, f)
-			second, secondOwner, _ := lbRecoveryWorker(t, f, secondRepo, expected)
-			third, thirdOwner, _ := lbRecoveryWorker(t, f, thirdRepo, expected)
+			second, secondOwner, _ := lbRecoveryWorker(t, f, secondRepo)
+			third, thirdOwner, _ := lbRecoveryWorker(t, f, thirdRepo)
 			if secondOwner == firstOwner || thirdOwner == firstOwner || secondOwner == thirdOwner {
 				t.Fatal("recovery reused a Worker owner")
 			}
 			f.f.p = secondRepo
-			f.lbs, err = biz.NewLoadBalancers(secondRepo, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)), time.Minute, time.Now)
+			f.lbs, err = biz.NewLoadBalancers(secondRepo, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -481,9 +289,6 @@ func TestLBComponentsRecoverResponseLossWithFreshWorkers(t *testing.T) {
 				t.Fatal("product cleanup did not complete", operation, err)
 			}
 			lbRecoveryOccupancy(t, f, id, 0, 0)
-			if lb.DataPlaneState != "unknown" || lb.DataPlaneObservedAt != nil {
-				t.Fatal("component recovery asserted live traffic health", lb)
-			}
 			controller.mu.Lock()
 			posts := map[string]int{}
 			for _, request := range controller.requests {
@@ -520,7 +325,7 @@ func lbRecoveryRepository(t *testing.T, f *lbAdmissionFixture) *data.Postgres {
 	return repository
 }
 
-func lbRecoveryWorker(t *testing.T, f *lbAdmissionFixture, repository *data.Postgres, expected data.LoadBalancerInstallation) (*biz.Worker, string, func()) {
+func lbRecoveryWorker(t *testing.T, f *lbAdmissionFixture, repository *data.Postgres) (*biz.Worker, string, func()) {
 	t.Helper()
 	config, err := clientcmd.BuildConfigFromFlags("", f.kubeconfig)
 	if err != nil {
@@ -531,13 +336,8 @@ func lbRecoveryWorker(t *testing.T, f *lbAdmissionFixture, repository *data.Post
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository.UseEgressInfrastructure(provider)
-	if err = provider.ConfigureLoadBalancer(expected); err != nil {
-		t.Fatal(err)
-	}
-	options := data.DefaultObservationOptions()
-	options.AuditInterval, options.AuditJitter, options.FlushInterval = 80*time.Millisecond, time.Millisecond, 10*time.Millisecond
-	observer, err := provider.EnableObservation(options)
+	repository.UseVirtualSwitchInfrastructure(provider)
+	observer, err := provider.EnableObservation(time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

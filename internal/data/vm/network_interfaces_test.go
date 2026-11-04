@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
@@ -72,7 +71,7 @@ func TestReleaseNetworkInterfacesPreservesBindingValidation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &interfaceBindingRepository{applyErr: tc.applyErr, releaseErr: tc.releaseErr}
-			port, err := network.NewNetwork(repo, []byte(strings.Repeat("k", 32)), time.Minute, time.Now)
+			port, err := network.NewNetwork(repo, []byte(strings.Repeat("k", 32)))
 			if err != nil {
 				t.Fatal(err)
 			}

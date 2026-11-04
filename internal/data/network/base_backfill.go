@@ -147,12 +147,8 @@ func (p *Postgres) PlanBaseBackfill(ctx context.Context, in BaseBackfillPlanInpu
 			state, reason = "excluded", "BASE_CONNECTIVITY_ALREADY_MANAGED"
 		case row.BindingID == nil || row.Namespace == nil || row.ProviderName == "":
 			state, reason = "conflict", "PROVIDER_BINDING_MISSING"
-		case row.State != "available" && row.State != "degraded":
-			state, reason = "conflict", "VPC_NOT_ESTABLISHED"
-		case row.OperationState != "succeeded":
+		case row.OperationState != "succeeded" && row.OperationState != "failed":
 			state, reason = "conflict", "VPC_OPERATION_NOT_COMPLETED"
-		case row.ProviderUid == "" || row.PendingAction != "":
-			state, reason = "conflict", "PROVIDER_IDENTITY_UNCONFIRMED"
 		}
 		snapshot := BaseBackfillSnapshot{TenantID: row.TenantID, VPCID: row.VpcID, VPCVersion: row.Version, Namespace: textValue(row.Namespace), BindingID: textValue(row.BindingID), ProviderName: row.ProviderName, ProviderUID: row.ProviderUid, InitialState: state, InitialReason: reason}
 		plan.Candidates = append(plan.Candidates, BaseBackfillCandidate{Snapshot: snapshot, State: state, Reason: reason})
@@ -359,14 +355,14 @@ func (p *Postgres) acceptBaseBackfillCandidate(ctx context.Context, q *sqlcgen.Q
 	// Observations legitimately increment VPC version while a plan is paused.
 	// The immutable review identity is rechecked below; use the current locked
 	// version for the update, without invalidating review for a pure observation.
-	if v.BaseConnectivityRequired || (v.State != "available" && v.State != "degraded") {
+	if v.BaseConnectivityRequired || v.State == "deleting" || v.State == "deleted" {
 		return conflict("VPC is no longer eligible or deletion closed admission")
 	}
 	binding, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: c.TenantID, ResourceID: c.VpcID})
 	if err != nil {
 		return "", databaseFailure(err)
 	}
-	if binding.ClusterID != run.ClusterID || binding.Namespace != textValue(c.Namespace) || binding.BindingID != textValue(c.BindingID) || binding.ProviderName != c.ProviderName || binding.ProviderUid != c.ProviderUid || binding.ProviderUid == "" || binding.PendingAction != "" {
+	if binding.ClusterID != run.ClusterID || binding.Namespace != textValue(c.Namespace) || binding.BindingID != textValue(c.BindingID) || binding.ProviderName != c.ProviderName || (c.ProviderUid != "" && binding.ProviderUid != c.ProviderUid) {
 		return conflict("reviewed Provider placement or identity changed")
 	}
 	if _, err = q.GetBaseConnectivity(ctx, sqlcgen.GetBaseConnectivityParams{TenantID: c.TenantID, VpcID: c.VpcID}); err == nil {
@@ -379,7 +375,7 @@ func (p *Postgres) acceptBaseBackfillCandidate(ctx context.Context, q *sqlcgen.Q
 	if err != nil {
 		return "", databaseFailure(err)
 	}
-	if op.State != "succeeded" || op.CompletedAt == nil {
+	if op.CompletedAt == nil {
 		return conflict("VPC operation is not completed")
 	}
 	opID := uuid.NewString()
@@ -446,9 +442,8 @@ func (p *Postgres) SetNewVPCBaseConnectivity(ctx context.Context, enabled bool) 
 	return p.GetBaseConnectivityRollout(ctx)
 }
 
-// ActivateLegacyBaseAggregation is one-way in this batch. Every non-deleted
-// legacy resource must have fresh real persisted dependency facts. This checks
-// configuration readiness only and never labels traffic as verified.
+// ActivateLegacyBaseAggregation is one-way in this batch. It verifies that
+// the reviewed Res declarations exist; provider readiness is not an input.
 func (p *Postgres) ActivateLegacyBaseAggregation(ctx context.Context) (ConnectivityRollout, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -473,21 +468,10 @@ func (p *Postgres) ActivateLegacyBaseAggregation(ctx context.Context) (Connectiv
 	if err != nil {
 		return ConnectivityRollout{}, databaseFailure(err)
 	}
-	now, err := q.DatabaseTime(ctx)
-	if err != nil {
-		return ConnectivityRollout{}, databaseFailure(err)
-	}
 	for _, v := range candidates {
-		if err = p.requireBaseConnectivity(ctx, q, v.TenantID, v.VpcID, now, p.baseFreshnessLimit()); err != nil {
-			return ConnectivityRollout{}, fmt.Errorf("legacy VPC %s/%s is not ready: %w", v.TenantID, v.VpcID, err)
+		if err = p.requireBaseDeclaration(ctx, q, v.TenantID, v.VpcID); err != nil {
+			return ConnectivityRollout{}, fmt.Errorf("legacy VPC %s/%s has no active base declaration: %w", v.TenantID, v.VpcID, err)
 		}
-	}
-	stale, err := q.CountStaleLegacyBaseEvidence(ctx, sqlcgen.CountStaleLegacyBaseEvidenceParams{ClusterID: p.placement.ClusterID, FreshnessMicros: p.baseFreshnessLimit().Microseconds()})
-	if err != nil {
-		return ConnectivityRollout{}, databaseFailure(err)
-	}
-	if stale != 0 {
-		return ConnectivityRollout{}, biz.Fail(biz.BaseConnectivityNotReady, "base evidence expired during legacy activation; refresh and retry")
 	}
 	for _, v := range candidates {
 		if err = q.RequireVPCBase(ctx, sqlcgen.RequireVPCBaseParams{TenantID: v.TenantID, VpcID: v.VpcID}); err != nil {

@@ -1,5 +1,15 @@
 # Network 执行状态
 
+<a id="network-management-simplification-20261104"></a>
+
+## 2026-11-04：完全采信 KCN 的网络状态消费简化
+
+**已完成固定工具生成、Resource 镜像构建及 ani-kcn-full 集群发布；数据库已到 32，临时 VM 创建、关机、启动和删除的真实操作均 succeeded。** 工作分支仍为 `work/network-status-authority`，基线为 `5dc539d92e3150a3593bde3668082753aa4fdebe`，继续更新原 [PR #57](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/57)。所有生成、编译、测试、打包和推送在 `ubuntu@100.64.128.15` 执行，集群操作在 `kubercloud@100.64.128.12` 执行，本地仅编辑、Git 和轻量编排。
+
+只发布 Resource，最终镜像为源码54aebd9，digest `sha256:c6f095b28f87897ccdb43e5347d9855315ab69bcecaea2eebe86d2214f95b3e5`，generation/observed173、Ready1、restart0。现场切换前已为 canonical31，因此实际只执行 0032；保留停止旧写入者后的备份，修正八张 Network 新表的迁移所有权，保留身份、幂等和历史操作，并应用匹配 RBAC。新镜像需配套 VM 配置，原含 `Service.ImageUpload` 的 Secret 保留未改；此分支不包含该额外配置对应的能力，见执行记录。
+
+**VM 和 VNIC 主流程已验收。** 用户随后授权升级 Governance，已发布最新 main `3a30c697`，digest `sha256:a035f93883068ee85998410863ae2d9f56e3d3f5782db608510d1769eebffed7`。通过官方 CLI 预览并增量同步 API，按仓库 SQL 登记9个新接口权限，仅为验收租户既有管理员追加所需5项权限，不改其他角色或套餐。正常登录后的 VNIC 创建、地址/MAC展示和删除均通过，临时资源已清理。28→32、31→32 及四项此前失败的定向 PG 用例分别通过。最终 Resource Pod 的340.238秒窗口为154次 Network provider 传输请求、0.4526 QPS、LIST0；34个租户删除任务、4个平台删除任务、32条释放连接均未改变，62个稳定任务停放、有限时刻待调度任务0。按用户要求未跑全量门禁，`make verify` 为 NOT_RUN；未重复验证最终镜像的完整 VM 生命周期，复用之前相同原生 VM 执行代码的实测，版本边界见[交付记录](records/2026-11-04-network-management-simplification.md#takeover-delivery-20261104)。PR交评审，不自动合并。以下各节保留其历史时点事实。
+
 ## 2026-11-04：观测故障隔离与终态恢复
 
 基于 main `d23828c` 修复 VM/VNIC 当前网络准入、终态共享审计、SNAT 事实保留与可选 LB 隔离；现场验收补修默认自动网卡删除收尾及共享观察等待误装故障退避。最终 Resource `99a03a1` 已部署 10–12，generation/observed 92、Ready1/restart0；真实 VM 平台启停/删除、VNIC 实际分配/删除与原 UID 清理通过，原用户 VM 保持。303.35s 静稳 GET/LIST 10.216 QPS，14 类基础 LIST 各9次、基础审计失败0，29组 VPC/base 全 available/ready；精确 EIP/SNAT Watch 均原UID/Bound且无事件。聚合时间仍滞后及一次可选 LB 审计失败未称修复，前者跟踪 Issue #55；guest 内部启动/关机 NOT_VERIFIED。Fedora 定向回归及最终 `make verify` PASS，未提高 QPS/TTL。来源、失败窗口与并行 Gov 原镜像重启的范围说明见[实施记录](records/network-observation-isolation-20261104.md)。

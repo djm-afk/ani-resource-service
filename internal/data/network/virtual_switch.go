@@ -27,7 +27,7 @@ func switchAdmissionFailure(err error) error {
 		if provider.Kind == biz.ProviderConflict || provider.Kind == biz.ProviderInUse {
 			return biz.Fail(biz.ResourceInUse, "switch or device ownership conflicts with current facts")
 		}
-		return biz.Fail(biz.DependencyUnavailable, "complete fresh network facts are unavailable")
+		return biz.Fail(biz.DependencyUnavailable, "node metadata is unavailable")
 	}
 	return databaseFailure(err)
 }
@@ -108,7 +108,9 @@ func (p *Postgres) GetVirtualSwitch(ctx context.Context, id string) (biz.Virtual
 	if err != nil {
 		return biz.VirtualSwitch{}, databaseFailure(err)
 	}
-	return switchSnapshot(r)
+	v, err := switchSnapshot(r.NetworkVirtualSwitch)
+	v.ObservationStale = r.ObservationError != ""
+	return v, err
 }
 
 func (p *Postgres) ListVirtualSwitches(ctx context.Context, f biz.VirtualSwitchFilter) ([]biz.VirtualSwitch, int64, error) {
@@ -128,10 +130,11 @@ func (p *Postgres) ListVirtualSwitches(ctx context.Context, f biz.VirtualSwitchF
 	}
 	values := make([]biz.VirtualSwitch, 0, len(rows))
 	for _, r := range rows {
-		v, err := switchSnapshot(r)
+		v, err := switchSnapshot(r.NetworkVirtualSwitch)
 		if err != nil {
 			return nil, 0, err
 		}
+		v.ObservationStale = r.ObservationError != ""
 		values = append(values, v)
 	}
 	return values, total, nil

@@ -14,15 +14,9 @@ rules:
     verbs: [get, list, watch, create, patch, delete]
   - apiGroups: [gateway.networking.k8s.io]
     resources: [gatewayclasses]
-    verbs: [get, list, watch]
+    verbs: [get]
   - apiGroups: [gateway.envoyproxy.io]
     resources: [envoyproxies]
-    verbs: [get, list, watch]
-  - apiGroups: [apps]
-    resources: [deployments, replicasets]
-    verbs: [get, list, watch]
-  - apiGroups: [discovery.k8s.io]
-    resources: [endpointslices]
     verbs: [get, list, watch]
 
   # Prefer a namespaced Role granting get to the tenant's selected TLS Secrets.

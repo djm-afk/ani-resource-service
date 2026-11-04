@@ -83,9 +83,8 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		return nil, err
 	}
 	w := bc.Network.Worker
-	policy := biz.WorkerPolicy{Lease: w.Lease.AsDuration(), RequestTimeout: w.RequestTimeout.AsDuration(), ObserveEvery: w.ObserveEvery.AsDuration(), StaleAfter: w.StaleAfter.AsDuration(), RetryMin: w.RetryMin.AsDuration(), RetryMax: w.RetryMax.AsDuration()}
-	repository.UseBaseConnectivityFreshness(policy.StaleAfter)
-	network, err := biz.NewNetwork(repository, key, policy.StaleAfter, time.Now)
+	policy := biz.WorkerPolicy{Lease: w.Lease.AsDuration(), RequestTimeout: w.RequestTimeout.AsDuration(), ObserveEvery: w.ObserveEvery.AsDuration(), RetryMin: w.RetryMin.AsDuration(), RetryMax: w.RetryMax.AsDuration()}
+	network, err := biz.NewNetwork(repository, key)
 	if err != nil {
 		return nil, err
 	}
@@ -116,14 +115,14 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		_ = observability.Shutdown(ctx)
 		return nil, err
 	}
-	attachments := biz.NewAttachments(repository, policy.StaleAfter)
-	routedConsumer, err := wireInstanceNetwork(instances, network, attachments, consumer, bc.Network.ClusterId, "tenant-", policy.StaleAfter)
+	attachments := biz.NewAttachments(repository)
+	routedConsumer, err := wireInstanceNetwork(instances, network, attachments, consumer, bc.Network.ClusterId, "tenant-")
 	if err != nil {
 		consumer.Close()
 		_ = observability.Shutdown(ctx)
 		return nil, err
 	}
-	vms, routedConsumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, routedConsumer, policy.StaleAfter, network)
+	vms, routedConsumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, routedConsumer, network)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +132,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			vms.Close()
 		}
 	}()
-	attachmentWorker, err := biz.NewAttachmentWorker(repository, provider, routedConsumer, uuid.NewString(), policy, observability.ObserveAttachmentWork)
+	attachmentWorker, err := biz.NewAttachmentWorker(repository, routedConsumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
 	if err != nil {
 		consumer.Close()
 		_ = observability.Shutdown(ctx)
@@ -187,8 +186,9 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	wireVNicConsumers(repository, vnicHandler, vms, instances)
 	networkv1.RegisterNetworkServiceServer(grpcServer, vnicHandler)
 	networkv1.RegisterNetworkSecurityGroupServiceServer(grpcServer, securityGroups)
-	repository.UseEgressInfrastructure(provider)
-	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, policy.StaleAfter, time.Now)
+	repository.UseVirtualSwitchInfrastructure(provider)
+	repository.UseLoadBalancerCapabilityReader(provider)
+	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, key, time.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		networkv1.RegisterPlatformDefaultEgressServiceServer(grpcServer, defaultService)
 	}
 	if lb := bc.Network.LoadBalancer; lb != nil && lb.EnableIsolatedApi {
-		lbs, err := biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, key, policy.StaleAfter, time.Now)
+		lbs, err := biz.NewLoadBalancers(repository, biz.ContextEgressAuthorization{}, key)
 		if err != nil {
 			return nil, err
 		}

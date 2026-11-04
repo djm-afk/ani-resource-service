@@ -65,7 +65,7 @@ func (n *Network) ListVPCs(ctx context.Context, request ListVPCs) (VPCPage, erro
 		}
 		page := VPCPage{Total: total, Items: make([]VPC, 0, len(rows))}
 		for _, value := range rows {
-			page.Items = append(page.Items, n.observation(value))
+			page.Items = append(page.Items, value)
 		}
 		return page, nil
 	}
@@ -97,7 +97,7 @@ func (n *Network) ListVPCs(ctx context.Context, request ListVPCs) (VPCPage, erro
 			})
 			break
 		}
-		page.Items = append(page.Items, n.observation(value))
+		page.Items = append(page.Items, value)
 	}
 	return page, nil
 }

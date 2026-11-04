@@ -4,20 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
-
 	networkv1 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
 	"google.golang.org/grpc"
@@ -26,7 +14,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sigs.k8s.io/yaml"
+	"strings"
+	"testing"
+	"time"
 )
 
 type lbProcessOwner struct {
@@ -47,7 +45,7 @@ func startLBProcessEndpoints(t *testing.T, f *lbAdmissionFixture) (networkv1.Ten
 	if err := f.f.owner.QueryRow(f.f.ctx, `SELECT attachment_id FROM network_attachments WHERE tenant_id=$1 AND instance_id='lb-backend'`, f.f.tenant).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	a, err := biz.NewAttachments(f.f.p, time.Minute).Get(f.f.ctx, f.f.tenant, id)
+	a, err := biz.NewAttachments(f.f.p).Get(f.f.ctx, f.f.tenant, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +69,7 @@ func startLBProcessEndpoints(t *testing.T, f *lbAdmissionFixture) (networkv1.Ten
 	t.Cleanup(func() { _ = conn.Close() })
 	return networkv1.NewTenantLoadBalancerServiceClient(conn), listener.Addr().String()
 }
-func lbProcessConfig(t *testing.T, root, owner string, expected data.LoadBalancerInstallation) string {
+func lbProcessConfig(t *testing.T, root, owner string) string {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Join(root, "configs/config.yaml"))
 	if err != nil {
@@ -83,7 +81,7 @@ func lbProcessConfig(t *testing.T, root, owner string, expected data.LoadBalance
 	}
 	network := config["network"].(map[string]any)
 	network["instance_consumer_endpoint"] = owner
-	network["load_balancer"] = map[string]any{"enable_isolated_api": true, "installation_fingerprint": expected.Fingerprint, "controller_image_id": expected.ControllerImageID, "envoy_image_id": expected.EnvoyImageID, "shutdown_image_id": expected.ShutdownImageID, "kc_image_id": expected.KCImageID}
+	network["load_balancer"] = map[string]any{"enable_isolated_api": true}
 	body, err = yaml.Marshal(config)
 	if err != nil {
 		t.Fatal(err)
@@ -177,29 +175,23 @@ func TestLBServiceProcessesRecoverUnknownMutationsWithTwoWorkers(t *testing.T) {
 	// matrix without rebuilding and restarting the whole service for each kind.
 	for _, tc := range []struct {
 		name, method, kind string
-		late               bool
 		terminate          bool
-	}{{"gateway_POST_late_success", "POST", "gateways", true, false}, {"gateway_UPDATE_response_lost", "PATCH", "gateways", false, false}, {"gateway_DELETE_response_lost", "DELETE", "gateways", false, false}, {"delete_during_unknown_gateway_POST", "POST", "gateways", true, true}} {
+	}{{"gateway_POST_response_lost", "POST", "gateways", false}, {"gateway_UPDATE_response_lost", "PATCH", "gateways", false}, {"gateway_DELETE_response_lost", "DELETE", "gateways", false}, {"delete_during_lost_gateway_POST", "POST", "gateways", true}} {
 		t.Run(tc.name, func(t *testing.T) {
-			fault := newBaseProcessFault(tc.method, tc.kind, tc.late)
+			fault := newBaseProcessFault(tc.method, tc.kind, false)
 			controller := &lbControllerFixture{}
 			f := newLBAdmissionFixture(t, lbProcessIntercept(fault, controller))
 			t.Cleanup(fault.unblock)
-			expected := seedLBInstallation(f.api)
+			seedLBInstallation(f.api)
 			client, owner := startLBProcessEndpoints(t, f)
-			config := lbProcessConfig(t, root, owner, expected)
+			config := lbProcessConfig(t, root, owner)
 			start := func() *networkProcess {
 				return startNetworkProcess(t, root, binary, f.runtimeDSN, f.kubeconfig, testenv.SigningKey(), "load_balancer", "config="+config)
 			}
 			first := start()
-			awaitNET05A(t, 8*time.Second, func() bool {
-				var ready bool
-				err := f.f.owner.QueryRow(f.f.ctx, `SELECT ready FROM network_lb_capabilities WHERE cluster_id='test-cluster' AND fingerprint=$1`, expected.Fingerprint).Scan(&ready)
-				return err == nil && ready
-			})
 			// A verified Governance workload without delegated metadata still
 			// cannot manufacture the production authorization context.
-			if tc.name == "gateway_POST_late_success" {
+			if tc.name == "gateway_POST_response_lost" {
 				conn, err := grpc.NewClient(first.grpcAddress, grpc.WithTransportCredentials(credentials.NewTLS(first.serviceTLS.Client.Clone())))
 				if err != nil {
 					t.Fatal(err)
@@ -258,22 +250,8 @@ func TestLBServiceProcessesRecoverUnknownMutationsWithTwoWorkers(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				waitLBProcesses(t, f, id, func(l biz.LoadBalancer) bool { return l.State == biz.Deleting && l.Reason == biz.ProviderUnknown }, second, third)
-				op, err := f.lbs.GetOperation(f.f.ctx, "", deleted.Operation.Id)
-				if err != nil || op.State != biz.Blocked {
-					t.Fatal("unknown POST deletion must remain blocked", op, err)
-				}
-				if err = f.f.owner.QueryRow(f.f.ctx, `SELECT count(*) FROM network_lb_vip_intents WHERE tenant_id=$1 AND lb_id=$2 AND released_at IS NULL`, f.f.tenant, id).Scan(&reserved); err != nil || reserved != 1 {
-					t.Fatal("termination released an uncertain write's VIP", reserved, err)
-				}
 				if _, err = client.UpdateLoadBalancer(context.Background(), &networkv1.UpdateLoadBalancerRequest{HealthCheck: health, LoadBalancerId: id, ExpectedVersion: deleted.LoadBalancer.Version, Name: "closed", IdempotencyKey: "closed", Backends: request.Backends}); status.Code(err) != codes.FailedPrecondition {
 					t.Fatal("delete did not close updates", err)
-				}
-			}
-			if tc.late {
-				var pending string
-				if err = f.f.owner.QueryRow(f.f.ctx, `SELECT pending_action FROM network_provider_bindings WHERE tenant_id=$1 AND lb_id=$2`, f.f.tenant, id).Scan(&pending); err != nil || pending != "create" {
-					t.Fatal("pending create was not retained", pending, err)
 				}
 			}
 			fault.unblock()
@@ -289,21 +267,18 @@ func TestLBServiceProcessesRecoverUnknownMutationsWithTwoWorkers(t *testing.T) {
 			if tc.method == "DELETE" || tc.terminate {
 				want = biz.Deleted
 			}
-			lb := waitLBProcesses(t, f, id, func(l biz.LoadBalancer) bool {
+			waitLBProcesses(t, f, id, func(l biz.LoadBalancer) bool {
 				return l.State == want && (tc.method != "PATCH" || l.AppliedVersion == 2)
 			}, second, third)
 			if tc.method != "DELETE" && !tc.terminate {
 				if _, err = client.DeleteLoadBalancer(context.Background(), &networkv1.DeleteLoadBalancerRequest{LoadBalancerId: id}); err != nil {
 					t.Fatal(err)
 				}
-				lb = waitLBProcesses(t, f, id, func(l biz.LoadBalancer) bool { return l.State == biz.Deleted }, second, third)
+				waitLBProcesses(t, f, id, func(l biz.LoadBalancer) bool { return l.State == biz.Deleted }, second, third)
 			}
 			var occupied int
 			if err = f.f.owner.QueryRow(f.f.ctx, `SELECT count(*) FROM network_lb_subnet_refs WHERE tenant_id=$1 AND lb_id=$2 AND released_at IS NULL`, f.f.tenant, id).Scan(&occupied); err != nil || occupied != 0 {
 				t.Fatal("recovery failed to release parents", occupied, err)
-			}
-			if lb.DataPlaneState != "unknown" || lb.DataPlaneObservedAt != nil {
-				t.Fatal("process success asserted traffic health")
 			}
 			controller.mu.Lock()
 			posts := map[string]int{}

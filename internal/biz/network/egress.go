@@ -149,8 +149,6 @@ type PlatformResource struct {
 	AllocationEnabled, IsDefault bool
 	NewVPCsEnabled               bool
 	ConfigRevision               int64
-	TopologyFingerprint          string
-	ObservedProviderImages       []string
 	Verification                 *PublicPoolVerification
 }
 
@@ -161,7 +159,6 @@ type PreparedDeviceNode struct {
 	NodeName, NodeUID, Name string
 }
 type PreparedDeviceInventory struct {
-	CollectedAt time.Time
 	Items       []PreparedDeviceNode
 	Fingerprint string
 }
@@ -227,27 +224,18 @@ func egressFingerprint(v any) string {
 }
 
 type EgressRepository interface {
-	AcceptEIP(context.Context, EgressIntent, Attribution, time.Duration) (EIP, error)
+	AcceptEIP(context.Context, EgressIntent, Attribution) (EIP, error)
 	GetEIP(context.Context, string, string) (EIP, error)
 	ListEIPs(context.Context, string, VPCFilter) ([]EIP, int64, error)
 	DeleteEIP(context.Context, string, string, Attribution) (EIP, error)
-	AcceptSnat(context.Context, EgressIntent, Attribution, time.Duration) (VPCSnatBinding, error)
+	AcceptSnat(context.Context, EgressIntent, Attribution) (VPCSnatBinding, error)
 	GetSnat(context.Context, string, string, bool) (VPCSnatBinding, error)
 	DeleteSnat(context.Context, string, string, Attribution) (VPCSnatBinding, error)
-	AcceptPlatform(context.Context, PlatformIntent, Attribution, time.Duration) (PlatformResource, error)
+	AcceptPlatform(context.Context, PlatformIntent, Attribution) (PlatformResource, error)
 	GetPlatform(context.Context, string, string) (PlatformResource, error)
 	ListPlatform(context.Context, string, VPCFilter) ([]PlatformResource, int64, error)
 	DeletePlatform(context.Context, string, string, Attribution) (PlatformResource, error)
 	GetPlatformOperation(context.Context, string) (Operation, error)
-}
-type EgressInfrastructure interface {
-	ValidatePublicPool(context.Context, PublicPoolConfig) error
-}
-
-// Intranet infrastructure is separate so public-only providers cannot assert
-// base connectivity without implementing its actual gateway and route contract.
-type IntranetPoolInfrastructure interface {
-	ValidateIntranetPool(context.Context, PublicPoolConfig) error
 }
 type CapabilityObservation struct {
 	Ready            bool
@@ -259,35 +247,25 @@ type PlatformNetworkCapabilities struct {
 	BaseConnectivity, PublicAddress, LoadBalancer CapabilityObservation
 }
 type PlatformCapabilitiesRepository interface {
-	GetPlatformCapabilities(context.Context, time.Duration) (PlatformNetworkCapabilities, error)
+	GetPlatformCapabilities(context.Context) (PlatformNetworkCapabilities, error)
 }
 type Egress struct {
-	repository     EgressRepository
-	infrastructure EgressInfrastructure
-	authorization  EgressAuthorization
-	cursor         *Network
-	freshness      time.Duration
-	now            func() time.Time
+	repository    EgressRepository
+	defaults      IntranetPoolDefaultsInfrastructure
+	authorization EgressAuthorization
+	cursor        *Network
+	now           func() time.Time
 }
 
-func NewEgress(r EgressRepository, p EgressInfrastructure, a EgressAuthorization, key []byte, freshness time.Duration, now func() time.Time) (*Egress, error) {
-	if r == nil || p == nil || a == nil || len(key) < 32 || freshness <= 0 || now == nil {
-		return nil, fmt.Errorf("egress repositories, authorization, cursor key and freshness are required")
+func NewEgress(r EgressRepository, defaults IntranetPoolDefaultsInfrastructure, a EgressAuthorization, key []byte, now func() time.Time) (*Egress, error) {
+	if r == nil || defaults == nil || a == nil || len(key) < 32 || now == nil {
+		return nil, fmt.Errorf("egress repository, defaults, authorization, cursor key and clock are required")
 	}
-	return &Egress{repository: r, infrastructure: p, authorization: a, cursor: &Network{cursorKey: slices.Clone(key)}, freshness: freshness, now: now}, nil
+	return &Egress{repository: r, defaults: defaults, authorization: a, cursor: &Network{cursorKey: slices.Clone(key)}, now: now}, nil
 }
-func (e *Egress) metadata(v EgressMetadata) EgressMetadata {
-	v.ObservationStale = v.Reason == ProviderUnavailable || v.ObservedAt == nil || v.ObservedAt.After(e.now()) || e.now().Sub(*v.ObservedAt) > e.freshness
-	return v
-}
-func (e *Egress) eip(v EIP) EIP { v.EgressMetadata = e.metadata(v.EgressMetadata); return v }
-func (e *Egress) snat(v VPCSnatBinding) VPCSnatBinding {
-	v.EgressMetadata = e.metadata(v.EgressMetadata)
-	if v.ObservationStale {
-		v.AppliedEnabled = nil
-	}
-	return v
-}
+func (e *Egress) metadata(v EgressMetadata) EgressMetadata { return v }
+func (e *Egress) eip(v EIP) EIP                            { v.EgressMetadata = e.metadata(v.EgressMetadata); return v }
+func (e *Egress) snat(v VPCSnatBinding) VPCSnatBinding     { return v }
 func (e *Egress) platform(v PlatformResource) PlatformResource {
 	v.EgressMetadata = e.metadata(v.EgressMetadata)
 	return v
@@ -315,7 +293,7 @@ func (e *Egress) CreateEIP(ctx context.Context, i EgressIntent) (EIP, error) {
 		return EIP{}, err
 	}
 	// Dynamic readiness and fixed pool selection happen after durable replay lookup.
-	return e.repository.AcceptEIP(ctx, i, a, e.freshness)
+	return e.repository.AcceptEIP(ctx, i, a)
 }
 func (e *Egress) GetEIP(ctx context.Context, tenant, id string) (EIP, error) {
 	tenant, _, err := e.authorization.Tenant(ctx, tenant)
@@ -351,7 +329,7 @@ func (e *Egress) BindVPCSnat(ctx context.Context, i EgressIntent) (VPCSnatBindin
 		return VPCSnatBinding{}, err
 	}
 	i = EgressIntent{TenantID: tenant, Kind: "bind_snat", VPCID: i.VPCID, EIPID: i.EIPID, Enabled: true, IdempotencyKey: i.IdempotencyKey}
-	return e.repository.AcceptSnat(ctx, i, a, e.freshness)
+	return e.repository.AcceptSnat(ctx, i, a)
 }
 func (e *Egress) SetVPCSnatEnabled(ctx context.Context, i EgressIntent) (VPCSnatBinding, error) {
 	tenant, a, err := e.authorization.Tenant(ctx, i.TenantID)
@@ -368,7 +346,7 @@ func (e *Egress) SetVPCSnatEnabled(ctx context.Context, i EgressIntent) (VPCSnat
 		return VPCSnatBinding{}, Fail(InvalidArgument, "expected_version is required")
 	}
 	i = EgressIntent{TenantID: tenant, Kind: "set_snat_enabled", ID: i.ID, Enabled: i.Enabled, ExpectedVersion: i.ExpectedVersion, IdempotencyKey: i.IdempotencyKey}
-	return e.repository.AcceptSnat(ctx, i, a, e.freshness)
+	return e.repository.AcceptSnat(ctx, i, a)
 }
 func (e *Egress) GetVPCSnat(ctx context.Context, tenant, id string, byVPC bool) (VPCSnatBinding, error) {
 	tenant, _, err := e.authorization.Tenant(ctx, tenant)
@@ -482,7 +460,7 @@ func (e *Egress) CreatePlatform(ctx context.Context, i PlatformIntent) (Platform
 	default:
 		return PlatformResource{}, Fail(InvalidArgument, "invalid platform creation")
 	}
-	return e.repository.AcceptPlatform(ctx, i, a, e.freshness)
+	return e.repository.AcceptPlatform(ctx, i, a)
 }
 func platformPrefix(kind string) string {
 	switch kind {
@@ -576,7 +554,7 @@ func (e *Egress) SetPool(ctx context.Context, i PlatformIntent) (PlatformResourc
 	default:
 		return PlatformResource{}, Fail(InvalidArgument, "invalid pool action")
 	}
-	return e.repository.AcceptPlatform(ctx, i, a, e.freshness)
+	return e.repository.AcceptPlatform(ctx, i, a)
 }
 func (e *Egress) GetPlatformOperation(ctx context.Context, id string) (Operation, error) {
 	if _, err := e.authorization.Platform(ctx); err != nil {
@@ -648,7 +626,7 @@ func lastPoolAddress(p netip.Prefix) netip.Addr {
 	return netip.AddrFrom4([4]byte{byte(bits >> 24), byte(bits >> 16), byte(bits >> 8), byte(bits)})
 }
 func ValidatePoolVerification(v PublicPoolVerification, now time.Time) error {
-	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(v.ProviderSourceRevision) || len(v.ProviderImageDigests) == 0 || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(v.TopologyFingerprint) || strings.TrimSpace(v.Scope) == "" || strings.TrimSpace(v.EvidenceReference) == "" || len(v.Scope) > 1024 || len(v.EvidenceReference) > 2048 || v.VerifiedAt.IsZero() || v.VerifiedAt.After(now) || !v.ExpiresAt.After(now) || !v.ExpiresAt.After(v.VerifiedAt) {
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(v.ProviderSourceRevision) || len(v.ProviderImageDigests) == 0 || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(v.TopologyFingerprint) || strings.TrimSpace(v.Scope) == "" || strings.TrimSpace(v.EvidenceReference) == "" || len(v.Scope) > 1024 || len(v.EvidenceReference) > 2048 || v.VerifiedAt.IsZero() || !v.ExpiresAt.After(v.VerifiedAt) {
 		return Fail(InvalidArgument, "verification requires exact provider identity, topology, scope and a valid time window")
 	}
 	for _, d := range v.ProviderImageDigests {

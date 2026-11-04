@@ -68,16 +68,13 @@ func (p *addressWorkerProvider) Observe(context.Context, ProviderTarget) (Provid
 func (p *addressWorkerProvider) EnsureVNic(_ context.Context, target ProviderTarget) (ProviderObservation, error) {
 	p.calls++
 	p.target = target
-	return ProviderObservation{Exists: true, Identity: "original-vnic", Ready: true}, nil
+	return ProviderObservation{Exists: true, Identity: "original-vnic", Ready: reportedReady(true)}, nil
 }
 
-func TestVNicWorkerResumesRequestedIPAndReportsConflict(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
+func TestVNicWorkerResumesOwnDeclarationAndUsesOnlyParentReady(t *testing.T) {
+	for _, needsDeclaration := range []bool{false, true} {
 		r := &addressWorkerRepository{work: Work{Now: time.Now(), ActiveOperation: true, KnownIdentity: "original-vnic", Resource: ResourceWork{Kind: "vnic", State: Provisioning, RequestedIP: "10.42.1.71", RequestedMAC: "02:ab:cd:ef:00:71"}, Operation: Operation{Kind: "create_vnic"}}}
-		p := &addressWorkerProvider{observation: ProviderObservation{Exists: true, Identity: "original-vnic", NeedsUpdate: !conflict}}
-		if conflict {
-			p.observation.RejectionReason = AddressConflict
-		}
+		p := &addressWorkerProvider{observation: ProviderObservation{Exists: true, Identity: "original-vnic", Ready: reportedReady(false), StatusReason: Reason("Waiting"), NeedsUpdate: needsDeclaration}}
 		w, err := NewWorker(r, p, uuid.NewString(), DefaultWorkerPolicy())
 		if err != nil {
 			t.Fatal(err)
@@ -85,12 +82,12 @@ func TestVNicWorkerResumesRequestedIPAndReportsConflict(t *testing.T) {
 		if _, err = w.Step(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if conflict {
-			if r.progress.State != Failed || r.progress.OperationState != OpFailed || r.progress.Reason != AddressConflict || p.calls != 0 {
-				t.Fatal("KCN address conflict did not terminate creation", r.progress, p.calls)
+		if needsDeclaration {
+			if r.progress.State != Available || r.progress.OperationState != Succeeded || r.mutation != "update" || p.calls != 1 || p.target.RequestedIP != r.work.Resource.RequestedIP {
+				t.Fatal(r.progress, p.target, p.calls)
 			}
-		} else if r.progress.State != Available || r.progress.OperationState != Succeeded || r.mutation != "update" || p.calls != 1 || p.target.KnownIdentity != "original-vnic" || p.target.RequestedIP != r.work.Resource.RequestedIP || p.target.RequestedMAC != r.work.Resource.RequestedMAC {
-			t.Fatal("existing VNIC did not resume the requested IP allocation", r.progress, p.target, p.calls)
+		} else if r.progress.State != Provisioning || r.progress.OperationState == OpFailed || p.calls != 0 {
+			t.Fatal("Ready=False became a Res terminal failure", r.progress, p.calls)
 		}
 	}
 }

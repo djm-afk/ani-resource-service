@@ -409,12 +409,14 @@ type DefaultVPCEgress struct {
 	CreatedAt           *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt           *timestamppb.Timestamp `protobuf:"bytes,24,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	ObservedAt          *timestamppb.Timestamp `protobuf:"bytes,25,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	TargetGeneration    int64                  `protobuf:"varint,26,opt,name=target_generation,json=targetGeneration,proto3" json:"target_generation,omitempty"`
-	PendingAction       string                 `protobuf:"bytes,27,opt,name=pending_action,json=pendingAction,proto3" json:"pending_action,omitempty"`
-	ObservationStale    bool                   `protobuf:"varint,28,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
-	EipId               string                 `protobuf:"bytes,29,opt,name=eip_id,json=eipId,proto3" json:"eip_id,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Deprecated: Marked as deprecated in network/v1/default_vpc_egress.proto.
+	TargetGeneration int64  `protobuf:"varint,26,opt,name=target_generation,json=targetGeneration,proto3" json:"target_generation,omitempty"`
+	PendingAction    string `protobuf:"bytes,27,opt,name=pending_action,json=pendingAction,proto3" json:"pending_action,omitempty"`
+	// Last read failed or no successful observation is recorded; never an age or admission gate.
+	ObservationStale bool   `protobuf:"varint,28,opt,name=observation_stale,json=observationStale,proto3" json:"observation_stale,omitempty"`
+	EipId            string `protobuf:"bytes,29,opt,name=eip_id,json=eipId,proto3" json:"eip_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *DefaultVPCEgress) Reset() {
@@ -622,6 +624,7 @@ func (x *DefaultVPCEgress) GetObservedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in network/v1/default_vpc_egress.proto.
 func (x *DefaultVPCEgress) GetTargetGeneration() int64 {
 	if x != nil {
 		return x.TargetGeneration
@@ -672,7 +675,7 @@ const file_network_v1_default_vpc_egress_proto_rawDesc = "" +
 	"\"GetCurrentDefaultVPCEgressResponse\x124\n" +
 	"\x06egress\x18\x01 \x01(\v2\x1c.network.v1.DefaultVPCEgressR\x06egress\"V\n" +
 	"\x1eDeleteDefaultVPCEgressResponse\x124\n" +
-	"\x06egress\x18\x01 \x01(\v2\x1c.network.v1.DefaultVPCEgressR\x06egress\"\xf1\b\n" +
+	"\x06egress\x18\x01 \x01(\v2\x1c.network.v1.DefaultVPCEgressR\x06egress\"\xf5\b\n" +
 	"\x10DefaultVPCEgress\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n" +
@@ -704,8 +707,8 @@ const file_network_v1_default_vpc_egress_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x18 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12;\n" +
 	"\vobserved_at\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"observedAt\x12+\n" +
-	"\x11target_generation\x18\x1a \x01(\x03R\x10targetGeneration\x12%\n" +
+	"observedAt\x12/\n" +
+	"\x11target_generation\x18\x1a \x01(\x03B\x02\x18\x01R\x10targetGeneration\x12%\n" +
 	"\x0epending_action\x18\x1b \x01(\tR\rpendingAction\x12+\n" +
 	"\x11observation_stale\x18\x1c \x01(\bR\x10observationStale\x12\x15\n" +
 	"\x06eip_id\x18\x1d \x01(\tR\x05eipIdB\x12\n" +

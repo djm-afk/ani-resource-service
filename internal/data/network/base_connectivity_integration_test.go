@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -45,9 +44,26 @@ func baseState(t *testing.T, f *egressFixture, id string, state biz.ResourceStat
 	f.drive(t, func() bool {
 		var err error
 		v, err = f.n.GetVPC(f.ctx, f.tenant, id)
-		return err == nil && v.State == state
+		return err == nil && baseFixtureProductsSettled(v, state)
 	})
 	return v
+}
+
+// Lifecycle fixtures wait for both independently managed product records.
+// Runtime VPC status remains independent; tests below check that explicitly.
+func baseFixtureProductsSettled(v biz.VPC, state biz.ResourceState) bool {
+	if v.State != state {
+		return false
+	}
+	if v.BaseConnectivity != nil {
+		if state == biz.Available {
+			return v.BaseConnectivity.State == "ready"
+		}
+		if state == biz.Deleted {
+			return v.BaseConnectivity.State == "deleted"
+		}
+	}
+	return true
 }
 func baseIDs(t *testing.T, f *egressFixture, id string) (string, string) {
 	t.Helper()
@@ -65,7 +81,7 @@ func TestBaseConnectivityActualAdapterLifecycleObservationAndPureReads(t *testin
 	}
 	v := baseState(t, f, accepted.ID, biz.Available)
 	if v.BaseConnectivity == nil || v.BaseConnectivity.State != "ready" || v.BaseConnectivity.ObservationStale {
-		t.Fatal("aggregate is not fresh and ready", v)
+		t.Fatal("managed base projection is not ready or has a read error", v)
 	}
 	e, s := baseIDs(t, f, v.ID)
 	var ns, snatName, vpcName, eipName string
@@ -104,18 +120,18 @@ func TestBaseConnectivityActualAdapterLifecycleObservationAndPureReads(t *testin
 	}
 	original := api.Object("snats", ns, snatName)
 	drift := api.Object("snats", ns, snatName)
-	drift["metadata"].(map[string]any)["uid"] = "replacement-uid"
+	drift["status"].(map[string]any)["phase"] = "Disabled"
 	api.Change("snats", drift, false)
-	degraded := baseState(t, f, v.ID, biz.Degraded)
-	if degraded.BaseConnectivity.State != "degraded" {
-		t.Fatal("base dependency drift not aggregated", degraded)
+	f.drive(t, func() bool {
+		current, err := f.n.GetVPC(f.ctx, f.tenant, v.ID)
+		return err == nil && current.State == biz.Available && current.BaseConnectivity != nil && current.BaseConnectivity.State == "degraded"
+	})
+	op, err := f.n.GetOperation(f.ctx, f.tenant, accepted.LastOperationID)
+	if err != nil || op.State != biz.Succeeded {
+		t.Fatal("child projection rewrote VPC history", op, err)
 	}
 	api.Change("snats", original, false)
 	baseState(t, f, v.ID, biz.Available)
-	op, err := f.n.GetOperation(f.ctx, f.tenant, accepted.LastOperationID)
-	if err != nil || op.State != biz.Succeeded {
-		t.Fatal("history rewritten", op, err)
-	}
 	// Switching/closing platform allocation cannot move an accepted base address.
 	var pool string
 	if err = f.owner.QueryRow(f.ctx, `SELECT pool_id FROM network_vpc_base_connectivity WHERE tenant_id=$1 AND vpc_id=$2`, f.tenant, v.ID).Scan(&pool); err != nil {
@@ -220,161 +236,53 @@ func TestBaseConnectivityPinsPoolAndChildrenAcrossRetryAndDefaultSwitch(t *testi
 // The Provider successfully creates the original system SNAT object but cannot
 // apply its binding yet. This exercises the initial aggregate gate, not the
 // already-available resource drift or response-loss paths.
-func TestBaseConnectivityInitialSnatPendingKeepsCreateOpenThenWorkerRecovers(t *testing.T) {
-	type bindingFacts struct {
-		snat, eip  map[string]any
-		statusCode int
-	}
-	captured := make(chan bindingFacts, 1)
-	var armed, intercepted atomic.Bool
-	var snatPosts atomic.Int32
-	intercept := func(w http.ResponseWriter, r *http.Request, api *controlled.Server) bool {
+func TestPendingManagedSnatDoesNotBlockNativeVPCReady(t *testing.T) {
+	var armed atomic.Bool
+	var posts atomic.Int32
+	f, api, _, _ := newBaseKCFixture(t, func(w http.ResponseWriter, r *http.Request, api *controlled.Server) bool {
 		if !armed.Load() || r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/snats") {
 			return false
 		}
-		snatPosts.Add(1)
-		if !intercepted.CompareAndSwap(false, true) {
-			return false
-		}
+		posts.Add(1)
 		recorder := httptest.NewRecorder()
 		api.Backend.ServeHTTP(recorder, r)
-		var created map[string]any
-		if recorder.Code >= 200 && recorder.Code < 300 && json.Unmarshal(recorder.Body.Bytes(), &created) == nil {
-			metadata, _ := created["metadata"].(map[string]any)
-			namespace, _ := metadata["namespace"].(string)
-			name, _ := metadata["name"].(string)
-			spec, _ := created["spec"].(map[string]any)
-			eipName, _ := spec["eip"].(string)
-			originalSnat := api.Object("snats", namespace, name)
-			originalEIP := api.Object("eips", namespace, eipName)
-			if originalSnat != nil && originalEIP != nil {
-				pendingSnat := api.Object("snats", namespace, name)
-				pendingSnat["status"].(map[string]any)["phase"] = "Pending"
-				pendingEIP := api.Object("eips", namespace, eipName)
-				pendingEIP["status"].(map[string]any)["phase"] = "Available"
-				pendingEIP["status"].(map[string]any)["boundResource"] = nil
-				api.Change("eips", pendingEIP, false)
-				api.Change("snats", pendingSnat, false)
-				captured <- bindingFacts{snat: originalSnat, eip: originalEIP, statusCode: recorder.Code}
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(recorder.Code)
-				_ = json.NewEncoder(w).Encode(api.Object("snats", namespace, name))
-				return true
-			}
+		var object map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &object); err != nil {
+			t.Error(err)
+			return false
 		}
-		captured <- bindingFacts{statusCode: recorder.Code}
-		for key, values := range recorder.Header() {
-			w.Header()[key] = values
-		}
+		object["status"].(map[string]any)["phase"] = "Pending"
+		api.Change("snats", object, false)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(recorder.Code)
-		_, _ = w.Write(recorder.Body.Bytes())
+		_ = json.NewEncoder(w).Encode(object)
 		return true
-	}
-	f, api, _, _ := newBaseKCFixture(t, intercept)
-	armed.Store(true)
-	accepted := createBaseVPC(t, f, "initial-snat-pending")
-	eipID, snatID := baseIDs(t, f, accepted.ID)
-	var facts *bindingFacts
-	assertCreateOpen := func() {
-		t.Helper()
-		v, err := f.n.GetVPC(f.ctx, f.tenant, accepted.ID)
-		if err != nil || v.State != biz.Provisioning || v.LastOperationID != accepted.LastOperationID || v.BaseConnectivity == nil || v.BaseConnectivity.State == "ready" {
-			t.Fatal("unapplied initial SNAT completed VPC aggregate", v, err)
-		}
-		operation, err := f.n.GetOperation(f.ctx, f.tenant, accepted.LastOperationID)
-		if err != nil || operation.State == biz.Succeeded || operation.CompletedAt != nil {
-			t.Fatal("unapplied initial SNAT completed create operation", operation, err)
-		}
-		var active int
-		if err := f.owner.QueryRow(f.ctx, `SELECT count(*) FROM network_eip_claims WHERE tenant_id=$1 AND eip_id=$2 AND snat_id=$3 AND released_at IS NULL`, f.tenant, eipID, snatID).Scan(&active); err != nil || active != 1 {
-			t.Fatal("pending base binding released exclusive EIP claim", active, err)
-		}
-		actualEIP, actualSnat := baseIDs(t, f, accepted.ID)
-		if actualEIP != eipID || actualSnat != snatID {
-			t.Fatal("pending binding changed fixed base identities")
-		}
-	}
-	f.drive(t, func() bool {
-		assertCreateOpen()
-		if facts == nil {
-			select {
-			case value := <-captured:
-				facts = &value
-			default:
-				return false
-			}
-		}
-		if facts.snat == nil || facts.eip == nil {
-			t.Fatal("controlled pending-binding injection failed", facts.statusCode)
-		}
-		var observedPending bool
-		err := f.owner.QueryRow(f.ctx, `SELECT s.purpose='intranet' AND s.state='provisioning' AND s.observed_at IS NOT NULL AND s.applied_enabled IS NULL AND s.reason='PROVIDER_NOT_READY' AND binding.provider_uid<>'' AND binding.pending_action='' AND b.provider_ready AND b.state='pending' AND b.reason='PROVIDER_NOT_READY' FROM network_snat_bindings s JOIN network_provider_bindings binding ON binding.tenant_id=s.tenant_id AND binding.snat_id=s.snat_id JOIN network_vpc_base_connectivity b ON b.tenant_id=s.tenant_id AND b.snat_id=s.snat_id WHERE s.tenant_id=$1 AND s.snat_id=$2`, f.tenant, snatID).Scan(&observedPending)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return observedPending
 	})
-	// Repeated retries cannot turn the accepted provider object into a successful
-	// VPC until the actual same-identity facts satisfy the binding contract.
-	for i := 0; i < 12; i++ {
-		if _, err := f.w.Step(f.ctx); err != nil {
-			t.Fatal(err)
+	armed.Store(true)
+	accepted := createBaseVPC(t, f, "native-ready-independent")
+	_, snatID := baseIDs(t, f, accepted.ID)
+	f.drive(t, func() bool {
+		current, err := f.n.GetVPC(f.ctx, f.tenant, accepted.ID)
+		var observed bool
+		if err == nil {
+			err = f.owner.QueryRow(f.ctx, `SELECT observed_at IS NOT NULL FROM network_snat_bindings WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID).Scan(&observed)
 		}
-		assertCreateOpen()
-	}
-	var bound bool
-	if err := f.owner.QueryRow(f.ctx, `SELECT state='bound' FROM network_eip_claims WHERE tenant_id=$1 AND eip_id=$2 AND released_at IS NULL`, f.tenant, eipID).Scan(&bound); err != nil || bound {
-		t.Fatal("unapplied binding claim incorrectly confirmed", bound, err)
-	}
-	namespace := facts.snat["metadata"].(map[string]any)["namespace"].(string)
-	for _, target := range []struct {
-		kind     string
-		original map[string]any
-	}{{"eips", facts.eip}, {"snats", facts.snat}} {
-		metadata := target.original["metadata"].(map[string]any)
-		name := metadata["name"].(string)
-		current := api.Object(target.kind, namespace, name)
-		currentMeta := current["metadata"].(map[string]any)
-		if currentMeta["uid"] != metadata["uid"] || currentMeta["generation"] != metadata["generation"] || !reflect.DeepEqual(current["spec"], target.original["spec"]) {
-			t.Fatal("pending observation altered accepted Provider identity or spec", target.kind)
-		}
-		// Restore only controlled current-generation status; do not create another
-		// object, resubmit product intent, or manually wake/update database rows.
-		current["status"] = target.original["status"]
-		api.Change(target.kind, current, false)
-	}
-	current := baseState(t, f, accepted.ID, biz.Available)
-	if current.LastOperationID != accepted.LastOperationID || current.BaseConnectivity == nil || current.BaseConnectivity.State != "ready" {
-		t.Fatal("recovery did not complete the original aggregate", current)
-	}
+		return err == nil && observed && current.State == biz.Available && current.BaseConnectivity != nil && current.BaseConnectivity.State == "pending"
+	})
 	operation, err := f.n.GetOperation(f.ctx, f.tenant, accepted.LastOperationID)
 	if err != nil || operation.State != biz.Succeeded || operation.CompletedAt == nil {
-		t.Fatal("same create operation did not recover", operation, err)
+		t.Fatal("child pending blocked native VPC operation", operation, err)
 	}
-	if snatPosts.Load() != 1 {
-		t.Fatal("pending binding allocated another SNAT", snatPosts.Load())
-	}
-	for _, target := range []struct {
-		id, kind string
-		original map[string]any
-	}{{eipID, "eips", facts.eip}, {snatID, "snats", facts.snat}} {
-		metadata := target.original["metadata"].(map[string]any)
-		var uid string
-		if err := f.owner.QueryRow(f.ctx, `SELECT provider_uid FROM network_provider_bindings WHERE tenant_id=$1 AND coalesce(eip_id,snat_id)=$2`, f.tenant, target.id).Scan(&uid); err != nil || uid != metadata["uid"] {
-			t.Fatal("recovery changed fixed provider UID", target.kind, uid, err)
-		}
-		api.Backend.Mu.Lock()
-		creates := api.Backend.Creates[target.kind]
-		api.Backend.Mu.Unlock()
-		if creates != 1 {
-			t.Fatal("pending binding caused duplicate allocation", target.kind, creates)
-		}
-	}
-	if err := f.owner.QueryRow(f.ctx, `SELECT state='bound' FROM network_eip_claims WHERE tenant_id=$1 AND eip_id=$2 AND snat_id=$3 AND released_at IS NULL`, f.tenant, eipID, snatID).Scan(&bound); err != nil || !bound {
-		t.Fatal("applied base binding did not confirm the original claim", bound, err)
-	}
-	if _, err = f.n.DeleteVPC(f.ctx, f.tenant, accepted.ID); err != nil {
+	var namespace, name string
+	if err = f.owner.QueryRow(f.ctx, `SELECT namespace,provider_name FROM network_provider_bindings WHERE tenant_id=$1 AND snat_id=$2`, f.tenant, snatID).Scan(&namespace, &name); err != nil {
 		t.Fatal(err)
 	}
-	baseState(t, f, accepted.ID, biz.Deleted)
+	object := api.Object("snats", namespace, name)
+	object["status"].(map[string]any)["phase"] = "Bound"
+	api.Change("snats", object, false)
+	baseState(t, f, accepted.ID, biz.Available)
+	after, err := f.n.GetOperation(f.ctx, f.tenant, accepted.LastOperationID)
+	if err != nil || !after.UpdatedAt.Equal(operation.UpdatedAt) || posts.Load() != 1 {
+		t.Fatal("child recovery changed history or redeclared object", after, posts.Load(), err)
+	}
 }

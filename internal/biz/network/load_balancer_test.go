@@ -15,7 +15,7 @@ type lbRepositoryTest struct {
 	op       Operation
 }
 
-func (r *lbRepositoryTest) AcceptLoadBalancer(_ context.Context, i LoadBalancerIntent, _ Attribution, _ time.Duration) (LoadBalancerResult, error) {
+func (r *lbRepositoryTest) AcceptLoadBalancer(_ context.Context, i LoadBalancerIntent, _ Attribution) (LoadBalancerResult, error) {
 	r.accepted = append(r.accepted, i)
 	return LoadBalancerResult{}, nil
 }
@@ -31,7 +31,7 @@ func (r *lbRepositoryTest) GetLoadBalancerOperation(_ context.Context, _, _ stri
 func lbTestSetup(t *testing.T) (*LoadBalancers, *lbRepositoryTest, context.Context) {
 	t.Helper()
 	r := &lbRepositoryTest{}
-	l, err := NewLoadBalancers(r, ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)), time.Minute, func() time.Time { return time.Unix(1000, 0) })
+	l, err := NewLoadBalancers(r, ContextEgressAuthorization{}, []byte(strings.Repeat("c", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,16 +158,16 @@ func TestLBBackendSetFingerprintIgnoresOrderButPreservesMemberIdentity(t *testin
 		t.Fatal("version or operation kind lost")
 	}
 }
-func TestLBQueryFreshnessAndCursorScope(t *testing.T) {
+func TestLBQueryPreservesReportedStateAndCursorScope(t *testing.T) {
 	l, repo, ctx := lbTestSetup(t)
 	old := time.Unix(900, 0)
 	fresh := time.Unix(990, 0)
-	repo.rows = []LoadBalancer{{EgressMetadata: EgressMetadata{ID: "lb_" + strings.Repeat("4", 32), ObservedAt: &fresh, CreatedAt: fresh}, ConfigurationState: "configured", DataPlaneState: "healthy", DataPlaneObservedAt: &old, DesiredVersion: 2, AppliedVersion: 1, Backends: []LoadBalancerBackend{{State: "available", ObservedAt: &old}}}, {EgressMetadata: EgressMetadata{ID: "lb_" + strings.Repeat("5", 32), CreatedAt: old}}}
+	repo.rows = []LoadBalancer{{EgressMetadata: EgressMetadata{ID: "lb_" + strings.Repeat("4", 32), ObservedAt: &fresh, CreatedAt: fresh}, ConfigurationState: "configured", DesiredVersion: 2, AppliedVersion: 1, Backends: []LoadBalancerBackend{{State: "available", ObservedAt: &old}}}, {EgressMetadata: EgressMetadata{ID: "lb_" + strings.Repeat("5", 32), CreatedAt: old}}}
 	v, err := l.Get(ctx, "", repo.rows[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.ObservationStale || v.DataPlaneState != "unknown" || v.DataPlaneObservedAt != nil || v.AppliedVersion != 1 || v.DesiredVersion != 2 || v.Backends[0].State != "unknown" {
+	if v.ObservationStale || v.AppliedVersion != 1 || v.DesiredVersion != 2 || v.Backends[0].State != "available" {
 		t.Fatalf("query mixed evidence/version: %+v", v)
 	}
 	q := ListLoadBalancers{ListVPCs: ListVPCs{Limit: 1}, Exposure: "private"}

@@ -2,6 +2,9 @@ package data_test
 
 import (
 	"context"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
+	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,13 +14,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	controlled "github.com/zhangzhe-ctrl/ani-resource-service/tests/net05a/provider"
-	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
 )
 
-func TestEgressServiceProcessesRecoverLostCreateDeleteAndTombstone(t *testing.T) {
+func TestEgressServiceProcessesRecoverLostCreateAndDelete(t *testing.T) {
 	if os.Getenv("NETWORK_TEST_ADMIN_DSN") == "" {
 		t.Skip("requires isolated PostgreSQL")
 	}
@@ -36,16 +35,11 @@ func TestEgressServiceProcessesRecoverLostCreateDeleteAndTombstone(t *testing.T)
 	defer close(createRelease)
 	defer close(deleteRelease)
 	var sawCreate, sawDelete atomic.Bool
-	var saved map[string]any
 	intercept := func(w http.ResponseWriter, r *http.Request, api *controlled.Server) bool {
 		create := r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/eips") && sawCreate.CompareAndSwap(false, true)
 		deletion := r.Method == "DELETE" && strings.Contains(r.URL.Path, "/eips/") && sawDelete.CompareAndSwap(false, true)
 		if !create && !deletion {
 			return false
-		}
-		if deletion {
-			parts := strings.Split(r.URL.Path, "/")
-			saved = api.Object("eips", parts[len(parts)-3], parts[len(parts)-1])
 		}
 		rec := httptest.NewRecorder()
 		api.Backend.ServeHTTP(rec, r)
@@ -112,16 +106,11 @@ func TestEgressServiceProcessesRecoverLostCreateDeleteAndTombstone(t *testing.T)
 	if err != nil || current.LastOperationID != deleting.LastOperationID {
 		t.Fatal("delete restart lost operation", err)
 	}
-	// The same UID late object must be cleaned from the retained tombstone.
-	if saved == nil {
-		t.Fatal("missing deleted object fixture")
+	var retired bool
+	var pending string
+	if err = f.owner.QueryRow(f.ctx, `SELECT r.retired,b.pending_action FROM network_reconciliations r JOIN network_provider_bindings b USING(tenant_id,eip_id) WHERE r.tenant_id=$1 AND r.eip_id=$2`, f.tenant, accepted.ID).Scan(&retired, &pending); err != nil || !retired || pending != "" {
+		t.Fatal("completed deletion did not retire its task", retired, pending, err)
 	}
-	api.Change("eips", saved, false)
-	awaitNET05A(t, 12*time.Second, func() bool {
-		api.Backend.Mu.Lock()
-		defer api.Backend.Mu.Unlock()
-		return api.Backend.Deletes["eips"] == 2
-	})
 	third.stop(t)
 	replay, err := f.e.CreateEIP(context.WithoutCancel(f.ctx), biz.EgressIntent{Name: "process-crash", IdempotencyKey: "process-crash"})
 	if err != nil || replay.ID != accepted.ID || replay.State != biz.Provisioning {

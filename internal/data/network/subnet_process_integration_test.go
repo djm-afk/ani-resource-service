@@ -37,7 +37,7 @@ func TestSubnetProcessesRecoverProviderSuccessAndUnknownDeletion(t *testing.T) {
 		const fault = "after-provider-success"
 		fixture := testenv.NewDatabase(t)
 		signingKey := testenv.SigningKey()
-		// Keep Subnet-specific post-write recovery, unknown deletion and tombstones.
+		// Keep Subnet-specific post-write recovery and original-object deletion.
 		// Generic T1 process recovery remains in the VPC process test; Subnet CIDR
 		// occupancy and expired-writer rejection remain in the database tests.
 		migration := exec.Command(binary, "-migrate")
@@ -172,36 +172,30 @@ func TestSubnetProcessesRecoverProviderSuccessAndUnknownDeletion(t *testing.T) {
 		if deleted.LastOperationId != deleting.Subnet.LastOperationId {
 			t.Fatal("delete recovery changed operation identity")
 		}
-		// A controlled stale/late same-UID object verifies retained tombstone
-		// handling. Real Kubernetes UID/visibility semantics remain unverified here.
+		// A later object with the same name belongs to a different lifecycle.
+		// Restarting Res must retain the completed delete without reclaiming it.
 		deletionProcess.kill(t)
 		api.Mu.Lock()
 		var restored map[string]any
 		_ = json.Unmarshal(saved, &restored)
+		restored["metadata"].(map[string]any)["uid"] = uuid.NewString()
 		api.Objects[savedKey] = restored
 		api.Mu.Unlock()
 		fourth := start()
-		tombstone, closeTombstone := fourth.client(t, tenant)
-		defer closeTombstone()
-		deadline := time.Now().Add(12 * time.Second)
-		cleaned := false
-		for time.Now().Before(deadline) {
-			api.Mu.Lock()
-			cleaned = api.Objects[savedKey] == nil && api.Deletes["subnets"] == 2
-			api.Mu.Unlock()
-			if cleaned {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if !cleaned {
-			t.Fatal("tombstone did not clean late owned object without caller")
+		restarted, closeRestarted := fourth.client(t, tenant)
+		defer closeRestarted()
+		waitSubnetRPCState(t, restarted, tenant, current.Id, networkv1.ResourceState_RESOURCE_STATE_DELETED)
+		api.Mu.Lock()
+		untouched := api.Objects[savedKey] != nil && api.Deletes["subnets"] == 1
+		api.Mu.Unlock()
+		if !untouched {
+			t.Fatal("completed delete reclaimed a later object")
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
-		historic, err := tombstone.GetOperation(ctx, &networkv1.GetOperationRequest{TenantId: tenant, OperationId: deleting.Subnet.LastOperationId})
+		historic, err := restarted.GetOperation(ctx, &networkv1.GetOperationRequest{TenantId: tenant, OperationId: deleting.Subnet.LastOperationId})
 		cancel()
 		if err != nil || !historic.Operation.CompletedAt.AsTime().Equal(completed.Operation.CompletedAt.AsTime()) {
-			t.Fatalf("tombstone rewrote historic operation: %v %v", historic, err)
+			t.Fatalf("restart rewrote historic operation: %v %v", historic, err)
 		}
 		fourth.stop(t)
 		t.Logf("%s: Subnet=%s create_op=%s create_count_before_crash=%d final_creates=%d delete_op=%s; five distinct service processes (including two concurrent replicas) used the same database and API state", fault, current.Id, accepted.Subnet.LastOperationId, createCountBefore, creates, deleting.Subnet.LastOperationId)

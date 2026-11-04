@@ -1,5 +1,7 @@
 # 租户 VPC SNAT 方案：Overlay 与 Underlay
 
+> 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
+
 2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
 
 > 2026-09-14 部分规则由[统一方案](vpc-connectivity-lb.md)接替：每 VPC 的 SNAT 按内网/公网分别限制，EIP 占用覆盖 SNAT/LB，VPC 新增基础内网生命周期。下文保留为 d8835a22 已有实现的来源；未冲突的 Public 申请/启停/解绑/释放和平台模式规则继续适用，不把新方案当作已实现。

@@ -323,7 +323,9 @@ func TestResourceOldClientSchemaCompatibleSameDatabaseRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	submission, err := consumer.GetSubmission(ctx, attachment)
-	if err != nil || submission.State != "closed" || submission.FinalizationID != attachment.FinalizationID || submission.TenantID != tenant || submission.ClosedAt == nil || !reflect.DeepEqual(submission.PodUIDs, []string{"old-pod"}) || !reflect.DeepEqual(submission.ControllerUIDs, []string{"old-controller"}) {
+	// The old wire may carry controller history. Only current management
+	// fields remain part of the Network consumer contract.
+	if err != nil || submission.State != "closed" || submission.FinalizationID != attachment.FinalizationID || submission.TenantID != tenant || submission.ClosedAt == nil || !reflect.DeepEqual(submission.PodUIDs, []string{"old-pod"}) {
 		t.Fatalf("old reverse consumer changed: %+v %v", submission, err)
 	}
 	t.Log("candidate outbound adapter -> independent old generated consumer: pass")

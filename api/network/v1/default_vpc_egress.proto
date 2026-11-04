@@ -46,8 +46,9 @@ message DefaultVPCEgress {
   google.protobuf.Timestamp created_at = 23;
   google.protobuf.Timestamp updated_at = 24;
   google.protobuf.Timestamp observed_at = 25;
-  int64 target_generation = 26;
+  int64 target_generation = 26 [deprecated = true];
   string pending_action = 27;
+  // Last read failed or no successful observation is recorded; never an age or admission gate.
   bool observation_stale = 28;
   string eip_id = 29;
 }

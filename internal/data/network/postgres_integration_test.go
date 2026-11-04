@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
 	"strings"
 )
@@ -24,6 +25,9 @@ func database(t *testing.T) (*data.Postgres, *pgxpool.Pool) {
 	// Admission, locking and SQL still run through the production implementation;
 	// NewDatabase itself remains closed until the fixture publishes its policy.
 	configureRepositoryVPCPresets(t, fixture.Repository)
+	fixture.Repository.ConfigureTenantNamespaceResolver(func(_ context.Context, tenant string) (tenantnamespace.Identity, error) {
+		return tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: "namespace-" + tenant}, nil
+	})
 	return fixture.Repository, fixture.Owner
 }
 
@@ -36,7 +40,7 @@ func configureRepositoryVPCPresets(t *testing.T, repository *data.Postgres) {
 
 func TestVPCAcceptanceIsTenantScopedAndReplaysExactly(t *testing.T) {
 	repository, owner := database(t)
-	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +89,7 @@ func TestVPCAcceptanceIsTenantScopedAndReplaysExactly(t *testing.T) {
 
 func TestVPCPagesRemainScopedAndCursorCannotChangeFilters(t *testing.T) {
 	repository, _ := database(t)
-	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	network, err := biz.NewNetwork(repository, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}

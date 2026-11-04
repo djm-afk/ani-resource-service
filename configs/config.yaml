@@ -21,16 +21,10 @@ network:
     lease: "${WORKER_LEASE:20s}"
     request_timeout: "${WORKER_REQUEST_TIMEOUT:5s}"
     observe_every: "${WORKER_OBSERVE_EVERY:10s}"
-    stale_after: "${WORKER_STALE_AFTER:60s}"
     retry_min: "${WORKER_RETRY_MIN:1s}"
     retry_max: "${WORKER_RETRY_MAX:60s}"
     poll_interval: "${WORKER_POLL_INTERVAL:0.1s}"
   observation:
-    audit_interval: "${OBSERVATION_AUDIT_INTERVAL:30s}"
-    audit_jitter: "${OBSERVATION_AUDIT_JITTER:2s}"
-    audit_timeout: "${OBSERVATION_AUDIT_TIMEOUT:10s}"
-    flush_interval: "${OBSERVATION_FLUSH_INTERVAL:0.1s}"
-    queue_capacity: ${OBSERVATION_QUEUE_CAPACITY:4096}
     workers_per_kind: ${OBSERVATION_WORKERS_PER_KIND:2}
     request_qps: ${OBSERVATION_REQUEST_QPS:5}
     request_burst: ${OBSERVATION_REQUEST_BURST:10}

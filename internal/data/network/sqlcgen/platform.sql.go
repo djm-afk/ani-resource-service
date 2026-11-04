@@ -14,7 +14,7 @@ import (
 const acquirePlatformLease = `-- name: AcquirePlatformLease :one
 UPDATE network_platform_reconciliations SET lease_owner=$1::uuid,lease_epoch=lease_epoch+1,
  lease_until=clock_timestamp()+$2::bigint*interval '1 microsecond'
-WHERE resource_id=$3 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) RETURNING resource_id, next_run_at, lease_owner, lease_until, lease_epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at
+WHERE resource_id=$3 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) RETURNING resource_id, next_run_at, lease_owner, lease_until, lease_epoch, requested_generation, processed_generation, retry_not_before, observation_error
 `
 
 type AcquirePlatformLeaseParams struct {
@@ -35,8 +35,7 @@ func (q *Queries) AcquirePlatformLease(ctx context.Context, arg AcquirePlatformL
 		&i.RequestedGeneration,
 		&i.ProcessedGeneration,
 		&i.RetryNotBefore,
-		&i.EvidenceHash,
-		&i.EvidenceAppliedAt,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -47,7 +46,7 @@ UPDATE network_platform_resources SET state=$1,reason=$2,version=version+1,updat
  observed_at=CASE WHEN $4::boolean THEN $5::timestamptz ELSE observed_at END,
  pending_action=CASE WHEN $6::boolean THEN '' ELSE pending_action END,
  pending_since=CASE WHEN $6::boolean THEN NULL ELSE pending_since END
-WHERE resource_id=$7 AND version=$8 AND (provider_uid='' OR provider_uid=$3) RETURNING resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, provider_images, binding_id, pending_action, pending_since
+WHERE resource_id=$7 AND version=$8 AND (provider_uid='' OR provider_uid=$3) RETURNING resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, binding_id, pending_action, pending_since
 `
 
 type AdvancePlatformParams struct {
@@ -88,7 +87,6 @@ func (q *Queries) AdvancePlatform(ctx context.Context, arg AdvancePlatformParams
 		&i.LastOperationID,
 		&i.ProviderName,
 		&i.ProviderUid,
-		&i.ProviderImages,
 		&i.BindingID,
 		&i.PendingAction,
 		&i.PendingSince,
@@ -100,7 +98,7 @@ const beginPlatformMutation = `-- name: BeginPlatformMutation :execrows
 UPDATE network_platform_resources SET pending_action=$1,pending_since=clock_timestamp(),
  provider_uid=CASE WHEN provider_uid='' THEN $2::text ELSE provider_uid END
 WHERE resource_id=$3 AND binding_id=$4 AND (provider_uid='' OR provider_uid=$2)
- AND (($1::text='create' AND pending_action='') OR
+ AND (($1::text='create' AND (pending_action='' OR (pending_action='create' AND provider_uid=''))) OR
  ($1='delete' AND (pending_action IN ('','delete') OR $2::text<>'')))
 `
 
@@ -125,7 +123,7 @@ func (q *Queries) BeginPlatformMutation(ctx context.Context, arg BeginPlatformMu
 }
 
 const checkPlatformLease = `-- name: CheckPlatformLease :one
-SELECT resource_id, next_run_at, lease_owner, lease_until, lease_epoch, requested_generation, processed_generation, retry_not_before, evidence_hash, evidence_applied_at FROM network_platform_reconciliations WHERE resource_id=$1 AND lease_owner=$2::uuid
+SELECT resource_id, next_run_at, lease_owner, lease_until, lease_epoch, requested_generation, processed_generation, retry_not_before, observation_error FROM network_platform_reconciliations WHERE resource_id=$1 AND lease_owner=$2::uuid
  AND lease_epoch=$3 AND lease_until>clock_timestamp() FOR UPDATE
 `
 
@@ -147,8 +145,7 @@ func (q *Queries) CheckPlatformLease(ctx context.Context, arg CheckPlatformLease
 		&i.RequestedGeneration,
 		&i.ProcessedGeneration,
 		&i.RetryNotBefore,
-		&i.EvidenceHash,
-		&i.EvidenceAppliedAt,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -280,7 +277,7 @@ func (q *Queries) CountVlanPools(ctx context.Context, arg CountVlanPoolsParams) 
 }
 
 const duePlatformCandidate = `-- name: DuePlatformCandidate :one
-SELECT p.resource_id, p.kind, p.cluster_id, p.name, p.description, p.state, p.reason, p.version, p.created_at, p.updated_at, p.observed_at, p.last_operation_id, p.provider_name, p.provider_uid, p.provider_images, p.binding_id, p.pending_action, p.pending_since FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id
+SELECT p.resource_id, p.kind, p.cluster_id, p.name, p.description, p.state, p.reason, p.version, p.created_at, p.updated_at, p.observed_at, p.last_operation_id, p.provider_name, p.provider_uid, p.binding_id, p.pending_action, p.pending_since FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id
 WHERE p.cluster_id=$1 AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
  AND p.kind<>'device'
 ORDER BY r.next_run_at,p.resource_id LIMIT 1 FOR UPDATE OF p SKIP LOCKED
@@ -309,7 +306,6 @@ func (q *Queries) DuePlatformCandidate(ctx context.Context, arg DuePlatformCandi
 		&i.LastOperationID,
 		&i.ProviderName,
 		&i.ProviderUid,
-		&i.ProviderImages,
 		&i.BindingID,
 		&i.PendingAction,
 		&i.PendingSince,
@@ -387,7 +383,7 @@ func (q *Queries) GetDeviceAdoption(ctx context.Context, arg GetDeviceAdoptionPa
 }
 
 const getPlatform = `-- name: GetPlatform :one
-SELECT resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, provider_images, binding_id, pending_action, pending_since FROM network_platform_resources WHERE cluster_id=$1 AND kind=$2 AND resource_id=$3
+SELECT p.resource_id, p.kind, p.cluster_id, p.name, p.description, p.state, p.reason, p.version, p.created_at, p.updated_at, p.observed_at, p.last_operation_id, p.provider_name, p.provider_uid, p.binding_id, p.pending_action, p.pending_since,coalesce(r.observation_error,'')::text AS observation_error FROM network_platform_resources p LEFT JOIN network_platform_reconciliations r USING(resource_id) WHERE p.cluster_id=$1 AND p.kind=$2 AND p.resource_id=$3
 `
 
 type GetPlatformParams struct {
@@ -396,29 +392,34 @@ type GetPlatformParams struct {
 	ResourceID string
 }
 
+type GetPlatformRow struct {
+	NetworkPlatformResource NetworkPlatformResource
+	ObservationError        string
+}
+
 // Platform tables do not carry a synthetic tenant. Cluster scope is mandatory.
-func (q *Queries) GetPlatform(ctx context.Context, arg GetPlatformParams) (NetworkPlatformResource, error) {
+func (q *Queries) GetPlatform(ctx context.Context, arg GetPlatformParams) (GetPlatformRow, error) {
 	row := q.db.QueryRow(ctx, getPlatform, arg.ClusterID, arg.Kind, arg.ResourceID)
-	var i NetworkPlatformResource
+	var i GetPlatformRow
 	err := row.Scan(
-		&i.ResourceID,
-		&i.Kind,
-		&i.ClusterID,
-		&i.Name,
-		&i.Description,
-		&i.State,
-		&i.Reason,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ObservedAt,
-		&i.LastOperationID,
-		&i.ProviderName,
-		&i.ProviderUid,
-		&i.ProviderImages,
-		&i.BindingID,
-		&i.PendingAction,
-		&i.PendingSince,
+		&i.NetworkPlatformResource.ResourceID,
+		&i.NetworkPlatformResource.Kind,
+		&i.NetworkPlatformResource.ClusterID,
+		&i.NetworkPlatformResource.Name,
+		&i.NetworkPlatformResource.Description,
+		&i.NetworkPlatformResource.State,
+		&i.NetworkPlatformResource.Reason,
+		&i.NetworkPlatformResource.Version,
+		&i.NetworkPlatformResource.CreatedAt,
+		&i.NetworkPlatformResource.UpdatedAt,
+		&i.NetworkPlatformResource.ObservedAt,
+		&i.NetworkPlatformResource.LastOperationID,
+		&i.NetworkPlatformResource.ProviderName,
+		&i.NetworkPlatformResource.ProviderUid,
+		&i.NetworkPlatformResource.BindingID,
+		&i.NetworkPlatformResource.PendingAction,
+		&i.NetworkPlatformResource.PendingSince,
+		&i.ObservationError,
 	)
 	return i, err
 }
@@ -694,7 +695,7 @@ func (q *Queries) InsertPlatformReconciliation(ctx context.Context, arg InsertPl
 
 const insertPlatformResource = `-- name: InsertPlatformResource :one
 INSERT INTO network_platform_resources(resource_id,kind,cluster_id,name,description,state,created_at,updated_at,last_operation_id,provider_name,binding_id)
-VALUES($1,$2,$3,$4,$5,'provisioning',$6,$6,$7,$8,$9) RETURNING resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, provider_images, binding_id, pending_action, pending_since
+VALUES($1,$2,$3,$4,$5,'provisioning',$6,$6,$7,$8,$9) RETURNING resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, binding_id, pending_action, pending_since
 `
 
 type InsertPlatformResourceParams struct {
@@ -737,7 +738,6 @@ func (q *Queries) InsertPlatformResource(ctx context.Context, arg InsertPlatform
 		&i.LastOperationID,
 		&i.ProviderName,
 		&i.ProviderUid,
-		&i.ProviderImages,
 		&i.BindingID,
 		&i.PendingAction,
 		&i.PendingSince,
@@ -780,7 +780,7 @@ func (q *Queries) InsertPublicPool(ctx context.Context, arg InsertPublicPoolPara
 }
 
 const listIntranetPools = `-- name: ListIntranetPools :many
-SELECT r.resource_id, r.kind, r.cluster_id, r.name, r.description, r.state, r.reason, r.version, r.created_at, r.updated_at, r.observed_at, r.last_operation_id, r.provider_name, r.provider_uid, r.provider_images, r.binding_id, r.pending_action, r.pending_since FROM network_platform_resources r JOIN network_public_pools p ON p.cluster_id=r.cluster_id AND p.resource_id=r.resource_id
+SELECT r.resource_id, r.kind, r.cluster_id, r.name, r.description, r.state, r.reason, r.version, r.created_at, r.updated_at, r.observed_at, r.last_operation_id, r.provider_name, r.provider_uid, r.binding_id, r.pending_action, r.pending_since,coalesce(task.observation_error,'')::text AS observation_error FROM network_platform_resources r LEFT JOIN network_platform_reconciliations task USING(resource_id) JOIN network_public_pools p ON p.cluster_id=r.cluster_id AND p.resource_id=r.resource_id
 WHERE r.cluster_id=$1 AND p.scope='intranet'
  AND ($2::text='' OR r.name=$2)
  AND (($3::text='' AND r.state<>'deleted') OR r.state=$3)
@@ -797,7 +797,12 @@ type ListIntranetPoolsParams struct {
 	MaxResults     int32
 }
 
-func (q *Queries) ListIntranetPools(ctx context.Context, arg ListIntranetPoolsParams) ([]NetworkPlatformResource, error) {
+type ListIntranetPoolsRow struct {
+	NetworkPlatformResource NetworkPlatformResource
+	ObservationError        string
+}
+
+func (q *Queries) ListIntranetPools(ctx context.Context, arg ListIntranetPoolsParams) ([]ListIntranetPoolsRow, error) {
 	rows, err := q.db.Query(ctx, listIntranetPools,
 		arg.ClusterID,
 		arg.NameFilter,
@@ -810,28 +815,28 @@ func (q *Queries) ListIntranetPools(ctx context.Context, arg ListIntranetPoolsPa
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NetworkPlatformResource{}
+	items := []ListIntranetPoolsRow{}
 	for rows.Next() {
-		var i NetworkPlatformResource
+		var i ListIntranetPoolsRow
 		if err := rows.Scan(
-			&i.ResourceID,
-			&i.Kind,
-			&i.ClusterID,
-			&i.Name,
-			&i.Description,
-			&i.State,
-			&i.Reason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ObservedAt,
-			&i.LastOperationID,
-			&i.ProviderName,
-			&i.ProviderUid,
-			&i.ProviderImages,
-			&i.BindingID,
-			&i.PendingAction,
-			&i.PendingSince,
+			&i.NetworkPlatformResource.ResourceID,
+			&i.NetworkPlatformResource.Kind,
+			&i.NetworkPlatformResource.ClusterID,
+			&i.NetworkPlatformResource.Name,
+			&i.NetworkPlatformResource.Description,
+			&i.NetworkPlatformResource.State,
+			&i.NetworkPlatformResource.Reason,
+			&i.NetworkPlatformResource.Version,
+			&i.NetworkPlatformResource.CreatedAt,
+			&i.NetworkPlatformResource.UpdatedAt,
+			&i.NetworkPlatformResource.ObservedAt,
+			&i.NetworkPlatformResource.LastOperationID,
+			&i.NetworkPlatformResource.ProviderName,
+			&i.NetworkPlatformResource.ProviderUid,
+			&i.NetworkPlatformResource.BindingID,
+			&i.NetworkPlatformResource.PendingAction,
+			&i.NetworkPlatformResource.PendingSince,
+			&i.ObservationError,
 		); err != nil {
 			return nil, err
 		}
@@ -844,7 +849,7 @@ func (q *Queries) ListIntranetPools(ctx context.Context, arg ListIntranetPoolsPa
 }
 
 const listPlatform = `-- name: ListPlatform :many
-SELECT r.resource_id, r.kind, r.cluster_id, r.name, r.description, r.state, r.reason, r.version, r.created_at, r.updated_at, r.observed_at, r.last_operation_id, r.provider_name, r.provider_uid, r.provider_images, r.binding_id, r.pending_action, r.pending_since FROM network_platform_resources r WHERE r.cluster_id=$1 AND r.kind=$2
+SELECT r.resource_id, r.kind, r.cluster_id, r.name, r.description, r.state, r.reason, r.version, r.created_at, r.updated_at, r.observed_at, r.last_operation_id, r.provider_name, r.provider_uid, r.binding_id, r.pending_action, r.pending_since,coalesce(task.observation_error,'')::text AS observation_error FROM network_platform_resources r LEFT JOIN network_platform_reconciliations task USING(resource_id) WHERE r.cluster_id=$1 AND r.kind=$2
  AND (r.kind<>'public_pool' OR EXISTS (SELECT 1 FROM network_public_pools pool WHERE pool.cluster_id=r.cluster_id AND pool.resource_id=r.resource_id AND pool.scope='public'))
  AND ($3::text='' OR r.name=$3)
  AND (($4::text='' AND r.state<>'deleted') OR r.state=$4)
@@ -862,7 +867,12 @@ type ListPlatformParams struct {
 	MaxResults     int32
 }
 
-func (q *Queries) ListPlatform(ctx context.Context, arg ListPlatformParams) ([]NetworkPlatformResource, error) {
+type ListPlatformRow struct {
+	NetworkPlatformResource NetworkPlatformResource
+	ObservationError        string
+}
+
+func (q *Queries) ListPlatform(ctx context.Context, arg ListPlatformParams) ([]ListPlatformRow, error) {
 	rows, err := q.db.Query(ctx, listPlatform,
 		arg.ClusterID,
 		arg.Kind,
@@ -876,28 +886,28 @@ func (q *Queries) ListPlatform(ctx context.Context, arg ListPlatformParams) ([]N
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NetworkPlatformResource{}
+	items := []ListPlatformRow{}
 	for rows.Next() {
-		var i NetworkPlatformResource
+		var i ListPlatformRow
 		if err := rows.Scan(
-			&i.ResourceID,
-			&i.Kind,
-			&i.ClusterID,
-			&i.Name,
-			&i.Description,
-			&i.State,
-			&i.Reason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ObservedAt,
-			&i.LastOperationID,
-			&i.ProviderName,
-			&i.ProviderUid,
-			&i.ProviderImages,
-			&i.BindingID,
-			&i.PendingAction,
-			&i.PendingSince,
+			&i.NetworkPlatformResource.ResourceID,
+			&i.NetworkPlatformResource.Kind,
+			&i.NetworkPlatformResource.ClusterID,
+			&i.NetworkPlatformResource.Name,
+			&i.NetworkPlatformResource.Description,
+			&i.NetworkPlatformResource.State,
+			&i.NetworkPlatformResource.Reason,
+			&i.NetworkPlatformResource.Version,
+			&i.NetworkPlatformResource.CreatedAt,
+			&i.NetworkPlatformResource.UpdatedAt,
+			&i.NetworkPlatformResource.ObservedAt,
+			&i.NetworkPlatformResource.LastOperationID,
+			&i.NetworkPlatformResource.ProviderName,
+			&i.NetworkPlatformResource.ProviderUid,
+			&i.NetworkPlatformResource.BindingID,
+			&i.NetworkPlatformResource.PendingAction,
+			&i.NetworkPlatformResource.PendingSince,
+			&i.ObservationError,
 		); err != nil {
 			return nil, err
 		}
@@ -910,7 +920,7 @@ func (q *Queries) ListPlatform(ctx context.Context, arg ListPlatformParams) ([]N
 }
 
 const lockPlatform = `-- name: LockPlatform :one
-SELECT resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, provider_images, binding_id, pending_action, pending_since FROM network_platform_resources WHERE cluster_id=$1 AND kind=$2 AND resource_id=$3 FOR UPDATE
+SELECT resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, binding_id, pending_action, pending_since FROM network_platform_resources WHERE cluster_id=$1 AND kind=$2 AND resource_id=$3 FOR UPDATE
 `
 
 type LockPlatformParams struct {
@@ -937,7 +947,6 @@ func (q *Queries) LockPlatform(ctx context.Context, arg LockPlatformParams) (Net
 		&i.LastOperationID,
 		&i.ProviderName,
 		&i.ProviderUid,
-		&i.ProviderImages,
 		&i.BindingID,
 		&i.PendingAction,
 		&i.PendingSince,
@@ -1026,95 +1035,6 @@ func (q *Queries) ManagedGatewayOwner(ctx context.Context, arg ManagedGatewayOwn
 	return resource_id, err
 }
 
-const notifyPlatform = `-- name: NotifyPlatform :execrows
-UPDATE network_platform_reconciliations SET requested_generation=requested_generation+1,
- next_run_at=greatest(retry_not_before,least(next_run_at,clock_timestamp())) WHERE resource_id=$1
-`
-
-type NotifyPlatformParams struct {
-	ResourceID string
-}
-
-func (q *Queries) NotifyPlatform(ctx context.Context, arg NotifyPlatformParams) (int64, error) {
-	result, err := q.db.Exec(ctx, notifyPlatform, arg.ResourceID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const observationPlatformResources = `-- name: ObservationPlatformResources :many
-SELECT p.resource_id, p.kind, p.cluster_id, p.name, p.description, p.state, p.reason, p.version, p.created_at, p.updated_at, p.observed_at, p.last_operation_id, p.provider_name, p.provider_uid, p.provider_images, p.binding_id, p.pending_action, p.pending_since,r.requested_generation,(p.state<>'deleted' OR r.next_run_at<>'infinity'::timestamptz)::boolean AS recovery FROM network_platform_resources p JOIN network_platform_reconciliations r ON r.resource_id=p.resource_id WHERE p.cluster_id=$1
-`
-
-type ObservationPlatformResourcesParams struct {
-	ClusterID string
-}
-
-type ObservationPlatformResourcesRow struct {
-	ResourceID          string
-	Kind                string
-	ClusterID           string
-	Name                string
-	Description         string
-	State               string
-	Reason              string
-	Version             int64
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	ObservedAt          *time.Time
-	LastOperationID     string
-	ProviderName        string
-	ProviderUid         string
-	ProviderImages      []string
-	BindingID           string
-	PendingAction       string
-	PendingSince        *time.Time
-	RequestedGeneration int64
-	Recovery            bool
-}
-
-func (q *Queries) ObservationPlatformResources(ctx context.Context, arg ObservationPlatformResourcesParams) ([]ObservationPlatformResourcesRow, error) {
-	rows, err := q.db.Query(ctx, observationPlatformResources, arg.ClusterID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ObservationPlatformResourcesRow{}
-	for rows.Next() {
-		var i ObservationPlatformResourcesRow
-		if err := rows.Scan(
-			&i.ResourceID,
-			&i.Kind,
-			&i.ClusterID,
-			&i.Name,
-			&i.Description,
-			&i.State,
-			&i.Reason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ObservedAt,
-			&i.LastOperationID,
-			&i.ProviderName,
-			&i.ProviderUid,
-			&i.ProviderImages,
-			&i.BindingID,
-			&i.PendingAction,
-			&i.PendingSince,
-			&i.RequestedGeneration,
-			&i.Recovery,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const platformPoolVPCOverlaps = `-- name: PlatformPoolVPCOverlaps :one
 SELECT count(*)::bigint FROM network_vpcs v JOIN network_provider_bindings b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id AND b.resource_kind='vpc'
 WHERE b.cluster_id=$1 AND v.state<>'deleted' AND v.cidr::cidr && $2::cidr
@@ -1149,81 +1069,26 @@ func (q *Queries) PublicPoolOverlaps(ctx context.Context, arg PublicPoolOverlaps
 	return column_1, err
 }
 
-const publicPoolTopology = `-- name: PublicPoolTopology :one
-SELECT p.resource_id,p.cluster_id,p.config_revision,p.mode,p.gateway_id,p.cidr,p.ovn_gateway_ip,p.excluded_ips,p.vlan_network_id,p.upstream_gateway_ip,
- r.provider_uid AS pool_uid,r.provider_images,COALESCE(g.provider_uid,'')::text AS gateway_uid,COALESCE(v.provider_uid,'')::text AS vlan_uid,
- COALESCE(d.provider_uid,'')::text AS device_config_uid
-FROM network_public_pools p
-JOIN network_platform_resources r ON r.cluster_id=p.cluster_id AND r.resource_id=p.resource_id
-LEFT JOIN network_platform_resources g ON g.cluster_id=p.cluster_id AND g.resource_id=p.gateway_id
-LEFT JOIN network_platform_resources v ON v.cluster_id=p.cluster_id AND v.resource_id=p.vlan_network_id
-LEFT JOIN network_vlan_networks vl ON vl.cluster_id=p.cluster_id AND vl.resource_id=p.vlan_network_id
-LEFT JOIN network_platform_resources d ON d.cluster_id=vl.cluster_id AND d.resource_id=vl.device_id
-WHERE p.cluster_id=$1 AND p.resource_id=$2
-`
-
-type PublicPoolTopologyParams struct {
-	ClusterID  string
-	ResourceID string
-}
-
-type PublicPoolTopologyRow struct {
-	ResourceID        string
-	ClusterID         string
-	ConfigRevision    int64
-	Mode              string
-	GatewayID         *string
-	Cidr              string
-	OvnGatewayIp      string
-	ExcludedIps       []string
-	VlanNetworkID     *string
-	UpstreamGatewayIp *string
-	PoolUid           string
-	ProviderImages    []string
-	GatewayUid        string
-	VlanUid           string
-	DeviceConfigUid   string
-}
-
-func (q *Queries) PublicPoolTopology(ctx context.Context, arg PublicPoolTopologyParams) (PublicPoolTopologyRow, error) {
-	row := q.db.QueryRow(ctx, publicPoolTopology, arg.ClusterID, arg.ResourceID)
-	var i PublicPoolTopologyRow
-	err := row.Scan(
-		&i.ResourceID,
-		&i.ClusterID,
-		&i.ConfigRevision,
-		&i.Mode,
-		&i.GatewayID,
-		&i.Cidr,
-		&i.OvnGatewayIp,
-		&i.ExcludedIps,
-		&i.VlanNetworkID,
-		&i.UpstreamGatewayIp,
-		&i.PoolUid,
-		&i.ProviderImages,
-		&i.GatewayUid,
-		&i.VlanUid,
-		&i.DeviceConfigUid,
-	)
-	return i, err
-}
-
 const releasePlatformLease = `-- name: ReleasePlatformLease :execrows
 UPDATE network_platform_reconciliations SET lease_owner=NULL,lease_until=NULL,
  processed_generation=greatest(processed_generation,$1::bigint),
- evidence_hash=CASE WHEN $2::boolean THEN $3::text ELSE evidence_hash END,
- evidence_applied_at=CASE WHEN $2::boolean THEN clock_timestamp() ELSE evidence_applied_at END,
- retry_not_before=CASE WHEN $4::boolean THEN clock_timestamp()+$5::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
- next_run_at=CASE WHEN requested_generation>$1::bigint AND NOT $4::boolean THEN clock_timestamp() WHEN $6::boolean THEN 'infinity'::timestamptz ELSE clock_timestamp()+$5::bigint*interval '1 microsecond' END
-WHERE resource_id=$7 AND lease_owner=$8::uuid AND lease_epoch=$9 AND lease_until>clock_timestamp()
+ observation_error=CASE WHEN $2::boolean THEN '' WHEN $3::text<>'' THEN $3::text ELSE observation_error END,
+ retry_not_before=CASE WHEN $4::boolean THEN $5::timestamptz+$6::bigint*interval '1 microsecond' ELSE '1970-01-01 UTC'::timestamptz END,
+ next_run_at=CASE WHEN $7::boolean THEN 'infinity'::timestamptz
+   WHEN $4::boolean THEN $5::timestamptz+$6::bigint*interval '1 microsecond'
+   WHEN requested_generation>$1::bigint THEN $5::timestamptz
+   WHEN $8::boolean THEN 'infinity'::timestamptz ELSE $5::timestamptz+$6::bigint*interval '1 microsecond' END
+WHERE resource_id=$9 AND lease_owner=$10::uuid AND lease_epoch=$11 AND lease_until>clock_timestamp()
 `
 
 type ReleasePlatformLeaseParams struct {
-	CoveredGeneration int64
+	ClaimedGeneration int64
 	Observed          bool
-	EvidenceHash      string
+	ObservationError  string
 	Backoff           bool
+	Now               time.Time
 	DelayMicros       int64
+	Terminal          bool
 	Park              bool
 	ResourceID        string
 	Owner             string
@@ -1232,11 +1097,13 @@ type ReleasePlatformLeaseParams struct {
 
 func (q *Queries) ReleasePlatformLease(ctx context.Context, arg ReleasePlatformLeaseParams) (int64, error) {
 	result, err := q.db.Exec(ctx, releasePlatformLease,
-		arg.CoveredGeneration,
+		arg.ClaimedGeneration,
 		arg.Observed,
-		arg.EvidenceHash,
+		arg.ObservationError,
 		arg.Backoff,
+		arg.Now,
 		arg.DelayMicros,
+		arg.Terminal,
 		arg.Park,
 		arg.ResourceID,
 		arg.Owner,
@@ -1312,24 +1179,6 @@ func (q *Queries) RunPlatformOperation(ctx context.Context, arg RunPlatformOpera
 	return i, err
 }
 
-const savePlatformImages = `-- name: SavePlatformImages :execrows
-UPDATE network_platform_resources SET provider_images=$3 WHERE cluster_id=$1 AND resource_id=$2
-`
-
-type SavePlatformImagesParams struct {
-	ClusterID      string
-	ResourceID     string
-	ProviderImages []string
-}
-
-func (q *Queries) SavePlatformImages(ctx context.Context, arg SavePlatformImagesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, savePlatformImages, arg.ClusterID, arg.ResourceID, arg.ProviderImages)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const savePoolVerification = `-- name: SavePoolVerification :execrows
 UPDATE network_public_pools SET verification=$3,verification_expires_at=$4 WHERE cluster_id=$1 AND resource_id=$2
 `
@@ -1402,7 +1251,7 @@ func (q *Queries) SetDefaultPublicPool(ctx context.Context, arg SetDefaultPublic
 
 const setPlatformIntent = `-- name: SetPlatformIntent :one
 UPDATE network_platform_resources SET state=$1,reason='',last_operation_id=$2,version=version+1,updated_at=clock_timestamp()
-WHERE cluster_id=$3 AND resource_id=$4 AND version=$5 RETURNING resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, provider_images, binding_id, pending_action, pending_since
+WHERE cluster_id=$3 AND resource_id=$4 AND version=$5 RETURNING resource_id, kind, cluster_id, name, description, state, reason, version, created_at, updated_at, observed_at, last_operation_id, provider_name, provider_uid, binding_id, pending_action, pending_since
 `
 
 type SetPlatformIntentParams struct {
@@ -1437,7 +1286,6 @@ func (q *Queries) SetPlatformIntent(ctx context.Context, arg SetPlatformIntentPa
 		&i.LastOperationID,
 		&i.ProviderName,
 		&i.ProviderUid,
-		&i.ProviderImages,
 		&i.BindingID,
 		&i.PendingAction,
 		&i.PendingSince,

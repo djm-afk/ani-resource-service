@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -66,7 +65,7 @@ func (c *Bootstrap) Validate() error {
 		maximum time.Duration
 	}{
 		{"worker lease", w.Lease, 2 * time.Minute}, {"provider request", w.RequestTimeout, 30 * time.Second},
-		{"observation interval", w.ObserveEvery, time.Minute}, {"observation freshness", w.StaleAfter, 10 * time.Minute},
+		{"observation interval", w.ObserveEvery, time.Minute},
 		{"retry minimum", w.RetryMin, time.Minute}, {"retry maximum", w.RetryMax, time.Minute},
 		{"worker poll", w.PollInterval, time.Second},
 	} {
@@ -77,34 +76,15 @@ func (c *Bootstrap) Validate() error {
 			return fmt.Errorf("%s must be at least 1ms", setting.name)
 		}
 	}
-	if w.Lease.AsDuration() < 3*w.RequestTimeout.AsDuration() || w.StaleAfter.AsDuration() <= w.ObserveEvery.AsDuration() || w.RetryMax.AsDuration() < w.RetryMin.AsDuration() {
+	if w.Lease.AsDuration() < 3*w.RequestTimeout.AsDuration() || w.RetryMax.AsDuration() < w.RetryMin.AsDuration() {
 		return fmt.Errorf("worker lease, observation and retry timing are inconsistent")
 	}
 	if o := c.Network.Observation; o != nil {
-		for _, v := range []struct {
-			name  string
-			value *durationpb.Duration
-			max   time.Duration
-		}{{"audit interval", o.AuditInterval, 40 * time.Second}, {"audit jitter", o.AuditJitter, 5 * time.Second}, {"audit timeout", o.AuditTimeout, 15 * time.Second}, {"notification flush", o.FlushInterval, time.Second}} {
-			if err := validateDuration(v.name, v.value, v.max); err != nil {
-				return err
-			}
-		}
 		if o.RequestQps < 1 || o.RequestQps > 100 || o.RequestBurst < o.RequestQps || o.RequestBurst > 200 {
 			return fmt.Errorf("invalid Kubernetes request budget")
 		}
-		if o.QueueCapacity < 16 || o.QueueCapacity > 65536 || o.WorkersPerKind < 1 || o.WorkersPerKind > 4 || o.AuditInterval.AsDuration()+o.AuditJitter.AsDuration()+o.AuditTimeout.AsDuration() >= w.StaleAfter.AsDuration() {
-			return fmt.Errorf("invalid observation capacity or freshness budget")
-		}
-	}
-	if lb := c.Network.LoadBalancer; lb != nil {
-		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(lb.InstallationFingerprint) {
-			return fmt.Errorf("load_balancer requires the pinned installation fingerprint")
-		}
-		for _, id := range []string{lb.ControllerImageId, lb.EnvoyImageId, lb.ShutdownImageId, lb.KcImageId} {
-			if !regexp.MustCompile(`^(?:[^\s@]+@)?sha256:[a-f0-9]{64}$`).MatchString(id) {
-				return fmt.Errorf("load_balancer requires fixed running image IDs")
-			}
+		if o.WorkersPerKind < 1 || o.WorkersPerKind > 4 {
+			return fmt.Errorf("invalid network worker concurrency")
 		}
 	}
 	if err := c.ObjectStorage.Validate(); err != nil {

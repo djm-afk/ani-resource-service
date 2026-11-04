@@ -49,8 +49,7 @@ func TestNET05ANotificationsDuringLeasePreservePendingAndPublicVersion(t *testin
 			if e != nil || version != v.Version || epoch != w.Epoch || owner != w.Owner {
 				t.Fatalf("notify altered version/lease: %d %d %s %v", version, epoch, owner, e)
 			}
-			proof := biz.ObservationProof{CollectedAt: w.Now, Hash: "fact-A", CoveredGeneration: w.Requirement.RequestedGeneration}
-			e = p.Finish(ctx, w, biz.Progress{State: biz.Provisioning, OperationState: biz.Retrying, Observed: true, Proof: proof, NextDelay: time.Hour})
+			e = p.Finish(ctx, w, biz.Progress{State: biz.Provisioning, OperationState: biz.Retrying, Observed: true, NextDelay: time.Hour})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -62,7 +61,7 @@ func TestNET05ANotificationsDuringLeasePreservePendingAndPublicVersion(t *testin
 			var processed int64
 			var due bool
 			e = db.QueryRow(ctx, `SELECT requested_generation,processed_generation,next_run_at<=clock_timestamp() FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`, tenant, v.ID).Scan(&requested, &processed, &due)
-			if e != nil || processed != w.Requirement.RequestedGeneration || due != (window != "before_claim") {
+			if e != nil || processed != w.ClaimedGeneration || due != (window != "before_claim") {
 				t.Fatalf("notification lost: requested=%d processed=%d due=%v %v", requested, processed, due, e)
 			}
 		})
@@ -106,51 +105,52 @@ func TestNET05AStormCannotBypassBackoffOrCrossTenant(t *testing.T) {
 		t.Fatalf("storm bypassed backoff/tenant: %d %v %v", requested, due, e)
 	}
 }
-func TestNET05AOldCacheAfterNewClaimCannotRegressOrCompleteNotification(t *testing.T) {
+func TestCurrentReadUpdatesResourceWithoutRewritingCompletedOperation(t *testing.T) {
 	p, db := database(t)
 	ctx := context.Background()
 	n := newNetwork(t, p, time.Minute)
 	tenant := uuid.NewString()
 	identity := tenantnamespace.Identity{TenantID: tenant, ClusterID: "test-cluster", Name: "tenant-" + tenant, UID: uuid.NewString()}
-	p.ConfigureTenantNamespaceResolver(func(_ context.Context, requested string) (tenantnamespace.Identity, error) {
-		if requested != identity.TenantID {
-			return tenantnamespace.Identity{}, errors.New("unknown fixture tenant")
-		}
-		return identity, nil
-	})
-	v, e := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "proof", CIDR: "10.42.0.0/16", IdempotencyKey: "proof"})
-	if e != nil {
-		t.Fatal(e)
+	p.ConfigureTenantNamespaceResolver(func(context.Context, string) (tenantnamespace.Identity, error) { return identity, nil })
+	v, err := n.CreateVPC(ctx, biz.CreateVPC{TenantID: tenant, Name: "current-read", CIDR: "10.42.0.0/16", IdempotencyKey: "current-read"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	first, _, e := p.Claim(ctx, uuid.NewString(), time.Second)
-	if e != nil {
-		t.Fatal(e)
+	first, _, err := p.Claim(ctx, uuid.NewString(), time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	proof := biz.ObservationProof{CollectedAt: first.Now, Hash: "new-fact", CoveredGeneration: first.Requirement.RequestedGeneration}
-	if e = p.Finish(ctx, first, biz.Progress{State: biz.Available, OperationState: biz.Succeeded, Identity: "uid", Observed: true, Proof: proof, NextDelay: time.Hour}); e != nil {
-		t.Fatal(e)
+	if err = p.Finish(ctx, first, biz.Progress{State: biz.Available, OperationState: biz.Succeeded, Identity: "uid", Observed: true, NextDelay: time.Hour}); err != nil {
+		t.Fatal(err)
 	}
-	if e = p.NotifyResource(ctx, tenant, v.ID); e != nil {
-		t.Fatal(e)
+	before, err := n.GetOperation(ctx, tenant, v.LastOperationID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	second, ok, e := p.Claim(ctx, uuid.NewString(), time.Second)
-	if e != nil || !ok {
-		t.Fatalf("second claim %v %v", ok, e)
+	if err = p.NotifyResource(ctx, tenant, v.ID); err != nil {
+		t.Fatal(err)
 	}
-	old := biz.ObservationProof{CollectedAt: first.Now.Add(-time.Second), Hash: "old-fact", CoveredGeneration: second.Requirement.RequestedGeneration}
-	if e = p.Finish(ctx, second, biz.Progress{State: biz.Degraded, Identity: "uid", Observed: true, Proof: old, NextDelay: time.Hour}); !errors.Is(e, biz.ErrLeaseLost) {
-		t.Fatalf("accepted old cache: %v", e)
+	second, found, err := p.Claim(ctx, uuid.NewString(), time.Second)
+	if err != nil || !found || second.ActiveOperation {
+		t.Fatal("notification reopened operation", found, second, err)
+	}
+	if err = p.Finish(ctx, first, biz.Progress{State: biz.Degraded, Observed: true}); !errors.Is(err, biz.ErrLeaseLost) {
+		t.Fatal("old lease changed projection", err)
+	}
+	if err = p.Finish(ctx, second, biz.Progress{State: biz.Degraded, Reason: "native-false", Identity: "uid", Observed: true, NextDelay: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := n.GetVPC(ctx, tenant, v.ID)
+	if err != nil || current.State != biz.Degraded || current.ObservedAt == nil || current.ObservedAt.Before(second.Now) {
+		t.Fatal(current, err)
+	}
+	after, err := n.GetOperation(ctx, tenant, v.LastOperationID)
+	if err != nil || after.State != before.State || after.Reason != before.Reason || !after.UpdatedAt.Equal(before.UpdatedAt) || !after.CompletedAt.Equal(*before.CompletedAt) {
+		t.Fatal("completed operation changed", before, after, err)
 	}
 	var processed int64
-	if e = db.QueryRow(ctx, `SELECT processed_generation FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`, tenant, v.ID).Scan(&processed); e != nil {
-		t.Fatal(e)
-	}
-	actual, e := n.GetVPC(ctx, tenant, v.ID)
-	if e != nil || actual.State != biz.Available || processed != first.Requirement.RequestedGeneration {
-		t.Fatalf("old cache changed fact/coverage: %+v %d %v", actual, processed, e)
-	}
-	if actual.ObservedAt == nil || !actual.ObservedAt.Equal(first.Now) {
-		t.Fatal("commit time replaced real collection time")
+	if err = db.QueryRow(ctx, `SELECT processed_generation FROM network_reconciliations WHERE tenant_id=$1 AND vpc_id=$2`, tenant, v.ID).Scan(&processed); err != nil || processed != second.ClaimedGeneration {
+		t.Fatal(processed, err)
 	}
 }
 func TestNET05AAttachmentNotificationDuringClaimPreservesLeaseAndWake(t *testing.T) {
@@ -164,12 +164,11 @@ func TestNET05AAttachmentNotificationDuringClaimPreservesLeaseAndWake(t *testing
 	if e = f.p.NotifyAttachment(ctx, a.TenantID, a.ID); e != nil {
 		t.Fatal(e)
 	}
-	proof := biz.ObservationProof{CollectedAt: w.Now, Hash: "relations", CoveredGeneration: w.Requirement.RequestedGeneration}
-	if e = f.p.FinishAttachment(ctx, w, biz.AttachmentProgress{State: biz.Reserved, Observed: true, Proof: proof, Relations: []byte("[]"), NextDelay: time.Hour}); e != nil {
+	if e = f.p.FinishAttachment(ctx, w, biz.AttachmentProgress{State: biz.Reserved, Observed: true, NextDelay: time.Hour}); e != nil {
 		t.Fatal(e)
 	}
 	next, ok, e := f.p.ClaimAttachment(ctx, uuid.NewString(), time.Second)
-	if e != nil || !ok || next.Requirement.RequestedGeneration <= w.Requirement.RequestedGeneration {
+	if e != nil || !ok || next.ClaimedGeneration <= w.ClaimedGeneration {
 		t.Fatalf("attachment wake lost %v %v", ok, e)
 	}
 }
@@ -189,7 +188,7 @@ func TestNET05AFairDueClaimsAcrossKindsTenantsAndParents(t *testing.T) {
 		return identity, nil
 	})
 	worker := subnetWorker(t, p)
-	as := biz.NewAttachments(p, time.Minute)
+	as := biz.NewAttachments(p)
 	resources := map[string]string{}
 	attachments := map[string]string{}
 	parents := []biz.VPC{}
@@ -231,7 +230,7 @@ func TestNET05AFairDueClaimsAcrossKindsTenantsAndParents(t *testing.T) {
 			t.Fatalf("resource claim %v %v", found, e)
 		}
 		seen[w.Resource.ID] = true
-		progress := biz.Progress{State: w.Resource.State, Reason: w.Resource.Reason, Identity: w.KnownIdentity, Observed: true, Proof: biz.ObservationProof{CollectedAt: w.Now, Hash: "fair", CoveredGeneration: w.Requirement.RequestedGeneration}, NextDelay: time.Hour}
+		progress := biz.Progress{State: w.Resource.State, Reason: w.Resource.Reason, Identity: w.KnownIdentity, Observed: true, NextDelay: time.Hour}
 		if e = p.Finish(ctx, w, progress); e != nil {
 			t.Fatal(e)
 		}
@@ -248,7 +247,7 @@ func TestNET05AFairDueClaimsAcrossKindsTenantsAndParents(t *testing.T) {
 			t.Fatal("repeat claim starved another parent")
 		}
 		delete(attachments, w.Attachment.ID)
-		if e = p.FinishAttachment(ctx, w, biz.AttachmentProgress{State: biz.Reserved, Observed: true, Proof: biz.ObservationProof{CollectedAt: w.Now, Hash: "fair", CoveredGeneration: w.Requirement.RequestedGeneration}, Relations: []byte("[]"), NextDelay: time.Hour}); e != nil {
+		if e = p.FinishAttachment(ctx, w, biz.AttachmentProgress{State: biz.Reserved, Observed: true, NextDelay: time.Hour}); e != nil {
 			t.Fatal(e)
 		}
 	}

@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -79,9 +80,14 @@ func mergeNetworkResult(current *biz.NetworkRuntime, result *biz.NetworkRuntime)
 		return
 	}
 	current.PrepareStarted = current.PrepareStarted || result.PrepareStarted
+	if current.AttachmentID == result.AttachmentID && result.NotifiedSnapshotRevision > current.NotifiedSnapshotRevision {
+		current.NotifiedSnapshotRevision = result.NotifiedSnapshotRevision
+	}
 	if current.FinalizationID != "" && current.FinalizationID == result.FinalizationID {
-		current.ReleaseStarted = current.ReleaseStarted || result.ReleaseStarted
-		current.ReleaseAcknowledged = current.ReleaseAcknowledged || result.ReleaseAcknowledged
+		current.Cleaned = current.Cleaned || result.Cleaned
+		if current.Cleaned {
+			current.NetworkState = "released"
+		}
 	}
 	if current.AttachmentID == "" && result.AttachmentID != "" {
 		current.AttachmentID = result.AttachmentID
@@ -91,4 +97,34 @@ func mergeNetworkResult(current *biz.NetworkRuntime, result *biz.NetworkRuntime)
 	if current.AttachmentID == result.AttachmentID && result.AttachmentVersion > current.AttachmentVersion {
 		current.AttachmentVersion = result.AttachmentVersion
 	}
+}
+
+func (p *Postgres) UseNetworkNotifier(notify func(context.Context, string, string) error) {
+	p.notifyNetwork = notify
+}
+
+func networkNotificationPending(n *biz.NetworkRuntime) bool {
+	return n != nil && n.AttachmentID != "" && n.NotifiedSnapshotRevision < n.SnapshotRevision
+}
+
+func (p *Postgres) notifyNetworkSubmission(ctx context.Context, i biz.Instance) error {
+	if p.notifyNetwork == nil || !networkNotificationPending(i.Network) {
+		return nil
+	}
+	n := i.Network
+	call, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := p.notifyNetwork(call, i.TenantID, n.AttachmentID); err != nil {
+		return err
+	}
+	// ACK exactly the revision sent. A newer snapshot remains pending even if
+	// it committed while this notification was in flight.
+	_, err := p.pool.Exec(ctx, `WITH ack AS (
+ UPDATE instance.instances SET snapshot=jsonb_set(snapshot,'{Network,NotifiedSnapshotRevision}',to_jsonb($4::bigint))
+ WHERE tenant_id=$1 AND instance_id=$2 AND snapshot #>> '{Network,AttachmentID}'=$3
+ AND (snapshot #>> '{Network,SnapshotRevision}')::bigint=$4 RETURNING tenant_id,instance_id)
+ UPDATE instance.network_submissions n SET snapshot=jsonb_set(n.snapshot,'{NotifiedSnapshotRevision}',to_jsonb($4::bigint))
+ FROM ack WHERE n.tenant_id=ack.tenant_id AND n.instance_id=ack.instance_id
+ AND n.attachment_id=$3 AND n.snapshot_revision=$4`, i.TenantID, i.ID, n.AttachmentID, n.SnapshotRevision)
+	return err
 }

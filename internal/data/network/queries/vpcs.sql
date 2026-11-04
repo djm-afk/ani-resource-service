@@ -35,35 +35,42 @@ INSERT INTO network_resource_history
 VALUES (sqlc.arg(tenant_id),sqlc.arg(history_id),NULLIF(sqlc.arg(vpc_id)::text,''),NULLIF(sqlc.arg(subnet_id)::text,''),NULLIF(sqlc.arg(eip_id)::text,''),NULLIF(sqlc.arg(snat_id)::text,''),NULLIF(sqlc.arg(lb_id)::text,''),NULLIF(sqlc.arg(vnic_id)::text,''),sqlc.narg(operation_id),sqlc.arg(event),sqlc.arg(resource_state),sqlc.arg(operation_state),sqlc.arg(reason),sqlc.arg(actor_ref),sqlc.arg(caller_ref),sqlc.arg(correlation_id),sqlc.arg(created_at));
 
 -- name: GetVPC :one
-SELECT sqlc.embed(v),coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
+SELECT sqlc.embed(v),coalesce(task.observation_error,'')::text AS observation_error,coalesce(base_task.observation_error,'')::text AS base_observation_error,coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
  (SELECT count(*) FROM network_subnets s WHERE s.tenant_id=v.tenant_id AND s.vpc_id=v.vpc_id AND s.state<>'deleted')::bigint AS subnet_count,
  (CASE WHEN pub.snat_id IS NULL THEN NULL::jsonb ELSE jsonb_build_object(
  'ID',pub.snat_id,'EIPID',pub.eip_id,'EIPAddress',pe.address,'BindingState',pc.state,
  'State',pub.state,'Reason',pub.reason,'Version',pub.version,'LastOperationID',pub.last_operation_id,
- 'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
+ 'ObservationError',coalesce(pub_task.observation_error,''),'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
 FROM network_vpcs v
+LEFT JOIN network_reconciliations task ON task.tenant_id=v.tenant_id AND task.vpc_id=v.vpc_id
 LEFT JOIN network_vpc_base_connectivity b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id
+LEFT JOIN network_reconciliations base_task ON base_task.tenant_id=b.tenant_id AND base_task.snat_id=b.snat_id
 LEFT JOIN (network_snat_bindings pub
  JOIN network_eips pe ON pe.tenant_id=pub.tenant_id AND pe.eip_id=pub.eip_id AND pe.scope='public' AND pe.managed_by='tenant'
  JOIN network_eip_claims pc ON pc.tenant_id=pub.tenant_id AND pc.snat_id=pub.snat_id AND pc.eip_id=pub.eip_id AND pc.released_at IS NULL)
- ON pub.tenant_id=v.tenant_id AND pub.vpc_id=v.vpc_id AND pub.purpose='public' AND pub.state<>'deleted' WHERE v.tenant_id=$1 AND v.vpc_id=$2;
+ ON pub.tenant_id=v.tenant_id AND pub.vpc_id=v.vpc_id AND pub.purpose='public' AND pub.state<>'deleted'
+LEFT JOIN network_reconciliations pub_task ON pub_task.tenant_id=pub.tenant_id AND pub_task.snat_id=pub.snat_id
+WHERE v.tenant_id=$1 AND v.vpc_id=$2;
 
 -- name: GetOperation :one
 SELECT * FROM network_operations WHERE tenant_id = $1 AND operation_id = $2;
 
 -- name: ListVPCs :many
-SELECT sqlc.embed(v),coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
+SELECT sqlc.embed(v),coalesce(task.observation_error,'')::text AS observation_error,coalesce(base_task.observation_error,'')::text AS base_observation_error,coalesce(b.state,'missing')::text AS base_state,coalesce(b.reason,'')::text AS base_reason,b.observed_at AS base_observed_at,
  (SELECT count(*) FROM network_subnets s WHERE s.tenant_id=v.tenant_id AND s.vpc_id=v.vpc_id AND s.state<>'deleted')::bigint AS subnet_count,
  (CASE WHEN pub.snat_id IS NULL THEN NULL::jsonb ELSE jsonb_build_object(
  'ID',pub.snat_id,'EIPID',pub.eip_id,'EIPAddress',pe.address,'BindingState',pc.state,
  'State',pub.state,'Reason',pub.reason,'Version',pub.version,'LastOperationID',pub.last_operation_id,
- 'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
+ 'ObservationError',coalesce(pub_task.observation_error,''),'ObservedAt',pub.observed_at,'DesiredEnabled',pub.desired_enabled,'AppliedEnabled',pub.applied_enabled) END)::jsonb AS public_egress
 FROM network_vpcs v
+LEFT JOIN network_reconciliations task ON task.tenant_id=v.tenant_id AND task.vpc_id=v.vpc_id
 LEFT JOIN network_vpc_base_connectivity b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id
+LEFT JOIN network_reconciliations base_task ON base_task.tenant_id=b.tenant_id AND base_task.snat_id=b.snat_id
 LEFT JOIN (network_snat_bindings pub
  JOIN network_eips pe ON pe.tenant_id=pub.tenant_id AND pe.eip_id=pub.eip_id AND pe.scope='public' AND pe.managed_by='tenant'
  JOIN network_eip_claims pc ON pc.tenant_id=pub.tenant_id AND pc.snat_id=pub.snat_id AND pc.eip_id=pub.eip_id AND pc.released_at IS NULL)
  ON pub.tenant_id=v.tenant_id AND pub.vpc_id=v.vpc_id AND pub.purpose='public' AND pub.state<>'deleted'
+LEFT JOIN network_reconciliations pub_task ON pub_task.tenant_id=pub.tenant_id AND pub_task.snat_id=pub.snat_id
 WHERE v.tenant_id = sqlc.arg(tenant_id)
   AND (sqlc.arg(name_filter)::text = '' OR v.name = sqlc.arg(name_filter))
   AND ((sqlc.arg(state_filter)::text = '' AND v.state <> 'deleted') OR v.state = sqlc.arg(state_filter))

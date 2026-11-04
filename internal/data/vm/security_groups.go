@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -41,24 +42,14 @@ func (n *Native) patchSecurityGroups(ctx context.Context, resource schema.GroupV
 	return err
 }
 
-// SetSecurityGroups changes the future VM template, the active VMI metadata,
-// and its launcher annotation using their individually verified exact UIDs.
+// SetSecurityGroups submits the VM template and the exact current references
+// already published by this VM's owner. KCN reports the subsequent application.
 func (n *Native) SetSecurityGroups(ctx context.Context, v biz.VM, names []string) error {
 	if v.Native.UID == "" {
 		return biz.ErrDependency
 	}
 	if err := n.namespace(ctx, v); err != nil {
 		return err
-	}
-	before, err := n.observe(ctx, v, false)
-	if err != nil {
-		return err
-	}
-	if before.VM.UID != v.Native.UID {
-		return biz.ErrOwnership
-	}
-	if len(before.StateChangeRequests) > 0 {
-		return biz.ErrDependency
 	}
 	value := strings.Join(names, ",")
 	root, err := n.client.Resource(vmResource).Namespace(v.Spec.Namespace).Get(ctx, v.Native.Name, metav1.GetOptions{})
@@ -71,75 +62,29 @@ func (n *Native) SetSecurityGroups(ctx context.Context, v biz.VM, names []string
 	if err = n.patchSecurityGroups(ctx, vmResource, root, true, value); err != nil {
 		return err
 	}
-	if before.VMI != nil {
-		vmi, err := n.client.Resource(vmiResource).Namespace(v.Spec.Namespace).Get(ctx, before.VMI.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if string(vmi.GetUID()) != before.VMI.UID || !owned(vmi, "VirtualMachine", v.Native.UID) {
-			return biz.ErrOwnership
-		}
-		if err = n.patchSecurityGroups(ctx, vmiResource, vmi, false, value); err != nil {
-			return err
-		}
+	if v.Network.Consumer == nil {
+		return nil
 	}
-	if before.Launcher != nil {
-		if before.VMI == nil {
-			return biz.ErrDependency
-		}
-		pod, err := n.client.Resource(podResource).Namespace(v.Spec.Namespace).Get(ctx, before.Launcher.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if string(pod.GetUID()) != before.Launcher.UID || !owned(pod, "VirtualMachineInstance", before.VMI.UID) {
-			return biz.ErrOwnership
-		}
-		if err = n.patchSecurityGroups(ctx, podResource, pod, false, value); err != nil {
-			return err
-		}
-	}
-	after, err := n.observe(ctx, v, false)
-	if err != nil {
-		return err
-	}
-	if after.VM != before.VM || !sameSecurityGroupRef(before.VMI, after.VMI) || !sameSecurityGroupRef(before.Launcher, after.Launcher) || len(after.StateChangeRequests) > 0 {
-		return biz.ErrDependency
-	}
-	root, err = n.client.Resource(vmResource).Namespace(v.Spec.Namespace).Get(ctx, v.Native.Name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	ann, _, err := unstructured.NestedStringMap(root.Object, "spec", "template", "metadata", "annotations")
-	if err != nil {
-		return err
-	}
-	if !matches(root, v) || string(root.GetUID()) != v.Native.UID || ann[biz.SecurityGroupsAnnotation] != value {
-		return biz.ErrDependency
-	}
-	for _, item := range []struct {
-		ref      *biz.ObjectRef
-		resource schema.GroupVersionResource
-	}{{after.VMI, vmiResource}, {after.Launcher, podResource}} {
-		if item.ref == nil {
+	for _, target := range []struct {
+		reference *biz.ObjectRef
+		resource  schema.GroupVersionResource
+	}{{v.Network.Consumer.CurrentVMI, vmiResource}, {v.Network.Consumer.CurrentLauncher, podResource}} {
+		if target.reference == nil || target.reference.Name == "" || target.reference.UID == "" {
 			continue
 		}
-		obj, err := n.client.Resource(item.resource).Namespace(v.Spec.Namespace).Get(ctx, item.ref.Name, metav1.GetOptions{})
+		object, err := n.client.Resource(target.resource).Namespace(target.reference.Namespace).Get(ctx, target.reference.Name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
-		ownerKind, ownerUID := "VirtualMachine", v.Native.UID
-		if item.resource == podResource {
-			ownerKind, ownerUID = "VirtualMachineInstance", after.VMI.UID
+		if string(object.GetUID()) != target.reference.UID {
+			return biz.ErrChanged
 		}
-		if string(obj.GetUID()) != item.ref.UID || !owned(obj, ownerKind, ownerUID) || obj.GetAnnotations()[biz.SecurityGroupsAnnotation] != value {
-			return biz.ErrDependency
+		if err = n.patchSecurityGroups(ctx, target.resource, object, false, value); err != nil {
+			return err
 		}
 	}
 	return nil
-}
-func sameSecurityGroupRef(a, b *biz.ObjectRef) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
 }

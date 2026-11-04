@@ -67,7 +67,7 @@ func TestLBListenerSetWire(t *testing.T) {
 }
 
 func TestLBWireNeverInfersHealthFromConfiguration(t *testing.T) {
-	v := biz.LoadBalancer{ConfigurationState: "configured", DataPlaneState: "healthy", DesiredVersion: 3, AppliedVersion: 2}
+	v := biz.LoadBalancer{ConfigurationState: "configured", DesiredVersion: 3, AppliedVersion: 2}
 	r := wireLoadBalancer(v)
 	if r.DataPlaneState != networkv1.LoadBalancerDataPlaneState_LOAD_BALANCER_DATA_PLANE_STATE_UNKNOWN || r.AppliedVersion != 2 || r.DesiredVersion != 3 {
 		t.Fatal(r)

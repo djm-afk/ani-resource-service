@@ -42,7 +42,6 @@ func (r *baseRecoveryRuntime) construct(t *testing.T, repository *data.Postgres)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository.UseEgressInfrastructure(provider)
 	if err := repository.ConfigureVPCCIDRPresets([]string{"10.42.0.0/16", "10.61.0.0/16", "10.62.0.0/16"}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +49,7 @@ func (r *baseRecoveryRuntime) construct(t *testing.T, repository *data.Postgres)
 	if err != nil {
 		t.Fatal(err)
 	}
-	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Minute, time.Now)
+	egress, err := biz.NewEgress(repository, provider, biz.ContextEgressAuthorization{}, []byte("0123456789abcdef0123456789abcdef"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,9 +59,7 @@ func (r *baseRecoveryRuntime) construct(t *testing.T, repository *data.Postgres)
 
 func (r *baseRecoveryRuntime) observe(t *testing.T) {
 	t.Helper()
-	options := data.DefaultObservationOptions()
-	options.AuditInterval, options.AuditJitter, options.FlushInterval = 80*time.Millisecond, time.Millisecond, 10*time.Millisecond
-	observer, err := r.provider.EnableObservation(options)
+	observer, err := r.provider.EnableObservation(baseRecoveryPolicy().RequestTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +161,7 @@ func waitBaseRecoveryState(t *testing.T, f *egressFixture, id string, expected b
 		}
 		var err error
 		current, err = f.n.GetVPC(ctx, f.tenant, id)
-		if err == nil && current.State == expected {
+		if err == nil && baseFixtureProductsSettled(current, expected) {
 			return current
 		}
 		time.Sleep(2 * time.Millisecond)

@@ -57,7 +57,7 @@ func wirePlatform(v biz.PlatformResource) *networkv1.PlatformResource {
 		if p.Mode == "underlay" {
 			mode = networkv1.PublicPoolMode_PUBLIC_POOL_MODE_UNDERLAY
 		}
-		pool := &networkv1.PublicAddressPool{Scope: "public", Mode: mode, GatewayId: p.GatewayID, Cidr: p.CIDR, OvnGatewayIp: p.OVNGatewayIP, ExcludedIps: p.ExcludedIPs, VlanNetworkId: p.VlanNetworkID, UpstreamGatewayIp: p.UpstreamGatewayIP, AllocationEnabled: v.AllocationEnabled, IsDefault: v.IsDefault, ConfigRevision: v.ConfigRevision, TopologyFingerprint: v.TopologyFingerprint, ObservedProviderImages: v.ObservedProviderImages}
+		pool := &networkv1.PublicAddressPool{Scope: "public", Mode: mode, GatewayId: p.GatewayID, Cidr: p.CIDR, OvnGatewayIp: p.OVNGatewayIP, ExcludedIps: p.ExcludedIPs, VlanNetworkId: p.VlanNetworkID, UpstreamGatewayIp: p.UpstreamGatewayIP, AllocationEnabled: v.AllocationEnabled, IsDefault: v.IsDefault, ConfigRevision: v.ConfigRevision, ObservedProviderImages: []string{}}
 		if v.Verification != nil {
 			ev := v.Verification
 			pool.Verification = &networkv1.PublicPoolVerification{ProviderSourceRevision: ev.ProviderSourceRevision, ProviderImageDigests: ev.ProviderImageDigests, TopologyFingerprint: ev.TopologyFingerprint, EvidenceReference: ev.EvidenceReference, Scope: ev.Scope, VerifiedAt: timestamppb.New(ev.VerifiedAt), ExpiresAt: timestamppb.New(ev.ExpiresAt)}
@@ -66,7 +66,7 @@ func wirePlatform(v biz.PlatformResource) *networkv1.PlatformResource {
 	}
 	if v.Pool != nil && v.Pool.Scope == "intranet" {
 		p := v.Pool
-		pool := &networkv1.IntranetAddressPool{Cidr: p.CIDR, OvnGatewayIp: p.OVNGatewayIP, ExcludedIps: p.ExcludedIPs, DefaultVpcName: p.DefaultVPCName, DefaultVpcUid: p.DefaultVPCUID, IntranetNetworks: p.IntranetNetworks, AllocationEnabled: v.AllocationEnabled, IsDefault: v.IsDefault, ConfigRevision: v.ConfigRevision, TopologyFingerprint: v.TopologyFingerprint, ObservedProviderImages: v.ObservedProviderImages, Scope: "intranet", NewVpcsEnabled: v.NewVPCsEnabled}
+		pool := &networkv1.IntranetAddressPool{Cidr: p.CIDR, OvnGatewayIp: p.OVNGatewayIP, ExcludedIps: p.ExcludedIPs, DefaultVpcName: p.DefaultVPCName, DefaultVpcUid: p.DefaultVPCUID, IntranetNetworks: p.IntranetNetworks, AllocationEnabled: v.AllocationEnabled, IsDefault: v.IsDefault, ConfigRevision: v.ConfigRevision, ObservedProviderImages: []string{}, Scope: "intranet", NewVpcsEnabled: v.NewVPCsEnabled}
 		if ev := v.Verification; ev != nil {
 			pool.Verification = &networkv1.IntranetPoolVerification{ProviderSourceRevision: ev.ProviderSourceRevision, ProviderImageDigests: ev.ProviderImageDigests, TopologyFingerprint: ev.TopologyFingerprint, EvidenceReference: ev.EvidenceReference, Scope: ev.Scope, VerifiedAt: timestamppb.New(ev.VerifiedAt), ExpiresAt: timestamppb.New(ev.ExpiresAt)}
 		}

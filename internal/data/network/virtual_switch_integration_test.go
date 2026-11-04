@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 )
 
 // Only the Kubernetes/NIC boundary is replaced. Authorization, acceptance,
@@ -27,13 +26,12 @@ func (b *switchBoundary) VirtualSwitchInventory(_ context.Context, cluster strin
 	if b.unavailable {
 		return biz.VirtualSwitchInventory{}, biz.Fail(biz.DependencyUnavailable, "facts unavailable")
 	}
-	now := time.Now()
 	members := []biz.VirtualSwitchNode{{NodeName: "n1", NodeUID: "uid1", Priority: 100, Allocated: true}, {NodeName: "n2", NodeUID: "uid2", Priority: 100, Allocated: true}}
 	items := []biz.PreparedDeviceNode{}
 	for _, n := range members {
 		items = append(items, biz.PreparedDeviceNode{NodeName: n.NodeName, NodeUID: n.NodeUID, Name: device})
 	}
-	return biz.VirtualSwitchInventory{Members: members, Fingerprint: strings.Repeat("a", 64), Inventory: biz.PreparedDeviceInventory{Items: items, Fingerprint: strings.Repeat("b", 64), CollectedAt: now}}, nil
+	return biz.VirtualSwitchInventory{Members: members, Fingerprint: strings.Repeat("a", 64), Inventory: biz.PreparedDeviceInventory{Items: items, Fingerprint: strings.Repeat("b", 64)}}, nil
 }
 func (b *switchBoundary) InspectVirtualSwitchNode(_ context.Context, sw biz.VirtualSwitch, n biz.VirtualSwitchNode) (biz.VirtualSwitchNode, error) {
 	b.mu.Lock()
@@ -76,8 +74,8 @@ func switchEgress(t *testing.T) (*egressFixture, *switchBoundary) {
 	t.Helper()
 	p, owner := database(t)
 	boundary := &switchBoundary{}
-	p.UseEgressInfrastructure(boundary)
-	e, err := biz.NewEgress(p, boundary, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("s", 32)), time.Minute, time.Now)
+	p.UseVirtualSwitchInfrastructure(boundary)
+	e, err := biz.NewEgress(p, boundary, biz.ContextEgressAuthorization{}, []byte(strings.Repeat("s", 32)), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +279,7 @@ JOIN network_virtual_switch_operations o ON o.operation_id=s.last_operation_id W
 	}
 	assertBlocked := func(checkpoint string) {
 		t.Helper()
-		if err := f.p.FinishVirtualSwitch(f.ctx, old, "configured", "", policy.ObserveEvery); !errors.Is(err, biz.ErrLeaseLost) {
+		if err := f.p.FinishVirtualSwitch(f.ctx, old, biz.VirtualSwitchProgress{BindingState: "configured", Observed: true}, policy.ObserveEvery); !errors.Is(err, biz.ErrLeaseLost) {
 			t.Fatalf("%s: stale Finish accepted: %v", checkpoint, err)
 		}
 		if err := f.p.SaveVirtualSwitchNode(f.ctx, old, 0, old.Switch.Nodes[0]); !errors.Is(err, biz.ErrLeaseLost) {
@@ -320,7 +318,7 @@ JOIN network_virtual_switch_operations o ON o.operation_id=s.last_operation_id W
 	if final.version != accepted.version || final.bindingID != accepted.bindingID || final.state != "deleted" || final.bindingState != "cleaned" || final.operation != accepted.operation || final.opState != "succeeded" || final.completed == nil || final.completed.Before(*claimed.leaseUntil) || final.epoch <= old.Epoch || final.owner != "" || final.leaseUntil != nil {
 		t.Fatalf("same object did not finish after natural expiry: %+v", final)
 	}
-	if err := f.p.FinishVirtualSwitch(f.ctx, old, "configured", "", policy.ObserveEvery); !errors.Is(err, biz.ErrLeaseLost) {
+	if err := f.p.FinishVirtualSwitch(f.ctx, old, biz.VirtualSwitchProgress{BindingState: "configured", Observed: true}, policy.ObserveEvery); !errors.Is(err, biz.ErrLeaseLost) {
 		t.Fatal("late old Finish revived the deleted switch", err)
 	}
 	if err := f.p.SaveVirtualSwitchNode(f.ctx, old, 0, old.Switch.Nodes[0]); !errors.Is(err, biz.ErrLeaseLost) {
