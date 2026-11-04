@@ -21,7 +21,7 @@ func currentAddressFixture() (biz.Attachment, biz.ConsumerSubmission, *unstructu
 }
 
 func TestAttachmentAddressReadUsesOnlyCurrentPublishedOutput(t *testing.T) {
-	for _, name := range []string{"pod-ip", "no-output", "vnic-output", "vm-default"} {
+	for _, name := range []string{"pod-ip", "no-output", "vnic-output", "vm-default", "vm-manual"} {
 		t.Run(name, func(t *testing.T) {
 			a, c, pod := currentAddressFixture()
 			vnic := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "networking.kubercloud.com/v1", "kind": "VNic", "metadata": map[string]any{"namespace": a.Namespace, "name": "nic", "uid": "nic-uid"}, "spec": map[string]any{"macAddress": "02:00:00:00:00:02"}, "status": map[string]any{"primaryIP": "10.42.1.3", "conditions": []any{map[string]any{"type": "Ready", "status": "False"}}}}}
@@ -33,15 +33,22 @@ func TestAttachmentAddressReadUsesOnlyCurrentPublishedOutput(t *testing.T) {
 			case "vnic-output":
 				pod.SetAnnotations(map[string]string{primaryVNicAnnotation: "tenant/nic"})
 				want, reads = []string{"10.42.1.3"}, 2
-			case "vm-default":
+			case "vm-default", "vm-manual":
 				a.WorkloadMode = "vm_managed"
 				pod.SetAnnotations(map[string]string{primaryVNicAnnotation: "nic", "k8s.v1.cni.cncf.io/network-status": `[{"default":true,"ips":["10.42.1.5"],"mac":"02:00:00:00:00:05"}]`})
 				want = []string{"10.42.1.5"}
+				if name == "vm-manual" {
+					c.ManualVNics = []biz.ManualVNicReference{{ProviderName: "nic", ProviderUID: "expected-uid"}}
+					reads = 2
+				}
 			}
 			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), pod, vnic)
 			got, err := (&KCProvider{client: client}).ObserveAttachmentAddresses(context.Background(), a, c)
 			if err != nil || !reflect.DeepEqual(got.CurrentIPs, want) || len(client.Actions()) != reads {
 				t.Fatal(got, err, client.Actions())
+			}
+			if name == "vm-manual" && got.CurrentVNicUID != string(vnic.GetUID()) {
+				t.Fatal("manual endpoint identity must come from the current VNIC", got)
 			}
 			for _, action := range client.Actions() {
 				if action.GetVerb() != "get" || (action.GetResource() != pods && action.GetResource() != kcManualVNics) {

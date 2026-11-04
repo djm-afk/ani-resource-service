@@ -124,7 +124,13 @@ func (p *KCProvider) ObserveAttachmentAddresses(ctx context.Context, a biz.Attac
 	if namespace, name, qualified := strings.Cut(value.CurrentVNicName, "/"); qualified && namespace == a.Namespace {
 		value.CurrentVNicName = name
 	}
-	if value.CurrentVNicName == "" || (value.CurrentMACAddress != "" && len(value.CurrentIPs) != 0) {
+	manualCurrent := false
+	for _, manual := range consumer.ManualVNics {
+		manualCurrent = manualCurrent || kcRef(manual.ProviderName, a.Namespace) == kcRef(value.CurrentVNicName, a.Namespace)
+	}
+	// Complete Pod addresses still need the current manual VNIC's actual UID.
+	// Automatic endpoints keep their existing single-Pod read path.
+	if value.CurrentVNicName == "" || (!manualCurrent && value.CurrentMACAddress != "" && len(value.CurrentIPs) != 0) {
 		return value, nil
 	}
 	current := a
