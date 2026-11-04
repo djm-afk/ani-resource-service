@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -251,19 +252,34 @@ func lbInstalledProxyPod(v *auditView, pod *unstructured.Unstructured) bool {
 	}
 	return false
 }
-func (o *KCObservation) collectLB(ctx context.Context, v *auditView) error {
+func (o *KCObservation) collectLB(ctx context.Context, v *auditView) (result error) {
 	if o.provider.loadBalancerInstallation == nil {
 		return nil
 	}
-	// Optional LB prerequisites may be missing without making ordinary VPC
-	// observations unavailable. Bound their I/O inside the existing audit.
-	optional, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer func() {
+		if result != nil {
+			// A partially listed LB scope cannot prove cleanup or absence. Do
+			// not carry old optional objects into a newly dated base audit.
+			for _, gvr := range append(append([]schema.GroupVersionResource{}, lbObservationGVRs...), lbExtendedObservationGVRs...) {
+				delete(v.indices, gvr)
+			}
+		}
+	}()
+	// Leave time to persist capability failure and publish mandatory facts.
+	// A late optional LIST must not consume the whole shared audit deadline.
+	budget := 4 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = min(budget, time.Until(deadline)/2)
+	}
+	optional, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	complete := true
+	var readErr error
 	for _, gvr := range lbObservationGVRs {
 		objects, err := o.provider.listAll(optional, gvr)
 		if err != nil {
 			complete = false
+			readErr = fmt.Errorf("optional LB audit LIST %s: %w", gvr.String(), err)
 			break
 		}
 		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
@@ -277,6 +293,9 @@ func (o *KCObservation) collectLB(ctx context.Context, v *auditView) error {
 	// Extra listener CRDs are observed by the existing periodic audit. A missing
 	// optional source blocks only LBs using it, preserving the HTTP baseline.
 	for _, gvr := range lbExtendedObservationGVRs {
+		if !complete || optional.Err() != nil {
+			break
+		}
 		objects, err := o.provider.listAll(optional, gvr)
 		if err != nil {
 			continue
@@ -303,7 +322,18 @@ func (o *KCObservation) collectLB(ctx context.Context, v *auditView) error {
 	} else if !ready {
 		reason = "PROVIDER_NOT_READY"
 	}
-	return o.provider.repository.queries.SaveLBCapability(ctx, sqlcgen.SaveLBCapabilityParams{ClusterID: o.provider.repository.placement.ClusterID, Ready: ready, Reason: reason, ObservedAt: v.collected, Fingerprint: o.provider.loadBalancerInstallation.Fingerprint, ProviderImages: []string{}})
+	// Persistence is optional to base observation too. Its own bounded context
+	// cannot consume all time left after a failed optional API request.
+	persistBudget := 500 * time.Millisecond
+	if deadline, ok := ctx.Deadline(); ok {
+		persistBudget = min(persistBudget, time.Until(deadline)/2)
+	}
+	persist, persistCancel := context.WithTimeout(ctx, persistBudget)
+	defer persistCancel()
+	if err := o.provider.repository.queries.SaveLBCapability(persist, sqlcgen.SaveLBCapabilityParams{ClusterID: o.provider.repository.placement.ClusterID, Ready: ready, Reason: reason, ObservedAt: v.collected, Fingerprint: o.provider.loadBalancerInstallation.Fingerprint, ProviderImages: []string{}}); err != nil {
+		return errors.Join(readErr, fmt.Errorf("optional LB capability persistence: %w", err))
+	}
+	return readErr
 }
 func (p *KCProvider) observationResources() []schema.GroupVersionResource {
 	values := append([]schema.GroupVersionResource{}, observationGVRs...)

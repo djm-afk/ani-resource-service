@@ -206,7 +206,10 @@ func (w *AttachmentWorker) stepManaged(ctx context.Context, work AttachmentWork,
 		work.RequireFreshRelations = accepted.State == "closed" && a.State != Released
 		// A blocked attachment needs a new independent collection, not an old
 		// address cache that predates the rejected owner relation.
-		work.RequireFreshRelations = work.RequireFreshRelations || work.ProtocolBlocked
+		// A retained release has already proved owner closure. Recovery consumes
+		// a later shared audit; asking for another post-Claim audit on every retry
+		// makes one permanently blocked record drive full-cluster collections.
+		work.RequireFreshRelations = work.RequireFreshRelations || (work.ProtocolBlocked && a.State != Released)
 	}
 	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 	o, observeErr := w.provider.ObserveAttachment(call, work)
@@ -266,7 +269,7 @@ func (w *AttachmentWorker) stepManaged(ctx context.Context, work AttachmentWork,
 			p.ProtocolBlocked = false
 			p.ProtocolRecovered = true
 		}
-		if work.ProtocolBlocked && consumerErr == nil && work.RequireFreshRelations && !o.Exists && !o.HasDependencies && !o.PendingCandidate && p.Proof.Covers(work.Requirement) && !p.Proof.CollectedAt.Before(work.Now) && VMClosedProtocolRecoveryMatches(a, consumer) {
+		if work.ProtocolBlocked && consumerErr == nil && !o.Exists && !o.HasDependencies && !o.PendingCandidate && ClosedProtocolRecoveryProof(work, p.Proof) && ClosedProtocolRecoveryMatches(a, consumer) {
 			p.ProtocolBlocked = false
 			p.ProtocolRecovered = true
 			p.State, p.Reason = Released, ""
@@ -274,6 +277,12 @@ func (w *AttachmentWorker) stepManaged(ctx context.Context, work AttachmentWork,
 	}
 	if p.ProtocolBlocked {
 		p.Reason = AttachmentProtocol
+		if a.State == Released {
+			// Keep the fence and durable recovery obligation, but do not let
+			// periodic hints or repeated failed reads create a hot retry loop.
+			p.NextDelay = max(w.policy.ObserveEvery, w.policy.StaleAfter)
+			p.Backoff = true
+		}
 	}
 	if p.State == Released && p.Observed && p.Reason == "" && !p.ProtocolBlocked && !p.Backoff {
 		p.NextDelay = max(w.policy.ObserveEvery, w.policy.StaleAfter)
@@ -286,4 +295,18 @@ func (w *AttachmentWorker) stepManaged(ctx context.Context, work AttachmentWork,
 		err = nil
 	}
 	return true, err
+}
+
+// ClosedProtocolRecoveryProof separates initial owner closure from a retained
+// release. Both require current notification coverage. Initial closure needs
+// the post-owner-response audit; retained recovery can use a shared audit only
+// after the last durable record (including its protocol violation) was written.
+func ClosedProtocolRecoveryProof(w AttachmentWork, proof ObservationProof) bool {
+	if !proof.Covers(w.Requirement) {
+		return false
+	}
+	if w.Attachment.State == Released {
+		return !proof.CollectedAt.Before(w.Attachment.UpdatedAt) && !proof.CollectedAt.Before(w.Requirement.AppliedAt)
+	}
+	return w.RequireFreshRelations && !proof.CollectedAt.Before(w.Now)
 }

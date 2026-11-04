@@ -89,7 +89,7 @@ VPC CIDR 是租户的地址规划范围。Subnet CIDR 必须属于同租户父 V
 受理与平台池写入共用 cluster 锁，Provider 首次创建前再检查平台事实和池冲突；外部 Kubernetes 变更与 PostgreSQL 不具有原子提交保证。白名单只约束首次 VPC 受理，旧已受理同意图的幂等重放仍返回原快照，Subnet CIDR 校验不应用这份白名单。最终部署预设必须据实际环境冻结，仓库示例为空，测试 CIDR 不作为部署值。
 
 不同 VPC 可以重复使用相同 CIDR。网关地址由 Network 确定后交 Provider 预留；具体工作负载 IP 分配始终由 kc IPAM 负责。
-首次受理创建 Subnet 要求父 VPC `available` 且观测未过期。首次受理接入要求 VPC 与 Subnet 都满足此条件。
+首次受理创建 Subnet 要求父 VPC `available` 且观测未过期。VM/容器接入与手动 VNIC 创建、预留按[持续观察规格](cr-observation.md#4-事实时效与真实校验)核验当前直接依赖。
 已受理请求重放按第 4.3 / 7.1 节先识别持久记录，不重新应用这些动态准入条件。
 CIDR、父 VPC 和网关首片不可修改；不提供 PATCH、在线换网或 VPC 迁移。
 2026-11-03 用户指定开放子网创建的网关、排除 IP、DHCP 和 DNS。新增三项随创建事务、幂等快照和 Provider 目标持久化，并在 Get/List 回显；默认空列表/false 保持已受理旧请求的指纹。本期只开放创建，未增加已有子网的编辑接口。配置值必须通过正常 KCN 下发及原身份观察后才可用。
@@ -473,5 +473,7 @@ Kind 多节点跨节点测试是多个 kind node 的验证，不外推物理多�
 创建可选 `requested_ip`、`requested_mac`，留空分别自动分配，创建后不可修改。请求值与实际 `primary_ip` / `mac_address` 分开持久化和展示；只有 KCN 确认实际值匹配才可用。IP 必须为所选子网内的 IPv4 主机地址，不能是网段、广播或网关；KCN 负责分配池和占用冲突，异步拒绝如实终止创建操作，地址占用以 `ADDRESS_CONFLICT` 表达。MAC 规范化为小写六段、非零单播地址，同子网未删除的手动产品网卡之间以数据库唯一约束保护（包含已自动分配的手动网卡）；不扫描或接管 KCN 自动网卡。实例停止、解绑或删除不释放手动网卡 MAC，显式删除网卡完成后才释放。
 
 手动 VNIC 使用独立 bindings 集合，本期仅开放 primary 槽位与单消费者独占；运行中当前 A 和目标 B 可同时保留。实例 owner 通过持久命令预留、同步最新安全组并保存目标，保存不改在线 Pod 或运行模板。平台重建端点时才应用模板；停止态展示下次启动配置。实例删除只释放其关系，VNIC/IP 保留，只有显式 DeleteVNic 才删除原 UID 对象。留存网卡继续保护 Subnet 与实际安全组引用。自动模式保留原 Pod-owner 核验，手动模式核验持久身份、有效消费者绑定及原 Pod 引用。
+
+创建和预留以原 Namespace、VPC/Subnet binding UID 及当前 CR 配置、代次和 Ready 为准，核对已接受的 DHCP、DNS 和排除范围。基础 EIP/SNAT 聚合降级或旧投影年龄不单独阻断内网接入；删除、归属冲突、未决变更和当前读取失败继续拒绝。预留还精确读取原 VNIC，核对 UID、配置及已分配 MAC/IP，保持消费者独占；校验不续写投影、不扫描全局关系，整个定向读取使用有界预算。
 
 正式 RPC 以 `api/network/v1/network.proto` 为字段合同；VM/Instance 各自拥有 GetNetworkInterfaces / SetNetworkInterface，网络配置读模型以 `api/network/v1/vnic.proto` 为准。普通读只消费数据库投影，分配、预留、模板和在线接入分别表达。实施顺序和验收范围见[实施计划](../plans/kcn-vnic-management-20261103.md)，实际结果见[执行状态](../execution/status.md#kcn-vnic-management-20261103)。

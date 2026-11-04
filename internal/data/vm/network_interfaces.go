@@ -57,11 +57,19 @@ func (n *Network) ReleaseNetworkInterfaces(ctx context.Context, v biz.VM, keep [
 		}
 		return nil
 	}
-	cfg := biz.PrimaryNetworkInterface(v)
-	if !cfg.PendingRestart() {
-		if err := n.vnics.ApplyVNicBinding(ctx, v.TenantID, "vm", v.ID, cfg.Applied.VNicID, cfg.AppliedRevision); err != nil {
-			return err
+	// An ordinary automatic VM has no saved primary selection or applied
+	// revision. Only acknowledge a persisted selection; always release its
+	// obsolete consumer bindings below.
+	for _, cfg := range v.NetworkInterfaces {
+		if cfg.Slot != "primary" {
+			continue
 		}
+		if !cfg.PendingRestart() {
+			if err := n.vnics.ApplyVNicBinding(ctx, v.TenantID, "vm", v.ID, cfg.Applied.VNicID, cfg.AppliedRevision); err != nil {
+				return err
+			}
+		}
+		break
 	}
 	return n.vnics.ReleaseVNicBindings(ctx, v.TenantID, "vm", v.ID, keep)
 }

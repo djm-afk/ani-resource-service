@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"reflect"
 	"sync"
@@ -78,6 +79,7 @@ type KCObservation struct {
 	sourceStarts      atomic.Int64
 	watchIndexBytes   atomic.Int64
 	auditFailures     atomic.Int64
+	optionalFailures  atomic.Int64
 	auditMaxSeconds   float64
 	collectingSince   time.Time
 	notifications     atomic.Int64
@@ -92,18 +94,22 @@ func (p *KCProvider) EnableObservation(options ObservationOptions) (*KCObservati
 		return nil, fmt.Errorf("invalid observation lifecycle/options")
 	}
 	o := &KCObservation{provider: p, client: p.watchClient, options: options, pending: map[string]struct{}{}, changes: map[string]uint64{}, done: make(chan struct{})}
-	for _, gvr := range p.observationResources() {
+	for index, gvr := range p.observationResources() {
+		boundary := o.sourceBoundary
+		if index >= len(observationGVRs) {
+			boundary = o.lbSourceBoundary
+		}
 		resource := o.client.Resource(gvr)
 		informer := cache.NewSharedIndexInformer(&cache.ListWatch{
 			ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-				o.sourceBoundary()
+				boundary()
 				return resource.List(ctx, opts)
 			},
 			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 				// Streaming initial events rebuild the store just like LIST. A
 				// normal watch resumes its RV without replaying initial events.
 				if opts.SendInitialEvents != nil && *opts.SendInitialEvents {
-					o.sourceBoundary()
+					boundary()
 				}
 				return resource.Watch(ctx, opts)
 			},
@@ -112,7 +118,7 @@ func (p *KCProvider) EnableObservation(options ObservationOptions) (*KCObservati
 		if err != nil {
 			return nil, err
 		}
-		if err = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) { o.watchErrors.Add(1); o.sourceBoundary() }); err != nil {
+		if err = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) { o.watchErrors.Add(1); boundary() }); err != nil {
 			return nil, err
 		}
 		o.informers = append(o.informers, informer)
@@ -132,6 +138,37 @@ func (o *KCObservation) sourceBoundary() {
 	o.overflow = true
 	o.mu.Unlock()
 	o.sourceStarts.Add(1)
+}
+
+// An optional LB source cannot invalidate an independently complete base
+// audit. LB observations carry this key even when their object is absent.
+// The same sequence fence rejects collections begun before an LB relist.
+func (o *KCObservation) lbSourceBoundary() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.sourceStarts.Add(1)
+	o.sequence++
+	if _, exists := o.changes["lb-source"]; !exists && len(o.changes) >= o.options.QueueCapacity*8 {
+		clear(o.changes)
+		clear(o.attachmentChanges)
+		o.epoch++
+		o.overflow = true
+		o.overflows.Add(1)
+	}
+	o.changes["lb-source"] = o.sequence
+	if _, pending := o.pending["lb-source"]; pending {
+		o.coalesced.Add(1)
+		return
+	}
+	if len(o.pending) >= o.options.QueueCapacity {
+		o.overflow = true
+		o.overflows.Add(1)
+		return
+	}
+	if len(o.pending) == 0 {
+		o.pendingSince = time.Now()
+	}
+	o.pending["lb-source"] = struct{}{}
 }
 
 func unwrapObject(value any) *unstructured.Unstructured {
@@ -432,7 +469,7 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 	for _, gvr := range observationGVRs {
 		objects, err := o.provider.listAll(ctx, gvr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("network audit LIST %s: %w", gvr.String(), err)
 		}
 		index := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{relationshipIndex: relationshipKeys})
 		for _, object := range objects {
@@ -444,9 +481,6 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 			v.bytes += int64(len(body))
 		}
 		v.indices[gvr] = index
-	}
-	if err = o.collectLB(ctx, v); err != nil {
-		return nil, err
 	}
 	bind := func(keys []string, t observationTarget) {
 		for _, k := range keys {
@@ -494,7 +528,11 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 				v.recovery = append(v.recovery, t)
 			}
 		}
-		bind([]string{"object:" + kind + "/" + r.Namespace + "/" + r.ProviderName, field + ":" + r.Namespace + "/" + r.ProviderName, "uid:" + r.ProviderUid}, t)
+		keys := []string{"object:" + kind + "/" + r.Namespace + "/" + r.ProviderName, field + ":" + r.Namespace + "/" + r.ProviderName, "uid:" + r.ProviderUid}
+		if r.ResourceKind == "load_balancer" {
+			keys = append(keys, "lb-source")
+		}
+		bind(keys, t)
 	}
 	for _, r := range platforms {
 		t := observationTarget{"", r.ResourceID, r.Kind}
@@ -583,6 +621,26 @@ func (o *KCObservation) collect(ctx context.Context) (*auditView, error) {
 	for _, edge := range lbEdges {
 		bind([]string{edge.RelationKey}, observationTarget{edge.TenantID, edge.LbID, "load_balancer"})
 	}
+	// Resolve every mandatory object and relationship before spending time on
+	// optional LB sources. A partial LB view never becomes absence proof, while
+	// its failure does not discard this independently complete base view.
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err = o.collectLB(ctx, v); err != nil {
+		o.optionalFailures.Add(1)
+		slog.WarnContext(ctx, "network optional LB audit unavailable", "error", err)
+	}
+	for _, r := range resources {
+		if r.ResourceKind == "load_balancer" && !r.Recovery && r.ProviderUid != "" {
+			if obj := lbViewObject(v, lbGateways, r.Namespace, r.ProviderName); obj != nil && string(obj.GetUID()) == r.ProviderUid {
+				v.recovery = append(v.recovery, observationTarget{r.TenantID, r.ResourceID, r.ResourceKind})
+			}
+		}
+	}
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
 	return v, nil
 }
 
@@ -633,7 +691,7 @@ func (o *KCObservation) cachedSnapshot(now time.Time) (*auditView, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.view == nil || now.Sub(o.view.collected) > o.options.AuditInterval+o.options.AuditJitter {
-		return nil, fmt.Errorf("shared observation is pending")
+		return nil, fmt.Errorf("%w: shared observation is pending", biz.ErrObservationPending)
 	}
 	return o.view, nil
 }
@@ -654,6 +712,7 @@ func (o *KCObservation) Snapshot() map[string]float64 {
 	m["watch_index_payload_bytes"] = float64(max(0, o.watchIndexBytes.Load()))
 	m["audit_collection_max_seconds"] = o.auditMaxSeconds
 	m["audit_failures_total"] = float64(o.auditFailures.Load())
+	m["optional_audit_failures_total"] = float64(o.optionalFailures.Load())
 	if !o.collectingSince.IsZero() {
 		m["audit_collecting_seconds"] = time.Since(o.collectingSince).Seconds()
 	}

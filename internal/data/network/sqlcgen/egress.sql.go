@@ -157,18 +157,18 @@ func (q *Queries) AdvanceEIP(ctx context.Context, arg AdvanceEIPParams) (Network
 
 const advanceSnat = `-- name: AdvanceSnat :one
 UPDATE network_snat_bindings SET state=$1,reason=$2,version=version+1,updated_at=clock_timestamp(),
- applied_enabled=$3::boolean,
- target_generation=greatest(target_generation,$4::bigint),
- observed_at=CASE WHEN $5::boolean THEN $6::timestamptz ELSE observed_at END
+ applied_enabled=CASE WHEN $3::boolean THEN $4::boolean ELSE applied_enabled END,
+ target_generation=greatest(target_generation,$5::bigint),
+ observed_at=CASE WHEN $3::boolean THEN $6::timestamptz ELSE observed_at END
 WHERE tenant_id=$7 AND snat_id=$8 AND version=$9 RETURNING tenant_id, snat_id, cluster_id, namespace, name, description, vpc_id, eip_id, desired_enabled, applied_enabled, target_generation, state, reason, version, created_at, updated_at, observed_at, last_operation_id, purpose, system_owner_vpc
 `
 
 type AdvanceSnatParams struct {
 	State            string
 	Reason           string
+	Observed         bool
 	AppliedEnabled   pgtype.Bool
 	TargetGeneration int64
-	Observed         bool
 	ObservedAt       *time.Time
 	TenantID         string
 	SnatID           string
@@ -179,9 +179,9 @@ func (q *Queries) AdvanceSnat(ctx context.Context, arg AdvanceSnatParams) (Netwo
 	row := q.db.QueryRow(ctx, advanceSnat,
 		arg.State,
 		arg.Reason,
+		arg.Observed,
 		arg.AppliedEnabled,
 		arg.TargetGeneration,
-		arg.Observed,
 		arg.ObservedAt,
 		arg.TenantID,
 		arg.SnatID,

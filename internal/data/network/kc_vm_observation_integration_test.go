@@ -23,6 +23,7 @@ func TestVMReservedAttachmentReusesSharedRelationAudit(t *testing.T) {
 	f, _, _ := newAutoVMNetwork(t)
 	policy := awaitAutoVMNetwork(t, f)
 	f.r.WorkloadMode = "vm_managed"
+	f.r.ConsumerType = biz.ConsumerVirtualMachine
 	f.r.VMExpectation = &biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}
 	a := f.prepare(t)
 	api := controlled.New()
@@ -63,6 +64,7 @@ func newVMRelationAudit(t *testing.T) (attachmentFixture, biz.Attachment, biz.Co
 	f, managedAPI, _ := newAutoVMNetwork(t)
 	policy := awaitAutoVMNetwork(t, f)
 	f.r.WorkloadMode = "vm_managed"
+	f.r.ConsumerType = biz.ConsumerVirtualMachine
 	f.r.VMExpectation = &biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}
 	a := f.prepare(t)
 	api := controlled.New()

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -58,6 +59,7 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
+	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
 	parent, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.VpcID})
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
@@ -72,8 +74,8 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
-	if parent.State != "available" || subnet.State != "available" {
-		return biz.VNic{}, biz.Fail(biz.ParentNotReady, "VPC and Subnet must be available")
+	if !networkManagementOpen(parent.State, parent.Reason) || !networkManagementOpen(subnet.State, subnet.Reason) {
+		return biz.VNic{}, biz.Fail(biz.ParentNotReady, "VPC or Subnet management is closed")
 	}
 	if e = biz.ValidateVNicRequestedIP(r.RequestedIP, subnet.Cidr, subnet.Gateway); e != nil {
 		return biz.VNic{}, e
@@ -91,6 +93,17 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 	}
 	if sb.ProviderUid == "" || sb.Namespace != identity.Name || sb.ClusterID != identity.ClusterID {
 		return biz.VNic{}, biz.Fail(biz.ParentNotReady, "Subnet provider identity unavailable")
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	currentCtx, e := p.networkProvider.namespaceContext(verifyCtx, sb)
+	if e != nil {
+		return biz.VNic{}, e
+	}
+	for _, resourceID := range []string{subnet.VpcID, subnet.SubnetID} {
+		if _, e = p.networkProvider.currentNetworkResource(currentCtx, q, r.TenantID, resourceID); e != nil {
+			return biz.VNic{}, e
+		}
 	}
 	id, op := "vnic_"+strings.ReplaceAll(uuid.NewString(), "-", ""), uuid.NewString()
 	now, e := q.DatabaseTime(ctx)
@@ -290,6 +303,7 @@ func (p *Postgres) DeleteVNic(ctx context.Context, tenant, id string) (biz.VNic,
 	return vnicRow(row), databaseFailure(tx.Commit(ctx))
 }
 func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.VNic, error) {
+	resultCtx := ctx
 	scope := biz.VNicConsumerScope{}
 	if p.vnicConsumerResolver != nil {
 		var e error
@@ -312,7 +326,12 @@ func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
+	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
 	parent, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.VpcID})
+	if e != nil {
+		return biz.VNic{}, databaseFailure(e)
+	}
+	subnet, e := q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: initial.SubnetID})
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
@@ -336,8 +355,36 @@ func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.
 	if row.SubnetID != r.SubnetID {
 		return biz.VNic{}, biz.Fail(biz.InvalidArgument, "manual VNIC must use the instance Subnet")
 	}
-	if parent.State != "available" || row.State != "available" || row.MacAddress == "" || row.PrimaryIp == "" {
+	if !networkManagementOpen(parent.State, parent.Reason) || !networkManagementOpen(subnet.State, subnet.Reason) || row.State != "available" || row.MacAddress == "" || row.PrimaryIp == "" {
 		return biz.VNic{}, biz.Fail(biz.ProviderNotReady, "manual VNIC allocation is not ready")
+	}
+	if p.networkProvider == nil {
+		return biz.VNic{}, biz.Fail(biz.ProviderUnavailable, "network provider unavailable")
+	}
+	binding, e := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.VNicID})
+	if e != nil {
+		return biz.VNic{}, databaseFailure(e)
+	}
+	if binding.ProviderUid == "" || binding.PendingAction != "" {
+		return biz.VNic{}, biz.Fail(biz.ProviderOwnership, "manual VNIC identity or mutation is unresolved")
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	currentCtx, e := p.networkProvider.namespaceContext(verifyCtx, binding)
+	if e != nil {
+		return biz.VNic{}, e
+	}
+	for _, resourceID := range []string{row.VpcID, row.SubnetID} {
+		if _, e = p.networkProvider.currentNetworkResource(currentCtx, q, r.TenantID, resourceID); e != nil {
+			return biz.VNic{}, e
+		}
+	}
+	current, e := p.networkProvider.observeDirect(currentCtx, biz.ProviderTarget{TenantID: r.TenantID, ResourceID: r.VNicID, Kind: "vnic", BindingID: binding.BindingID, KnownIdentity: binding.ProviderUid, RequestedIP: row.RequestedIp, RequestedMAC: row.RequestedMac})
+	if e != nil {
+		return biz.VNic{}, e
+	}
+	if !current.Ready || current.VNic == nil || current.VNic.MACAddress != row.MacAddress || current.VNic.PrimaryIP != row.PrimaryIp {
+		return biz.VNic{}, biz.Fail(biz.ProviderNotReady, "manual VNIC has not confirmed its allocated address")
 	}
 	var occupied bool
 	e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM network_vnic_bindings WHERE tenant_id=$1 AND vnic_id=$2 AND released_at IS NULL AND (consumer_kind<>$3 OR consumer_id<>$4 OR slot<>$5))`, r.TenantID, r.VNicID, r.ConsumerKind, r.ConsumerID, r.Slot).Scan(&occupied)
@@ -354,7 +401,7 @@ func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.
 	if e = tx.Commit(ctx); e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
-	return p.GetVNic(ctx, r.TenantID, r.VNicID)
+	return p.GetVNic(resultCtx, r.TenantID, r.VNicID)
 }
 func (p *Postgres) ReleaseVNicBindings(ctx context.Context, tenant, kind, consumer string, keep []string) error {
 	_, e := p.pool.Exec(ctx, `UPDATE network_vnic_bindings SET released_at=clock_timestamp() WHERE tenant_id=$1 AND consumer_kind=$2 AND consumer_id=$3 AND released_at IS NULL AND vnic_id<>ALL(coalesce($4::text[],'{}'))`, tenant, kind, consumer, keep)

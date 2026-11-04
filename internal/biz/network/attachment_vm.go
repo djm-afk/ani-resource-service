@@ -117,7 +117,24 @@ func validVMConsumer(a Attachment, c ConsumerSubmission) bool {
 // VMClosedProtocolRecoveryMatches authorizes only cleanup of an unchanged,
 // already accepted closure. It grants neither a current Pod nor address use.
 func VMClosedProtocolRecoveryMatches(a Attachment, c ConsumerSubmission) bool {
-	if a.WorkloadMode != "vm_managed" || a.State != Releasing || a.ConsumerSnapshot == nil || a.SnapshotRevision < 1 || a.SnapshotHash == "" || a.RootController.UID == "" || a.FinalizationID == "" {
+	if a.WorkloadMode != "vm_managed" || (a.State != Releasing && a.State != Released) {
+		return false
+	}
+	return closedProtocolSnapshotMatches(a, c)
+}
+
+// ClosedProtocolRecoveryMatches also permits a retained, already released
+// controller attachment to recover after a late relation has gone away. It
+// does not authorize initial controller release from a protocol conflict.
+func ClosedProtocolRecoveryMatches(a Attachment, c ConsumerSubmission) bool {
+	if a.WorkloadMode == "vm_managed" {
+		return VMClosedProtocolRecoveryMatches(a, c)
+	}
+	return a.WorkloadMode == "controller_managed" && a.State == Released && closedProtocolSnapshotMatches(a, c)
+}
+
+func closedProtocolSnapshotMatches(a Attachment, c ConsumerSubmission) bool {
+	if a.ConsumerSnapshot == nil || a.SnapshotRevision < 1 || a.SnapshotHash == "" || a.RootController.UID == "" || a.FinalizationID == "" {
 		return false
 	}
 	return c.State == "closed" && c.DesiredRunState == "deleted" && len(c.CurrentPods) == 0 && c.FinalizationID == a.FinalizationID && c.RootController == a.RootController &&

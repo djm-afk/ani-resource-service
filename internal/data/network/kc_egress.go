@@ -516,7 +516,7 @@ func objectKey(b sqlcgen.NetworkProviderBinding) string {
 	return "object:" + egressCRKind(b.ResourceKind) + "/" + b.Namespace + "/" + b.ProviderName
 }
 
-var errEgressAuditInvalid = errors.New("egress audit needs a fresh collection")
+var errEgressAuditInvalid = fmt.Errorf("%w: egress audit needs a fresh collection", biz.ErrObservationPending)
 
 func (p *KCProvider) readEgressSet(ctx context.Context, r egressResolved, critical bool) (egressReadSet, error) {
 	critical = critical || (r.target.Deleting && !sharedTombstone(r.target))

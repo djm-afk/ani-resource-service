@@ -29,11 +29,11 @@ func (p *KCProvider) inspectVNic(ctx context.Context, o *unstructured.Unstructur
 	if o.GetAPIVersion() != "networking.kubercloud.com/v1" || o.GetKind() != "VNic" || o.GetName() != b.ProviderName || o.GetNamespace() != b.Namespace || o.GetUID() == "" || o.GetResourceVersion() == "" || l[ownerLabel] != "ani-network-service" || l[tenantLabel] != t.TenantID || l[resourceLabel] != t.ResourceID || l[bindingLabel] != b.BindingID || len(o.GetOwnerReferences()) > 0 || (b.ProviderUid != "" && string(o.GetUID()) != b.ProviderUid) || (t.KnownIdentity != "" && string(o.GetUID()) != t.KnownIdentity) {
 		return biz.ProviderObservation{}, &biz.ProviderError{Kind: biz.ProviderConflict}
 	}
-	row, e := p.repository.queries.GetVNicRow(ctx, sqlcgen.GetVNicRowParams{TenantID: t.TenantID, VnicID: t.ResourceID})
+	row, e := p.repository.readQueries(ctx).GetVNicRow(ctx, sqlcgen.GetVNicRowParams{TenantID: t.TenantID, VnicID: t.ResourceID})
 	if e != nil {
 		return biz.ProviderObservation{}, readFailure(e)
 	}
-	sb, e := p.repository.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: row.SubnetID})
+	sb, e := p.repository.readQueries(ctx).GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: t.TenantID, ResourceID: row.SubnetID})
 	if e != nil {
 		return biz.ProviderObservation{}, readFailure(e)
 	}

@@ -100,7 +100,7 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND snat_id=sqlc.arg(snat_id) AND version=sq
 
 -- name: AdvanceSnat :one
 UPDATE network_snat_bindings SET state=sqlc.arg(state),reason=sqlc.arg(reason),version=version+1,updated_at=clock_timestamp(),
- applied_enabled=sqlc.narg(applied_enabled)::boolean,
+ applied_enabled=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.narg(applied_enabled)::boolean ELSE applied_enabled END,
  target_generation=greatest(target_generation,sqlc.arg(target_generation)::bigint),
  observed_at=CASE WHEN sqlc.arg(observed)::boolean THEN sqlc.narg(observed_at)::timestamptz ELSE observed_at END
 WHERE tenant_id=sqlc.arg(tenant_id) AND snat_id=sqlc.arg(snat_id) AND version=sqlc.arg(version) RETURNING *;

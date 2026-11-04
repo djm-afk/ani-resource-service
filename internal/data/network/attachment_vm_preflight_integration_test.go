@@ -23,6 +23,7 @@ func TestVMNetworkPreflightPGUsesCurrentProofWithoutRefreshingProjection(t *test
 	f, _, _ := newAutoVMNetwork(t)
 	policy := awaitAutoVMNetwork(t, f)
 	f.r.WorkloadMode = "vm_managed"
+	f.r.ConsumerType = biz.ConsumerVirtualMachine
 	f.r.VMExpectation = &biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: policy.NADConfigDigest}
 	ctx := context.Background()
 	for _, table := range []string{"network_vpcs", "network_subnets"} {

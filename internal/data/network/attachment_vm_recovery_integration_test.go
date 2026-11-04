@@ -36,6 +36,7 @@ func (p *vmClosureProvider) ObserveAttachment(ctx context.Context, w biz.Attachm
 func TestVMBlockedAttachmentPGClosesWithFrozenHistoricalNADAndFreshAbsence(t *testing.T) {
 	f := newAttachmentFixture(t)
 	f.r.WorkloadMode = "vm_managed"
+	f.r.ConsumerType = biz.ConsumerVirtualMachine
 	const historical = `{"cniVersion":"0.3.1","name":"kc-networking","plugins":[{"type":"kc-networking","server_socket":"/run/kcn.sock"}]}`
 	digest, err := data.VMNADConfigDigest(historical)
 	if err != nil {

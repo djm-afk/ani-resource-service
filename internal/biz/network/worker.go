@@ -77,6 +77,10 @@ type ResourceProvider interface {
 
 var ErrLeaseLost = errors.New("resource execution lease lost")
 
+// ErrObservationPending means the local shared observation has not yet covered
+// a read. It carries no new Provider fact and must not renew existing evidence.
+var ErrObservationPending = errors.New("shared resource observation pending")
+
 // ResourceWork is the immutable resource snapshot used by the shared lifecycle
 // worker. Resource kinds are closed at the repository boundary.
 type ResourceWork struct {
@@ -281,7 +285,13 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 			progress, err = w.ensure(ctx, work, target, observation, progress)
 		}
 	}
-	progress.Backoff = observeErr != nil || (work.ActiveOperation && progress.OperationState != Succeeded && progress.OperationState != OpFailed)
+	// Ordinary readers can briefly outpace the next shared audit. Preserve the
+	// original facts without installing a failure backoff that would also block
+	// the successful audit from waking this resource. Mutations and cleanup keep
+	// their original retry and proof requirements.
+	observationPending := errors.Is(observeErr, ErrObservationPending) && !work.ActiveOperation && work.PendingAction == "" &&
+		(work.Resource.State == Available || work.Resource.State == Degraded)
+	progress.Backoff = (observeErr != nil && !observationPending) || (work.ActiveOperation && progress.OperationState != Succeeded && progress.OperationState != OpFailed)
 	if progress.Backoff {
 		progress.NextDelay = w.retryDelay(work.Attempt)
 	} else if tombstone && progress.State == Deleted && progress.Reason == "" && progress.Observed && progress.ClearPending {

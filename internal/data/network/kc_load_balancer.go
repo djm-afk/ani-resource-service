@@ -358,9 +358,23 @@ func lbProxyComparableSpec(obj *unstructured.Unstructured) map[string]any {
 
 var errLBAuditInvalid = errors.New("LB audit needs a fresh collection")
 
+func loadBalancerCriticalObservation(w biz.Work) bool {
+	if w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleting {
+		return true
+	}
+	if w.Resource.LoadBalancer != nil {
+		for _, component := range w.Resource.LoadBalancer.Components {
+			if component.PendingAction != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p *KCProvider) ObserveLoadBalancer(ctx context.Context, w biz.Work) (biz.LoadBalancerObservation, error) {
 	refresh := false
-	critical := w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleting || w.Resource.State == biz.Deleted
+	critical := loadBalancerCriticalObservation(w)
 	for {
 		if err := ctx.Err(); err != nil {
 			return biz.LoadBalancerObservation{}, readFailure(err)
@@ -417,10 +431,10 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 		}
 	}
 	var view *auditView
-	keys := []string{"load-balancer:" + r.binding.Namespace + "/" + w.Resource.ID, "uid:" + r.binding.ProviderUid}
+	keys := []string{"load-balancer:" + r.binding.Namespace + "/" + w.Resource.ID, "uid:" + r.binding.ProviderUid, "lb-source"}
 	if p.observation != nil && p.loadBalancerInstallation != nil {
 		after := time.Time{}
-		if refresh || w.ActiveOperation || w.PendingAction != "" || w.Resource.State == biz.Deleting || w.Resource.State == biz.Deleted {
+		if refresh || loadBalancerCriticalObservation(w) {
 			after = now
 		}
 		if after.IsZero() {
@@ -461,7 +475,7 @@ func (p *KCProvider) observeLoadBalancerOnce(ctx context.Context, w biz.Work, re
 	if view != nil {
 		o.Proof.CollectedAt = view.collected
 		o.Proof.CoveredGeneration = view.generations[observationTarget{w.Resource.TenantID, w.Resource.ID, "load_balancer"}.key()]
-		if !refresh && !w.ActiveOperation && w.PendingAction == "" && w.Resource.State != biz.Deleting && w.Resource.State != biz.Deleted && p.observation.valid(view, keys) {
+		if !refresh && !loadBalancerCriticalObservation(w) && p.observation.valid(view, keys) {
 			// A management hint does not invalidate unchanged Provider facts.
 			// Keep the source timestamp and the object/source continuity fence.
 			o.Proof.CoveredGeneration = w.Requirement.RequestedGeneration

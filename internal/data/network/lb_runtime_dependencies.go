@@ -82,6 +82,7 @@ func (p *KCProvider) currentNetworkResource(ctx context.Context, q *sqlcgen.Quer
 			return biz.ProviderObservation{}, biz.Fail(biz.ParentNotReady, "Subnet management has not completed or is closed")
 		}
 		t.CIDR, t.Gateway = s.Cidr, s.Gateway
+		t.SubnetOptions = &biz.SubnetOptions{ExcludeIPs: s.ExcludeIps, EnableDHCP: s.EnableDhcp, DNSServers: s.DnsServers}
 		parent, err := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: tenant, ResourceID: s.VpcID})
 		if err != nil {
 			return biz.ProviderObservation{}, databaseFailure(err)

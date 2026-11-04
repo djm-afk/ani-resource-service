@@ -96,8 +96,11 @@ func (p *Postgres) FinishAttachment(ctx context.Context, w biz.AttachmentWork, p
 		// by setting ProtocolBlocked=false in a stale progress value.
 		openRecovery, closedRecovery := false, false
 		if progress.ConsumerSnapshot != nil {
+			recoveryWork := w
+			recoveryWork.Attachment = managed
+			recoveryWork.Requirement.AppliedAt = a.EvidenceAppliedAt
 			openRecovery = progress.State == biz.Attached && biz.ManagedProtocolRecoveryMatches(managed, *progress.ConsumerSnapshot, progress.PodName, progress.PodUID)
-			closedRecovery = progress.State == biz.Released && progress.PodName == "" && progress.PodUID == "" && w.RequireFreshRelations && !progress.Proof.CollectedAt.Before(w.Now) && biz.VMClosedProtocolRecoveryMatches(managed, *progress.ConsumerSnapshot)
+			closedRecovery = progress.State == biz.Released && progress.PodName == "" && progress.PodUID == "" && biz.ClosedProtocolRecoveryProof(recoveryWork, progress.Proof) && biz.ClosedProtocolRecoveryMatches(managed, *progress.ConsumerSnapshot)
 			if closedRecovery {
 				var relations []attachmentRelation
 				if len(progress.Relations) == 0 || json.Unmarshal(progress.Relations, &relations) != nil {

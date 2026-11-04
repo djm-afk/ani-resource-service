@@ -237,7 +237,13 @@ func (p *Postgres) finishBaseConnectivity(ctx context.Context, q *sqlcgen.Querie
 		}
 	}
 	if r.Kind != "vpc" {
-		if r.SystemManaged && (r.State != progress.State || r.Reason != progress.Reason || w.KnownIdentity != progress.Identity) {
+		// A child can recover from an observation gap without changing state,
+		// reason or identity. Wake its parent on that freshness transition too;
+		// fresh-to-fresh audits do not need another parent notification.
+		becameFresh := progress.Observed &&
+			!freshResource(string(r.State), r.ObservedAt, now, p.baseFreshnessLimit()) &&
+			freshResource(string(progress.State), &progress.Proof.CollectedAt, now, p.baseFreshnessLimit())
+		if r.SystemManaged && (r.State != progress.State || r.Reason != progress.Reason || w.KnownIdentity != progress.Identity || becameFresh) {
 			return databaseFailure(q.NotifyBaseParent(ctx, sqlcgen.NotifyBaseParentParams{TenantID: r.TenantID, ResourceID: r.ID}))
 		}
 		return nil
@@ -260,6 +266,19 @@ func (p *Postgres) finishBaseConnectivity(ctx context.Context, q *sqlcgen.Querie
 	providerTime := b.ProviderObservedAt
 	if progress.Observed {
 		providerTime = &progress.Proof.CollectedAt
+	} else if progress.Reason == biz.ProviderUnavailable && (r.State == biz.Available || r.State == biz.Degraded) && !w.ActiveOperation && w.PendingAction == "" && w.KnownIdentity != "" {
+		// A failed read supplies no new health fact. Reuse only the original,
+		// unexpired readiness proof for this exact persisted provider identity.
+		// Actual UID conflicts, pending mutations and deletion never use it.
+		prior, err := q.GetVPCProviderReadiness(ctx, sqlcgen.GetVPCProviderReadinessParams{TenantID: r.TenantID, VpcID: &r.ID})
+		if err != nil {
+			return databaseFailure(err)
+		}
+		providerReady = prior.ProviderReady && prior.ProviderObservedUid == w.KnownIdentity &&
+			freshTime(prior.ProviderObservedAt, now, p.baseFreshnessLimit())
+		if providerReady {
+			providerTime = prior.ProviderObservedAt
+		}
 	}
 	e, err := q.GetEIPInternal(ctx, sqlcgen.GetEIPInternalParams{TenantID: r.TenantID, EipID: b.EipID})
 	if err != nil {
@@ -302,7 +321,7 @@ func (p *Postgres) finishBaseConnectivity(ctx context.Context, q *sqlcgen.Querie
 	if err = q.SetBaseObservation(ctx, sqlcgen.SetBaseObservationParams{TenantID: r.TenantID, VpcID: r.ID, State: state, Reason: string(reason), ProviderReady: providerReady, ProviderObservedAt: providerTime, ObservedAt: observed}); err != nil {
 		return databaseFailure(err)
 	}
-	if b.ProviderReady != providerReady {
+	if b.ProviderReady != providerReady || (providerReady && !freshTime(b.ProviderObservedAt, now, p.baseFreshnessLimit())) {
 		if err = q.NotifyBaseChildren(ctx, sqlcgen.NotifyBaseChildrenParams{TenantID: r.TenantID, VpcID: r.ID}); err != nil {
 			return databaseFailure(err)
 		}
