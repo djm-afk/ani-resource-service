@@ -15,6 +15,7 @@ import (
 
 // VNic is a user-owned network interface. Runtime consumer deletion never deletes it.
 type VNic struct {
+	Reference                                                             NetworkReference
 	ID, TenantID, Name, Description, VPCID, SubnetID, VPCName, SubnetName string
 	State                                                                 ResourceState
 	Reason                                                                Reason

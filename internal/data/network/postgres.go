@@ -33,6 +33,7 @@ type Postgres struct {
 	vmNetworks                  biz.VMNetworkResolver
 	vpcCIDRPresets              *biz.VPCCIDRPresets
 	workTurn                    atomic.Uint64
+	attachmentTurn              atomic.Uint64
 	virtualSwitchInfrastructure biz.VirtualSwitchInfrastructure
 	lbCapabilityReader          LoadBalancerCapabilityReader
 	pool                        *pgxpool.Pool
@@ -154,6 +155,8 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 		if value.ID != textValue(previous.VpcID) || value.TenantID != intent.TenantID || value.LastOperationID != previous.OperationID {
 			return biz.VPC{}, databaseFailure(fmt.Errorf("invalid acceptance snapshot"))
 		}
+		value.OwnerScope = biz.OwnerScopeTenant
+		value.CanManage, value.CanUse = networkManagementOpen(string(value.State), string(value.Reason)), networkManagementOpen(string(value.State), string(value.Reason))
 		return value, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -243,7 +246,7 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 }
 
 func (p *Postgres) GetVPC(ctx context.Context, tenant, id string) (biz.VPC, error) {
-	row, err := p.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: tenant, VpcID: id})
+	row, err := p.readQueries(ctx).GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: tenant, VpcID: id})
 	value := vpc(row.NetworkVpc)
 	value.SubnetCount = row.SubnetCount
 	value.ObservationStale = row.NetworkVpc.ObservedAt == nil || row.ObservationError != ""
@@ -325,7 +328,7 @@ func (p *Postgres) ListVPCs(ctx context.Context, tenant string, filter biz.VPCFi
 
 func vpc(row sqlcgen.NetworkVpc) biz.VPC {
 	return biz.VPC{
-		ID: row.VpcID, TenantID: row.TenantID, Name: row.Name, Description: row.Description, CIDR: row.Cidr,
+		OwnerScope: biz.OwnerScopeTenant, CanManage: networkManagementOpen(row.State, row.Reason), CanUse: networkManagementOpen(row.State, row.Reason), ID: row.VpcID, TenantID: row.TenantID, Name: row.Name, Description: row.Description, CIDR: row.Cidr,
 		State: biz.ResourceState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, LastOperationID: row.LastOperationID,
 	}

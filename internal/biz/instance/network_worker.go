@@ -38,6 +38,7 @@ func (w *Worker) prepareNetwork(ctx context.Context, i *Instance) (bool, error) 
 	n.AttachmentID = binding.AttachmentID
 	n.BindingRevision = binding.BindingRevision
 	n.PrimaryNetworkRef = binding.PrimaryNetworkRef
+	n.BasicIsolationName = binding.BasicIsolationName
 	n.AttachmentVersion = binding.Version
 	n.NetworkState = "reserved"
 	n.Reason = ""

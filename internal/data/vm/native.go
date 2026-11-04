@@ -199,6 +199,11 @@ func (n *Native) EnsureVM(ctx context.Context, v biz.VM) (biz.ObjectRef, error) 
 		return biz.ObjectRef{}, e
 	}
 	o := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "kubevirt.io/v1", "kind": "VirtualMachine", "metadata": map[string]any{"name": v.Native.Name, "namespace": v.Spec.Namespace}, "spec": map[string]any{"runStrategy": "Manual", "template": map[string]any{"metadata": map[string]any{"annotations": map[string]any{"networking.kubercloud.com/subnet": v.Network.KCNSubnetRef, biz.SecurityGroupsAnnotation: strings.Join(v.SecurityGroupNames, ",")}}, "spec": map[string]any{"serviceAccountName": v.Spec.ServiceAccount, "domain": domain, "volumes": volumes, "networks": []any{map[string]any{"name": "default", "multus": map[string]any{"default": true, "networkName": v.Spec.Namespace + "/" + v.Network.NADName}}}}}}}}
+	if v.Network.BasicIsolationName != "" {
+		if e = unstructured.SetNestedField(o.Object, v.Network.BasicIsolationName, "spec", "template", "metadata", "annotations", "networking.kubercloud.com/basic-network-isolation"); e != nil {
+			return biz.ObjectRef{}, e
+		}
+	}
 	if e = configureDNS(v.Spec.DNS, o); e != nil {
 		return biz.ObjectRef{}, e
 	}

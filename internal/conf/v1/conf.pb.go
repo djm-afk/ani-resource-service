@@ -548,8 +548,9 @@ func (x *PullSecretCaller) GetRequireTenantLabel() bool {
 }
 
 type Network struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	DatabaseDsn string                 `protobuf:"bytes,1,opt,name=database_dsn,json=databaseDsn,proto3" json:"database_dsn,omitempty"`
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	PlatformBaseNetwork *PlatformBaseNetwork   `protobuf:"bytes,12,opt,name=platform_base_network,json=platformBaseNetwork,proto3" json:"platform_base_network,omitempty"`
+	DatabaseDsn         string                 `protobuf:"bytes,1,opt,name=database_dsn,json=databaseDsn,proto3" json:"database_dsn,omitempty"`
 	// Empty uses Kubernetes in-cluster service account credentials.
 	Kubeconfig string `protobuf:"bytes,2,opt,name=kubeconfig,proto3" json:"kubeconfig,omitempty"`
 	ClusterId  string `protobuf:"bytes,3,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
@@ -599,6 +600,13 @@ func (x *Network) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Network.ProtoReflect.Descriptor instead.
 func (*Network) Descriptor() ([]byte, []int) {
 	return file_conf_v1_conf_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Network) GetPlatformBaseNetwork() *PlatformBaseNetwork {
+	if x != nil {
+		return x.PlatformBaseNetwork
+	}
+	return nil
 }
 
 func (x *Network) GetDatabaseDsn() string {
@@ -1097,6 +1105,266 @@ func (x *Server) GetShutdownTimeout() *durationpb.Duration {
 	return nil
 }
 
+type PlatformBaseNetwork struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClusterUid    string                 `protobuf:"bytes,1,opt,name=cluster_uid,json=clusterUid,proto3" json:"cluster_uid,omitempty"`
+	Vpc           *PlatformBaseVPC       `protobuf:"bytes,2,opt,name=vpc,proto3" json:"vpc,omitempty"`
+	Subnets       []*PlatformBaseSubnet  `protobuf:"bytes,3,rep,name=subnets,proto3" json:"subnets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlatformBaseNetwork) Reset() {
+	*x = PlatformBaseNetwork{}
+	mi := &file_conf_v1_conf_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformBaseNetwork) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformBaseNetwork) ProtoMessage() {}
+
+func (x *PlatformBaseNetwork) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_v1_conf_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformBaseNetwork.ProtoReflect.Descriptor instead.
+func (*PlatformBaseNetwork) Descriptor() ([]byte, []int) {
+	return file_conf_v1_conf_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *PlatformBaseNetwork) GetClusterUid() string {
+	if x != nil {
+		return x.ClusterUid
+	}
+	return ""
+}
+
+func (x *PlatformBaseNetwork) GetVpc() *PlatformBaseVPC {
+	if x != nil {
+		return x.Vpc
+	}
+	return nil
+}
+
+func (x *PlatformBaseNetwork) GetSubnets() []*PlatformBaseSubnet {
+	if x != nil {
+		return x.Subnets
+	}
+	return nil
+}
+
+type PlatformBaseVPC struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProductId       string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	NativeNamespace string                 `protobuf:"bytes,2,opt,name=native_namespace,json=nativeNamespace,proto3" json:"native_namespace,omitempty"`
+	NativeName      string                 `protobuf:"bytes,3,opt,name=native_name,json=nativeName,proto3" json:"native_name,omitempty"`
+	NativeUid       string                 `protobuf:"bytes,4,opt,name=native_uid,json=nativeUid,proto3" json:"native_uid,omitempty"`
+	DisplayName     string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description     string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	Published       bool                   `protobuf:"varint,7,opt,name=published,proto3" json:"published,omitempty"`
+	AcceptNew       bool                   `protobuf:"varint,8,opt,name=accept_new,json=acceptNew,proto3" json:"accept_new,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PlatformBaseVPC) Reset() {
+	*x = PlatformBaseVPC{}
+	mi := &file_conf_v1_conf_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformBaseVPC) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformBaseVPC) ProtoMessage() {}
+
+func (x *PlatformBaseVPC) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_v1_conf_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformBaseVPC.ProtoReflect.Descriptor instead.
+func (*PlatformBaseVPC) Descriptor() ([]byte, []int) {
+	return file_conf_v1_conf_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PlatformBaseVPC) GetProductId() string {
+	if x != nil {
+		return x.ProductId
+	}
+	return ""
+}
+
+func (x *PlatformBaseVPC) GetNativeNamespace() string {
+	if x != nil {
+		return x.NativeNamespace
+	}
+	return ""
+}
+
+func (x *PlatformBaseVPC) GetNativeName() string {
+	if x != nil {
+		return x.NativeName
+	}
+	return ""
+}
+
+func (x *PlatformBaseVPC) GetNativeUid() string {
+	if x != nil {
+		return x.NativeUid
+	}
+	return ""
+}
+
+func (x *PlatformBaseVPC) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *PlatformBaseVPC) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PlatformBaseVPC) GetPublished() bool {
+	if x != nil {
+		return x.Published
+	}
+	return false
+}
+
+func (x *PlatformBaseVPC) GetAcceptNew() bool {
+	if x != nil {
+		return x.AcceptNew
+	}
+	return false
+}
+
+type PlatformBaseSubnet struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProductId       string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	NativeNamespace string                 `protobuf:"bytes,2,opt,name=native_namespace,json=nativeNamespace,proto3" json:"native_namespace,omitempty"`
+	NativeName      string                 `protobuf:"bytes,3,opt,name=native_name,json=nativeName,proto3" json:"native_name,omitempty"`
+	NativeUid       string                 `protobuf:"bytes,4,opt,name=native_uid,json=nativeUid,proto3" json:"native_uid,omitempty"`
+	DisplayName     string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description     string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	Published       bool                   `protobuf:"varint,7,opt,name=published,proto3" json:"published,omitempty"`
+	AcceptNew       bool                   `protobuf:"varint,8,opt,name=accept_new,json=acceptNew,proto3" json:"accept_new,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PlatformBaseSubnet) Reset() {
+	*x = PlatformBaseSubnet{}
+	mi := &file_conf_v1_conf_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformBaseSubnet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformBaseSubnet) ProtoMessage() {}
+
+func (x *PlatformBaseSubnet) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_v1_conf_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformBaseSubnet.ProtoReflect.Descriptor instead.
+func (*PlatformBaseSubnet) Descriptor() ([]byte, []int) {
+	return file_conf_v1_conf_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PlatformBaseSubnet) GetProductId() string {
+	if x != nil {
+		return x.ProductId
+	}
+	return ""
+}
+
+func (x *PlatformBaseSubnet) GetNativeNamespace() string {
+	if x != nil {
+		return x.NativeNamespace
+	}
+	return ""
+}
+
+func (x *PlatformBaseSubnet) GetNativeName() string {
+	if x != nil {
+		return x.NativeName
+	}
+	return ""
+}
+
+func (x *PlatformBaseSubnet) GetNativeUid() string {
+	if x != nil {
+		return x.NativeUid
+	}
+	return ""
+}
+
+func (x *PlatformBaseSubnet) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *PlatformBaseSubnet) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PlatformBaseSubnet) GetPublished() bool {
+	if x != nil {
+		return x.Published
+	}
+	return false
+}
+
+func (x *PlatformBaseSubnet) GetAcceptNew() bool {
+	if x != nil {
+		return x.AcceptNew
+	}
+	return false
+}
+
 type Server_GRPC struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Network       string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
@@ -1108,7 +1376,7 @@ type Server_GRPC struct {
 
 func (x *Server_GRPC) Reset() {
 	*x = Server_GRPC{}
-	mi := &file_conf_v1_conf_proto_msgTypes[11]
+	mi := &file_conf_v1_conf_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1120,7 +1388,7 @@ func (x *Server_GRPC) String() string {
 func (*Server_GRPC) ProtoMessage() {}
 
 func (x *Server_GRPC) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_v1_conf_proto_msgTypes[11]
+	mi := &file_conf_v1_conf_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1168,7 +1436,7 @@ type Server_Admin struct {
 
 func (x *Server_Admin) Reset() {
 	*x = Server_Admin{}
-	mi := &file_conf_v1_conf_proto_msgTypes[12]
+	mi := &file_conf_v1_conf_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1180,7 +1448,7 @@ func (x *Server_Admin) String() string {
 func (*Server_Admin) ProtoMessage() {}
 
 func (x *Server_Admin) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_v1_conf_proto_msgTypes[12]
+	mi := &file_conf_v1_conf_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,8 +1544,9 @@ const file_conf_v1_conf_proto_rawDesc = "" +
 	"namespaces\x18\x03 \x03(\tR\n" +
 	"namespaces\x12!\n" +
 	"\fowner_labels\x18\x04 \x03(\tR\vownerLabels\x120\n" +
-	"\x14require_tenant_label\x18\x05 \x01(\bR\x12requireTenantLabel\"\x98\x04\n" +
-	"\aNetwork\x12!\n" +
+	"\x14require_tenant_label\x18\x05 \x01(\bR\x12requireTenantLabel\"\xea\x04\n" +
+	"\aNetwork\x12P\n" +
+	"\x15platform_base_network\x18\f \x01(\v2\x1c.conf.v1.PlatformBaseNetworkR\x13platformBaseNetwork\x12!\n" +
 	"\fdatabase_dsn\x18\x01 \x01(\tR\vdatabaseDsn\x12\x1e\n" +
 	"\n" +
 	"kubeconfig\x18\x02 \x01(\tR\n" +
@@ -1335,7 +1604,38 @@ const file_conf_v1_conf_proto_rawDesc = "" +
 	"\x05Admin\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
-	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeoutBEZCgithub.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1;confb\x06proto3"
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\x99\x01\n" +
+	"\x13PlatformBaseNetwork\x12\x1f\n" +
+	"\vcluster_uid\x18\x01 \x01(\tR\n" +
+	"clusterUid\x12*\n" +
+	"\x03vpc\x18\x02 \x01(\v2\x18.conf.v1.PlatformBaseVPCR\x03vpc\x125\n" +
+	"\asubnets\x18\x03 \x03(\v2\x1b.conf.v1.PlatformBaseSubnetR\asubnets\"\x9d\x02\n" +
+	"\x0fPlatformBaseVPC\x12\x1d\n" +
+	"\n" +
+	"product_id\x18\x01 \x01(\tR\tproductId\x12)\n" +
+	"\x10native_namespace\x18\x02 \x01(\tR\x0fnativeNamespace\x12\x1f\n" +
+	"\vnative_name\x18\x03 \x01(\tR\n" +
+	"nativeName\x12\x1d\n" +
+	"\n" +
+	"native_uid\x18\x04 \x01(\tR\tnativeUid\x12!\n" +
+	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x1c\n" +
+	"\tpublished\x18\a \x01(\bR\tpublished\x12\x1d\n" +
+	"\n" +
+	"accept_new\x18\b \x01(\bR\tacceptNew\"\xa0\x02\n" +
+	"\x12PlatformBaseSubnet\x12\x1d\n" +
+	"\n" +
+	"product_id\x18\x01 \x01(\tR\tproductId\x12)\n" +
+	"\x10native_namespace\x18\x02 \x01(\tR\x0fnativeNamespace\x12\x1f\n" +
+	"\vnative_name\x18\x03 \x01(\tR\n" +
+	"nativeName\x12\x1d\n" +
+	"\n" +
+	"native_uid\x18\x04 \x01(\tR\tnativeUid\x12!\n" +
+	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x1c\n" +
+	"\tpublished\x18\a \x01(\bR\tpublished\x12\x1d\n" +
+	"\n" +
+	"accept_new\x18\b \x01(\bR\tacceptNewBEZCgithub.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1;confb\x06proto3"
 
 var (
 	file_conf_v1_conf_proto_rawDescOnce sync.Once
@@ -1349,7 +1649,7 @@ func file_conf_v1_conf_proto_rawDescGZIP() []byte {
 	return file_conf_v1_conf_proto_rawDescData
 }
 
-var file_conf_v1_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_conf_v1_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_conf_v1_conf_proto_goTypes = []any{
 	(*Bootstrap)(nil),                // 0: conf.v1.Bootstrap
 	(*ObjectStorage)(nil),            // 1: conf.v1.ObjectStorage
@@ -1362,9 +1662,12 @@ var file_conf_v1_conf_proto_goTypes = []any{
 	(*Observation)(nil),              // 8: conf.v1.Observation
 	(*Worker)(nil),                   // 9: conf.v1.Worker
 	(*Server)(nil),                   // 10: conf.v1.Server
-	(*Server_GRPC)(nil),              // 11: conf.v1.Server.GRPC
-	(*Server_Admin)(nil),             // 12: conf.v1.Server.Admin
-	(*durationpb.Duration)(nil),      // 13: google.protobuf.Duration
+	(*PlatformBaseNetwork)(nil),      // 11: conf.v1.PlatformBaseNetwork
+	(*PlatformBaseVPC)(nil),          // 12: conf.v1.PlatformBaseVPC
+	(*PlatformBaseSubnet)(nil),       // 13: conf.v1.PlatformBaseSubnet
+	(*Server_GRPC)(nil),              // 14: conf.v1.Server.GRPC
+	(*Server_Admin)(nil),             // 15: conf.v1.Server.Admin
+	(*durationpb.Duration)(nil),      // 16: google.protobuf.Duration
 }
 var file_conf_v1_conf_proto_depIdxs = []int32{
 	10, // 0: conf.v1.Bootstrap.server:type_name -> conf.v1.Server
@@ -1372,34 +1675,37 @@ var file_conf_v1_conf_proto_depIdxs = []int32{
 	3,  // 2: conf.v1.Bootstrap.image:type_name -> conf.v1.Image
 	1,  // 3: conf.v1.Bootstrap.object_storage:type_name -> conf.v1.ObjectStorage
 	2,  // 4: conf.v1.ObjectStorage.managed_buckets:type_name -> conf.v1.ManagedBucket
-	13, // 5: conf.v1.ObjectStorage.upload_ttl:type_name -> google.protobuf.Duration
-	13, // 6: conf.v1.Image.request_timeout:type_name -> google.protobuf.Duration
+	16, // 5: conf.v1.ObjectStorage.upload_ttl:type_name -> google.protobuf.Duration
+	16, // 6: conf.v1.Image.request_timeout:type_name -> google.protobuf.Duration
 	4,  // 7: conf.v1.Image.pull_secret_callers:type_name -> conf.v1.PullSecretCaller
-	9,  // 8: conf.v1.Network.worker:type_name -> conf.v1.Worker
-	8,  // 9: conf.v1.Network.observation:type_name -> conf.v1.Observation
-	7,  // 10: conf.v1.Network.load_balancer:type_name -> conf.v1.LoadBalancer
-	6,  // 11: conf.v1.Network.platform_default_vpc_egress:type_name -> conf.v1.PlatformDefaultVPCEgress
-	13, // 12: conf.v1.Observation.audit_interval:type_name -> google.protobuf.Duration
-	13, // 13: conf.v1.Observation.audit_jitter:type_name -> google.protobuf.Duration
-	13, // 14: conf.v1.Observation.audit_timeout:type_name -> google.protobuf.Duration
-	13, // 15: conf.v1.Observation.flush_interval:type_name -> google.protobuf.Duration
-	13, // 16: conf.v1.Worker.lease:type_name -> google.protobuf.Duration
-	13, // 17: conf.v1.Worker.request_timeout:type_name -> google.protobuf.Duration
-	13, // 18: conf.v1.Worker.observe_every:type_name -> google.protobuf.Duration
-	13, // 19: conf.v1.Worker.stale_after:type_name -> google.protobuf.Duration
-	13, // 20: conf.v1.Worker.retry_min:type_name -> google.protobuf.Duration
-	13, // 21: conf.v1.Worker.retry_max:type_name -> google.protobuf.Duration
-	13, // 22: conf.v1.Worker.poll_interval:type_name -> google.protobuf.Duration
-	11, // 23: conf.v1.Server.grpc:type_name -> conf.v1.Server.GRPC
-	12, // 24: conf.v1.Server.admin:type_name -> conf.v1.Server.Admin
-	13, // 25: conf.v1.Server.shutdown_timeout:type_name -> google.protobuf.Duration
-	13, // 26: conf.v1.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	13, // 27: conf.v1.Server.Admin.timeout:type_name -> google.protobuf.Duration
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	11, // 8: conf.v1.Network.platform_base_network:type_name -> conf.v1.PlatformBaseNetwork
+	9,  // 9: conf.v1.Network.worker:type_name -> conf.v1.Worker
+	8,  // 10: conf.v1.Network.observation:type_name -> conf.v1.Observation
+	7,  // 11: conf.v1.Network.load_balancer:type_name -> conf.v1.LoadBalancer
+	6,  // 12: conf.v1.Network.platform_default_vpc_egress:type_name -> conf.v1.PlatformDefaultVPCEgress
+	16, // 13: conf.v1.Observation.audit_interval:type_name -> google.protobuf.Duration
+	16, // 14: conf.v1.Observation.audit_jitter:type_name -> google.protobuf.Duration
+	16, // 15: conf.v1.Observation.audit_timeout:type_name -> google.protobuf.Duration
+	16, // 16: conf.v1.Observation.flush_interval:type_name -> google.protobuf.Duration
+	16, // 17: conf.v1.Worker.lease:type_name -> google.protobuf.Duration
+	16, // 18: conf.v1.Worker.request_timeout:type_name -> google.protobuf.Duration
+	16, // 19: conf.v1.Worker.observe_every:type_name -> google.protobuf.Duration
+	16, // 20: conf.v1.Worker.stale_after:type_name -> google.protobuf.Duration
+	16, // 21: conf.v1.Worker.retry_min:type_name -> google.protobuf.Duration
+	16, // 22: conf.v1.Worker.retry_max:type_name -> google.protobuf.Duration
+	16, // 23: conf.v1.Worker.poll_interval:type_name -> google.protobuf.Duration
+	14, // 24: conf.v1.Server.grpc:type_name -> conf.v1.Server.GRPC
+	15, // 25: conf.v1.Server.admin:type_name -> conf.v1.Server.Admin
+	16, // 26: conf.v1.Server.shutdown_timeout:type_name -> google.protobuf.Duration
+	12, // 27: conf.v1.PlatformBaseNetwork.vpc:type_name -> conf.v1.PlatformBaseVPC
+	13, // 28: conf.v1.PlatformBaseNetwork.subnets:type_name -> conf.v1.PlatformBaseSubnet
+	16, // 29: conf.v1.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	16, // 30: conf.v1.Server.Admin.timeout:type_name -> google.protobuf.Duration
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_conf_v1_conf_proto_init() }
@@ -1413,7 +1719,7 @@ func file_conf_v1_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conf_v1_conf_proto_rawDesc), len(file_conf_v1_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

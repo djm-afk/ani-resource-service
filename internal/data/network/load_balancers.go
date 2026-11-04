@@ -196,7 +196,8 @@ func lbBackendIdentity(ctx context.Context, q *sqlcgen.Queries, tenant, cluster,
 	}
 	var found []sqlcgen.InsertLBMemberParams
 	for _, a := range rows {
-		if a.State != "attached" || a.ClusterID != cluster || a.Namespace != namespace || a.VpcID != vpc || a.PodUid == "" {
+		reference := normalizeNetworkReference(a.VpcID, a.SubnetID, a.PlatformVpcID, a.PlatformSubnetID, a.BindingID)
+		if reference.OwnerScope != biz.OwnerScopeTenant || a.State != "attached" || a.ClusterID != cluster || a.Namespace != namespace || reference.VPCID != vpc || a.PodUid == "" {
 			continue
 		}
 		for _, address := range a.CurrentIps {
@@ -255,6 +256,13 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 			return biz.LoadBalancerResult{}, biz.Fail(biz.ResourceNotFound, "load balancer not found")
 		}
 		vpcID, subnetID, eipID = prior.VpcID, prior.SubnetID, textValue(prior.PublicEipID)
+	}
+	for _, id := range []string{vpcID, subnetID} {
+		if id != "" {
+			if err = p.rejectPlatformManagement(ctx, id); err != nil {
+				return biz.LoadBalancerResult{}, err
+			}
+		}
 	}
 	parent, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: i.TenantID, VpcID: vpcID})
 	if err != nil {

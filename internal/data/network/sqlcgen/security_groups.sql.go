@@ -109,7 +109,7 @@ func (q *Queries) FinishSecurityGroupTask(ctx context.Context, arg FinishSecurit
 }
 
 const getSecurityGroupConsumerAttachment = `-- name: GetSecurityGroupConsumerAttachment :one
-SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips FROM network_attachments WHERE tenant_id=$1 AND cluster_id=$2
+SELECT tenant_id, attachment_id, vpc_id, subnet_id, binding_id, instance_id, slot, request_key, submission_id, generation, fingerprint, cluster_id, namespace, binding_revision, plan, state, reason, version, pod_name, pod_uid, confirm_uid, finalization_id, created_at, updated_at, observed_at, released_at, next_check_at, lease_owner, lease_until, epoch, requested_generation, processed_generation, retry_not_before, consumer_type, observation_error, current_vnic_name, current_vnic_uid, current_mac_address, current_ips, platform_vpc_id, platform_subnet_id FROM network_attachments WHERE tenant_id=$1 AND cluster_id=$2
  AND namespace=$3 AND instance_id=$4 AND consumer_type=$5
  AND slot='primary' AND state='attached' ORDER BY updated_at DESC,attachment_id DESC LIMIT 1
 `
@@ -171,6 +171,8 @@ func (q *Queries) GetSecurityGroupConsumerAttachment(ctx context.Context, arg Ge
 		&i.CurrentVnicUid,
 		&i.CurrentMacAddress,
 		&i.CurrentIps,
+		&i.PlatformVpcID,
+		&i.PlatformSubnetID,
 	)
 	return i, err
 }

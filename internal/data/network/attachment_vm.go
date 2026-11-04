@@ -68,7 +68,7 @@ func (p *KCProvider) resolveVMNetwork(ctx context.Context, s biz.VMNetworkSelect
 	static = static && e.NADName == v.NADName && e.NADUID == v.NADUID && e.NADConfigDigest == v.NADConfigDigest
 	if !static {
 		var err error
-		v, err = p.lookupManagedVMNetwork(ctx, s.TenantID, s.VPCID, s.SubnetID, s.ClusterID, s.Namespace, requireRunnable)
+		v, err = p.lookupManagedVMNetwork(ctx, s.TenantID, s.VPCID, s.SubnetID, s.ClusterID, s.Namespace, requireRunnable, s.Reference)
 		if err != nil {
 			return biz.VMPrimaryPlan{}, err
 		}
@@ -173,28 +173,18 @@ func (p *Postgres) ResolveVMNetworkSelection(ctx context.Context, r biz.PrepareA
 	if r.WorkloadMode != "vm_managed" || !biz.ValidVMNetworkExpectation(r.VMExpectation) || p.vmNetworks == nil {
 		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_preparation", biz.Fail(biz.NetworkNotReady, "managed VM network is unavailable"))
 	}
-	s, err := p.queries.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
+	selection := biz.NetworkSelection{TenantID: r.TenantID, VPCID: r.VPCID, SubnetID: r.SubnetID, ClusterID: r.ClusterID, Namespace: r.Namespace, NamespaceUID: r.NamespaceUID, Reference: r.AcceptedReference}
+	var resolved biz.ResolvedNetworkSelection
+	var err error
+	if r.Accepted {
+		resolved, err = p.ResolveAcceptedNetworkSelection(ctx, selection)
+	} else {
+		resolved, err = p.ResolveNewNetworkSelection(ctx, selection)
+	}
 	if err != nil {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
+		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", err)
 	}
-	v, err := p.queries.GetVPC(ctx, sqlcgen.GetVPCParams{TenantID: r.TenantID, VpcID: s.NetworkSubnet.VpcID})
-	if err != nil {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", databaseFailure(err))
-	}
-	if !networkManagementOpen(v.NetworkVpc.State, v.NetworkVpc.Reason) || !networkManagementOpen(s.NetworkSubnet.State, s.NetworkSubnet.Reason) {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_management", biz.Fail(biz.NetworkNotReady, "VM network management is closed"))
-	}
-	if r.VPCID != "" && r.VPCID != s.NetworkSubnet.VpcID {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_selection", biz.Fail(biz.NetworkNotReady, "VM network selection differs"))
-	}
-	b, err := p.queries.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.SubnetID})
-	if err != nil {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_placement", databaseFailure(err))
-	}
-	if b.ClusterID != r.ClusterID || b.Namespace != r.Namespace || b.ProviderName == "" {
-		return biz.VMPrimaryPlan{}, vmNetworkPreflightFailure(ctx, r, "network_placement", biz.Fail(biz.PlacementMismatch, "VM network placement or identity differs"))
-	}
-	plan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.NetworkSubnet.VpcID, SubnetID: s.NetworkSubnet.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID, KCNSubnetRef: b.Namespace + "/" + b.ProviderName}, *r.VMExpectation)
+	plan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: resolved.VPCID, SubnetID: resolved.SubnetID, ClusterID: resolved.ClusterID, Namespace: resolved.Namespace, BindingRevision: resolved.BindingID, KCNSubnetRef: resolved.NativeNamespace + "/" + resolved.NativeName, Reference: resolved.Reference}, *r.VMExpectation)
 	if err != nil {
 		return plan, vmNetworkPreflightFailure(ctx, r, "network_identity", err)
 	}

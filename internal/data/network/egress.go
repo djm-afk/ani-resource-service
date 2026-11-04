@@ -264,6 +264,10 @@ func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Att
 	if i.Kind == "set_snat_enabled" {
 		vpcID, eipID = prior.VpcID, prior.EipID
 	}
+	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
+	if err = p.rejectPlatformManagement(ctx, vpcID); err != nil {
+		return biz.VPCSnatBinding{}, err
+	}
 	parent, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: i.TenantID, VpcID: vpcID})
 	if err != nil {
 		return biz.VPCSnatBinding{}, databaseFailure(err)

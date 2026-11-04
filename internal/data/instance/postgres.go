@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
+	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance/sqlcgen"
 	migrations "github.com/zhangzhe-ctrl/ani-resource-service/migrations/instance"
 )
@@ -23,6 +24,7 @@ import (
 type Postgres struct {
 	pool                  *pgxpool.Pool
 	notifyNetwork         func(context.Context, string, string) error
+	admitNewNetwork       func(context.Context, string, string, string, biz.NetworkSelection) (biz.NetworkSelection, error)
 	newIntentsEnabled     bool
 	pvcReferenceConflicts atomic.Uint64
 	pvcUnknownWrites      atomic.Uint64
@@ -199,6 +201,12 @@ func decodeSnapshot(raw []byte, i *biz.Instance) error {
 	}
 	if i.Network != nil {
 		n := i.Network
+		if i.Spec.Network.Reference.OwnerScope == "" {
+			// Preserve the legacy opaque revision; only the accepted reference
+			// uses the original binding ID before an optional provider UID.
+			bindingID, _, _ := strings.Cut(n.BindingRevision, ":")
+			i.Spec.Network.Reference = network.NetworkReference{OwnerScope: network.OwnerScopeTenant, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, SubnetBindingID: bindingID}
+		}
 		if !biz.UUID(n.SubmissionID) || n.RequestKey == "" || n.Generation < 1 || n.SnapshotRevision < 1 || (n.State != "open" && n.State != "closing" && n.State != "closed") || n.DesiredRunState != i.RuntimeDesired || (n.State == "open" && n.FinalizationID != "") || (n.State != "open" && !biz.UUID(n.FinalizationID)) || (n.State == "closed" && (n.ClosedAt == nil || n.ClosedAt.IsZero())) {
 			return biz.ErrInvalid
 		}
@@ -328,6 +336,15 @@ func (p *Postgres) AcceptCreate(ctx context.Context, c biz.Create) (biz.ACK, err
 	}
 	if !errors.Is(e, biz.ErrNotFound) {
 		return biz.ACK{}, e
+	}
+	if c.Spec.Network != nil && p.admitNewNetwork != nil {
+		accepted, err := p.admitNewNetwork(ctx, c.TenantID, c.Spec.ClusterID, c.Spec.Namespace, *c.Spec.Network)
+		if err != nil {
+			return biz.ACK{}, err
+		}
+		selection := *c.Spec.Network
+		selection.Reference = accepted.Reference
+		c.Spec.Network = &selection
 	}
 	i = biz.Instance{TenantID: c.TenantID, ID: c.ID, CreateOperationID: c.OperationID, CreateRequestHash: c.RequestHash, BusinessDigest: c.BusinessDigest, Spec: c.Spec, CurrentMounts: initialMounts(c.Spec.VolumeMounts), MountsInitialized: true, RuntimeDesired: biz.Running, Version: 1, Desired: biz.Running, Observed: "pending", LastOperationID: c.OperationID, VolumeReferencesReleased: len(c.Spec.VolumeMounts) == 0}
 	i.Network = initialNetworkSubmission(i)

@@ -8,19 +8,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
 	migrations "github.com/zhangzhe-ctrl/ani-resource-service/migrations/vm"
 )
 
 type Postgres struct {
-	pool          *pgxpool.Pool
-	guestCipher   *guestCredentialCipher
-	notifyNetwork func(context.Context, string, string) error
+	pool            *pgxpool.Pool
+	guestCipher     *guestCredentialCipher
+	notifyNetwork   func(context.Context, string, string) error
+	admitNewNetwork func(context.Context, string, biz.Spec) (biz.NetworkSelection, error)
 }
 
 func schemaChecksum() (string, error) {
@@ -174,8 +177,18 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	}
 	return tx.Commit(ctx)
 }
-func encode(v any) []byte             { b, _ := json.Marshal(v); return b }
-func vmFrom(b []byte) (biz.VM, error) { var v biz.VM; e := json.Unmarshal(b, &v); return v, e }
+func encode(v any) []byte { b, _ := json.Marshal(v); return b }
+func vmFrom(b []byte) (biz.VM, error) {
+	var v biz.VM
+	err := json.Unmarshal(b, &v)
+	if err == nil && v.Spec.Network.Reference.OwnerScope == "" && v.Spec.Network.VPCID != "" && v.Spec.Network.SubnetID != "" {
+		// Legacy revisions may append a provider UID. The reference uses the
+		// original binding ID while the runtime keeps its opaque replay token.
+		bindingID, _, _ := strings.Cut(v.Network.BindingRevision, ":")
+		v.Spec.Network.Reference = network.NetworkReference{OwnerScope: network.OwnerScopeTenant, VPCID: v.Spec.Network.VPCID, SubnetID: v.Spec.Network.SubnetID, SubnetBindingID: bindingID}
+	}
+	return v, err
+}
 func opFrom(b []byte) (biz.Operation, error) {
 	var v biz.Operation
 	e := json.Unmarshal(b, &v)
@@ -257,6 +270,16 @@ func (p *Postgres) AcceptCreate(ctx context.Context, a biz.Acceptance) (biz.Oper
 			}
 		}
 		return o, x
+	}
+	if p.admitNewNetwork != nil {
+		accepted, err := p.admitNewNetwork(ctx, a.TenantID, a.Spec)
+		if err != nil {
+			return biz.Operation{}, err
+		}
+		// Only internal owner data is enriched. The original canonical intent,
+		// digest and empty initial NAD UID remain exactly as Gov accepted them.
+		a.Spec.Network.Reference = accepted.Reference
+		a.Spec.Network.NADConfig = accepted.NADConfig
 	}
 	v := biz.VM{TenantID: a.TenantID, ID: a.VMID, Name: a.Spec.Name, CreateOperationID: a.OperationID, Spec: a.Spec, Version: 1, Disks: a.Spec.InitialDisks, Desired: "Stopped", Observed: "Unknown", LastOperationID: a.OperationID}
 	if e = biz.InitializeMedia(&v); e != nil {
@@ -351,6 +374,21 @@ func (p *Postgres) accept(ctx context.Context, c biz.Command, id, createID strin
 	v.Version++
 	v.LastOperationID = id
 	o := biz.Operation{TenantID: c.TenantID, ID: id, VMID: c.VMID, Action: c.Action, Key: c.Key, RequestDigest: c.RequestDigest, Intent: c.Intent, IntentVersion: v.Version, State: "accepted"}
+	if c.Action == biz.DeleteAction && v.Network.AttachmentID == "" && v.Network.NADUID != "" {
+		// A completed first-round save alone has sent no Attachment. Carry only
+		// the existing second-round send checkpoint into Delete recovery.
+		var raw []byte
+		if e = tx.QueryRow(ctx, "SELECT record FROM vm.operations WHERE tenant_id=$1 AND vm_id=$2 AND id=$3", v.TenantID, v.ID, v.CreateOperationID).Scan(&raw); e != nil {
+			return biz.Operation{}, e
+		}
+		create, err := opFrom(raw)
+		if err != nil {
+			return biz.Operation{}, err
+		}
+		if create.Pending != nil && create.Pending.Action == "prepare-network" && create.Pending.Submitted {
+			o.Pending = create.Pending
+		}
+	}
 	if e = biz.ApplyAcceptedMedia(&v, &o); e != nil {
 		return biz.Operation{}, e
 	}

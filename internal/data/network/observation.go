@@ -32,6 +32,8 @@ func (p *Postgres) NotifyObservedObject(ctx context.Context, gvr schema.GroupVer
 		switch target.TargetType {
 		case "resource":
 			_, err = p.queries.NotifyResource(ctx, sqlcgen.NotifyResourceParams{TenantID: target.TenantID, ResourceID: target.TargetID})
+		case "platform_network":
+			_, err = p.queries.NotifyPlatformNetwork(ctx, sqlcgen.NotifyPlatformNetworkParams{ResourceID: target.TargetID})
 		case "platform":
 			_, err = p.queries.NotifyPlatform(ctx, sqlcgen.NotifyPlatformParams{ResourceID: target.TargetID})
 		case "attachment":

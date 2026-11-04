@@ -2,6 +2,7 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -25,6 +26,24 @@ func (r *adapterNetworkRepository) GetSubnet(context.Context, string, string) (n
 }
 func (r *adapterNetworkRepository) GetVPC(context.Context, string, string) (networkbiz.VPC, error) {
 	return r.vpc, r.err
+}
+
+func (r *adapterNetworkRepository) ResolveNewNetworkSelection(_ context.Context, s networkbiz.NetworkSelection) (networkbiz.ResolvedNetworkSelection, error) {
+	r.getCalls++
+	if r.err != nil {
+		return networkbiz.ResolvedNetworkSelection{}, r.err
+	}
+	if s.SubnetID != r.subnet.ID || s.VPCID != r.subnet.VPCID || s.VPCID != r.vpc.ID {
+		return networkbiz.ResolvedNetworkSelection{}, networkbiz.Fail(networkbiz.PlacementMismatch, "selection differs")
+	}
+	s.Reference = networkbiz.NetworkReference{OwnerScope: networkbiz.OwnerScopeTenant, VPCID: s.VPCID, SubnetID: s.SubnetID, SubnetBindingID: "original-binding"}
+	if r.subnet.OwnerScope == networkbiz.OwnerScopePlatform {
+		s.Reference.OwnerScope = networkbiz.OwnerScopePlatform
+	}
+	return networkbiz.ResolvedNetworkSelection{NetworkSelection: s}, nil
+}
+func (r *adapterNetworkRepository) ResolveAcceptedNetworkSelection(ctx context.Context, s networkbiz.NetworkSelection) (networkbiz.ResolvedNetworkSelection, error) {
+	return r.ResolveNewNetworkSelection(ctx, s)
 }
 
 type adapterAttachmentRepository struct {
@@ -73,6 +92,27 @@ func instanceNetworkFixture(t *testing.T) (*InstanceNetwork, biz.Instance, *adap
 		t.Fatal(err)
 	}
 	return adapter, i, repo, attachments
+}
+
+func TestOldPrivateInstanceSnapshotPreservesBindingRevision(t *testing.T) {
+	for _, revision := range []string{"binding-original", "binding-original:original-subnet-uid"} {
+		t.Run(revision, func(t *testing.T) {
+			_, i, _, _ := instanceNetworkFixture(t)
+			i.Network.BindingRevision = revision
+			raw, err := json.Marshal(i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded := biz.Instance{RuntimeDesired: i.RuntimeDesired}
+			if err = decodeSnapshot(raw, &loaded); err != nil {
+				t.Fatal(err)
+			}
+			want := networkbiz.NetworkReference{OwnerScope: networkbiz.OwnerScopeTenant, VPCID: i.Spec.Network.VPCID, SubnetID: i.Spec.Network.SubnetID, SubnetBindingID: "binding-original"}
+			if loaded.Spec.Network.Reference != want || loaded.Network.BindingRevision != revision {
+				t.Fatal("legacy private normalization changed the original binding", loaded.Spec.Network, loaded.Network)
+			}
+		})
+	}
 }
 
 func TestInstanceNetworkAdapterUsesStableSubmissionAndSnapshotFences(t *testing.T) {
@@ -182,5 +222,46 @@ func TestInstanceNetworkConsumerRoutesOnlyDurableManagedIdentity(t *testing.T) {
 	a = attachments.value
 	if _, err = consumer.GetSubmission(context.Background(), a); !errors.Is(err, biz.ErrNetworkUnavailable) {
 		t.Fatal("lost Prepare acknowledgement fabricated absence", err)
+	}
+}
+
+func TestPlatformInstanceSelectionAndReplayPreserveAcceptedReference(t *testing.T) {
+	adapter, i, products, attachments := instanceNetworkFixture(t)
+	products.subnet.OwnerScope, products.subnet.TenantID = networkbiz.OwnerScopePlatform, ""
+	products.vpc.OwnerScope, products.vpc.TenantID = networkbiz.OwnerScopePlatform, ""
+	selected, err := adapter.AdmitNewNetwork(context.Background(), i.TenantID, i.Spec.ClusterID, i.Spec.Namespace, *i.Spec.Network)
+	if err != nil || selected.Reference.OwnerScope != networkbiz.OwnerScopePlatform {
+		t.Fatal("platform selection was forced into consumer tenant ownership", selected, err)
+	}
+	i.Spec.Network = &selected
+	attachments.value.Plan.BasicIsolationName = "ani-tenant-" + i.TenantID
+	// A future directory read would fail after this owner was accepted. Prepare
+	// must enter Attachment replay directly, without calling that admission.
+	products.err = networkbiz.Fail(networkbiz.NetworkNewAdmissionClosed, "closed")
+	binding, err := adapter.Prepare(context.Background(), i)
+	if err != nil || !attachments.prepare.Accepted || attachments.prepare.AcceptedReference != selected.Reference || binding.BasicIsolationName != attachments.value.Plan.BasicIsolationName {
+		t.Fatal("accepted replay reopened directory or lost isolation", binding, err)
+	}
+	current := &biz.NetworkRuntime{SubmissionID: i.Network.SubmissionID, Generation: 1}
+	result := biz.CloneNetwork(i.Network)
+	result.BasicIsolationName = binding.BasicIsolationName
+	mergeNetworkResult(current, result)
+	if current.BasicIsolationName != binding.BasicIsolationName {
+		t.Fatal("owner merge dropped the accepted isolation group")
+	}
+	i.Network.BasicIsolationName = binding.BasicIsolationName
+	notebook, err := RenderNotebook(i)
+	if err != nil || notebook.GetAnnotations()["networking.kubercloud.com/basic-network-isolation"] != binding.BasicIsolationName {
+		t.Fatal("Notebook did not declare its tenant isolation at metadata", err)
+	}
+	for _, reason := range []networkbiz.Reason{networkbiz.NetworkNewAdmissionClosed, networkbiz.ProviderOwnership} {
+		got := instanceNetworkError(networkbiz.Fail(reason, "private detail"))
+		want := biz.ErrNetworkConflict
+		if reason == networkbiz.NetworkNewAdmissionClosed {
+			want = biz.ErrNetworkAdmissionClosed
+		}
+		if !errors.Is(got, want) {
+			t.Fatalf("wrong domain mapping: %v", got)
+		}
 	}
 }

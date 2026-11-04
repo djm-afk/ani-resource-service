@@ -73,6 +73,8 @@ func rpcError(e error) error {
 		return status.Error(codes.NotFound, "INSTANCE_NETWORK_NOT_FOUND")
 	case errors.Is(e, biz.ErrNetworkConflict):
 		return status.Error(codes.FailedPrecondition, "INSTANCE_NETWORK_CONFLICT")
+	case errors.Is(e, biz.ErrNetworkAdmissionClosed):
+		return status.Error(codes.FailedPrecondition, "NETWORK_NEW_ADMISSION_CLOSED")
 	case errors.Is(e, biz.ErrNetworkUnavailable):
 		return status.Error(codes.Unavailable, "INSTANCE_DEPENDENCY_UNAVAILABLE")
 	case errors.Is(e, biz.ErrPVCNotFound):

@@ -1,0 +1,161 @@
+{
+  "source": {
+    "resource": "585c2d9f87d41543dac54fc0ba5af6191eafc848",
+    "governance": "e334d81f02f2c8a6cb7ba270463e4be8e9e5bdd7",
+    "console": "a86dcba450d4c8434a8affc8c84245dd625f3c17",
+    "sdk": "v0.0.0-20261104150849-76dc2a3218d2"
+  },
+  "platform": {
+    "cluster_uid": "3eeb5379-8748-4bf8-8f6d-d7a48ce3bc24",
+    "vpc": {
+      "product_id": "vpc_03eaeb5776614d3ab114a7b7fb5b3de0",
+      "native_namespace": "kcn-system",
+      "native_name": "kcn-cluster",
+      "native_uid": "55c8c219-0acc-4088-a5a5-4608a81d80e5",
+      "display_name": "平台基础网络",
+      "description": "平台共享基础网络",
+      "published": true,
+      "accept_new": true
+    },
+    "subnets": [
+      {
+        "product_id": "subnet_5dadd7ee2895480285d65493dc291109",
+        "native_namespace": "kcn-system",
+        "native_name": "pool-8836e1121d3c40a4ab73859afef5d6d8",
+        "native_uid": "2d392b1a-2e6e-476c-a7ef-c93a6299cb95",
+        "display_name": "平台基础子网 10.20.0.0/24",
+        "description": "平台共享基础网络工作负载接入",
+        "published": true,
+        "accept_new": true
+      }
+    ]
+  },
+  "test_resources": {
+    "vm_id": "fbef215a-7f2c-4f4e-9137-21fb2e2f342d",
+    "vnic_id": "vnic_9fb29a3c2ba84d0e88698b24e211bb31",
+    "second_vnic_id": "vnic_98bdea86ce544641ab7cc0875842f43d",
+    "container_id": "21444081-e4eb-465f-967a-8116753396c9",
+    "container_attempts": [
+      {
+        "id": "dd0f2f3a-a9d5-4d59-a6f7-5e56aa830501",
+        "reason": "Training image requires managed bootstrap configuration; normal API deletion accepted"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "action": "vnic_create",
+      "status": 200,
+      "outcome": "ACCEPTED",
+      "key": "cc6a2d11-0156-47d3-8190-f8fe24ab82fb"
+    },
+    {
+      "action": "vm_create",
+      "status": 202,
+      "outcome": "ACCEPTED",
+      "key": "4042f282-64d1-4e56-b506-5c28635ba9b4"
+    },
+    {
+      "action": "restart",
+      "status": 202,
+      "outcome": "ACCEPTED",
+      "key": "168250ff-dc6c-4002-acd1-41a5d567a923"
+    },
+    {
+      "action": "vm_delete",
+      "status": null,
+      "outcome": "UNKNOWN",
+      "key": "ff25a21c-4401-4755-98fd-54be28772825"
+    }
+  ],
+  "verification": {
+    "directory": "pass",
+    "manual_vnic_a": "10.20.0.21",
+    "manual_vnic_b": "10.20.0.27",
+    "vm_automatic": "10.20.0.22 then 10.20.0.24 after restart",
+    "vm_manual": "10.20.0.21 effective_now=true",
+    "container_restart": "running 10.20.0.26",
+    "same_tenant_guest_ssh": "pass",
+    "cross_tenant_vnic_read": 404,
+    "second_tenant_private_vpcs": 0,
+    "second_tenant_private_subnets": 0,
+    "second_tenant_association_total": 0,
+    "closed_permanent_replay": 200,
+    "closed_new_request": 412,
+    "platform_delete_vpc": 403,
+    "platform_delete_subnet": 403,
+    "browser": "VPC tag/managed output, related rows, manual save and restart, effective display pass"
+  },
+  "final_runtime": {
+    "deployments": [
+      {
+        "name": "ani-resource-service",
+        "ready": 1,
+        "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:a335dc68aeebdfc3671575941d8b3ae163fc64bada8b26cf71aa3fd09118e466"
+      },
+      {
+        "name": "ani-governance",
+        "ready": 1,
+        "image": "10.10.1.66:30003/ani-gpu-platform/ani-governance@sha256:35cd33d48a1ba162a9b98842c4de8588461b1829129157a9c282bb7289e86147"
+      },
+      {
+        "name": "ani-console",
+        "ready": 1,
+        "image": "10.10.1.66:30003/ani-gpu-platform/ani-console@sha256:22a838e22c27838bf3e69483e33b376f6f69cb21cf63f3178ff1713345de1668"
+      }
+    ],
+    "native_test_objects_remaining": [],
+    "platform_uids": {
+      "vpc": "55c8c219-0acc-4088-a5a5-4608a81d80e5",
+      "subnet": "2d392b1a-2e6e-476c-a7ef-c93a6299cb95"
+    },
+    "bni_retained": [
+      {
+        "name": "ani-tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+        "enabled": true
+      },
+      {
+        "name": "ani-tenant-bf244b5d-eb29-4350-8530-cefb29f72d8d",
+        "enabled": true
+      }
+    ]
+  },
+  "final_api": {
+    "vpc": {
+      "id": "vpc_03eaeb5776614d3ab114a7b7fb5b3de0",
+      "owner_scope": "platform",
+      "can_use": true,
+      "can_manage": false
+    },
+    "subnet": {
+      "id": "subnet_5dadd7ee2895480285d65493dc291109",
+      "vpc_id": "vpc_03eaeb5776614d3ab114a7b7fb5b3de0",
+      "cidr": "10.20.0.0/24",
+      "can_use": true
+    },
+    "manual_vnic_a": "deleted",
+    "containers": [
+      {
+        "id": "21444081-e4eb-465f-967a-8116753396c9",
+        "state": "deleted",
+        "quota_returned": true
+      },
+      {
+        "id": "dd0f2f3a-a9d5-4d59-a6f7-5e56aa830501",
+        "state": "deleted",
+        "quota_returned": true
+      }
+    ],
+    "association_total": "0",
+    "existing_running_vm_count": 5
+  },
+  "cleanup": {
+    "temporary_tenant_b_grants_deleted": 9,
+    "temporary_database_role_removed": true,
+    "temporary_kubernetes_secrets_and_jobs_removed": true,
+    "guest_keys_removed": true,
+    "ubuntu_test_postgres_containers_remaining": 0,
+    "shared_catalog_reopened": true
+  },
+  "completed_at": "2026-11-04T16:39:22.614187+00:00"
+}

@@ -252,6 +252,7 @@ func wireInstanceNetwork(c *instanceComponents, network *networkbiz.Network, att
 	if err != nil {
 		return nil, err
 	}
+	c.repo.UseNetworkAdmission(adapter.AdmitNewNetwork)
 	if err = c.worker.UseNetwork(adapter); err != nil {
 		return nil, err
 	}

@@ -22,14 +22,25 @@ func (p *Postgres) Claim(ctx context.Context, owner string, duration time.Durati
 	q := p.queries.WithTx(tx)
 	// Alternate platform and tenant admission opportunities within the same
 	// durable executor; due ordering provides fairness inside the tenant lane.
-	if p.workTurn.Add(1)%2 == 0 {
+	turn := p.workTurn.Add(1) % 3
+	if turn == 0 {
+		if work, found, err := p.claimPlatformNetwork(ctx, tx, q, owner, duration); found || err != nil {
+			return work, found, err
+		}
+	}
+	if turn == 1 {
 		if work, found, err := p.claimPlatform(ctx, tx, q, owner, duration); found || err != nil {
 			return work, found, err
 		}
 	}
 	resource, err := claimResource(ctx, q)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return p.claimPlatform(ctx, tx, q, owner, duration)
+		if turn != 1 {
+			if work, found, err := p.claimPlatform(ctx, tx, q, owner, duration); found || err != nil {
+				return work, found, err
+			}
+		}
+		return p.claimPlatformNetwork(ctx, tx, q, owner, duration)
 	}
 	if err != nil {
 		return biz.Work{}, false, databaseFailure(err)
@@ -135,6 +146,9 @@ func affected(rows int64, err error) error {
 }
 
 func (p *Postgres) BeginMutation(ctx context.Context, work biz.Work, action, identity string) error {
+	if work.PlatformNetwork != nil {
+		return biz.ErrLeaseLost
+	}
 	if work.Resource.TenantID == "" {
 		return p.beginPlatformMutation(ctx, work, action, identity)
 	}
@@ -165,6 +179,9 @@ func (p *Postgres) BeginMutation(ctx context.Context, work biz.Work, action, ide
 }
 
 func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progress) error {
+	if work.PlatformNetwork != nil {
+		return p.finishPlatformNetwork(ctx, work, progress)
+	}
 	if work.Resource.TenantID == "" {
 		return p.finishPlatform(ctx, work, progress)
 	}
@@ -276,6 +293,9 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 }
 
 func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, error) {
+	if err := p.rejectPlatformManagement(ctx, id); err != nil {
+		return biz.VPC{}, err
+	}
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return biz.VPC{}, databaseFailure(err)

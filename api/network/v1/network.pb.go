@@ -297,6 +297,55 @@ func (OperationKind) EnumDescriptor() ([]byte, []int) {
 	return file_network_v1_network_proto_rawDescGZIP(), []int{2}
 }
 
+type OwnerScope int32
+
+const (
+	OwnerScope_OWNER_SCOPE_UNSPECIFIED OwnerScope = 0
+	OwnerScope_OWNER_SCOPE_TENANT      OwnerScope = 1
+	OwnerScope_OWNER_SCOPE_PLATFORM    OwnerScope = 2
+)
+
+// Enum value maps for OwnerScope.
+var (
+	OwnerScope_name = map[int32]string{
+		0: "OWNER_SCOPE_UNSPECIFIED",
+		1: "OWNER_SCOPE_TENANT",
+		2: "OWNER_SCOPE_PLATFORM",
+	}
+	OwnerScope_value = map[string]int32{
+		"OWNER_SCOPE_UNSPECIFIED": 0,
+		"OWNER_SCOPE_TENANT":      1,
+		"OWNER_SCOPE_PLATFORM":    2,
+	}
+)
+
+func (x OwnerScope) Enum() *OwnerScope {
+	p := new(OwnerScope)
+	*p = x
+	return p
+}
+
+func (x OwnerScope) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OwnerScope) Descriptor() protoreflect.EnumDescriptor {
+	return file_network_v1_network_proto_enumTypes[3].Descriptor()
+}
+
+func (OwnerScope) Type() protoreflect.EnumType {
+	return &file_network_v1_network_proto_enumTypes[3]
+}
+
+func (x OwnerScope) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OwnerScope.Descriptor instead.
+func (OwnerScope) EnumDescriptor() ([]byte, []int) {
+	return file_network_v1_network_proto_rawDescGZIP(), []int{3}
+}
+
 type ResourceType int32
 
 const (
@@ -360,11 +409,11 @@ func (x ResourceType) String() string {
 }
 
 func (ResourceType) Descriptor() protoreflect.EnumDescriptor {
-	return file_network_v1_network_proto_enumTypes[3].Descriptor()
+	return file_network_v1_network_proto_enumTypes[4].Descriptor()
 }
 
 func (ResourceType) Type() protoreflect.EnumType {
-	return &file_network_v1_network_proto_enumTypes[3]
+	return &file_network_v1_network_proto_enumTypes[4]
 }
 
 func (x ResourceType) Number() protoreflect.EnumNumber {
@@ -373,7 +422,7 @@ func (x ResourceType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ResourceType.Descriptor instead.
 func (ResourceType) EnumDescriptor() ([]byte, []int) {
-	return file_network_v1_network_proto_rawDescGZIP(), []int{3}
+	return file_network_v1_network_proto_rawDescGZIP(), []int{4}
 }
 
 type AttachmentState int32
@@ -415,11 +464,11 @@ func (x AttachmentState) String() string {
 }
 
 func (AttachmentState) Descriptor() protoreflect.EnumDescriptor {
-	return file_network_v1_network_proto_enumTypes[4].Descriptor()
+	return file_network_v1_network_proto_enumTypes[5].Descriptor()
 }
 
 func (AttachmentState) Type() protoreflect.EnumType {
-	return &file_network_v1_network_proto_enumTypes[4]
+	return &file_network_v1_network_proto_enumTypes[5]
 }
 
 func (x AttachmentState) Number() protoreflect.EnumNumber {
@@ -428,7 +477,7 @@ func (x AttachmentState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AttachmentState.Descriptor instead.
 func (AttachmentState) EnumDescriptor() ([]byte, []int) {
-	return file_network_v1_network_proto_rawDescGZIP(), []int{4}
+	return file_network_v1_network_proto_rawDescGZIP(), []int{5}
 }
 
 type SubmissionState int32
@@ -467,11 +516,11 @@ func (x SubmissionState) String() string {
 }
 
 func (SubmissionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_network_v1_network_proto_enumTypes[5].Descriptor()
+	return file_network_v1_network_proto_enumTypes[6].Descriptor()
 }
 
 func (SubmissionState) Type() protoreflect.EnumType {
-	return &file_network_v1_network_proto_enumTypes[5]
+	return &file_network_v1_network_proto_enumTypes[6]
 }
 
 func (x SubmissionState) Number() protoreflect.EnumNumber {
@@ -480,11 +529,14 @@ func (x SubmissionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubmissionState.Descriptor instead.
 func (SubmissionState) EnumDescriptor() ([]byte, []int) {
-	return file_network_v1_network_proto_rawDescGZIP(), []int{5}
+	return file_network_v1_network_proto_rawDescGZIP(), []int{6}
 }
 
 type VPC struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
+	OwnerScope  OwnerScope             `protobuf:"varint,18,opt,name=owner_scope,json=ownerScope,proto3,enum=network.v1.OwnerScope" json:"owner_scope,omitempty"`
+	CanManage   bool                   `protobuf:"varint,19,opt,name=can_manage,json=canManage,proto3" json:"can_manage,omitempty"`
+	CanUse      bool                   `protobuf:"varint,20,opt,name=can_use,json=canUse,proto3" json:"can_use,omitempty"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	TenantId    string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
@@ -537,6 +589,27 @@ func (x *VPC) ProtoReflect() protoreflect.Message {
 // Deprecated: Use VPC.ProtoReflect.Descriptor instead.
 func (*VPC) Descriptor() ([]byte, []int) {
 	return file_network_v1_network_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *VPC) GetOwnerScope() OwnerScope {
+	if x != nil {
+		return x.OwnerScope
+	}
+	return OwnerScope_OWNER_SCOPE_UNSPECIFIED
+}
+
+func (x *VPC) GetCanManage() bool {
+	if x != nil {
+		return x.CanManage
+	}
+	return false
+}
+
+func (x *VPC) GetCanUse() bool {
+	if x != nil {
+		return x.CanUse
+	}
+	return false
 }
 
 func (x *VPC) GetId() string {
@@ -1300,10 +1373,12 @@ func (x *GetVPCResponse) GetVpc() *VPC {
 }
 
 type ListVPCsRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	Name     string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	State    ResourceState          `protobuf:"varint,3,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	CanUse    *bool                  `protobuf:"varint,8,opt,name=can_use,json=canUse,proto3,oneof" json:"can_use,omitempty"`
+	CanManage *bool                  `protobuf:"varint,9,opt,name=can_manage,json=canManage,proto3,oneof" json:"can_manage,omitempty"`
+	TenantId  string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	State     ResourceState          `protobuf:"varint,3,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
 	// Legacy RPC window only; Gov public VPC requests use page/page_size.
 	//
 	// Deprecated: Marked as deprecated in network/v1/network.proto.
@@ -1344,6 +1419,20 @@ func (x *ListVPCsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListVPCsRequest.ProtoReflect.Descriptor instead.
 func (*ListVPCsRequest) Descriptor() ([]byte, []int) {
 	return file_network_v1_network_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListVPCsRequest) GetCanUse() bool {
+	if x != nil && x.CanUse != nil {
+		return *x.CanUse
+	}
+	return false
+}
+
+func (x *ListVPCsRequest) GetCanManage() bool {
+	if x != nil && x.CanManage != nil {
+		return *x.CanManage
+	}
+	return false
 }
 
 func (x *ListVPCsRequest) GetTenantId() string {
@@ -1651,6 +1740,9 @@ func (x *GetOperationResponse) GetOperation() *Operation {
 
 type Subnet struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
+	OwnerScope  OwnerScope             `protobuf:"varint,24,opt,name=owner_scope,json=ownerScope,proto3,enum=network.v1.OwnerScope" json:"owner_scope,omitempty"`
+	CanManage   bool                   `protobuf:"varint,25,opt,name=can_manage,json=canManage,proto3" json:"can_manage,omitempty"`
+	CanUse      bool                   `protobuf:"varint,26,opt,name=can_use,json=canUse,proto3" json:"can_use,omitempty"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	TenantId    string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
@@ -1705,6 +1797,27 @@ func (x *Subnet) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Subnet.ProtoReflect.Descriptor instead.
 func (*Subnet) Descriptor() ([]byte, []int) {
 	return file_network_v1_network_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Subnet) GetOwnerScope() OwnerScope {
+	if x != nil {
+		return x.OwnerScope
+	}
+	return OwnerScope_OWNER_SCOPE_UNSPECIFIED
+}
+
+func (x *Subnet) GetCanManage() bool {
+	if x != nil {
+		return x.CanManage
+	}
+	return false
+}
+
+func (x *Subnet) GetCanUse() bool {
+	if x != nil {
+		return x.CanUse
+	}
+	return false
 }
 
 func (x *Subnet) GetId() string {
@@ -2120,6 +2233,8 @@ func (x *GetSubnetResponse) GetSubnet() *Subnet {
 
 type ListSubnetsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	CanUse        *bool                  `protobuf:"varint,7,opt,name=can_use,json=canUse,proto3,oneof" json:"can_use,omitempty"`
+	CanManage     *bool                  `protobuf:"varint,8,opt,name=can_manage,json=canManage,proto3,oneof" json:"can_manage,omitempty"`
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	State         ResourceState          `protobuf:"varint,3,opt,name=state,proto3,enum=network.v1.ResourceState" json:"state,omitempty"`
@@ -2158,6 +2273,20 @@ func (x *ListSubnetsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListSubnetsRequest.ProtoReflect.Descriptor instead.
 func (*ListSubnetsRequest) Descriptor() ([]byte, []int) {
 	return file_network_v1_network_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ListSubnetsRequest) GetCanUse() bool {
+	if x != nil && x.CanUse != nil {
+		return *x.CanUse
+	}
+	return false
+}
+
+func (x *ListSubnetsRequest) GetCanManage() bool {
+	if x != nil && x.CanManage != nil {
+		return *x.CanManage
+	}
+	return false
 }
 
 func (x *ListSubnetsRequest) GetTenantId() string {
@@ -5473,8 +5602,13 @@ var File_network_v1_network_proto protoreflect.FileDescriptor
 const file_network_v1_network_proto_rawDesc = "" +
 	"\n" +
 	"\x18network/v1/network.proto\x12\n" +
-	"network.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc5\x05\n" +
-	"\x03VPC\x12\x0e\n" +
+	"network.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb6\x06\n" +
+	"\x03VPC\x127\n" +
+	"\vowner_scope\x18\x12 \x01(\x0e2\x16.network.v1.OwnerScopeR\n" +
+	"ownerScope\x12\x1d\n" +
+	"\n" +
+	"can_manage\x18\x13 \x01(\bR\tcanManage\x12\x17\n" +
+	"\acan_use\x18\x14 \x01(\bR\x06canUse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
@@ -5556,15 +5690,21 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x15\n" +
 	"\x06vpc_id\x18\x02 \x01(\tR\x05vpcId\"3\n" +
 	"\x0eGetVPCResponse\x12!\n" +
-	"\x03vpc\x18\x01 \x01(\v2\x0f.network.v1.VPCR\x03vpc\"\xfb\x01\n" +
-	"\x0fListVPCsRequest\x12\x1b\n" +
+	"\x03vpc\x18\x01 \x01(\v2\x0f.network.v1.VPCR\x03vpc\"\xd8\x02\n" +
+	"\x0fListVPCsRequest\x12\x1c\n" +
+	"\acan_use\x18\b \x01(\bH\x00R\x06canUse\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"can_manage\x18\t \x01(\bH\x01R\tcanManage\x88\x01\x01\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x19.network.v1.ResourceStateR\x05state\x12\x18\n" +
 	"\x05limit\x18\x04 \x01(\x05B\x02\x18\x01R\x05limit\x12\x1a\n" +
 	"\x06cursor\x18\x05 \x01(\tB\x02\x18\x01R\x06cursor\x12\x17\n" +
-	"\x04page\x18\x06 \x01(\rH\x00R\x04page\x88\x01\x01\x12 \n" +
-	"\tpage_size\x18\a \x01(\rH\x01R\bpageSize\x88\x01\x01B\a\n" +
+	"\x04page\x18\x06 \x01(\rH\x02R\x04page\x88\x01\x01\x12 \n" +
+	"\tpage_size\x18\a \x01(\rH\x03R\bpageSize\x88\x01\x01B\n" +
+	"\n" +
+	"\b_can_useB\r\n" +
+	"\v_can_manageB\a\n" +
 	"\x05_pageB\f\n" +
 	"\n" +
 	"_page_size\"p\n" +
@@ -5582,8 +5722,13 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\"K\n" +
 	"\x14GetOperationResponse\x123\n" +
-	"\toperation\x18\x01 \x01(\v2\x15.network.v1.OperationR\toperation\"\xdd\x06\n" +
-	"\x06Subnet\x12\x0e\n" +
+	"\toperation\x18\x01 \x01(\v2\x15.network.v1.OperationR\toperation\"\xce\a\n" +
+	"\x06Subnet\x127\n" +
+	"\vowner_scope\x18\x18 \x01(\x0e2\x16.network.v1.OwnerScopeR\n" +
+	"ownerScope\x12\x1d\n" +
+	"\n" +
+	"can_manage\x18\x19 \x01(\bR\tcanManage\x12\x17\n" +
+	"\acan_use\x18\x1a \x01(\bR\x06canUse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
@@ -5639,14 +5784,20 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1b\n" +
 	"\tsubnet_id\x18\x02 \x01(\tR\bsubnetId\"?\n" +
 	"\x11GetSubnetResponse\x12*\n" +
-	"\x06subnet\x18\x01 \x01(\v2\x12.network.v1.SubnetR\x06subnet\"\xbb\x01\n" +
-	"\x12ListSubnetsRequest\x12\x1b\n" +
+	"\x06subnet\x18\x01 \x01(\v2\x12.network.v1.SubnetR\x06subnet\"\x98\x02\n" +
+	"\x12ListSubnetsRequest\x12\x1c\n" +
+	"\acan_use\x18\a \x01(\bH\x00R\x06canUse\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"can_manage\x18\b \x01(\bH\x01R\tcanManage\x88\x01\x01\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x19.network.v1.ResourceStateR\x05state\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06cursor\x18\x05 \x01(\tR\x06cursor\x12\x15\n" +
-	"\x06vpc_id\x18\x06 \x01(\tR\x05vpcId\"v\n" +
+	"\x06vpc_id\x18\x06 \x01(\tR\x05vpcIdB\n" +
+	"\n" +
+	"\b_can_useB\r\n" +
+	"\v_can_manage\"v\n" +
 	"\x13ListSubnetsResponse\x12(\n" +
 	"\x05items\x18\x01 \x03(\v2\x12.network.v1.SubnetR\x05items\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -6027,7 +6178,12 @@ const file_network_v1_network_proto_rawDesc = "" +
 	"$OPERATION_KIND_DELETE_SECURITY_GROUP\x10!\x12*\n" +
 	"&OPERATION_KIND_SET_EIP_SECURITY_GROUPS\x10\"\x12\x1e\n" +
 	"\x1aOPERATION_KIND_CREATE_VNIC\x10#\x12\x1e\n" +
-	"\x1aOPERATION_KIND_DELETE_VNIC\x10$*\xa8\x03\n" +
+	"\x1aOPERATION_KIND_DELETE_VNIC\x10$*[\n" +
+	"\n" +
+	"OwnerScope\x12\x1b\n" +
+	"\x17OWNER_SCOPE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12OWNER_SCOPE_TENANT\x10\x01\x12\x18\n" +
+	"\x14OWNER_SCOPE_PLATFORM\x10\x02*\xa8\x03\n" +
 	"\fResourceType\x12\x1d\n" +
 	"\x19RESOURCE_TYPE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11RESOURCE_TYPE_VPC\x10\x01\x12\x18\n" +
@@ -6092,199 +6248,202 @@ func file_network_v1_network_proto_rawDescGZIP() []byte {
 	return file_network_v1_network_proto_rawDescData
 }
 
-var file_network_v1_network_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_network_v1_network_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_network_v1_network_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_network_v1_network_proto_goTypes = []any{
 	(ResourceState)(0),                     // 0: network.v1.ResourceState
 	(OperationState)(0),                    // 1: network.v1.OperationState
 	(OperationKind)(0),                     // 2: network.v1.OperationKind
-	(ResourceType)(0),                      // 3: network.v1.ResourceType
-	(AttachmentState)(0),                   // 4: network.v1.AttachmentState
-	(SubmissionState)(0),                   // 5: network.v1.SubmissionState
-	(*VPC)(nil),                            // 6: network.v1.VPC
-	(*VPCPublicEgress)(nil),                // 7: network.v1.VPCPublicEgress
-	(*VPCBaseConnectivity)(nil),            // 8: network.v1.VPCBaseConnectivity
-	(*Operation)(nil),                      // 9: network.v1.Operation
-	(*Attribution)(nil),                    // 10: network.v1.Attribution
-	(*CreateVPCRequest)(nil),               // 11: network.v1.CreateVPCRequest
-	(*CreateVPCResponse)(nil),              // 12: network.v1.CreateVPCResponse
-	(*GetVPCRequest)(nil),                  // 13: network.v1.GetVPCRequest
-	(*GetVPCResponse)(nil),                 // 14: network.v1.GetVPCResponse
-	(*ListVPCsRequest)(nil),                // 15: network.v1.ListVPCsRequest
-	(*ListVPCsResponse)(nil),               // 16: network.v1.ListVPCsResponse
-	(*DeleteVPCRequest)(nil),               // 17: network.v1.DeleteVPCRequest
-	(*DeleteVPCResponse)(nil),              // 18: network.v1.DeleteVPCResponse
-	(*GetOperationRequest)(nil),            // 19: network.v1.GetOperationRequest
-	(*GetOperationResponse)(nil),           // 20: network.v1.GetOperationResponse
-	(*Subnet)(nil),                         // 21: network.v1.Subnet
-	(*CreateSubnetRequest)(nil),            // 22: network.v1.CreateSubnetRequest
-	(*CreateSubnetResponse)(nil),           // 23: network.v1.CreateSubnetResponse
-	(*GetSubnetRequest)(nil),               // 24: network.v1.GetSubnetRequest
-	(*GetSubnetResponse)(nil),              // 25: network.v1.GetSubnetResponse
-	(*ListSubnetsRequest)(nil),             // 26: network.v1.ListSubnetsRequest
-	(*ListSubnetsResponse)(nil),            // 27: network.v1.ListSubnetsResponse
-	(*DeleteSubnetRequest)(nil),            // 28: network.v1.DeleteSubnetRequest
-	(*DeleteSubnetResponse)(nil),           // 29: network.v1.DeleteSubnetResponse
-	(*PodPrimaryPlan)(nil),                 // 30: network.v1.PodPrimaryPlan
-	(*VMNetworkExpectation)(nil),           // 31: network.v1.VMNetworkExpectation
-	(*VMPrimaryPlan)(nil),                  // 32: network.v1.VMPrimaryPlan
-	(*VMCurrentAddress)(nil),               // 33: network.v1.VMCurrentAddress
-	(*AttachmentLabels)(nil),               // 34: network.v1.AttachmentLabels
-	(*WorkloadReference)(nil),              // 35: network.v1.WorkloadReference
-	(*ControllerReference)(nil),            // 36: network.v1.ControllerReference
-	(*PodReference)(nil),                   // 37: network.v1.PodReference
-	(*Attachment)(nil),                     // 38: network.v1.Attachment
-	(*PrepareAttachmentRequest)(nil),       // 39: network.v1.PrepareAttachmentRequest
-	(*GetAttachmentRequest)(nil),           // 40: network.v1.GetAttachmentRequest
-	(*ConfirmAttachmentRequest)(nil),       // 41: network.v1.ConfirmAttachmentRequest
-	(*ReleaseAttachmentRequest)(nil),       // 42: network.v1.ReleaseAttachmentRequest
-	(*PrepareAttachmentResponse)(nil),      // 43: network.v1.PrepareAttachmentResponse
-	(*GetAttachmentResponse)(nil),          // 44: network.v1.GetAttachmentResponse
-	(*ConfirmAttachmentResponse)(nil),      // 45: network.v1.ConfirmAttachmentResponse
-	(*ReleaseAttachmentResponse)(nil),      // 46: network.v1.ReleaseAttachmentResponse
-	(*NetworkAddress)(nil),                 // 47: network.v1.NetworkAddress
-	(*AssociatedInstance)(nil),             // 48: network.v1.AssociatedInstance
-	(*ListNetworkInstancesRequest)(nil),    // 49: network.v1.ListNetworkInstancesRequest
-	(*ListNetworkInstancesResponse)(nil),   // 50: network.v1.ListNetworkInstancesResponse
-	(*GetSubmissionRequest)(nil),           // 51: network.v1.GetSubmissionRequest
-	(*GetSubmissionResponse)(nil),          // 52: network.v1.GetSubmissionResponse
-	(*ListVPCCIDRPresetsRequest)(nil),      // 53: network.v1.ListVPCCIDRPresetsRequest
-	(*ListVPCCIDRPresetsResponse)(nil),     // 54: network.v1.ListVPCCIDRPresetsResponse
-	(*VNicBinding)(nil),                    // 55: network.v1.VNicBinding
-	(*VNic)(nil),                           // 56: network.v1.VNic
-	(*CreateVNicRequest)(nil),              // 57: network.v1.CreateVNicRequest
-	(*CreateVNicResponse)(nil),             // 58: network.v1.CreateVNicResponse
-	(*GetVNicRequest)(nil),                 // 59: network.v1.GetVNicRequest
-	(*GetVNicResponse)(nil),                // 60: network.v1.GetVNicResponse
-	(*DeleteVNicRequest)(nil),              // 61: network.v1.DeleteVNicRequest
-	(*DeleteVNicResponse)(nil),             // 62: network.v1.DeleteVNicResponse
-	(*ListVNicsRequest)(nil),               // 63: network.v1.ListVNicsRequest
-	(*ListVNicsResponse)(nil),              // 64: network.v1.ListVNicsResponse
-	(*ListVNicBindingTargetsRequest)(nil),  // 65: network.v1.ListVNicBindingTargetsRequest
-	(*VNicBindingTarget)(nil),              // 66: network.v1.VNicBindingTarget
-	(*ListVNicBindingTargetsResponse)(nil), // 67: network.v1.ListVNicBindingTargetsResponse
-	(*timestamppb.Timestamp)(nil),          // 68: google.protobuf.Timestamp
+	(OwnerScope)(0),                        // 3: network.v1.OwnerScope
+	(ResourceType)(0),                      // 4: network.v1.ResourceType
+	(AttachmentState)(0),                   // 5: network.v1.AttachmentState
+	(SubmissionState)(0),                   // 6: network.v1.SubmissionState
+	(*VPC)(nil),                            // 7: network.v1.VPC
+	(*VPCPublicEgress)(nil),                // 8: network.v1.VPCPublicEgress
+	(*VPCBaseConnectivity)(nil),            // 9: network.v1.VPCBaseConnectivity
+	(*Operation)(nil),                      // 10: network.v1.Operation
+	(*Attribution)(nil),                    // 11: network.v1.Attribution
+	(*CreateVPCRequest)(nil),               // 12: network.v1.CreateVPCRequest
+	(*CreateVPCResponse)(nil),              // 13: network.v1.CreateVPCResponse
+	(*GetVPCRequest)(nil),                  // 14: network.v1.GetVPCRequest
+	(*GetVPCResponse)(nil),                 // 15: network.v1.GetVPCResponse
+	(*ListVPCsRequest)(nil),                // 16: network.v1.ListVPCsRequest
+	(*ListVPCsResponse)(nil),               // 17: network.v1.ListVPCsResponse
+	(*DeleteVPCRequest)(nil),               // 18: network.v1.DeleteVPCRequest
+	(*DeleteVPCResponse)(nil),              // 19: network.v1.DeleteVPCResponse
+	(*GetOperationRequest)(nil),            // 20: network.v1.GetOperationRequest
+	(*GetOperationResponse)(nil),           // 21: network.v1.GetOperationResponse
+	(*Subnet)(nil),                         // 22: network.v1.Subnet
+	(*CreateSubnetRequest)(nil),            // 23: network.v1.CreateSubnetRequest
+	(*CreateSubnetResponse)(nil),           // 24: network.v1.CreateSubnetResponse
+	(*GetSubnetRequest)(nil),               // 25: network.v1.GetSubnetRequest
+	(*GetSubnetResponse)(nil),              // 26: network.v1.GetSubnetResponse
+	(*ListSubnetsRequest)(nil),             // 27: network.v1.ListSubnetsRequest
+	(*ListSubnetsResponse)(nil),            // 28: network.v1.ListSubnetsResponse
+	(*DeleteSubnetRequest)(nil),            // 29: network.v1.DeleteSubnetRequest
+	(*DeleteSubnetResponse)(nil),           // 30: network.v1.DeleteSubnetResponse
+	(*PodPrimaryPlan)(nil),                 // 31: network.v1.PodPrimaryPlan
+	(*VMNetworkExpectation)(nil),           // 32: network.v1.VMNetworkExpectation
+	(*VMPrimaryPlan)(nil),                  // 33: network.v1.VMPrimaryPlan
+	(*VMCurrentAddress)(nil),               // 34: network.v1.VMCurrentAddress
+	(*AttachmentLabels)(nil),               // 35: network.v1.AttachmentLabels
+	(*WorkloadReference)(nil),              // 36: network.v1.WorkloadReference
+	(*ControllerReference)(nil),            // 37: network.v1.ControllerReference
+	(*PodReference)(nil),                   // 38: network.v1.PodReference
+	(*Attachment)(nil),                     // 39: network.v1.Attachment
+	(*PrepareAttachmentRequest)(nil),       // 40: network.v1.PrepareAttachmentRequest
+	(*GetAttachmentRequest)(nil),           // 41: network.v1.GetAttachmentRequest
+	(*ConfirmAttachmentRequest)(nil),       // 42: network.v1.ConfirmAttachmentRequest
+	(*ReleaseAttachmentRequest)(nil),       // 43: network.v1.ReleaseAttachmentRequest
+	(*PrepareAttachmentResponse)(nil),      // 44: network.v1.PrepareAttachmentResponse
+	(*GetAttachmentResponse)(nil),          // 45: network.v1.GetAttachmentResponse
+	(*ConfirmAttachmentResponse)(nil),      // 46: network.v1.ConfirmAttachmentResponse
+	(*ReleaseAttachmentResponse)(nil),      // 47: network.v1.ReleaseAttachmentResponse
+	(*NetworkAddress)(nil),                 // 48: network.v1.NetworkAddress
+	(*AssociatedInstance)(nil),             // 49: network.v1.AssociatedInstance
+	(*ListNetworkInstancesRequest)(nil),    // 50: network.v1.ListNetworkInstancesRequest
+	(*ListNetworkInstancesResponse)(nil),   // 51: network.v1.ListNetworkInstancesResponse
+	(*GetSubmissionRequest)(nil),           // 52: network.v1.GetSubmissionRequest
+	(*GetSubmissionResponse)(nil),          // 53: network.v1.GetSubmissionResponse
+	(*ListVPCCIDRPresetsRequest)(nil),      // 54: network.v1.ListVPCCIDRPresetsRequest
+	(*ListVPCCIDRPresetsResponse)(nil),     // 55: network.v1.ListVPCCIDRPresetsResponse
+	(*VNicBinding)(nil),                    // 56: network.v1.VNicBinding
+	(*VNic)(nil),                           // 57: network.v1.VNic
+	(*CreateVNicRequest)(nil),              // 58: network.v1.CreateVNicRequest
+	(*CreateVNicResponse)(nil),             // 59: network.v1.CreateVNicResponse
+	(*GetVNicRequest)(nil),                 // 60: network.v1.GetVNicRequest
+	(*GetVNicResponse)(nil),                // 61: network.v1.GetVNicResponse
+	(*DeleteVNicRequest)(nil),              // 62: network.v1.DeleteVNicRequest
+	(*DeleteVNicResponse)(nil),             // 63: network.v1.DeleteVNicResponse
+	(*ListVNicsRequest)(nil),               // 64: network.v1.ListVNicsRequest
+	(*ListVNicsResponse)(nil),              // 65: network.v1.ListVNicsResponse
+	(*ListVNicBindingTargetsRequest)(nil),  // 66: network.v1.ListVNicBindingTargetsRequest
+	(*VNicBindingTarget)(nil),              // 67: network.v1.VNicBindingTarget
+	(*ListVNicBindingTargetsResponse)(nil), // 68: network.v1.ListVNicBindingTargetsResponse
+	(*timestamppb.Timestamp)(nil),          // 69: google.protobuf.Timestamp
 }
 var file_network_v1_network_proto_depIdxs = []int32{
-	0,  // 0: network.v1.VPC.state:type_name -> network.v1.ResourceState
-	68, // 1: network.v1.VPC.created_at:type_name -> google.protobuf.Timestamp
-	68, // 2: network.v1.VPC.updated_at:type_name -> google.protobuf.Timestamp
-	68, // 3: network.v1.VPC.observed_at:type_name -> google.protobuf.Timestamp
-	8,  // 4: network.v1.VPC.base_connectivity:type_name -> network.v1.VPCBaseConnectivity
-	7,  // 5: network.v1.VPC.public_egress:type_name -> network.v1.VPCPublicEgress
-	0,  // 6: network.v1.VPCPublicEgress.state:type_name -> network.v1.ResourceState
-	68, // 7: network.v1.VPCPublicEgress.observed_at:type_name -> google.protobuf.Timestamp
-	68, // 8: network.v1.VPCBaseConnectivity.observed_at:type_name -> google.protobuf.Timestamp
-	2,  // 9: network.v1.Operation.kind:type_name -> network.v1.OperationKind
-	1,  // 10: network.v1.Operation.state:type_name -> network.v1.OperationState
-	68, // 11: network.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
-	68, // 12: network.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
-	68, // 13: network.v1.Operation.completed_at:type_name -> google.protobuf.Timestamp
-	68, // 14: network.v1.Operation.next_attempt_at:type_name -> google.protobuf.Timestamp
-	3,  // 15: network.v1.Operation.resource_type:type_name -> network.v1.ResourceType
-	10, // 16: network.v1.CreateVPCRequest.attribution:type_name -> network.v1.Attribution
-	6,  // 17: network.v1.CreateVPCResponse.vpc:type_name -> network.v1.VPC
-	6,  // 18: network.v1.GetVPCResponse.vpc:type_name -> network.v1.VPC
-	0,  // 19: network.v1.ListVPCsRequest.state:type_name -> network.v1.ResourceState
-	6,  // 20: network.v1.ListVPCsResponse.items:type_name -> network.v1.VPC
-	6,  // 21: network.v1.DeleteVPCResponse.vpc:type_name -> network.v1.VPC
-	9,  // 22: network.v1.GetOperationResponse.operation:type_name -> network.v1.Operation
-	0,  // 23: network.v1.Subnet.state:type_name -> network.v1.ResourceState
-	68, // 24: network.v1.Subnet.created_at:type_name -> google.protobuf.Timestamp
-	68, // 25: network.v1.Subnet.updated_at:type_name -> google.protobuf.Timestamp
-	68, // 26: network.v1.Subnet.observed_at:type_name -> google.protobuf.Timestamp
-	10, // 27: network.v1.CreateSubnetRequest.attribution:type_name -> network.v1.Attribution
-	21, // 28: network.v1.CreateSubnetResponse.subnet:type_name -> network.v1.Subnet
-	21, // 29: network.v1.GetSubnetResponse.subnet:type_name -> network.v1.Subnet
-	0,  // 30: network.v1.ListSubnetsRequest.state:type_name -> network.v1.ResourceState
-	21, // 31: network.v1.ListSubnetsResponse.items:type_name -> network.v1.Subnet
-	21, // 32: network.v1.DeleteSubnetResponse.subnet:type_name -> network.v1.Subnet
-	34, // 33: network.v1.PodPrimaryPlan.labels:type_name -> network.v1.AttachmentLabels
-	34, // 34: network.v1.VMPrimaryPlan.labels:type_name -> network.v1.AttachmentLabels
-	35, // 35: network.v1.ControllerReference.reference:type_name -> network.v1.WorkloadReference
-	35, // 36: network.v1.ControllerReference.owner:type_name -> network.v1.WorkloadReference
-	35, // 37: network.v1.PodReference.reference:type_name -> network.v1.WorkloadReference
-	35, // 38: network.v1.PodReference.owner:type_name -> network.v1.WorkloadReference
-	4,  // 39: network.v1.Attachment.state:type_name -> network.v1.AttachmentState
-	30, // 40: network.v1.Attachment.pod_primary:type_name -> network.v1.PodPrimaryPlan
-	68, // 41: network.v1.Attachment.created_at:type_name -> google.protobuf.Timestamp
-	68, // 42: network.v1.Attachment.updated_at:type_name -> google.protobuf.Timestamp
-	68, // 43: network.v1.Attachment.observed_at:type_name -> google.protobuf.Timestamp
-	68, // 44: network.v1.Attachment.released_at:type_name -> google.protobuf.Timestamp
-	35, // 45: network.v1.Attachment.root_controller:type_name -> network.v1.WorkloadReference
-	32, // 46: network.v1.Attachment.vm_primary:type_name -> network.v1.VMPrimaryPlan
-	33, // 47: network.v1.Attachment.vm_current_addresses:type_name -> network.v1.VMCurrentAddress
-	31, // 48: network.v1.PrepareAttachmentRequest.vm_expectation:type_name -> network.v1.VMNetworkExpectation
-	38, // 49: network.v1.PrepareAttachmentResponse.attachment:type_name -> network.v1.Attachment
-	38, // 50: network.v1.GetAttachmentResponse.attachment:type_name -> network.v1.Attachment
-	38, // 51: network.v1.ConfirmAttachmentResponse.attachment:type_name -> network.v1.Attachment
-	38, // 52: network.v1.ReleaseAttachmentResponse.attachment:type_name -> network.v1.Attachment
-	68, // 53: network.v1.AssociatedInstance.observed_at:type_name -> google.protobuf.Timestamp
-	47, // 54: network.v1.AssociatedInstance.addresses:type_name -> network.v1.NetworkAddress
-	48, // 55: network.v1.ListNetworkInstancesResponse.items:type_name -> network.v1.AssociatedInstance
-	5,  // 56: network.v1.GetSubmissionResponse.state:type_name -> network.v1.SubmissionState
-	68, // 57: network.v1.GetSubmissionResponse.closed_at:type_name -> google.protobuf.Timestamp
-	35, // 58: network.v1.GetSubmissionResponse.root_controller:type_name -> network.v1.WorkloadReference
-	36, // 59: network.v1.GetSubmissionResponse.controllers:type_name -> network.v1.ControllerReference
-	37, // 60: network.v1.GetSubmissionResponse.current_pods:type_name -> network.v1.PodReference
-	37, // 61: network.v1.GetSubmissionResponse.retired_pods:type_name -> network.v1.PodReference
-	0,  // 62: network.v1.VNic.state:type_name -> network.v1.ResourceState
-	55, // 63: network.v1.VNic.bindings:type_name -> network.v1.VNicBinding
-	68, // 64: network.v1.VNic.observed_at:type_name -> google.protobuf.Timestamp
-	68, // 65: network.v1.VNic.created_at:type_name -> google.protobuf.Timestamp
-	68, // 66: network.v1.VNic.updated_at:type_name -> google.protobuf.Timestamp
-	56, // 67: network.v1.CreateVNicResponse.vnic:type_name -> network.v1.VNic
-	56, // 68: network.v1.GetVNicResponse.vnic:type_name -> network.v1.VNic
-	56, // 69: network.v1.DeleteVNicResponse.vnic:type_name -> network.v1.VNic
-	56, // 70: network.v1.ListVNicsResponse.items:type_name -> network.v1.VNic
-	66, // 71: network.v1.ListVNicBindingTargetsResponse.items:type_name -> network.v1.VNicBindingTarget
-	57, // 72: network.v1.NetworkService.CreateVNic:input_type -> network.v1.CreateVNicRequest
-	59, // 73: network.v1.NetworkService.GetVNic:input_type -> network.v1.GetVNicRequest
-	63, // 74: network.v1.NetworkService.ListVNics:input_type -> network.v1.ListVNicsRequest
-	61, // 75: network.v1.NetworkService.DeleteVNic:input_type -> network.v1.DeleteVNicRequest
-	65, // 76: network.v1.NetworkService.ListVNicBindingTargets:input_type -> network.v1.ListVNicBindingTargetsRequest
-	53, // 77: network.v1.NetworkService.ListVPCCIDRPresets:input_type -> network.v1.ListVPCCIDRPresetsRequest
-	11, // 78: network.v1.NetworkService.CreateVPC:input_type -> network.v1.CreateVPCRequest
-	13, // 79: network.v1.NetworkService.GetVPC:input_type -> network.v1.GetVPCRequest
-	15, // 80: network.v1.NetworkService.ListVPCs:input_type -> network.v1.ListVPCsRequest
-	17, // 81: network.v1.NetworkService.DeleteVPC:input_type -> network.v1.DeleteVPCRequest
-	22, // 82: network.v1.NetworkService.CreateSubnet:input_type -> network.v1.CreateSubnetRequest
-	24, // 83: network.v1.NetworkService.GetSubnet:input_type -> network.v1.GetSubnetRequest
-	26, // 84: network.v1.NetworkService.ListSubnets:input_type -> network.v1.ListSubnetsRequest
-	28, // 85: network.v1.NetworkService.DeleteSubnet:input_type -> network.v1.DeleteSubnetRequest
-	19, // 86: network.v1.NetworkService.GetOperation:input_type -> network.v1.GetOperationRequest
-	39, // 87: network.v1.NetworkService.PrepareAttachment:input_type -> network.v1.PrepareAttachmentRequest
-	40, // 88: network.v1.NetworkService.GetAttachment:input_type -> network.v1.GetAttachmentRequest
-	41, // 89: network.v1.NetworkService.ConfirmAttachment:input_type -> network.v1.ConfirmAttachmentRequest
-	42, // 90: network.v1.NetworkService.ReleaseAttachment:input_type -> network.v1.ReleaseAttachmentRequest
-	49, // 91: network.v1.NetworkService.ListNetworkInstances:input_type -> network.v1.ListNetworkInstancesRequest
-	51, // 92: network.v1.InstanceNetworkConsumerService.GetSubmission:input_type -> network.v1.GetSubmissionRequest
-	58, // 93: network.v1.NetworkService.CreateVNic:output_type -> network.v1.CreateVNicResponse
-	60, // 94: network.v1.NetworkService.GetVNic:output_type -> network.v1.GetVNicResponse
-	64, // 95: network.v1.NetworkService.ListVNics:output_type -> network.v1.ListVNicsResponse
-	62, // 96: network.v1.NetworkService.DeleteVNic:output_type -> network.v1.DeleteVNicResponse
-	67, // 97: network.v1.NetworkService.ListVNicBindingTargets:output_type -> network.v1.ListVNicBindingTargetsResponse
-	54, // 98: network.v1.NetworkService.ListVPCCIDRPresets:output_type -> network.v1.ListVPCCIDRPresetsResponse
-	12, // 99: network.v1.NetworkService.CreateVPC:output_type -> network.v1.CreateVPCResponse
-	14, // 100: network.v1.NetworkService.GetVPC:output_type -> network.v1.GetVPCResponse
-	16, // 101: network.v1.NetworkService.ListVPCs:output_type -> network.v1.ListVPCsResponse
-	18, // 102: network.v1.NetworkService.DeleteVPC:output_type -> network.v1.DeleteVPCResponse
-	23, // 103: network.v1.NetworkService.CreateSubnet:output_type -> network.v1.CreateSubnetResponse
-	25, // 104: network.v1.NetworkService.GetSubnet:output_type -> network.v1.GetSubnetResponse
-	27, // 105: network.v1.NetworkService.ListSubnets:output_type -> network.v1.ListSubnetsResponse
-	29, // 106: network.v1.NetworkService.DeleteSubnet:output_type -> network.v1.DeleteSubnetResponse
-	20, // 107: network.v1.NetworkService.GetOperation:output_type -> network.v1.GetOperationResponse
-	43, // 108: network.v1.NetworkService.PrepareAttachment:output_type -> network.v1.PrepareAttachmentResponse
-	44, // 109: network.v1.NetworkService.GetAttachment:output_type -> network.v1.GetAttachmentResponse
-	45, // 110: network.v1.NetworkService.ConfirmAttachment:output_type -> network.v1.ConfirmAttachmentResponse
-	46, // 111: network.v1.NetworkService.ReleaseAttachment:output_type -> network.v1.ReleaseAttachmentResponse
-	50, // 112: network.v1.NetworkService.ListNetworkInstances:output_type -> network.v1.ListNetworkInstancesResponse
-	52, // 113: network.v1.InstanceNetworkConsumerService.GetSubmission:output_type -> network.v1.GetSubmissionResponse
-	93, // [93:114] is the sub-list for method output_type
-	72, // [72:93] is the sub-list for method input_type
-	72, // [72:72] is the sub-list for extension type_name
-	72, // [72:72] is the sub-list for extension extendee
-	0,  // [0:72] is the sub-list for field type_name
+	3,  // 0: network.v1.VPC.owner_scope:type_name -> network.v1.OwnerScope
+	0,  // 1: network.v1.VPC.state:type_name -> network.v1.ResourceState
+	69, // 2: network.v1.VPC.created_at:type_name -> google.protobuf.Timestamp
+	69, // 3: network.v1.VPC.updated_at:type_name -> google.protobuf.Timestamp
+	69, // 4: network.v1.VPC.observed_at:type_name -> google.protobuf.Timestamp
+	9,  // 5: network.v1.VPC.base_connectivity:type_name -> network.v1.VPCBaseConnectivity
+	8,  // 6: network.v1.VPC.public_egress:type_name -> network.v1.VPCPublicEgress
+	0,  // 7: network.v1.VPCPublicEgress.state:type_name -> network.v1.ResourceState
+	69, // 8: network.v1.VPCPublicEgress.observed_at:type_name -> google.protobuf.Timestamp
+	69, // 9: network.v1.VPCBaseConnectivity.observed_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: network.v1.Operation.kind:type_name -> network.v1.OperationKind
+	1,  // 11: network.v1.Operation.state:type_name -> network.v1.OperationState
+	69, // 12: network.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
+	69, // 13: network.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
+	69, // 14: network.v1.Operation.completed_at:type_name -> google.protobuf.Timestamp
+	69, // 15: network.v1.Operation.next_attempt_at:type_name -> google.protobuf.Timestamp
+	4,  // 16: network.v1.Operation.resource_type:type_name -> network.v1.ResourceType
+	11, // 17: network.v1.CreateVPCRequest.attribution:type_name -> network.v1.Attribution
+	7,  // 18: network.v1.CreateVPCResponse.vpc:type_name -> network.v1.VPC
+	7,  // 19: network.v1.GetVPCResponse.vpc:type_name -> network.v1.VPC
+	0,  // 20: network.v1.ListVPCsRequest.state:type_name -> network.v1.ResourceState
+	7,  // 21: network.v1.ListVPCsResponse.items:type_name -> network.v1.VPC
+	7,  // 22: network.v1.DeleteVPCResponse.vpc:type_name -> network.v1.VPC
+	10, // 23: network.v1.GetOperationResponse.operation:type_name -> network.v1.Operation
+	3,  // 24: network.v1.Subnet.owner_scope:type_name -> network.v1.OwnerScope
+	0,  // 25: network.v1.Subnet.state:type_name -> network.v1.ResourceState
+	69, // 26: network.v1.Subnet.created_at:type_name -> google.protobuf.Timestamp
+	69, // 27: network.v1.Subnet.updated_at:type_name -> google.protobuf.Timestamp
+	69, // 28: network.v1.Subnet.observed_at:type_name -> google.protobuf.Timestamp
+	11, // 29: network.v1.CreateSubnetRequest.attribution:type_name -> network.v1.Attribution
+	22, // 30: network.v1.CreateSubnetResponse.subnet:type_name -> network.v1.Subnet
+	22, // 31: network.v1.GetSubnetResponse.subnet:type_name -> network.v1.Subnet
+	0,  // 32: network.v1.ListSubnetsRequest.state:type_name -> network.v1.ResourceState
+	22, // 33: network.v1.ListSubnetsResponse.items:type_name -> network.v1.Subnet
+	22, // 34: network.v1.DeleteSubnetResponse.subnet:type_name -> network.v1.Subnet
+	35, // 35: network.v1.PodPrimaryPlan.labels:type_name -> network.v1.AttachmentLabels
+	35, // 36: network.v1.VMPrimaryPlan.labels:type_name -> network.v1.AttachmentLabels
+	36, // 37: network.v1.ControllerReference.reference:type_name -> network.v1.WorkloadReference
+	36, // 38: network.v1.ControllerReference.owner:type_name -> network.v1.WorkloadReference
+	36, // 39: network.v1.PodReference.reference:type_name -> network.v1.WorkloadReference
+	36, // 40: network.v1.PodReference.owner:type_name -> network.v1.WorkloadReference
+	5,  // 41: network.v1.Attachment.state:type_name -> network.v1.AttachmentState
+	31, // 42: network.v1.Attachment.pod_primary:type_name -> network.v1.PodPrimaryPlan
+	69, // 43: network.v1.Attachment.created_at:type_name -> google.protobuf.Timestamp
+	69, // 44: network.v1.Attachment.updated_at:type_name -> google.protobuf.Timestamp
+	69, // 45: network.v1.Attachment.observed_at:type_name -> google.protobuf.Timestamp
+	69, // 46: network.v1.Attachment.released_at:type_name -> google.protobuf.Timestamp
+	36, // 47: network.v1.Attachment.root_controller:type_name -> network.v1.WorkloadReference
+	33, // 48: network.v1.Attachment.vm_primary:type_name -> network.v1.VMPrimaryPlan
+	34, // 49: network.v1.Attachment.vm_current_addresses:type_name -> network.v1.VMCurrentAddress
+	32, // 50: network.v1.PrepareAttachmentRequest.vm_expectation:type_name -> network.v1.VMNetworkExpectation
+	39, // 51: network.v1.PrepareAttachmentResponse.attachment:type_name -> network.v1.Attachment
+	39, // 52: network.v1.GetAttachmentResponse.attachment:type_name -> network.v1.Attachment
+	39, // 53: network.v1.ConfirmAttachmentResponse.attachment:type_name -> network.v1.Attachment
+	39, // 54: network.v1.ReleaseAttachmentResponse.attachment:type_name -> network.v1.Attachment
+	69, // 55: network.v1.AssociatedInstance.observed_at:type_name -> google.protobuf.Timestamp
+	48, // 56: network.v1.AssociatedInstance.addresses:type_name -> network.v1.NetworkAddress
+	49, // 57: network.v1.ListNetworkInstancesResponse.items:type_name -> network.v1.AssociatedInstance
+	6,  // 58: network.v1.GetSubmissionResponse.state:type_name -> network.v1.SubmissionState
+	69, // 59: network.v1.GetSubmissionResponse.closed_at:type_name -> google.protobuf.Timestamp
+	36, // 60: network.v1.GetSubmissionResponse.root_controller:type_name -> network.v1.WorkloadReference
+	37, // 61: network.v1.GetSubmissionResponse.controllers:type_name -> network.v1.ControllerReference
+	38, // 62: network.v1.GetSubmissionResponse.current_pods:type_name -> network.v1.PodReference
+	38, // 63: network.v1.GetSubmissionResponse.retired_pods:type_name -> network.v1.PodReference
+	0,  // 64: network.v1.VNic.state:type_name -> network.v1.ResourceState
+	56, // 65: network.v1.VNic.bindings:type_name -> network.v1.VNicBinding
+	69, // 66: network.v1.VNic.observed_at:type_name -> google.protobuf.Timestamp
+	69, // 67: network.v1.VNic.created_at:type_name -> google.protobuf.Timestamp
+	69, // 68: network.v1.VNic.updated_at:type_name -> google.protobuf.Timestamp
+	57, // 69: network.v1.CreateVNicResponse.vnic:type_name -> network.v1.VNic
+	57, // 70: network.v1.GetVNicResponse.vnic:type_name -> network.v1.VNic
+	57, // 71: network.v1.DeleteVNicResponse.vnic:type_name -> network.v1.VNic
+	57, // 72: network.v1.ListVNicsResponse.items:type_name -> network.v1.VNic
+	67, // 73: network.v1.ListVNicBindingTargetsResponse.items:type_name -> network.v1.VNicBindingTarget
+	58, // 74: network.v1.NetworkService.CreateVNic:input_type -> network.v1.CreateVNicRequest
+	60, // 75: network.v1.NetworkService.GetVNic:input_type -> network.v1.GetVNicRequest
+	64, // 76: network.v1.NetworkService.ListVNics:input_type -> network.v1.ListVNicsRequest
+	62, // 77: network.v1.NetworkService.DeleteVNic:input_type -> network.v1.DeleteVNicRequest
+	66, // 78: network.v1.NetworkService.ListVNicBindingTargets:input_type -> network.v1.ListVNicBindingTargetsRequest
+	54, // 79: network.v1.NetworkService.ListVPCCIDRPresets:input_type -> network.v1.ListVPCCIDRPresetsRequest
+	12, // 80: network.v1.NetworkService.CreateVPC:input_type -> network.v1.CreateVPCRequest
+	14, // 81: network.v1.NetworkService.GetVPC:input_type -> network.v1.GetVPCRequest
+	16, // 82: network.v1.NetworkService.ListVPCs:input_type -> network.v1.ListVPCsRequest
+	18, // 83: network.v1.NetworkService.DeleteVPC:input_type -> network.v1.DeleteVPCRequest
+	23, // 84: network.v1.NetworkService.CreateSubnet:input_type -> network.v1.CreateSubnetRequest
+	25, // 85: network.v1.NetworkService.GetSubnet:input_type -> network.v1.GetSubnetRequest
+	27, // 86: network.v1.NetworkService.ListSubnets:input_type -> network.v1.ListSubnetsRequest
+	29, // 87: network.v1.NetworkService.DeleteSubnet:input_type -> network.v1.DeleteSubnetRequest
+	20, // 88: network.v1.NetworkService.GetOperation:input_type -> network.v1.GetOperationRequest
+	40, // 89: network.v1.NetworkService.PrepareAttachment:input_type -> network.v1.PrepareAttachmentRequest
+	41, // 90: network.v1.NetworkService.GetAttachment:input_type -> network.v1.GetAttachmentRequest
+	42, // 91: network.v1.NetworkService.ConfirmAttachment:input_type -> network.v1.ConfirmAttachmentRequest
+	43, // 92: network.v1.NetworkService.ReleaseAttachment:input_type -> network.v1.ReleaseAttachmentRequest
+	50, // 93: network.v1.NetworkService.ListNetworkInstances:input_type -> network.v1.ListNetworkInstancesRequest
+	52, // 94: network.v1.InstanceNetworkConsumerService.GetSubmission:input_type -> network.v1.GetSubmissionRequest
+	59, // 95: network.v1.NetworkService.CreateVNic:output_type -> network.v1.CreateVNicResponse
+	61, // 96: network.v1.NetworkService.GetVNic:output_type -> network.v1.GetVNicResponse
+	65, // 97: network.v1.NetworkService.ListVNics:output_type -> network.v1.ListVNicsResponse
+	63, // 98: network.v1.NetworkService.DeleteVNic:output_type -> network.v1.DeleteVNicResponse
+	68, // 99: network.v1.NetworkService.ListVNicBindingTargets:output_type -> network.v1.ListVNicBindingTargetsResponse
+	55, // 100: network.v1.NetworkService.ListVPCCIDRPresets:output_type -> network.v1.ListVPCCIDRPresetsResponse
+	13, // 101: network.v1.NetworkService.CreateVPC:output_type -> network.v1.CreateVPCResponse
+	15, // 102: network.v1.NetworkService.GetVPC:output_type -> network.v1.GetVPCResponse
+	17, // 103: network.v1.NetworkService.ListVPCs:output_type -> network.v1.ListVPCsResponse
+	19, // 104: network.v1.NetworkService.DeleteVPC:output_type -> network.v1.DeleteVPCResponse
+	24, // 105: network.v1.NetworkService.CreateSubnet:output_type -> network.v1.CreateSubnetResponse
+	26, // 106: network.v1.NetworkService.GetSubnet:output_type -> network.v1.GetSubnetResponse
+	28, // 107: network.v1.NetworkService.ListSubnets:output_type -> network.v1.ListSubnetsResponse
+	30, // 108: network.v1.NetworkService.DeleteSubnet:output_type -> network.v1.DeleteSubnetResponse
+	21, // 109: network.v1.NetworkService.GetOperation:output_type -> network.v1.GetOperationResponse
+	44, // 110: network.v1.NetworkService.PrepareAttachment:output_type -> network.v1.PrepareAttachmentResponse
+	45, // 111: network.v1.NetworkService.GetAttachment:output_type -> network.v1.GetAttachmentResponse
+	46, // 112: network.v1.NetworkService.ConfirmAttachment:output_type -> network.v1.ConfirmAttachmentResponse
+	47, // 113: network.v1.NetworkService.ReleaseAttachment:output_type -> network.v1.ReleaseAttachmentResponse
+	51, // 114: network.v1.NetworkService.ListNetworkInstances:output_type -> network.v1.ListNetworkInstancesResponse
+	53, // 115: network.v1.InstanceNetworkConsumerService.GetSubmission:output_type -> network.v1.GetSubmissionResponse
+	95, // [95:116] is the sub-list for method output_type
+	74, // [74:95] is the sub-list for method input_type
+	74, // [74:74] is the sub-list for extension type_name
+	74, // [74:74] is the sub-list for extension extendee
+	0,  // [0:74] is the sub-list for field type_name
 }
 
 func init() { file_network_v1_network_proto_init() }
@@ -6296,6 +6455,7 @@ func file_network_v1_network_proto_init() {
 	file_network_v1_network_proto_msgTypes[9].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[15].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[16].OneofWrappers = []any{}
+	file_network_v1_network_proto_msgTypes[20].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[43].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[57].OneofWrappers = []any{}
 	file_network_v1_network_proto_msgTypes[59].OneofWrappers = []any{}
@@ -6304,7 +6464,7 @@ func file_network_v1_network_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_network_v1_network_proto_rawDesc), len(file_network_v1_network_proto_rawDesc)),
-			NumEnums:      6,
+			NumEnums:      7,
 			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   2,

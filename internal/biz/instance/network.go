@@ -23,6 +23,7 @@ type NetworkRuntime struct {
 	ClosedAt                                         *time.Time
 	CurrentPods                                      []PodReference
 	AttachmentID, BindingRevision, PrimaryNetworkRef string
+	BasicIsolationName                               string
 	AttachmentVersion, ConfirmedSnapshotRevision     int64
 	NetworkState, Reason                             string
 	PrepareStarted                                   bool
@@ -38,6 +39,7 @@ func (n *NetworkRuntime) UnmarshalJSON(raw []byte) error {
 
 type NetworkBinding struct {
 	AttachmentID, BindingRevision, PrimaryNetworkRef string
+	BasicIsolationName                               string
 	Version                                          int64
 }
 type NetworkObservation struct {

@@ -25,7 +25,7 @@ func (p *Postgres) ListAttachmentConsumers(ctx context.Context, tenant string, f
 	}
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
-	if e = verifyAttachmentConsumerScope(ctx, q, tenant, f); e != nil {
+	if e = verifyAttachmentConsumerScope(ctx, q, tenant, p.placement.ClusterID, f); e != nil {
 		return nil, 0, e
 	}
 	total, e := q.CountAttachmentConsumers(ctx, sqlcgen.CountAttachmentConsumersParams{TenantID: tenant, SubnetID: f.SubnetID, VpcID: f.VPCID})
@@ -84,11 +84,21 @@ func (p *Postgres) ListAttachmentConsumers(ctx context.Context, tenant string, f
 // verifyAttachmentConsumerScope keeps "no such network" distinguishable from
 // "no consumer attached". A subnet row is the authority for VPC membership; the
 // attachment foreign key already guarantees a stored pair is consistent.
-func verifyAttachmentConsumerScope(ctx context.Context, q *sqlcgen.Queries, tenant string, f biz.AttachmentConsumerFilter) error {
+func verifyAttachmentConsumerScope(ctx context.Context, q *sqlcgen.Queries, tenant, cluster string, f biz.AttachmentConsumerFilter) error {
 	if f.SubnetID != "" {
 		subnet, e := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: tenant, SubnetID: f.SubnetID})
 		if errors.Is(e, pgx.ErrNoRows) {
-			return biz.Fail(biz.ResourceNotFound, "subnet not found")
+			platform, err := q.GetPlatformSubnet(ctx, sqlcgen.GetPlatformSubnetParams{SubnetID: f.SubnetID})
+			if err != nil {
+				return databaseFailure(err)
+			}
+			if platform.ClusterID != cluster {
+				return biz.Fail(biz.ResourceNotFound, "subnet not found")
+			}
+			if f.VPCID != "" && platform.VpcID != f.VPCID {
+				return biz.Fail(biz.InvalidArgument, "subnet does not belong to requested VPC")
+			}
+			return nil
 		}
 		if e != nil {
 			return databaseFailure(e)
@@ -103,7 +113,14 @@ func verifyAttachmentConsumerScope(ctx context.Context, q *sqlcgen.Queries, tena
 		return databaseFailure(e)
 	}
 	if !found {
-		return biz.Fail(biz.ResourceNotFound, "vpc not found")
+		v, e := q.GetPlatformVPC(ctx, sqlcgen.GetPlatformVPCParams{VpcID: f.VPCID})
+		if e != nil {
+			return databaseFailure(e)
+		}
+		if v.ClusterID != cluster {
+			return biz.Fail(biz.ResourceNotFound, "vpc not found")
+		}
+		return nil
 	}
 	return nil
 }

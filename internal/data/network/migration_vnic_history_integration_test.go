@@ -23,6 +23,28 @@ type vnicMigrationReceipt struct {
 	AppliedAt time.Time
 }
 
+func currentNetworkMigrationCount(t *testing.T) int {
+	t.Helper()
+	files, err := fs.Glob(migrations.Files, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(files)
+}
+
+func assertPrivateConsumerReferencesRetained(t *testing.T, owner *pgxpool.Pool) {
+	t.Helper()
+	var retained bool
+	err := owner.QueryRow(context.Background(), `SELECT NOT EXISTS (
+ SELECT 1 FROM network_vnics WHERE vpc_id IS NULL OR subnet_id IS NULL OR platform_vpc_id IS NOT NULL OR platform_subnet_id IS NOT NULL
+ UNION ALL
+ SELECT 1 FROM network_attachments WHERE vpc_id IS NULL OR subnet_id IS NULL OR platform_vpc_id IS NOT NULL OR platform_subnet_id IS NOT NULL
+)`).Scan(&retained)
+	if err != nil || !retained {
+		t.Fatal("migration changed existing private consumer references", retained, err)
+	}
+}
+
 func vnicMigrationLedger(t *testing.T, owner *pgxpool.Pool) []vnicMigrationReceipt {
 	t.Helper()
 	rows, err := owner.Query(context.Background(), `SELECT version,checksum,applied_at FROM network_schema_version ORDER BY version`)
@@ -123,9 +145,10 @@ func TestVNicMigrationMain28Upgrade(t *testing.T) {
 		before = vnicMigrationLedger(t, owner)
 	})
 	after := vnicMigrationLedger(t, f.Owner)
-	if len(after) != 32 || !reflect.DeepEqual(before, after[:28]) {
+	if len(after) != currentNetworkMigrationCount(t) || !reflect.DeepEqual(before, after[:28]) {
 		t.Fatal("main28 receipts changed", before, after)
 	}
+	assertPrivateConsumerReferencesRetained(t, f.Owner)
 	var columns int
 	if err := f.Owner.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND ((table_name='network_vnics' AND column_name IN ('requested_ip','requested_mac')) OR (table_name='network_subnets' AND column_name IN ('exclude_ips','enable_dhcp','dns_servers')) OR (table_name='network_attachments' AND column_name='consumer_type'))`).Scan(&columns); err != nil || columns != 6 {
 		t.Fatal("missing canonical schema", columns, err)
@@ -137,7 +160,7 @@ func TestVNicMigrationMain28Upgrade(t *testing.T) {
 
 func TestNetworkSimplificationMigrationPreservesFactsAndFencesOldWorkers(t *testing.T) {
 	for _, version := range []int{28, 31} {
-		t.Run(fmt.Sprintf("%d_to_32", version), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d_to_latest", version), func(t *testing.T) {
 			ctx := context.Background()
 			var before []vnicMigrationReceipt
 			facts := map[string]string{}
@@ -148,7 +171,7 @@ func TestNetworkSimplificationMigrationPreservesFactsAndFencesOldWorkers(t *test
 			snapshot := func(owner *pgxpool.Pool, table string) string {
 				t.Helper()
 				var value string
-				dropped := "'provider_ready','provider_observed_at','provider_observed_uid','provider_generation','provider_observed_generation'"
+				dropped := "'provider_ready','provider_observed_at','provider_observed_uid','provider_generation','provider_observed_generation','platform_vpc_id','platform_subnet_id'"
 				if version == 28 {
 					dropped += ",'vnic_id'"
 				}
@@ -182,9 +205,10 @@ INSERT INTO network_attachments SELECT (jsonb_populate_record(NULL::network_atta
 				}
 			})
 			after := vnicMigrationLedger(t, f.Owner)
-			if len(after) != 32 || !reflect.DeepEqual(before, after[:version]) {
+			if len(after) != currentNetworkMigrationCount(t) || !reflect.DeepEqual(before, after[:version]) {
 				t.Fatal("existing migration receipts changed", before, after)
 			}
+			assertPrivateConsumerReferencesRetained(t, f.Owner)
 			for _, table := range tables {
 				if snapshot(f.Owner, table) != facts[table] {
 					t.Fatalf("migration changed intent, identity or history: %s", table)
@@ -222,9 +246,10 @@ func TestVNicMigrationReleased30Upgrade(t *testing.T) {
 		before = vnicMigrationLedger(t, owner)
 	})
 	after := vnicMigrationLedger(t, f.Owner)
-	if len(after) != 32 || !reflect.DeepEqual(before[:27], after[:27]) {
+	if len(after) != currentNetworkMigrationCount(t) || !reflect.DeepEqual(before[:27], after[:27]) {
 		t.Fatal("shared receipts changed", before, after)
 	}
+	assertPrivateConsumerReferencesRetained(t, f.Owner)
 	for i := 27; i < len(before); i++ {
 		want := before[i]
 		want.Version++

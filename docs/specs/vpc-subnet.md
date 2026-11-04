@@ -1,5 +1,7 @@
 # 租户 VPC / Subnet 首片规格
 
+2026-11-04 平台基础网络增量统一见本文[平台基础网络租户接入](#平台基础网络租户接入)。下文租户创建、CIDR、父行锁和配额规则适用于私有分支；平台目录使用明确的共享引用分支。
+
 > 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
 
 2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
@@ -363,15 +365,13 @@ Prepare 校验类型与模式一致：`controller_managed`→`container_instance
 迁移 0028 只回填 `plan->>'WorkloadMode'` 能确证的两类，其余保持空值并在查询里返回 `unknown`。
 
 `ListNetworkInstances(tenant_id,vpc_id|subnet_id,page,page_size)` 是治理面只读查询，二选一必填，同时提供时校验子网属于该 VPC。
-先按租户确认网络行存在，否则 `RESOURCE_NOT_FOUND`，使“网络不存在”与“存在但没有关联”可区分。
-Count 与 List 在同一 Repeatable Read 只读事务、同一谓词 `state<>'released' OR protocol_blocked`（与占用检查同口径，异常占用记录必须可见）内完成；
-`subnet_name` 由同库 `network_subnets` join 得到且不加 `state<>'deleted'` 过滤，否则已删除子网上残留的未释放关联会从列表消失；
+先确认当前租户可读的私有或平台网络行存在，否则 `RESOURCE_NOT_FOUND`，使“网络不存在”与“存在但没有关联”可区分；已知平台 ID 的查询不受发布开关影响。
+Count 与 List 在同一 Repeatable Read 只读事务内，以当前真实租户和 `state<>'released'` 为相同谓词；VPC/Subnet 同时提供时按 AND 过滤。
+`subnet_name` 由私有和平台子网分别 LEFT JOIN 后按该行的有效引用选择，不加 `state<>'deleted'` 过滤；
 排序固定 `created_at DESC,attachment_id DESC`，不用 `updated_at`，避免观察刷新让翻页漏行或重复。
 名称与运行状态由 `ConsumerDirectory` 端口跨库批量补齐（Instance/VM 与 Network 是分离的库，不存在可用的 join），
 一次请求每种类型只读一次；查不到资源的行仍然返回，消费者字段为 `unknown`，不删行也不改判类型。
-地址只读 Network 自己持久化的观测：`state=attached`、无原因、`observed_at` 未超过注入的 freshness 才投影；
-容器要求 Pod→VNic→VNicIP 身份链与记录的 `pod_uid` 完整匹配，VM 沿用 launcher Pod 与 VMI owner 围栏，
-不满足即返回空地址而不是旧 IP。`observation_stale` 与“地址为空”分开表达：空地址可能是停止、未观测、过期或身份不匹配，不能一律读成“未接网”。
+地址只读 Network 已持久化的当前输出，不追加逐行 KCN 调用或时效/Ready 门槛；读错保留、消费者更换及 stopped/closing/closed 撤回规则统一见[网络状态消费规格](cr-observation.md#4-attachment-与计算侧)。`observation_stale` 与“地址为空”分别表达。
 本查询不合成“已选网但尚未 Prepare 成功”的行（那没有 attachment 记录），也不聚合子网/LB/EIP，见[治理调用登记](governance-calls.md)。
 
 ## 8. Provider 契约与接线
@@ -476,6 +476,32 @@ Kind 多节点跨节点测试是多个 kind node 的验证，不外推物理多�
 
 手动 VNIC 使用独立 bindings 集合，本期仅开放 primary 槽位与单消费者独占；运行中当前 A 和目标 B 可同时保留。实例 owner 通过持久命令预留、同步最新安全组并保存目标，保存不改在线 Pod 或运行模板。平台重建端点时才应用模板；停止态展示下次启动配置。实例删除只释放其关系，VNIC/IP 保留，只有显式 DeleteVNic 才删除原 UID 对象。留存网卡继续保护 Subnet 与实际安全组引用。自动模式保留原 Pod-owner 核验，手动模式核验持久身份、有效消费者绑定及原 Pod 引用。
 
-创建和预留以原 Namespace、VPC/Subnet binding UID 及当前 CR 配置、代次和 Ready 为准，核对已接受的 DHCP、DNS 和排除范围。基础 EIP/SNAT 聚合降级或旧投影年龄不单独阻断内网接入；删除、归属冲突、未决变更和当前读取失败继续拒绝。预留还精确读取原 VNIC，核对 UID、配置及已分配 MAC/IP，保持消费者独占；校验不续写投影、不扫描全局关系，整个定向读取使用有界预算。
+创建和预留保留真实租户、placement、原 Namespace/绑定身份、自己的管理状态和消费者独占。Ready、地址是否分配、Reason 和观测时间不作为入口条件，遵循[网络状态消费规格](cr-observation.md#4-attachment-与计算侧)。平台分支的首次受理和已受理引用规则见下节。
+
+## 平台基础网络租户接入
+
+### 目录、所有权与可见查询
+
+受信配置 `network.platform_base_network` 登记原集群 UID、固定 `kcn-system/kcn-cluster` VPC 及显式列出的 Subnet。每项具有稳定产品 ID、原 kind/namespace/name/UID、显示名、描述、`published`、`accept_new`；配置和原身份不符时拒绝同步，不从 KCN 自动发现或接管对象。移除配置项只关闭两个开关，保留登记、引用和观察队列。
+
+VPC/Subnet 返回 `owner_scope=tenant|platform`、`can_manage`、`can_use`。平台网络不伪造 tenant，VM、Instance、VNIC 和 Attachment 始终保存实际租户。平台 `can_manage=false`；`can_use` 只取父子目录发布/新接入开关及已记录的原 UID 冲突，不取 Ready、投影时间或地址。私有网络能力沿其管理状态和归属计算。
+
+List 在数据库合并私有和已发布平台目录后统一过滤、计数及分页：VPC 保持 page，Subnet 保持 cursor，count 和本页处于同一只读快照。两个可选 bool 保留未传、false、true 三态；Subnet cursor 绑定它们和原筛选条件。平台 Subnet List 同时要求父与自身 published；平台 VPC 的 subnet_count 只数已发布子网。已知 ID Get 使用原读权限，不受 published/accept_new 影响。
+
+平台 DeleteVPC、CreateSubnet、DeleteSubnet、租户 SNAT/LB 管理请求在受理和 Provider 写入前返回 PermissionDenied。未知 ID/其他租户私有 ID 仍 NotFound。平台基础出口在界面显示为平台托管，不并入租户基础连接分配或租户 VPC/Subnet 配额。
+
+### 首次受理与持久引用
+
+`ResolveNewNetworkSelection` 供只读 Resolve 和真正新建分支使用；VM、Instance、VNIC 在各自持久重放检查之后、首次插入之前重新判断新接入；Instance 保留既有 DELETE-first 墓碑分支并跳过新接入检查。平台父子开关和身份冲突由一条 SQL 读取，其返回时点为本次判定点；允许已通过读取的在途请求完成，不增加跨库预约或分布式锁。
+
+owner 内部快照固定 `NetworkReference{OwnerScope,VPCID,SubnetID,SubnetBindingID}`；旧快照无 scope 时按私有租户引用解释。内部 `PrepareAccepted` 及后续 Start/Restart、Confirm/Release/Delete、已有 VNIC Reservation 读取固定引用，不重查目录发布资格。目录拒绝的新请求返回 `NETWORK_NEW_ADMISSION_CLOSED` / FailedPrecondition；Gov Network 返回 412，VM/Instance 同步入口沿其依赖错误转换为 400，异步投递保留既有 blocked/charge 语义。
+
+### 自有声明与数据分支
+
+首次接入不要求租户曾创建私有网络；登记规范租户 Namespace 原 UID后，声明集群级 `BasicNetworkIsolation`，固定名 `ani-tenant-<完整租户 UUID>`，仅设 `spec.enabled=true`。自己的标签和已存 UID 必须一致，原 UID 已存但对象消失不重建；不等待 Ready/成员集合或读取 OVN。组名写入手动 VNIC 的 `spec.isolationGroup`、VM template annotation 和 Notebook metadata annotation。最后一个消费者删除后保留 BNI、NAD、SA 及平台网络。
+
+迁移 `0033_platform_base_networks.sql` 增加目录与只读观察队列。VNIC/Attachment 保留原带 tenant 的私有父 FK，新增 `(platform_vpc_id,platform_subnet_id)` 平台父 FK；Attachment 的平台 FK 还包含固定 `binding_id`。CHECK 保证两套父引用只能选一支。私有 FK/父锁保持；平台分支只锁自己的消费者行，不让不同租户因平台父排他锁串行。共享 Subnet 的未删除手动 VNIC 显式请求 MAC 跨租户唯一；请求 IP 做格式校验，地址范围、池和冲突分配由 KCN 负责，不等待目录 CIDR 投影。
+
+导入目录的观察和调度见[只读观察分支](cr-observation.md#9-平台基础网络目录的只读观察)。本功能以已合入 main 的 #57（schema 0032）为基线，只需协调本次 schema 0033、认识共享 Reference 的 Res、对应 Gov SDK 与 Console 发布。已有共享消费者后关闭新接入可暂停申请，不能回退到不认识共享引用的旧二进制。
 
 正式 RPC 以 `api/network/v1/network.proto` 为字段合同；VM/Instance 各自拥有 GetNetworkInterfaces / SetNetworkInterface，网络配置读模型以 `api/network/v1/vnic.proto` 为准。普通读只消费数据库投影，分配、预留、模板和在线接入分别表达。实施顺序和验收范围见[实施计划](../plans/kcn-vnic-management-20261103.md)，实际结果见[执行状态](../execution/status.md#kcn-vnic-management-20261103)。

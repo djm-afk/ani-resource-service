@@ -389,7 +389,8 @@ func (p *KCProvider) lbMemberIdentity(ctx context.Context, r lbResolved, m biz.L
 	if err != nil {
 		return false, readFailure(err)
 	}
-	if a.State != "attached" || a.PodUid != m.PodUID || a.SubnetID != m.SubnetID || a.VpcID != r.work.Resource.VPCID || a.Namespace != r.binding.Namespace || a.ClusterID != r.binding.ClusterID {
+	reference := normalizeNetworkReference(a.VpcID, a.SubnetID, a.PlatformVpcID, a.PlatformSubnetID, a.BindingID)
+	if reference.OwnerScope != biz.OwnerScopeTenant || a.State != "attached" || a.PodUid != m.PodUID || reference.SubnetID != m.SubnetID || reference.VPCID != r.work.Resource.VPCID || a.Namespace != r.binding.Namespace || a.ClusterID != r.binding.ClusterID {
 		return false, nil
 	}
 	for _, address := range a.CurrentIps {

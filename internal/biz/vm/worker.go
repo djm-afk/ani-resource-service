@@ -346,6 +346,19 @@ func (w *Worker) remove(ctx context.Context, o *Operation, v *VM) error {
 	if !v.Closing {
 		return ErrBusy
 	}
+	if v.Network.AttachmentID == "" && v.Network.NADUID != "" && o.Pending != nil && o.Pending.Action == "prepare-network" && o.Pending.Submitted {
+		// The second prepare may have committed its Attachment before its VM
+		// save lost a race with Delete. The saved first-round plan reconstructs
+		// that exact request and reaches permanent replay before any new reads.
+		plan, err := w.network.Prepare(ctx, *v)
+		if err != nil {
+			return err
+		}
+		v.Network = plan
+		o.Pending = nil
+		ReconcileNetworkSubmission(v, Observation{})
+		return nil
+	}
 	if done, e := w.removeSnapshots(ctx, o, v); e != nil || !done {
 		return e
 	}

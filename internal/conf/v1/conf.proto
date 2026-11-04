@@ -73,6 +73,7 @@ message PullSecretCaller {
 }
 
 message Network {
+  PlatformBaseNetwork platform_base_network = 12;
   string database_dsn = 1;
   // Empty uses Kubernetes in-cluster service account credentials.
   string kubeconfig = 2;
@@ -148,4 +149,32 @@ message Server {
   GRPC grpc = 1;
   Admin admin = 2;
   google.protobuf.Duration shutdown_timeout = 3;
+}
+
+message PlatformBaseNetwork {
+  string cluster_uid = 1;
+  PlatformBaseVPC vpc = 2;
+  repeated PlatformBaseSubnet subnets = 3;
+}
+
+message PlatformBaseVPC {
+  string product_id = 1;
+  string native_namespace = 2;
+  string native_name = 3;
+  string native_uid = 4;
+  string display_name = 5;
+  string description = 6;
+  bool published = 7;
+  bool accept_new = 8;
+}
+
+message PlatformBaseSubnet {
+  string product_id = 1;
+  string native_namespace = 2;
+  string native_name = 3;
+  string native_uid = 4;
+  string display_name = 5;
+  string description = 6;
+  bool published = 7;
+  bool accept_new = 8;
 }

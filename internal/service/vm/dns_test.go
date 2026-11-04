@@ -27,6 +27,8 @@ func (dnsEnvironment) ValidateNetwork(_ context.Context, _, _, _ string, selecti
 	return selection, nil
 }
 
+func (dnsEnvironment) ValidateExistingNetwork(context.Context, biz.VM) error { return nil }
+
 type dnsCompute struct{ selection *compute.ComputeSelection }
 
 func (c dnsCompute) ResolveComputePreset(context.Context, *compute.ResolveComputePresetRequest) (*compute.ComputeSelection, error) {

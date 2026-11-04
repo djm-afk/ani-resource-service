@@ -44,7 +44,10 @@ func claimResource(ctx context.Context, q *sqlcgen.Queries) (biz.ResourceWork, e
 		}
 		switch c.ResourceKind {
 		case "vnic":
-			r, err := q.LockVNicRow(ctx, sqlcgen.LockVNicRowParams{TenantID: c.TenantID, VnicID: c.ResourceID})
+			r, err := q.TryLockWorkVNic(ctx, sqlcgen.TryLockWorkVNicParams{TenantID: c.TenantID, VnicID: c.ResourceID})
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue
+			}
 			return vnicWork(r), err
 		case "load_balancer":
 			return lockLBWork(ctx, q, c.TenantID, c.ResourceID)
@@ -78,8 +81,10 @@ func snatWork(s sqlcgen.NetworkSnatBinding) biz.ResourceWork {
 }
 func lockResource(ctx context.Context, q *sqlcgen.Queries, r biz.ResourceWork) (biz.ResourceWork, error) {
 	if r.Kind == "vnic" {
-		if _, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: r.VPCID}); err != nil {
-			return biz.ResourceWork{}, err
+		if r.Reference.OwnerScope != biz.OwnerScopePlatform {
+			if _, err := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: r.VPCID}); err != nil {
+				return biz.ResourceWork{}, err
+			}
 		}
 		v, err := q.LockVNicRow(ctx, sqlcgen.LockVNicRowParams{TenantID: r.TenantID, VnicID: r.ID})
 		return vnicWork(v), err

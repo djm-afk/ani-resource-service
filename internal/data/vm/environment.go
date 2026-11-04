@@ -11,8 +11,9 @@ import (
 
 type NetworkSelectionValidator func(context.Context, string, string, string, biz.NetworkSelection) (biz.NetworkSelection, error)
 type Environment struct {
-	native  *Native
-	network NetworkSelectionValidator
+	native          *Native
+	network         NetworkSelectionValidator
+	existingNetwork func(context.Context, biz.VM) error
 }
 
 func NewEnvironment(n *Native, prefix string, network NetworkSelectionValidator) (*Environment, error) {
@@ -53,4 +54,15 @@ func (e *Environment) ValidateStorage(ctx context.Context, name, uid string) err
 }
 func (e *Environment) ValidateNetwork(ctx context.Context, t, c, ns string, s biz.NetworkSelection) (biz.NetworkSelection, error) {
 	return e.network(ctx, t, c, ns, s)
+}
+
+func (e *Environment) UseExistingNetworkValidator(validate func(context.Context, biz.VM) error) {
+	e.existingNetwork = validate
+}
+
+func (e *Environment) ValidateExistingNetwork(ctx context.Context, v biz.VM) error {
+	if e.existingNetwork == nil {
+		return biz.ErrDependency
+	}
+	return e.existingNetwork(ctx, v)
 }

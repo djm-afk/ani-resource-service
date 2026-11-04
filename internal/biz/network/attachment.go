@@ -28,6 +28,7 @@ const (
 // PodPrimaryPlan is a closed delivery DTO. Infrastructure owns the mapping to
 // annotation keys; business logic neither builds nor merges arbitrary patches.
 type PodPrimaryPlan struct {
+	BasicIsolationName                               string `json:",omitempty"`
 	FormatVersion                                    int32
 	WorkloadMode                                     string `json:",omitempty"`
 	Namespace, PrimaryNetworkRef                     string
@@ -36,6 +37,8 @@ type PodPrimaryPlan struct {
 	VMPrimary                                        *VMPrimaryPlan `json:",omitempty"`
 }
 type Attachment struct {
+	BasicIsolationName                                            string
+	Reference                                                     NetworkReference
 	CurrentVNicName, CurrentVNicUID, CurrentMACAddress            string
 	CurrentIPs                                                    []string
 	VMPrimary                                                     *VMPrimaryPlan
@@ -58,7 +61,10 @@ type Attachment struct {
 	ObservedAt, ReleasedAt                                        *time.Time
 }
 type PrepareAttachment struct {
-	WorkloadMode                                            string `json:",omitempty"`
+	Accepted                                                bool             `json:"-"`
+	NamespaceUID                                            string           `json:"-"`
+	AcceptedReference                                       NetworkReference `json:"-"`
+	WorkloadMode                                            string           `json:",omitempty"`
 	TenantID, InstanceID, SubnetID, VPCID, Slot, RequestKey string
 	SubmissionID                                            string
 	Generation                                              int64
@@ -146,6 +152,21 @@ func validConsumerIntent(mode, consumerType string) error {
 }
 
 func (a *Attachments) Prepare(ctx context.Context, r PrepareAttachment) (Attachment, error) {
+	r.Accepted = false
+	r.AcceptedReference = NetworkReference{}
+	return a.prepare(ctx, r)
+}
+
+// PrepareAccepted is an internal owner-worker entry point, never a wire flag.
+func (a *Attachments) PrepareAccepted(ctx context.Context, r PrepareAttachment) (Attachment, error) {
+	if r.WorkloadMode != "vm_managed" && r.WorkloadMode != "controller_managed" {
+		return Attachment{}, Fail(InvalidArgument, "accepted attachment requires a persisted owner")
+	}
+	r.Accepted = true
+	return a.prepare(ctx, r)
+}
+
+func (a *Attachments) prepare(ctx context.Context, r PrepareAttachment) (Attachment, error) {
 	tenant, err := ParseTenant(r.TenantID)
 	if err != nil {
 		return Attachment{}, err

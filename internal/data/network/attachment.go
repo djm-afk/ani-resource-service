@@ -17,7 +17,8 @@ func attachment(row sqlcgen.NetworkAttachment) (biz.Attachment, error) {
 	if err := json.Unmarshal(row.Plan, &plan); err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
-	a := biz.Attachment{CurrentVNicName: row.CurrentVnicName, CurrentVNicUID: row.CurrentVnicUid, CurrentMACAddress: row.CurrentMacAddress, CurrentIPs: append([]string{}, row.CurrentIps...), ID: row.AttachmentID, TenantID: row.TenantID, VPCID: row.VpcID, SubnetID: row.SubnetID, InstanceID: row.InstanceID, ConsumerType: row.ConsumerType, Slot: row.Slot, SubmissionID: row.SubmissionID, Generation: row.Generation, ClusterID: row.ClusterID, Namespace: row.Namespace, BindingRevision: row.BindingRevision, State: biz.AttachmentState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, PodName: row.PodName, PodUID: row.PodUid, ConfirmUID: row.ConfirmUid, FinalizationID: textValue(row.FinalizationID), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, ReleasedAt: row.ReleasedAt}
+	reference := normalizeNetworkReference(row.VpcID, row.SubnetID, row.PlatformVpcID, row.PlatformSubnetID, row.BindingID)
+	a := biz.Attachment{Reference: reference, BasicIsolationName: plan.BasicIsolationName, CurrentVNicName: row.CurrentVnicName, CurrentVNicUID: row.CurrentVnicUid, CurrentMACAddress: row.CurrentMacAddress, CurrentIPs: append([]string{}, row.CurrentIps...), ID: row.AttachmentID, TenantID: row.TenantID, VPCID: reference.VPCID, SubnetID: reference.SubnetID, InstanceID: row.InstanceID, ConsumerType: row.ConsumerType, Slot: row.Slot, SubmissionID: row.SubmissionID, Generation: row.Generation, ClusterID: row.ClusterID, Namespace: row.Namespace, BindingRevision: row.BindingRevision, State: biz.AttachmentState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, PodName: row.PodName, PodUID: row.PodUid, ConfirmUID: row.ConfirmUid, FinalizationID: textValue(row.FinalizationID), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, ReleasedAt: row.ReleasedAt}
 	a.WorkloadMode = plan.WorkloadMode
 	if a.WorkloadMode == "" {
 		a.WorkloadMode = "single_pod"
@@ -52,6 +53,14 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if a, found, e := attachmentReplay(ctx, p.queries, p.pool, r); found || e != nil {
 		return a, e
 	}
+	selection := biz.NetworkSelection{TenantID: r.TenantID, VPCID: r.VPCID, SubnetID: r.SubnetID, ClusterID: r.ClusterID, Namespace: r.Namespace, NamespaceUID: r.NamespaceUID, Reference: r.AcceptedReference}
+	// A container may first reach Network after owner acceptance. Permanent
+	// replay above must win before Namespace/BNI preparation or any dynamic read.
+	if r.Accepted && r.WorkloadMode == "controller_managed" {
+		if _, err := p.PrepareAcceptedTenantNetwork(ctx, selection); err != nil {
+			return biz.Attachment{}, err
+		}
+	}
 	tx, e := p.pool.Begin(ctx)
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
@@ -59,17 +68,24 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	defer tx.Rollback(ctx)
 	q := p.queries.WithTx(tx)
 	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
-	initial, e := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
+	platform, e := q.IsPlatformNetwork(ctx, sqlcgen.IsPlatformNetworkParams{ResourceID: r.SubnetID})
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	v, e := q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.NetworkSubnet.VpcID})
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	if platform && !r.Accepted {
+		return biz.Attachment{}, biz.Fail(biz.PermissionDenied, "platform attachments require an accepted VM or container owner")
 	}
-	s, e := q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
-	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
+	if !platform {
+		initial, err := q.GetSubnet(ctx, sqlcgen.GetSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID})
+		if err != nil {
+			return biz.Attachment{}, databaseFailure(err)
+		}
+		if _, err = q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: r.TenantID, VpcID: initial.NetworkSubnet.VpcID}); err != nil {
+			return biz.Attachment{}, databaseFailure(err)
+		}
+		if _, err = q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: r.TenantID, SubnetID: r.SubnetID}); err != nil {
+			return biz.Attachment{}, databaseFailure(err)
+		}
 	}
 	if e = q.LockAttachmentSlot(ctx, sqlcgen.LockAttachmentSlotParams{TenantID: r.TenantID, InstanceID: r.InstanceID, Slot: r.Slot}); e != nil {
 		return biz.Attachment{}, databaseFailure(e)
@@ -84,33 +100,26 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if occupied {
 		return biz.Attachment{}, biz.Fail(biz.AttachmentConflict, "instance primary slot is occupied")
 	}
-	if !networkManagementOpen(v.State, v.Reason) || !networkManagementOpen(s.State, s.Reason) {
-		return biz.Attachment{}, biz.Fail(biz.NetworkNotReady, "VPC or Subnet management is closed")
+	var resolved biz.ResolvedNetworkSelection
+	if r.Accepted {
+		resolved, e = p.ResolveAcceptedNetworkSelection(ctx, selection)
+	} else {
+		resolved, e = p.ResolveNewNetworkSelection(ctx, selection)
 	}
-	if r.VPCID != "" && r.VPCID != s.VpcID {
-		return biz.Attachment{}, biz.Fail(biz.InvalidArgument, "subnet does not belong to requested VPC")
-	}
-	b, e := q.GetBinding(ctx, sqlcgen.GetBindingParams{TenantID: r.TenantID, ResourceID: r.SubnetID})
 	if e != nil {
-		return biz.Attachment{}, databaseFailure(e)
-	}
-	if b.ClusterID != r.ClusterID || b.Namespace != r.Namespace {
-		return biz.Attachment{}, biz.Fail(biz.PlacementMismatch, "consumer placement differs from network binding")
-	}
-	if b.ProviderName == "" {
-		return biz.Attachment{}, biz.Fail(biz.PlacementMismatch, "Subnet declaration name is missing")
+		return biz.Attachment{}, e
 	}
 	id := "att_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	delivery := biz.PodPrimaryPlan{FormatVersion: 1, WorkloadMode: r.WorkloadMode, Namespace: b.Namespace, PrimaryNetworkRef: b.Namespace + "/" + b.ProviderName, TenantID: r.TenantID, InstanceID: r.InstanceID, AttachmentID: id, SubmissionID: r.SubmissionID, Generation: r.Generation}
+	delivery := biz.PodPrimaryPlan{FormatVersion: 1, WorkloadMode: r.WorkloadMode, BasicIsolationName: resolved.BasicIsolationName, Namespace: resolved.Namespace, PrimaryNetworkRef: resolved.NativeNamespace + "/" + resolved.NativeName, TenantID: r.TenantID, InstanceID: r.InstanceID, AttachmentID: id, SubmissionID: r.SubmissionID, Generation: r.Generation}
 	if r.WorkloadMode == "vm_managed" {
 		if p.vmNetworks == nil || r.VMExpectation == nil {
 			return biz.Attachment{}, biz.Fail(biz.DependencyUnavailable, "managed VM network is not configured")
 		}
-		vmPlan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: s.VpcID, SubnetID: s.SubnetID, ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID, KCNSubnetRef: delivery.PrimaryNetworkRef}, *r.VMExpectation)
+		vmPlan, err := p.vmNetworks.ResolveVMNetwork(ctx, biz.VMNetworkSelection{TenantID: r.TenantID, VPCID: resolved.VPCID, SubnetID: resolved.SubnetID, ClusterID: resolved.ClusterID, Namespace: resolved.Namespace, BindingRevision: resolved.BindingID, KCNSubnetRef: delivery.PrimaryNetworkRef, Reference: resolved.Reference}, *r.VMExpectation)
 		if err != nil {
 			return biz.Attachment{}, err
 		}
-		if vmPlan.Namespace != b.Namespace || vmPlan.KCNSubnetRef != delivery.PrimaryNetworkRef || vmPlan.NADName != r.VMExpectation.NADName || vmPlan.NADUID != r.VMExpectation.NADUID || vmPlan.NADConfigDigest != r.VMExpectation.NADConfigDigest {
+		if vmPlan.Namespace != resolved.Namespace || vmPlan.KCNSubnetRef != delivery.PrimaryNetworkRef || vmPlan.NADName != r.VMExpectation.NADName || vmPlan.NADUID != r.VMExpectation.NADUID || vmPlan.NADConfigDigest != r.VMExpectation.NADConfigDigest {
 			return biz.Attachment{}, biz.Fail(biz.AttachmentConflict, "VM network resolver returned a different frozen dependency")
 		}
 		vmPlan.FormatVersion = 1
@@ -125,7 +134,12 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	row, e := q.InsertAttachment(ctx, sqlcgen.InsertAttachmentParams{TenantID: r.TenantID, AttachmentID: id, VpcID: s.VpcID, SubnetID: s.SubnetID, BindingID: b.BindingID, InstanceID: r.InstanceID, ConsumerType: r.ConsumerType, Slot: r.Slot, RequestKey: r.RequestKey, SubmissionID: r.SubmissionID, Generation: r.Generation, Fingerprint: r.Fingerprint(), ClusterID: b.ClusterID, Namespace: b.Namespace, BindingRevision: b.BindingID, Plan: plan})
+	var row sqlcgen.NetworkAttachment
+	if resolved.Reference.OwnerScope == biz.OwnerScopePlatform {
+		row, e = q.InsertPlatformAttachment(ctx, sqlcgen.InsertPlatformAttachmentParams{TenantID: r.TenantID, AttachmentID: id, PlatformVpcID: resolved.VPCID, PlatformSubnetID: resolved.SubnetID, BindingID: resolved.BindingID, InstanceID: r.InstanceID, ConsumerType: r.ConsumerType, Slot: r.Slot, RequestKey: r.RequestKey, SubmissionID: r.SubmissionID, Generation: r.Generation, Fingerprint: r.Fingerprint(), ClusterID: resolved.ClusterID, Namespace: resolved.Namespace, BindingRevision: resolved.BindingID, Plan: plan})
+	} else {
+		row, e = q.InsertAttachment(ctx, sqlcgen.InsertAttachmentParams{TenantID: r.TenantID, AttachmentID: id, VpcID: resolved.VPCID, SubnetID: resolved.SubnetID, BindingID: resolved.BindingID, InstanceID: r.InstanceID, ConsumerType: r.ConsumerType, Slot: r.Slot, RequestKey: r.RequestKey, SubmissionID: r.SubmissionID, Generation: r.Generation, Fingerprint: r.Fingerprint(), ClusterID: resolved.ClusterID, Namespace: resolved.Namespace, BindingRevision: resolved.BindingID, Plan: plan})
+	}
 	if e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
@@ -154,11 +168,13 @@ func lockAttachmentParents(ctx context.Context, q *sqlcgen.Queries, t, id string
 	if e != nil {
 		return initial, e
 	}
-	if _, e = q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: t, VpcID: initial.VpcID}); e != nil {
-		return initial, e
-	}
-	if _, e = q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: t, SubnetID: initial.SubnetID}); e != nil {
-		return initial, e
+	if initial.VpcID != nil {
+		if _, e = q.LockVPC(ctx, sqlcgen.LockVPCParams{TenantID: t, VpcID: *initial.VpcID}); e != nil {
+			return initial, e
+		}
+		if _, e = q.LockSubnet(ctx, sqlcgen.LockSubnetParams{TenantID: t, SubnetID: textValue(initial.SubnetID)}); e != nil {
+			return initial, e
+		}
 	}
 	return q.LockAttachment(ctx, sqlcgen.LockAttachmentParams{TenantID: t, AttachmentID: id})
 }

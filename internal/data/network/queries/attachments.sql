@@ -9,10 +9,10 @@ SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(tenant_id)::text||':attac
 -- name: HasAttachmentSlot :one
 SELECT EXISTS(SELECT 1 FROM network_attachments WHERE tenant_id=$1 AND instance_id=$2 AND slot=$3 AND state<>'released');
 -- name: CountAttachments :one
-SELECT count(*)::bigint FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state<>'released';
+SELECT count(*)::bigint FROM network_attachments WHERE tenant_id=sqlc.arg(tenant_id) AND subnet_id=sqlc.arg(subnet_id)::text AND state<>'released';
 -- name: InsertAttachment :one
 INSERT INTO network_attachments(tenant_id,attachment_id,vpc_id,subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,consumer_type,state)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'reserved') RETURNING *;
+VALUES(sqlc.arg(tenant_id),sqlc.arg(attachment_id),sqlc.arg(vpc_id)::text,sqlc.arg(subnet_id)::text,sqlc.arg(binding_id),sqlc.arg(instance_id),sqlc.arg(slot),sqlc.arg(request_key),sqlc.arg(submission_id),sqlc.arg(generation),sqlc.arg(fingerprint),sqlc.arg(cluster_id),sqlc.arg(namespace),sqlc.arg(binding_revision),sqlc.arg(plan),sqlc.arg(consumer_type),'reserved') RETURNING *;
 -- name: ConfirmAttachment :one
 UPDATE network_attachments SET state='attached',reason='',pod_name=$3,pod_uid=$4,confirm_uid=$4,
 current_vnic_name=CASE WHEN pod_uid=$4 THEN current_vnic_name ELSE '' END,
@@ -39,7 +39,7 @@ ORDER BY (SELECT min(a.next_check_at) FROM network_attachments a WHERE a.tenant_
 SELECT s.* FROM network_subnets s WHERE s.tenant_id=$1 AND s.vpc_id=$2 AND EXISTS(SELECT 1 FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND a.state<>'released' AND a.next_check_at<=clock_timestamp() AND (a.lease_until IS NULL OR a.lease_until<=clock_timestamp()))
 ORDER BY (SELECT min(a.next_check_at) FROM network_attachments a WHERE a.tenant_id=s.tenant_id AND a.subnet_id=s.subnet_id AND (a.lease_until IS NULL OR a.lease_until<=clock_timestamp())),s.subnet_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED;
 -- name: LockDueAttachment :one
-SELECT * FROM network_attachments WHERE tenant_id=$1 AND subnet_id=$2 AND state<>'released' AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+SELECT * FROM network_attachments WHERE tenant_id=sqlc.arg(tenant_id) AND subnet_id=sqlc.arg(subnet_id)::text AND state<>'released' AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
 ORDER BY next_check_at,attachment_id LIMIT 1 FOR UPDATE SKIP LOCKED;
 -- name: ClaimAttachment :one
 UPDATE network_attachments SET lease_owner=sqlc.arg(owner)::uuid,lease_until=clock_timestamp()+sqlc.arg(lease_micros)::bigint*interval '1 microsecond',epoch=epoch+1
@@ -71,19 +71,29 @@ SELECT EXISTS(SELECT 1 FROM network_vpcs WHERE tenant_id=$1 AND vpc_id=$2)::bool
 -- name: CountAttachmentConsumers :one
 SELECT count(*)::bigint FROM network_attachments a
 WHERE a.tenant_id=sqlc.arg(tenant_id)
-  AND (a.subnet_id=sqlc.arg(subnet_id)::text OR a.vpc_id=sqlc.arg(vpc_id)::text)
+  AND (sqlc.arg(subnet_id)::text='' OR coalesce(a.subnet_id,a.platform_subnet_id)=sqlc.arg(subnet_id)::text)
+  AND (sqlc.arg(vpc_id)::text='' OR coalesce(a.vpc_id,a.platform_vpc_id)=sqlc.arg(vpc_id)::text)
   AND a.state<>'released';
 -- name: ListAttachmentConsumers :many
-SELECT a.tenant_id,a.attachment_id,a.vpc_id,a.subnet_id,a.slot,a.state,a.reason,a.observation_error,
+SELECT a.tenant_id,a.attachment_id,coalesce(a.vpc_id,a.platform_vpc_id)::text AS vpc_id,coalesce(a.subnet_id,a.platform_subnet_id)::text AS subnet_id,a.slot,a.state,a.reason,a.observation_error,
  a.instance_id,a.consumer_type,a.pod_uid,a.observed_at,a.created_at,a.current_vnic_name,a.current_vnic_uid,a.current_mac_address,a.current_ips,
  coalesce(a.plan->>'WorkloadMode','')::text AS workload_mode,
- coalesce(s.name,'')::text AS subnet_name,
+ coalesce(s.name,ps.name,'')::text AS subnet_name,
  cs.snapshot AS consumer_snapshot
 FROM network_attachments a
 LEFT JOIN network_subnets s ON s.tenant_id=a.tenant_id AND s.subnet_id=a.subnet_id
+LEFT JOIN network_platform_subnets ps ON ps.subnet_id=a.platform_subnet_id
 LEFT JOIN network_attachment_consumer_snapshots cs ON cs.tenant_id=a.tenant_id AND cs.attachment_id=a.attachment_id
 WHERE a.tenant_id=sqlc.arg(tenant_id)
-  AND (a.subnet_id=sqlc.arg(subnet_id)::text OR a.vpc_id=sqlc.arg(vpc_id)::text)
+  AND (sqlc.arg(subnet_id)::text='' OR coalesce(a.subnet_id,a.platform_subnet_id)=sqlc.arg(subnet_id)::text)
+  AND (sqlc.arg(vpc_id)::text='' OR coalesce(a.vpc_id,a.platform_vpc_id)=sqlc.arg(vpc_id)::text)
   AND a.state<>'released'
 ORDER BY a.created_at DESC,a.attachment_id DESC
 LIMIT sqlc.arg(max_results)::integer OFFSET sqlc.arg(page_offset)::bigint;
+
+-- name: InsertPlatformAttachment :one
+INSERT INTO network_attachments(tenant_id,attachment_id,platform_vpc_id,platform_subnet_id,binding_id,instance_id,slot,request_key,submission_id,generation,fingerprint,cluster_id,namespace,binding_revision,plan,consumer_type,state)
+VALUES(sqlc.arg(tenant_id),sqlc.arg(attachment_id),sqlc.arg(platform_vpc_id)::text,sqlc.arg(platform_subnet_id)::text,sqlc.arg(binding_id),sqlc.arg(instance_id),sqlc.arg(slot),sqlc.arg(request_key),sqlc.arg(submission_id),sqlc.arg(generation),sqlc.arg(fingerprint),sqlc.arg(cluster_id),sqlc.arg(namespace),sqlc.arg(binding_revision),sqlc.arg(plan),sqlc.arg(consumer_type),'reserved') RETURNING *;
+-- name: LockDuePlatformAttachment :one
+SELECT * FROM network_attachments WHERE platform_subnet_id IS NOT NULL AND state<>'released' AND next_check_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+ORDER BY next_check_at,attachment_id LIMIT 1 FOR UPDATE SKIP LOCKED;

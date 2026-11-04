@@ -1,5 +1,7 @@
 # ANI Resource 文档导航
 
+[平台基础网络租户接入](specs/vpc-subnet.md#平台基础网络租户接入)：同一平台目录、真实租户消费者、首次受理开关和只读观察；VM 两轮准备见 [VM 合同](contracts/vm-v1.md#c05-平台基础网络与两轮准备)，容器重放见 [Instance 合同](specs/instance-configuration-network.md#平台基础网络接入)。编码交接见 [PR #62](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/62)，实际发布与真实验收见[执行状态](execution/status.md#platform-base-network-tenant-access-20261105)。
+
 [2026-11-04 网络状态消费简化](plans/network-management-simplification.md)：完全采信 KCN 原生状态，移除 Res 网络证明与审计逻辑；正式合同为[规格 v3](specs/cr-observation.md)，实现/验证/部署分别见[执行状态](execution/status.md#network-management-simplification-20261104)。
 
 [2026-11-03 网络管理简化](plans/network-management-simplification-20261103.md)：Res 管理意图与结果，KCN 负责底层收敛；该历史方案的观察条款现已由[网络状态消费规格 v3](specs/cr-observation.md)替代，实际结果见执行状态。

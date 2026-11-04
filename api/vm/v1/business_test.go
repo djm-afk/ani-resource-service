@@ -55,6 +55,33 @@ func TestFrozenSpecCanonicalRoundTripAndUserDigest(t *testing.T) {
 		t.Fatal("compute units/topology changed")
 	}
 }
+
+func TestInitialNADUIDRemainsAnExplicitEmptyV1Field(t *testing.T) {
+	s := fixedSpec(t)
+	original, err := CanonicalCreateSpec(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalUID := s.Network.NadUid
+	s.Network.NadUid = ""
+	raw, err := CanonicalCreateSpec(s)
+	if err != nil || !bytes.Contains(raw, []byte(`"nad_uid":""`)) || ContractVersion != 1 {
+		t.Fatalf("initial network intent changed its v1 field set: %s %v", raw, err)
+	}
+	decoded, err := DecodeCreateSpec(raw)
+	if err != nil || decoded.Network.NadUid != "" {
+		t.Fatalf("empty initial UID did not survive canonical decode: %v", err)
+	}
+	again, err := CanonicalCreateSpec(decoded)
+	if err != nil || !bytes.Equal(raw, again) {
+		t.Fatal("empty initial UID changed canonical bytes on replay", err)
+	}
+	s.Network.NadUid = originalUID
+	restored, err := CanonicalCreateSpec(s)
+	if err != nil || !bytes.Equal(original, restored) {
+		t.Fatal("existing nonempty UID canonical changed", err)
+	}
+}
 func TestFrozenSpecRejectsUnknownAndInvalidCapacity(t *testing.T) {
 	for _, name := range []string{"absent-start", "zero-size", "overflow-size", "wrong-topology", "filesystem-root", "source-minimum", "nested-unknown"} {
 		t.Run(name, func(t *testing.T) {

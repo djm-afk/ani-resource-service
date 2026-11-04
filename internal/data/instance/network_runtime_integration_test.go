@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/v1"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
+	networkbiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/instance"
 )
@@ -260,7 +261,9 @@ func TestInstanceNetworkSubmissionTrustedServiceAcceptsFrozenSelectionAfterWrite
 	if err != nil {
 		t.Fatal(err)
 	}
-	if original.Spec.Network == nil || *original.Spec.Network != *s.Network || original.Network == nil || original.Network.State != "open" || original.Network.SnapshotRevision != 1 || !biz.UUID(original.Network.SubmissionID) {
+	expectedSelection := *s.Network
+	expectedSelection.Reference = networkbiz.NetworkReference{OwnerScope: networkbiz.OwnerScopeTenant, VPCID: s.Network.VPCID, SubnetID: s.Network.SubnetID}
+	if original.Spec.Network == nil || *original.Spec.Network != expectedSelection || original.Network == nil || original.Network.State != "open" || original.Network.SnapshotRevision != 1 || !biz.UUID(original.Network.SubmissionID) {
 		t.Fatal("trusted intake lost frozen selection or durable submission", original.Network)
 	}
 	if _, err = intake.AcceptCreate(ctx, request); err != nil {

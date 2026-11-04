@@ -121,6 +121,45 @@ func newAutoVMNetwork(t *testing.T) (attachmentFixture, *vmNetworkAPI, string) {
 	return f, api, host.URL
 }
 
+func TestVMObservedNADWithoutPreparationRecordIsRejected(t *testing.T) {
+	f, api, _ := newAutoVMNetwork(t)
+	ctx := context.Background()
+	resolved, err := f.p.ResolveAcceptedNetworkSelection(ctx, biz.NetworkSelection{
+		TenantID: f.r.TenantID, VPCID: f.r.VPCID, SubnetID: f.r.SubnetID,
+		ClusterID: f.r.ClusterID, Namespace: f.r.Namespace,
+	})
+	if err != nil {
+		t.Fatal("accepted private network fixture", err)
+	}
+	const raw = `{"cniVersion":"0.3.1","name":"vm-main","type":"kc-networking","server_socket":"/run/kcn.sock","mtu":1500}`
+	digest, err := data.VMNADConfigDigest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectation := biz.VMNetworkExpectation{NADName: "unregistered-network", NADUID: "unregistered-nad-uid", NADConfigDigest: digest}
+	api.mu.Lock()
+	api.objects = map[string]map[string]any{
+		"/apis/k8s.cni.cncf.io/v1/namespaces/" + f.r.Namespace + "/network-attachment-definitions/" + expectation.NADName: {
+			"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition",
+			"metadata": map[string]any{"name": expectation.NADName, "namespace": f.r.Namespace, "uid": expectation.NADUID},
+			"spec":     map[string]any{"config": raw},
+		},
+	}
+	api.mu.Unlock()
+	selection := biz.VMNetworkSelection{
+		TenantID: f.r.TenantID, VPCID: resolved.VPCID, SubnetID: resolved.SubnetID,
+		ClusterID: resolved.ClusterID, Namespace: resolved.Namespace,
+		KCNSubnetRef: resolved.NativeNamespace + "/" + resolved.NativeName, Reference: resolved.Reference,
+	}
+	if _, err = f.provider.ResolveVMNetwork(ctx, selection, expectation); err == nil || biz.ReasonOf(err) != biz.NetworkNotReady {
+		t.Fatal("observed NAD without a durable preparation record was not rejected", err)
+	}
+	var records int
+	if err = f.owner.QueryRow(ctx, "SELECT count(*) FROM network_vm_namespaces WHERE tenant_id=$1 AND cluster_id=$2", f.r.TenantID, f.r.ClusterID).Scan(&records); err != nil || records != 0 {
+		t.Fatal("read-only lookup adopted an observed NAD", records, err)
+	}
+}
+
 func awaitAutoVMNetwork(t *testing.T, f attachmentFixture) data.ManagedVMNAD {
 	t.Helper()
 	ctx := context.Background()
@@ -130,8 +169,11 @@ func awaitAutoVMNetwork(t *testing.T, f attachmentFixture) data.ManagedVMNAD {
 			t.Fatal(err)
 		}
 		policy, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace)
-		if err == nil {
-			return policy
+		if err == nil && policy.NADUID != "" {
+			var accountUID string
+			if scanErr := f.owner.QueryRow(ctx, "SELECT service_account_uid FROM network_vm_namespaces WHERE tenant_id=$1 AND cluster_id=$2", f.r.TenantID, f.r.ClusterID).Scan(&accountUID); scanErr == nil && accountUID != "" {
+				return policy
+			}
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
@@ -302,8 +344,8 @@ func TestVMAutoNetworkPGRefusesForeignObjectsWithoutFailingSubnet(t *testing.T) 
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	if _, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace); err == nil {
-		t.Fatal("foreign existing NAD was adopted")
+	if intent, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace); err != nil || intent.NADUID != "" {
+		t.Fatal("read-only intent must retain an empty original UID, never adopt the foreign NAD", intent, err)
 	}
 	s, err := f.n.GetSubnet(ctx, f.r.TenantID, f.r.SubnetID)
 	if err != nil || s.State != biz.Available || s.Reason != "" {
@@ -346,8 +388,14 @@ func TestVMAutoNetworkPGPinsPartialReceiptAndRefusesUIDDrift(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	if _, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace); err == nil {
-		t.Fatal("same-name replacement after partial preparation was accepted")
+	intent, err := f.provider.LookupManagedVMNetwork(ctx, f.r.TenantID, f.r.VPCID, f.r.SubnetID, f.r.ClusterID, f.r.Namespace)
+	if err != nil || intent.NADUID != nadUID {
+		t.Fatal("read-only intent replaced the saved original UID", intent, err)
+	}
+	f.r.WorkloadMode = "vm_managed"
+	f.r.VMExpectation = &biz.VMNetworkExpectation{NADName: intent.NADName, NADUID: intent.NADUID, NADConfigDigest: intent.NADConfigDigest}
+	if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r); err == nil {
+		t.Fatal("execution accepted a same-name replacement after partial preparation")
 	}
 	api.mu.Lock()
 	creates := api.creates
@@ -389,8 +437,13 @@ func TestVMAutoNetworkPGStopAndClosureSurviveAuxiliaryPreparationFailure(t *test
 					t.Fatal(err)
 				}
 			}
-			if _, err := f.p.ResolveVMNetworkSelection(ctx, f.r); err == nil {
-				t.Fatal("new/running VM admitted after auxiliary failure", fault)
+			_, resolveErr := f.p.ResolveVMNetworkSelection(ctx, f.r)
+			if fault == "sa-missing" || fault == "sa-replaced" {
+				if resolveErr == nil {
+					t.Fatal("own original ServiceAccount identity was not enforced", fault)
+				}
+			} else if resolveErr != nil {
+				t.Fatal("saved VM intent was blocked by current template or cached preparation state", fault, resolveErr)
 			}
 			c := vmConsumerFor(a)
 			c.DesiredRunState = "stopped"

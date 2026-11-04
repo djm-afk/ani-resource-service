@@ -90,7 +90,7 @@ func rpcError(e error) error {
 		code = codes.NotFound
 	case errors.Is(e, biz.ErrIdempotency):
 		code = codes.AlreadyExists
-	case errors.Is(e, biz.ErrVersion), errors.Is(e, biz.ErrBusy), errors.Is(e, biz.ErrOwnership), errors.Is(e, biz.ErrChanged), errors.Is(e, biz.ErrConsole):
+	case errors.Is(e, biz.ErrVersion), errors.Is(e, biz.ErrBusy), errors.Is(e, biz.ErrOwnership), errors.Is(e, biz.ErrChanged), errors.Is(e, biz.ErrConsole), errors.Is(e, biz.ErrNetworkAdmissionClosed):
 		code = codes.FailedPrecondition
 	case errors.Is(e, biz.ErrLogTarget):
 		code = codes.FailedPrecondition
@@ -152,7 +152,11 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 			return nil, rpcError(e)
 		}
 	}
-	spec := &pb.CreateSpec{SecurityGroupIds: append([]string(nil), r.Data.SecurityGroupIds...), Intent: intent, Compute: selection, ClusterId: s.config.ClusterID, Namespace: ns.Name, NamespaceUid: ns.UID, ServiceAccount: s.config.ServiceAccount, Storage: &pb.StoragePolicy{StorageClass: s.config.StorageClass, StorageClassUid: s.config.StorageClassUID, VolumeMode: "Block", AccessModes: []string{"ReadWriteOnce"}, BackendStorageClass: s.config.BackendStorageClass, MediaStorageClass: s.config.MediaStorageClass}, Media: media, Network: &pb.FrozenNetwork{VpcId: selectionNetwork.VPCID, SubnetId: selectionNetwork.SubnetID, NadName: selectionNetwork.NADName, NadUid: selectionNetwork.NADUID, NadConfigDigest: selectionNetwork.NADDigest}, Sockets: 1, Cores: uint32((selection.CpuMillis + 999) / 1000), Threads: 1, BootDevice: "SYSTEM_DISK", Dns: dns}
+	serviceAccount := selectionNetwork.ServiceAccount
+	if serviceAccount == "" {
+		serviceAccount = s.config.ServiceAccount
+	}
+	spec := &pb.CreateSpec{SecurityGroupIds: append([]string(nil), r.Data.SecurityGroupIds...), Intent: intent, Compute: selection, ClusterId: s.config.ClusterID, Namespace: ns.Name, NamespaceUid: ns.UID, ServiceAccount: serviceAccount, Storage: &pb.StoragePolicy{StorageClass: s.config.StorageClass, StorageClassUid: s.config.StorageClassUID, VolumeMode: "Block", AccessModes: []string{"ReadWriteOnce"}, BackendStorageClass: s.config.BackendStorageClass, MediaStorageClass: s.config.MediaStorageClass}, Media: media, Network: &pb.FrozenNetwork{VpcId: selectionNetwork.VPCID, SubnetId: selectionNetwork.SubnetID, NadName: selectionNetwork.NADName, NadUid: selectionNetwork.NADUID, NadConfigDigest: selectionNetwork.NADDigest}, Sockets: 1, Cores: uint32((selection.CpuMillis + 999) / 1000), Threads: 1, BootDevice: "SYSTEM_DISK", Dns: dns}
 	if media.Kind == "INSTALL_ISO" {
 		spec.BootDevice = "INSTALL_MEDIA"
 	}
@@ -471,12 +475,12 @@ func (s *Service) command(ctx context.Context, m proto.Message, action string) (
 				return nil, commandPreflightError(ctx, c, "backend_configuration", e)
 			}
 		}
-		network, e := s.environment.ValidateNetwork(ctx, c.TenantID, v.Spec.ClusterID, v.Spec.Namespace, v.Spec.Network)
-		if e != nil {
-			return nil, commandPreflightError(ctx, c, "network", e)
-		}
-		if network != v.Spec.Network {
-			return nil, commandPreflightError(ctx, c, "network_identity", biz.ErrChanged)
+		if e := s.environment.ValidateExistingNetwork(ctx, v); e != nil {
+			stage := "network"
+			if errors.Is(e, biz.ErrChanged) || errors.Is(e, biz.ErrOwnership) {
+				stage = "network_identity"
+			}
+			return nil, commandPreflightError(ctx, c, stage, e)
 		}
 	}
 	o, e := s.repo.AcceptCommand(ctx, c)

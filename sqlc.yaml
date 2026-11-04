@@ -52,6 +52,7 @@ sql:
       - migrations/0030_vnic_requested_addresses.sql
       - migrations/0031_subnet_creation_options.sql
       - migrations/0032_network_management_simplification.sql
+      - migrations/0033_platform_base_networks.sql
     queries: internal/data/network/queries
     gen:
       go:
@@ -66,6 +67,10 @@ sql:
               import: github.com/jackc/pgx/v5/pgtype
               type: Timestamptz
           - column: network_default_vpc_egresses.next_run_at
+            go_type:
+              import: github.com/jackc/pgx/v5/pgtype
+              type: Timestamptz
+          - column: network_platform_network_observations.next_run_at
             go_type:
               import: github.com/jackc/pgx/v5/pgtype
               type: Timestamptz

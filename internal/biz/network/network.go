@@ -48,6 +48,8 @@ type VPCPublicEgress struct {
 }
 
 type VPC struct {
+	OwnerScope                            OwnerScope
+	CanManage, CanUse                     bool
 	PublicEgress                          *VPCPublicEgress  `json:",omitempty"`
 	BaseConnectivity                      *BaseConnectivity `json:",omitempty"`
 	ID, TenantID, Name, CIDR, Description string
@@ -131,6 +133,9 @@ func (n *Network) GetVPC(ctx context.Context, tenant, id string) (VPC, error) {
 	}
 	if !validVPCID(id) {
 		return VPC{}, Fail(ResourceNotFound, "VPC not found")
+	}
+	if visible, ok := n.repository.(VisibleNetworkRepository); ok {
+		return visible.GetVisibleVPC(ctx, tenant, id)
 	}
 	return n.repository.GetVPC(ctx, tenant, id)
 }

@@ -1,5 +1,7 @@
 # VPC 基础内网、公网出站与租户 LB 统一方案
 
+2026-11-04 [平台基础网络目录](vpc-subnet.md#平台基础网络租户接入)是既有共享网络的只读登记，独立于本文的租户 VPC 和地址池生命周期。目录不调用 BaseConnectivity 分配、不创建租户 EIP/SNAT，不允许租户在平台 VPC/Subnet 创建 LB 或配置 SNAT；管理命令按所有权返回 PermissionDenied，平台出口在 Console 显示为平台托管。既有私有网络流程继续按本文执行。
+
 > 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
 
 2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。

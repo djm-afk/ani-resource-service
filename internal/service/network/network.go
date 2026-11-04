@@ -54,7 +54,7 @@ func (s *NetworkService) ListVPCs(ctx context.Context, r *networkv1.ListVPCsRequ
 	if !exists {
 		return nil, rpcError(biz.Fail(biz.InvalidArgument, "invalid VPC state filter"))
 	}
-	value, err := s.network.ListVPCs(ctx, biz.ListVPCs{TenantID: r.GetTenantId(), Name: r.GetName(), State: string(state), Limit: int(r.GetLimit()), Cursor: r.GetCursor(), Page: r.Page, PageSize: r.PageSize})
+	value, err := s.network.ListVPCs(ctx, biz.ListVPCs{TenantID: r.GetTenantId(), Name: r.GetName(), State: string(state), Limit: int(r.GetLimit()), Cursor: r.GetCursor(), Page: r.Page, PageSize: r.PageSize, CanUse: r.CanUse, CanManage: r.CanManage})
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -87,7 +87,7 @@ func wireVPC(v biz.VPC) *networkv1.VPC {
 	if e := v.PublicEgress; e != nil {
 		public = &networkv1.VPCPublicEgress{BindingId: e.ID, EipId: e.EIPID, EipAddress: e.EIPAddress, BindingState: e.BindingState, State: statesToWire[e.State], Reason: string(e.Reason), ReasonMessage: e.Reason.Message(), DesiredEnabled: e.DesiredEnabled, AppliedEnabled: e.AppliedEnabled, ObservedAt: optionalTime(e.ObservedAt), ObservationStale: e.ObservationStale, Version: e.Version, LastOperationId: e.LastOperationID}
 	}
-	return &networkv1.VPC{PublicEgress: public, BaseConnectivity: base, Id: v.ID, TenantId: v.TenantID, Name: v.Name, Description: v.Description, Cidr: v.CIDR, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), Version: v.Version, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, LastOperationId: v.LastOperationID, SubnetCount: v.SubnetCount}
+	return &networkv1.VPC{OwnerScope: ownerScopeToWire(v.OwnerScope, v.TenantID), CanManage: v.CanManage, CanUse: v.CanUse, PublicEgress: public, BaseConnectivity: base, Id: v.ID, TenantId: v.TenantID, Name: v.Name, Description: v.Description, Cidr: v.CIDR, State: statesToWire[v.State], Reason: string(v.Reason), ReasonMessage: v.Reason.Message(), CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), Version: v.Version, ObservedAt: optionalTime(v.ObservedAt), ObservationStale: v.ObservationStale, LastOperationId: v.LastOperationID, SubnetCount: v.SubnetCount}
 }
 func optionalTime(v *time.Time) *timestamppb.Timestamp {
 	if v == nil {
@@ -160,7 +160,7 @@ func rpcError(err error) error {
 		code = codes.NotFound
 	case biz.IdempotencyConflict, biz.CIDROverlap, biz.AttachmentConflict, biz.AddressConflict:
 		code = codes.AlreadyExists
-	case biz.EIPInUse, biz.VIPInUse, biz.BackendIdentityMismatch, biz.VPCSnatExists, biz.ProviderOwnership, biz.ProviderStateMismatch, biz.ResourceInUse, biz.ResourceBusy, biz.ParentNotReady, biz.NetworkNotReady, biz.PlacementMismatch, biz.VersionConflict:
+	case biz.NetworkNewAdmissionClosed, biz.EIPInUse, biz.VIPInUse, biz.BackendIdentityMismatch, biz.VPCSnatExists, biz.ProviderOwnership, biz.ProviderStateMismatch, biz.ResourceInUse, biz.ResourceBusy, biz.ParentNotReady, biz.NetworkNotReady, biz.PlacementMismatch, biz.VersionConflict:
 		code = codes.FailedPrecondition
 	case biz.PermissionDenied:
 		code = codes.PermissionDenied
@@ -190,4 +190,18 @@ func (s *NetworkService) ListVPCCIDRPresets(ctx context.Context, r *networkv1.Li
 		return nil, rpcError(err)
 	}
 	return &networkv1.ListVPCCIDRPresetsResponse{Cidrs: values}, nil
+}
+
+func ownerScopeToWire(scope biz.OwnerScope, tenant string) networkv1.OwnerScope {
+	switch scope {
+	case biz.OwnerScopePlatform:
+		return networkv1.OwnerScope_OWNER_SCOPE_PLATFORM
+	case biz.OwnerScopeTenant:
+		return networkv1.OwnerScope_OWNER_SCOPE_TENANT
+	}
+	// Old immutable private acceptance snapshots predate the explicit field.
+	if tenant != "" {
+		return networkv1.OwnerScope_OWNER_SCOPE_TENANT
+	}
+	return networkv1.OwnerScope_OWNER_SCOPE_UNSPECIFIED
 }
