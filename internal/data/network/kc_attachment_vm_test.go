@@ -34,9 +34,8 @@ func TestVMManagedNADRequiresTrustedIdentityAndCanonicalConfig(t *testing.T) {
 	policy := ManagedVMNAD{TenantID: "11111111-1111-4111-8111-111111111111", VPCID: "vpc", SubnetID: "subnet", ClusterID: "cluster", Namespace: "tenant-11111111-1111-4111-8111-111111111111", NamespaceUID: "namespace-uid", NADName: "main", NADUID: "nad-uid", NADConfigDigest: digest, KCNSubnetRef: "tenant-11111111-1111-4111-8111-111111111111/kcn-subnet"}
 	s := biz.VMNetworkSelection{TenantID: policy.TenantID, VPCID: policy.VPCID, SubnetID: policy.SubnetID, ClusterID: policy.ClusterID, Namespace: policy.Namespace, KCNSubnetRef: policy.KCNSubnetRef}
 	e := biz.VMNetworkExpectation{NADName: policy.NADName, NADUID: policy.NADUID, NADConfigDigest: digest}
-	if _, err = p.resolveVMNetwork(context.Background(), s, e, true); err == nil {
-		t.Fatal("arbitrary observed NAD promoted to managed without policy")
-	}
+	// The no-policy path reads durable preparation records and is covered by
+	// TestVMObservedNADWithoutPreparationRecordIsRejected with a real repository.
 	if err = p.ConfigureVMNetworks([]ManagedVMNAD{policy}); err != nil {
 		t.Fatal(err)
 	}

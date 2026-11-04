@@ -121,6 +121,45 @@ func newAutoVMNetwork(t *testing.T) (attachmentFixture, *vmNetworkAPI, string) {
 	return f, api, host.URL
 }
 
+func TestVMObservedNADWithoutPreparationRecordIsRejected(t *testing.T) {
+	f, api, _ := newAutoVMNetwork(t)
+	ctx := context.Background()
+	resolved, err := f.p.ResolveAcceptedNetworkSelection(ctx, biz.NetworkSelection{
+		TenantID: f.r.TenantID, VPCID: f.r.VPCID, SubnetID: f.r.SubnetID,
+		ClusterID: f.r.ClusterID, Namespace: f.r.Namespace,
+	})
+	if err != nil {
+		t.Fatal("accepted private network fixture", err)
+	}
+	const raw = `{"cniVersion":"0.3.1","name":"vm-main","type":"kc-networking","server_socket":"/run/kcn.sock","mtu":1500}`
+	digest, err := data.VMNADConfigDigest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectation := biz.VMNetworkExpectation{NADName: "unregistered-network", NADUID: "unregistered-nad-uid", NADConfigDigest: digest}
+	api.mu.Lock()
+	api.objects = map[string]map[string]any{
+		"/apis/k8s.cni.cncf.io/v1/namespaces/" + f.r.Namespace + "/network-attachment-definitions/" + expectation.NADName: {
+			"apiVersion": "k8s.cni.cncf.io/v1", "kind": "NetworkAttachmentDefinition",
+			"metadata": map[string]any{"name": expectation.NADName, "namespace": f.r.Namespace, "uid": expectation.NADUID},
+			"spec":     map[string]any{"config": raw},
+		},
+	}
+	api.mu.Unlock()
+	selection := biz.VMNetworkSelection{
+		TenantID: f.r.TenantID, VPCID: resolved.VPCID, SubnetID: resolved.SubnetID,
+		ClusterID: resolved.ClusterID, Namespace: resolved.Namespace,
+		KCNSubnetRef: resolved.NativeNamespace + "/" + resolved.NativeName, Reference: resolved.Reference,
+	}
+	if _, err = f.provider.ResolveVMNetwork(ctx, selection, expectation); err == nil || biz.ReasonOf(err) != biz.NetworkNotReady {
+		t.Fatal("observed NAD without a durable preparation record was not rejected", err)
+	}
+	var records int
+	if err = f.owner.QueryRow(ctx, "SELECT count(*) FROM network_vm_namespaces WHERE tenant_id=$1 AND cluster_id=$2", f.r.TenantID, f.r.ClusterID).Scan(&records); err != nil || records != 0 {
+		t.Fatal("read-only lookup adopted an observed NAD", records, err)
+	}
+}
+
 func awaitAutoVMNetwork(t *testing.T, f attachmentFixture) data.ManagedVMNAD {
 	t.Helper()
 	ctx := context.Background()
