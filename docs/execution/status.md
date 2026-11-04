@@ -1,5 +1,18 @@
 # Network 执行状态
 
+<a id="platform-base-network-tenant-access-20261105"></a>
+
+## 2026-11-05：平台基础网络租户接入发布
+
+**Res #62、Gov #93、Console #1 的功能版本已构建、推送并发布，三服务 Ready1，Network schema33。**
+按用户指定只开放 `kcn-system/pool-8836e1121d3c40a4ab73859afef5d6d8`（`10.20.0.0/24`），
+平台 VPC 为 `kcn-system/kcn-cluster`。真实两租户 VNIC/隔离、VM 自动与手动网卡切换、
+CPU 容器创建/重启、关联分页、关闭准入重放/拒绝/清理及 Console 页面通过。
+修复现场发现的手动 VM 地址投影漏 UID，浏览器已显示“已生效”。本次临时资源和授权已清理，
+目录恢复开放，原五台 Running VM 保持原版本。三仓已推送原 PR 分支，未自动合并。
+遵用户最新指令未完成全量门禁；实际命令范围、保留的失败、ImageUpload 配置边界、镜像及备份见
+[发布与验收记录](records/platform-base-network-release-20261105.md)。
+
 <a id="network-management-simplification-20261104"></a>
 
 ## 2026-11-04：完全采信 KCN 的网络状态消费简化
