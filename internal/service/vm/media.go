@@ -71,9 +71,11 @@ func (s *Service) mediaCommand(ctx context.Context, message proto.Message, actio
 			}
 		}
 		if mutation.Copy == nil {
-			configured := s.media[request.MediaKey]
-			if configured == nil {
-				return nil, rpcError(biz.ErrDependency)
+			// The same resolution the picker and the create path use, so an ISO the
+			// tenant uploaded can be mounted for the first time as well as booted.
+			configured, e := s.resolveMedia(ctx, current.TenantID, request.MediaKey)
+			if e != nil {
+				return nil, rpcError(e)
 			}
 			source := domainSource(configured)
 			if e = biz.ValidateMediaSource(current, request.Slot, source); e != nil {

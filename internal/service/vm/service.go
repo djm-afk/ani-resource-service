@@ -29,6 +29,8 @@ type Config struct {
 	Media                                                                                            []*pb.MediaReference
 	DefaultDNSServers                                                                                []string
 	LogLimits                                                                                        biz.LogLimits
+	// ImageUpload is the fixed deployment input for the tenant image lane.
+	ImageUpload ImageUploadConfig
 }
 type Service struct {
 	pb.UnimplementedVMServiceServer
@@ -41,6 +43,7 @@ type Service struct {
 	runtime        biz.RuntimePort
 	config         Config
 	media          map[string]*pb.MediaReference
+	images         biz.ImageCatalogPort
 	addresses      AddressReader
 	relations      biz.RelationsPort
 	logs           biz.LogPort
@@ -68,6 +71,9 @@ func NewService(r biz.Repository, c ComputeResolver, e biz.EnvironmentPort, n bi
 	}
 	logs, _ := n.(biz.LogPort)
 	s := &Service{repo: r, compute: c, environment: e, native: n, config: cfg, media: map[string]*pb.MediaReference{}, logs: logs, logTenants: map[string]int{}, logVMs: map[string]int{}}
+	if e := ValidateStaticMediaKeys(cfg.Media); e != nil {
+		return nil, e
+	}
 	for _, m := range cfg.Media {
 		if m == nil || m.MediaKey == "" || s.media[m.MediaKey] != nil {
 			return nil, biz.ErrInvalid
@@ -129,11 +135,10 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 	if e != nil {
 		return nil, e
 	}
-	media := s.media[r.Data.MediaKey]
-	if media == nil {
-		return nil, rpcError(biz.ErrDependency)
+	media, e := s.resolveMedia(ctx, r.TenantId, r.Data.MediaKey)
+	if e != nil {
+		return nil, rpcError(e)
 	}
-	media = proto.Clone(media).(*pb.MediaReference)
 	if e = s.native.ValidateSource(ctx, domainSource(media)); e != nil {
 		return nil, rpcError(e)
 	}
@@ -161,9 +166,9 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 		spec.BootDevice = "INSTALL_MEDIA"
 	}
 	if media.DriverMediaKey != "" {
-		driver := s.media[media.DriverMediaKey]
-		if driver == nil {
-			return nil, rpcError(biz.ErrDependency)
+		driver, e := s.resolveMedia(ctx, r.TenantId, media.DriverMediaKey)
+		if e != nil {
+			return nil, rpcError(e)
 		}
 		spec.DriverMedia = proto.Clone(driver).(*pb.MediaReference)
 		if e = s.native.ValidateSource(ctx, domainSource(driver)); e != nil {
@@ -531,6 +536,13 @@ func (s *Service) ListMedia(ctx context.Context, r *pb.ListMediaRequest) (*pb.Li
 	for _, m := range s.config.Media {
 		out.Items = append(out.Items, proto.Clone(m).(*pb.MediaReference))
 	}
+	// Tenant-uploaded READY images join the same picker with no contract change:
+	// the response keeps its shape, ordering of static entries stays first.
+	dynamic, e := s.dynamicMedia(ctx, r.TenantId)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	out.Items = append(out.Items, dynamic...)
 	return out, nil
 }
 func (s *Service) resolveConsole(ctx context.Context, tenant, id string, version int64) (*console.VMConsoleBinding, error) {

@@ -320,8 +320,9 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 		_, computeMethod := computeGovernanceMethods[info.FullMethod]
 		_, storageMethod := storageGovernanceMethods[info.FullMethod]
 		_, vmMethod := vmGovernanceMethods[info.FullMethod]
+		_, vmImageMethod := vmImageGovernanceMethods[info.FullMethod]
 		_, sandboxMethod := sandboxGovernanceMethods[info.FullMethod]
-		if _, ok := governanceReadMethods[info.FullMethod]; !ok && !imageMethod && !platformMethod && !instanceMethod && !computeMethod && !storageMethod && !vmMethod && !sandboxMethod {
+		if _, ok := governanceReadMethods[info.FullMethod]; !ok && !imageMethod && !platformMethod && !instanceMethod && !computeMethod && !storageMethod && !vmMethod && !vmImageMethod && !sandboxMethod {
 			return nil, status.Error(codes.PermissionDenied, "governance credential does not permit this method")
 		}
 		r, ok := req.(proto.Message)
@@ -329,7 +330,9 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.PermissionDenied, "governance requests must be proto messages")
 		}
 		ctx = context.WithValue(ctx, governancePrincipalKey{}, p)
-		if vmMethod {
+		// The image lane binds the same trusted tenant scope as the VM lane: the tenant
+		// may only ever be the one the credential was issued for.
+		if vmMethod || vmImageMethod {
 			ctx, err = withVMGovernanceScope(ctx, p, r, info.FullMethod)
 			if err != nil {
 				return nil, err

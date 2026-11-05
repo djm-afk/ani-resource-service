@@ -1,0 +1,125 @@
+syntax = "proto3";
+package vm.v1;
+option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/vm/v1;vmv1";
+
+import "google/protobuf/field_mask.proto";
+
+// Trusted Governance gRPC only. Tenant identity and every native identity come
+// from the authenticated caller context, never from these fields' siblings.
+service VMImageService {
+  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+  rpc GetImage(GetImageRequest) returns (VMImage);
+  // CreateImage is asynchronous: the returned record is PREPARING and carries
+  // the image_id the caller needs for the upload session.
+  rpc CreateImage(CreateImageRequest) returns (VMImage);
+  rpc CreateUploadSession(CreateUploadSessionRequest) returns (UploadSession);
+  rpc UpdateImage(UpdateImageRequest) returns (VMImage);
+  rpc DeleteImage(DeleteImageRequest) returns (VMImage);
+}
+
+// ImageOS is the platform profile frozen for one image. A tenant-uploaded image
+// never claims an initialization capability, so cloud-init stays unavailable.
+message ImageOS {
+  string os_family = 1 [json_name = "os_family"];
+  string os_version = 2 [json_name = "os_version"];
+  string architecture = 3;
+  string firmware = 4;
+  string root_bus = 5 [json_name = "root_bus"];
+  string data_bus = 6 [json_name = "data_bus"];
+  string nic_model = 7 [json_name = "nic_model"];
+}
+
+message VMImage {
+  string image_id = 1 [json_name = "image_id"];
+  string media_key = 2 [json_name = "media_key"];
+  string name = 3;
+  string description = 4;
+  // DISK_IMAGE consumes as a cloned system disk; INSTALL_ISO as a read-only CD-ROM.
+  string kind = 5;
+  string format = 6;
+  // PREPARING, IMPORTING, VERIFYING, READY, FAILED, UNAVAILABLE, DELETING, DELETED.
+  string state = 7;
+  string reason = 8;
+  // NONE, PENDING, RUNNING, COMPLETE, BLOCKED.
+  string cleanup_state = 9 [json_name = "cleanup_state"];
+  // Four independent capacity measures. None is derived from another.
+  int64 source_capacity_gb = 10 [json_name = "source_capacity_gb"];
+  int64 source_requested_bytes = 11 [json_name = "source_requested_bytes"];
+  int64 observed_source_capacity_bytes = 12 [json_name = "observed_source_capacity_bytes"];
+  int64 source_checksum_bytes = 13 [json_name = "source_checksum_bytes"];
+  // Full-length SHA-256 of the CDI-processed source, not of the uploaded file.
+  string source_sha256 = 14 [json_name = "source_sha256"];
+  ImageOS os = 15;
+  int64 version = 16;
+  string upload_deadline = 17 [json_name = "upload_deadline"];
+  string created_by = 18 [json_name = "created_by"];
+  string created_at = 19 [json_name = "created_at"];
+  string updated_at = 20 [json_name = "updated_at"];
+}
+
+message ListImagesRequest {
+  string tenant_id = 1;
+  uint32 page = 2;
+  uint32 page_size = 3;
+  // Optional kind/state/keyword narrowing; empty means every state but DELETED.
+  string kind = 4;
+  string state = 5;
+  string keyword = 6;
+}
+message ListImagesResponse {
+  repeated VMImage items = 1;
+  int64 total = 2;
+}
+
+message GetImageRequest {
+  string tenant_id = 1;
+  string image_id = 2;
+}
+
+message CreateImageRequest {
+  string tenant_id = 1;
+  string idempotency_key = 2;
+  string name = 3;
+  string description = 4;
+  string kind = 5;
+  // qcow2 for DISK_IMAGE, iso for INSTALL_ISO.
+  string format = 6;
+  int64 source_capacity_gb = 7;
+  ImageOS os = 8;
+}
+
+message CreateUploadSessionRequest {
+  string tenant_id = 1;
+  string image_id = 2;
+  string idempotency_key = 3;
+}
+
+// UploadSession is a short-lived ticket. The bearer token is never stored and
+// the file bytes travel from the caller straight to the upload entrypoint.
+message UploadSession {
+  string image_id = 1 [json_name = "image_id"];
+  string upload_session_id = 2 [json_name = "upload_session_id"];
+  string method = 3;
+  string upload_url = 4 [json_name = "upload_url"];
+  string bearer_token = 5 [json_name = "bearer_token"];
+  string expires_at = 6 [json_name = "expires_at"];
+  string content_type = 7 [json_name = "content_type"];
+  int64 max_file_bytes = 8 [json_name = "max_file_bytes"];
+}
+
+message UpdateImageRequest {
+  string tenant_id = 1;
+  string image_id = 2;
+  string idempotency_key = 3;
+  int64 expected_version = 4;
+  string name = 5;
+  string description = 6;
+  google.protobuf.FieldMask update_mask = 7;
+}
+
+message DeleteImageRequest {
+  string tenant_id = 1;
+  string image_id = 2;
+  string idempotency_key = 3;
+  int64 expected_version = 4;
+}

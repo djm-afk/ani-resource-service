@@ -159,6 +159,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	additional := []server.Stepper{attachmentWorker, switchWorker, securityGroupWorker}
 	if vms != nil {
 		additional = append(additional, vms.worker)
+		additional = append(additional, vms.ImageLanes()...)
 	}
 	if defaultWorker != nil {
 		additional = append(additional, defaultWorker)
@@ -199,6 +200,9 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	if vms != nil {
 		vmv1.RegisterVMServiceServer(gs, vms.service)
+		if vms.imageService != nil {
+			vmv1.RegisterVMImageServiceServer(gs, vms.imageService)
+		}
 	}
 	storageComponents, err := openStorage(context.Background(), bc, instances)
 	if err != nil {

@@ -1,0 +1,30 @@
+# Read-only VM image validator. The Res deployment pins this image by digest in
+# Service.ImageUpload.ValidatorImage, and the validation Job passes exactly three
+# fixed arguments. No image, command, mount path or plugin is caller-supplied.
+#
+# util-linux exists for one reason: the ISO signature check runs the fixed argv form
+# `blkid -p -s TYPE -o value -- /source/disk.img` without a shell.
+#
+# Build standalone from the repository root:
+#   docker build -f Dockerfile.verify -t <registry>/ani-vm-image-verify:<tag> .
+# The batch build reaches the same result through the shared compile stage
+# (--target verify), so the binary is produced by the pinned toolchain once.
+FROM docker.changqingyun.cn/hub/library/golang:1.26.10-alpine AS build
+ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOWORK=off GOTOOLCHAIN=auto
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY api ./api
+COPY internal ./internal
+COPY cmd/vm-image-verify ./cmd/vm-image-verify
+RUN go build -trimpath -ldflags='-s -w' -o /out/vm-image-verify ./cmd/vm-image-verify
+
+FROM docker.changqingyun.cn/hub/library/alpine:3.22
+RUN apk add --no-cache util-linux
+
+COPY --from=build /out/vm-image-verify /vm-image-verify
+
+# runAsNonRoot with the CDI importer's uid/gid, which is the only restricted identity
+# that can open the RBD block device on this cluster. No capability, no privilege,
+# no writable root filesystem.
+USER 107:107
+ENTRYPOINT ["/vm-image-verify"]

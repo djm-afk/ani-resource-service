@@ -26,7 +26,7 @@ cat > "$work/buf.gen.yaml" <<'EOF'
 version: v2
 inputs:
   - directory: .
-    paths: [api/compute/v1/compute.proto, api/vm/v1/vm.proto]
+    paths: [api/compute/v1/compute.proto, api/vm/v1/vm.proto, api/vm/v1/image.proto]
 plugins:
   - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11]
     out: .

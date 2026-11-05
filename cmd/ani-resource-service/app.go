@@ -161,6 +161,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	additional := []server.Stepper{attachmentWorker, switchWorker, securityGroupWorker}
 	if vms != nil {
 		additional = append(additional, vms.worker)
+		additional = append(additional, vms.ImageLanes()...)
 	}
 	if defaultWorker != nil {
 		additional = append(additional, defaultWorker)
@@ -219,6 +220,9 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	}
 	if vms != nil {
 		vmv1.RegisterVMServiceServer(grpcServer, vms.service)
+		if vms.imageService != nil {
+			vmv1.RegisterVMImageServiceServer(grpcServer, vms.imageService)
+		}
 	}
 	adminServer := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), middlewares...)
 	servers := []transport.Server{grpcServer, adminServer, observation, execution}

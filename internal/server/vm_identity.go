@@ -24,6 +24,16 @@ var vmGovernanceMethods = map[string]struct{}{
 	"/vm.v1.VMService/PreviewRestore": {}, "/vm.v1.VMService/RestoreSnapshot": {}, "/vm.v1.VMService/ResolveConsoleTarget": {},
 }
 
+// vmImageGovernanceMethods is the tenant image lane's surface on the same governance
+// credential. Without an entry here GovernanceUnary rejects the call with
+// "governance credential does not permit this method" before the service ever runs,
+// which the BFF reports as VM_IMAGE_DEPENDENCY_UNAVAILABLE.
+var vmImageGovernanceMethods = map[string]struct{}{
+	"/vm.v1.VMImageService/ListImages": {}, "/vm.v1.VMImageService/GetImage": {},
+	"/vm.v1.VMImageService/CreateImage": {}, "/vm.v1.VMImageService/CreateUploadSession": {},
+	"/vm.v1.VMImageService/UpdateImage": {}, "/vm.v1.VMImageService/DeleteImage": {},
+}
+
 func withVMGovernanceScope(ctx context.Context, p governancePrincipal, m proto.Message, method string) (context.Context, error) {
 	var tenant string
 	switch r := m.(type) {

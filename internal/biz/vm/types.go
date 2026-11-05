@@ -54,6 +54,13 @@ func RequireTenant(ctx context.Context, tenant string) error {
 	}
 	return nil
 }
+
+// CallerFrom reads the already verified caller for audit fields. It returns the
+// empty value when the context carries no trusted principal.
+func CallerFrom(ctx context.Context) Caller {
+	c, _ := ctx.Value(callerKey{}).(Caller)
+	return c
+}
 func UUID(s string) bool { u, e := uuid.Parse(s); return e == nil && u != uuid.Nil && u.String() == s }
 
 type ObjectRef struct{ Kind, Namespace, Name, UID string }
