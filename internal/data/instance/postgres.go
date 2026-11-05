@@ -367,6 +367,10 @@ func (p *Postgres) AcceptCreate(ctx context.Context, c biz.Create) (biz.ACK, err
 	if e = lockMountGuards(ctx, tx, c.TenantID, i.CurrentMounts); e != nil {
 		return ack, e
 	}
+	// 创建同样遵循“受管 + 空闲”规则：并发创建/挂载抢同一块盘时只有一个成功。
+	if e = rejectOccupiedVolumes(ctx, tx, c.TenantID, i.CurrentMounts); e != nil {
+		return ack, e
+	}
 	for _, m := range i.CurrentMounts {
 		if _, e = tx.Exec(ctx, "INSERT INTO instance.borrowed_volume_references(tenant_id,instance_id,mount_path,cluster_id,namespace,pvc_name,pvc_uid,read_only,state,reference_generation,operation_id,intent_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'pending',1,$9,1)", c.TenantID, c.ID, m.MountPath, m.ClusterID, m.Namespace, m.PVCName, m.PVCUID, m.ReadOnly, c.OperationID); e != nil {
 			return ack, e

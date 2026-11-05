@@ -8,6 +8,42 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// markMountablePVCs 统一为候选标记不可选原因，创建范围与实例范围共用同一规则：
+// 删除 guard 优先（PVC_DELETION_IN_PROGRESS），其次按引用台账标记 PVC_IN_USE。
+// 只覆盖当前可选的项，保留 Block/Lost/Terminating 等既有原因。候选是观测值，
+// 受理期的权威校验在受理事务内执行。
+func (s *Service) markMountablePVCs(ctx context.Context, tenant, cluster, namespace string, items []biz.MountablePVC) ([]biz.MountablePVC, error) {
+	guard, ok := s.repo.(biz.PVCGuardReader)
+	if !ok {
+		return nil, biz.ErrNetworkUnavailable
+	}
+	refs := map[string]bool{}
+	if usage, ok := s.repo.(biz.VolumeUsageReader); ok {
+		list, err := usage.VolumeReferences(ctx, tenant, cluster, namespace)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range list {
+			refs[r.PVCName+"\x00"+r.PVCUID] = true
+		}
+	}
+	for i := range items {
+		deleting, err := guard.PVCDeleting(ctx, tenant, cluster, namespace, items[i].PVCName)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case deleting:
+			items[i].Selectable = false
+			items[i].UnavailableReason = "PVC_DELETION_IN_PROGRESS"
+		case items[i].Selectable && refs[items[i].PVCName+"\x00"+items[i].PVCUID]:
+			items[i].Selectable = false
+			items[i].UnavailableReason = "PVC_IN_USE"
+		}
+	}
+	return items, nil
+}
+
 func (s *Service) ListMountablePVCs(ctx context.Context, r *pb.ListMountablePVCsRequest) (*pb.ListMountablePVCsResponse, error) {
 	if r == nil {
 		return nil, rpcError(biz.ErrInvalid)
@@ -24,6 +60,9 @@ func (s *Service) ListMountablePVCs(ctx context.Context, r *pb.ListMountablePVCs
 	}
 	items, total, e := s.volumes.ListMountablePVCs(ctx, r.TenantId, s.config.ClusterID, ns, r.Page, r.PageSize, r.Name)
 	if e != nil {
+		return nil, rpcError(e)
+	}
+	if items, e = s.markMountablePVCs(ctx, r.TenantId, s.config.ClusterID, ns, items); e != nil {
 		return nil, rpcError(e)
 	}
 	out := &pb.ListMountablePVCsResponse{Items: []*pb.MountablePVC{}, Total: total}

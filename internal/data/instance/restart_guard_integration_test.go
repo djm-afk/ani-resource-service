@@ -322,6 +322,77 @@ func TestRestartGuardPGCreateAndStorageShareNameLock(t *testing.T) {
 	}
 }
 
+// 同租户 Namespace 内，一块受管卷在同一时刻只能被一个实例绑定：
+// CREATE 与 ATTACH 在受理事务内拒绝占用中的卷；卸载 released 后才能重新挂载。
+func TestRestartGuardPGOccupiedVolumeRejectedUntilReleased(t *testing.T) {
+	f := database(t)
+	f.repo.UseIntentGate(true)
+	ctx := context.Background()
+	a := restartGuardCreate()
+	shared := biz.VolumeMount{ClusterID: a.Spec.ClusterID, Namespace: a.Spec.Namespace, PVCName: "vol-shared", PVCUID: uuid.NewString(), MountPath: "/shared", ReadOnly: true, Ownership: "borrowed"}
+	a.Spec.VolumeMounts = []biz.VolumeMount{shared}
+	if _, err := f.repo.AcceptCreate(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	pA := newRestartGuardBoundary()
+	wA, _ := biz.NewWorker(f.repo, pA, "restart-guard-occupied-a")
+	iA := awaitRestartGuardOperation(t, f, wA, a, a.OperationID)
+
+	// 与 A 同租户/同集群/同 Namespace 的兄弟实例。
+	sibling := func() biz.Create {
+		c := restartGuardCreate()
+		c.TenantID, c.Spec.ClusterID, c.Spec.Namespace = a.TenantID, a.Spec.ClusterID, a.Spec.Namespace
+		c.Spec.PVCName = "workspace-" + c.ID
+		c.Spec.NotebookName = "instance-" + c.ID
+		return c
+	}
+
+	// B：CREATE 引用占用中的同一块盘 → 受理拒绝。
+	b := sibling()
+	b.Spec.VolumeMounts = []biz.VolumeMount{shared}
+	if _, err := f.repo.AcceptCreate(ctx, b); !errors.Is(err, biz.ErrPVCInUse) {
+		t.Fatal("CREATE accepted an occupied volume", err)
+	}
+
+	// C：带一块占位挂载创建并停止（与 A 同构的状态机路径，挂载基线证明随
+	// CREATE/STOP 回合完成）；停止态实例的 active 引用仍占用 → ATTACH 拒绝。
+	// A 与 C 使用各自的 boundary/worker：boundary 的 mounts 槽位按实例记录。
+	c := sibling()
+	placeholder := biz.VolumeMount{ClusterID: a.Spec.ClusterID, Namespace: a.Spec.Namespace, PVCName: "vol-placeholder", PVCUID: uuid.NewString(), MountPath: "/placeholder", ReadOnly: true, Ownership: "borrowed"}
+	c.Spec.VolumeMounts = []biz.VolumeMount{placeholder}
+	if _, err := f.repo.AcceptCreate(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	pC := newRestartGuardBoundary()
+	wC, _ := biz.NewWorker(f.repo, pC, "restart-guard-occupied-c")
+	iC := awaitRestartGuardOperation(t, f, wC, c, c.OperationID)
+	stopC := acceptRestartGuardCommand(t, f, c, iC, "stop", "")
+	iC = awaitRestartGuardOperation(t, f, wC, c, stopC.OperationID)
+	attach := func() biz.Command {
+		raw, err := api.CanonicalCommandIntent("attach-pvc", c.ID, iC.Version, shared.PVCName, "/shared", false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return biz.Command{TenantID: c.TenantID, ID: c.ID, OperationID: uuid.NewString(), Key: uuid.NewString(), Action: "attach-pvc", ExpectedVersion: iC.Version, RequestHash: api.CommandIntentDigest(raw), CanonicalIntent: raw, Mount: &biz.VolumeMount{ClusterID: c.Spec.ClusterID, Namespace: c.Spec.Namespace, PVCName: shared.PVCName, PVCUID: shared.PVCUID, MountPath: "/shared", ReadOnly: true, Ownership: "borrowed"}}
+	}
+	if _, err := f.repo.AcceptCommand(ctx, attach()); !errors.Is(err, biz.ErrPVCInUse) {
+		t.Fatal("ATTACH accepted a volume held by a stopped instance", err)
+	}
+
+	// A 停止并卸载 → released 后 C 才能再挂同一块盘。
+	stopA := acceptRestartGuardCommand(t, f, a, iA, "stop", "")
+	iA = awaitRestartGuardOperation(t, f, wA, a, stopA.OperationID)
+	detach := acceptRestartGuardCommand(t, f, a, iA, "detach-pvc", shared.MountPath)
+	iA = awaitRestartGuardOperation(t, f, wA, a, detach.OperationID)
+	var state string
+	if err := f.runtime.QueryRow(ctx, `SELECT state FROM instance.borrowed_volume_references WHERE tenant_id=$1 AND instance_id=$2 AND mount_path=$3`, a.TenantID, a.ID, shared.MountPath).Scan(&state); err != nil || state != "released" {
+		t.Fatal("detached reference not released", state, err)
+	}
+	if _, err := f.repo.AcceptCommand(ctx, attach()); err != nil {
+		t.Fatal("released volume not attachable again", err)
+	}
+}
+
 func TestRestartGuardPGDeleteLeaseAndTerminalIdentityCAS(t *testing.T) {
 	f := database(t)
 	f.repo.UseIntentGate(true)

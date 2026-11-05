@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
+	storagebiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/storage"
 	"github.com/zhangzhe-ctrl/ani-resource-service/pkg/instanceconfig"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,6 +105,13 @@ func dedicatedPVC(pvc *unstructured.Unstructured) bool {
 	return false
 }
 
+// managedVolume 判定 PVC 是否属于 Storage 受管卷范围（与 /storage/volumes 列表
+// 同一标签口径）：managed-by 与 tenant-id 必须同时匹配当前租户。缺标签视为非受管。
+func managedVolume(pvc *unstructured.Unstructured, tenant string) bool {
+	labels := pvc.GetLabels()
+	return labels[storagebiz.LabelManagedBy] == storagebiz.ManagedByValue && labels[storagebiz.LabelTenantID] == tenant
+}
+
 func mountablePVC(pvc *unstructured.Unstructured) (biz.MountablePVC, string) {
 	phase, _, _ := unstructured.NestedString(pvc.Object, "status", "phase")
 	mode, _, _ := unstructured.NestedString(pvc.Object, "spec", "volumeMode")
@@ -112,7 +120,7 @@ func mountablePVC(pvc *unstructured.Unstructured) (biz.MountablePVC, string) {
 	}
 	capacity, _, _ := unstructured.NestedString(pvc.Object, "spec", "resources", "requests", "storage")
 	access, _, _ := unstructured.NestedStringSlice(pvc.Object, "spec", "accessModes")
-	out := biz.MountablePVC{PVCName: pvc.GetName(), Phase: phase, RequestedCapacity: capacity, AccessModes: access, VolumeMode: mode, Selectable: true}
+	out := biz.MountablePVC{PVCName: pvc.GetName(), Phase: phase, RequestedCapacity: capacity, AccessModes: access, VolumeMode: mode, Selectable: true, PVCUID: string(pvc.GetUID())}
 	switch {
 	case pvc.GetDeletionTimestamp() != nil:
 		out.UnavailableReason = "PVC_TERMINATING"
@@ -156,7 +164,7 @@ func (n *Notebook) ResolveVolumes(ctx context.Context, tenant, cluster, namespac
 			}
 			return nil, err
 		}
-		if pvc.GetNamespace() != namespace || dedicatedPVC(pvc) || (pvc.GetLabels()[tenantLabel] != "" && pvc.GetLabels()[tenantLabel] != tenant) {
+		if pvc.GetNamespace() != namespace || dedicatedPVC(pvc) || !managedVolume(pvc, tenant) {
 			return nil, biz.ErrPVCNotFound
 		}
 		if _, reason := mountablePVC(pvc); reason != "" {
@@ -289,13 +297,16 @@ func (n *Notebook) ListMountablePVCs(ctx context.Context, tenant, cluster, names
 	}
 	// A continue expiration invalidates every earlier page. Restart from an
 	// empty accumulator, with a bounded number of attempts under churn.
+	// Candidates reuse the Storage managed-volume scope: only claims labelled
+	// managed-by=ani-resource-service and tenant-id=<tenant> are enumerated.
+	selector := fmt.Sprintf("%s=%s,%s=%s", storagebiz.LabelManagedBy, storagebiz.ManagedByValue, storagebiz.LabelTenantID, tenant)
 	for attempt := 0; attempt < 3; attempt++ {
 		items := []biz.MountablePVC{}
 		continuation, version := "", ""
 		count := 0
 		restart := false
 		for {
-			list, err := n.client.Resource(pvcGVR).Namespace(namespace).List(ctx, metav1.ListOptions{Limit: pvcListPage, Continue: continuation})
+			list, err := n.client.Resource(pvcGVR).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: pvcListPage, Continue: continuation})
 			if apierrors.IsResourceExpired(err) {
 				restart = true
 				break
@@ -313,7 +324,8 @@ func (n *Notebook) ListMountablePVCs(ctx context.Context, tenant, cluster, names
 			}
 			for k := range list.Items {
 				pvc := &list.Items[k]
-				if pvc.GetNamespace() != namespace || dedicatedPVC(pvc) || (pvc.GetLabels()[tenantLabel] != "" && pvc.GetLabels()[tenantLabel] != tenant) || !strings.Contains(pvc.GetName(), name) {
+				// 复核受管标签：不依赖服务端 selector 行为，缺标签或误标一律排除。
+				if pvc.GetNamespace() != namespace || dedicatedPVC(pvc) || !managedVolume(pvc, tenant) || !strings.Contains(pvc.GetName(), name) {
 					continue
 				}
 				item, _ := mountablePVC(pvc)

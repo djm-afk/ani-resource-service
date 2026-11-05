@@ -288,12 +288,20 @@ func (p *Postgres) AcceptCommand(ctx context.Context, c biz.Command) (biz.ACK, e
 		if c.Mount == nil || c.Mount.ClusterID != i.Spec.ClusterID || c.Mount.Namespace != i.Spec.Namespace || c.Mount.PVCUID == "" || c.Mount.Ownership != "borrowed" {
 			return ack, biz.ErrInvalid
 		}
+		if c.Mount.PVCName == i.Spec.PVCName {
+			return ack, biz.ErrPVCNotFound
+		}
 		for _, m := range mounts {
 			if m.MountPath == c.Mount.MountPath {
 				return ack, biz.ErrMountPathInUse
 			}
 		}
 		if err = lockMountGuards(ctx, tx, i.TenantID, []biz.VolumeMount{*c.Mount}); err != nil {
+			return ack, err
+		}
+		// 原子预占：guard 行锁已拿到，此处检查与下方引用写入同一事务，两个
+		// 并发受理在锁上串行，第二个必然看到第一个写入的 pending 引用。
+		if err = rejectOccupiedVolumes(ctx, tx, i.TenantID, []biz.VolumeMount{*c.Mount}); err != nil {
 			return ack, err
 		}
 		generation := int64(1)
@@ -382,6 +390,23 @@ func (p *Postgres) AcceptCommand(ctx context.Context, c biz.Command) (biz.ACK, e
 	}
 	return ack, tx.Commit(ctx)
 }
+
+// rejectOccupiedVolumes 拒绝挂载已被任何实例引用（pending/active/retiring）
+// 的 PVC；released 视为空闲。必须在 lockMountGuards 之后、写入新引用之前调用，
+// 与引用写入同处一个事务。PVCUID 为空时按名称匹配（fail-closed）。
+func rejectOccupiedVolumes(ctx context.Context, tx pgx.Tx, tenant string, mounts []biz.VolumeMount) error {
+	for _, m := range mounts {
+		var used bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM instance.borrowed_volume_references WHERE tenant_id=$1 AND cluster_id=$2 AND namespace=$3 AND pvc_name=$4 AND ($5::text='' OR pvc_uid=$5) AND state IN ('pending','active','retiring'))`, tenant, m.ClusterID, m.Namespace, m.PVCName, m.PVCUID).Scan(&used); err != nil {
+			return err
+		}
+		if used {
+			return biz.ErrPVCInUse
+		}
+	}
+	return nil
+}
+
 func lockMountGuards(ctx context.Context, tx pgx.Tx, tenant string, mounts []biz.VolumeMount) error {
 	sorted := append([]biz.VolumeMount(nil), mounts...)
 	sort.Slice(sorted, func(a, b int) bool {

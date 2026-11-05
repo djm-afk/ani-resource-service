@@ -109,6 +109,18 @@ type PVCGuardReader interface {
 	PVCDeleting(context.Context, string, string, string, string) (bool, error)
 }
 
+// VolumeReference 是 borrowed_volume_references 的占用投影，仅用于候选展示；
+// 受理期的权威占用校验在受理事务内直接查询引用表。
+type VolumeReference struct {
+	PVCName, PVCUID, State string
+}
+
+// VolumeUsageReader 返回指定 placement 下仍受保护（pending/active/retiring）的
+// 卷引用；候选查询据此标记 PVC_IN_USE。
+type VolumeUsageReader interface {
+	VolumeReferences(ctx context.Context, tenant, cluster, namespace string) ([]VolumeReference, error)
+}
+
 type LegacyDeleteRepository interface {
 	InitializeLegacyDeleteExecution(context.Context, Work) error
 }

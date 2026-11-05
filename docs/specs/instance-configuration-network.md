@@ -104,13 +104,13 @@ Instance 在 `internal/biz` 声明自己需要的窄 Network 和卷查询 Interf
 
 已实现 `ListMountablePVCs` 及批量解析端口，Gov 公开候选入口为 `GET /api/v1/instances/mountable-pvcs?page=1&pageSize=20&name=...`。静态路由先于 `{instance_id}` 路由匹配。分页沿用 `page/pageSize → items,total`，最大 pageSize=100；Kubernetes LIST 使用一次完整一致的分页快照，完成租户过滤、确定性名称排序后计算真实 total 并切页。内部每页 200、单次最多 2,000 个 PVC；continue 过期重启本次查询，超限返回明确容量错误，不返回截断集合或伪造 total。
 
-候选返回 `pvc_name、phase、requested_capacity、access_modes、volume_mode、selectable、unavailable_reason`；容量使用 Kubernetes quantity 字符串，例如 `20Gi`。UID 由 Res 内部冻结，不作为公开可写字段。候选只在可信租户 Namespace 内查询，过滤其他实例专属工作盘及非授权资源。目录展示不能替代创建时重查。
+候选返回 `pvc_name、phase、requested_capacity、access_modes、volume_mode、selectable、unavailable_reason`；容量使用 Kubernetes quantity 字符串，例如 `20Gi`。UID 由 Res 内部冻结，不作为公开可写字段。候选范围与 `/api/v1/storage/volumes` 受管卷口径一致：只枚举带 `storage.ani.io/managed-by=ani-resource-service` 且 `storage.ani.io/tenant-id=<租户>` 标签的 PVC（LIST 带 selector 并在代码内复核），非受管盘、其他实例专属工作盘及非授权资源一律排除。候选是观测值，目录展示不能替代创建时重查。
 
 VPC/Subnet 继续复用现有租户列表，前端按 VPC 筛选 Subnet；CPU/GPU 规格解析出的 cluster 必须与所选网络 placement 一致。用户看不到或不能使用的卷/网络不作为可猜测的跨租户详情返回。
 
 授权配置查询 `GET /api/v1/instances/{instance_id}/configuration` 返回当前 `CurrentMounts`、`version/applied_mount_version/pending_change`，以及原冻结的工作目录、网络产品 ID、用户标签/注解/env；待提交目标不能提前覆盖当前挂载。采用实例详情读取权限，该权限可以读取字面环境值。列表、操作状态、审计和错误不回显 env 值；运行诊断只返回环境变量名称/来源。字段及映射见 [Proto](../../api/instance/v1/instance.proto)和[配置查询](../../internal/service/instance/configuration.go)。
 
-创建范围候选沿用原入口；实例范围候选 `GET /api/v1/instances/{instance_id}/mountable-pvcs` 只使用实例已保存的 cluster/namespace，活跃删除 guard 对应名称不可选。三个新动作和候选的权限、五个 Resource RPC 及精确 mTLS 登记见[实例 API 合同](instance-mvp.md#111-用户-api)；只读 Lookup 不访问 Kubernetes、不产生受理或占额副作用。
+创建范围候选沿用原入口；实例范围候选 `GET /api/v1/instances/{instance_id}/mountable-pvcs` 只使用实例已保存的 cluster/namespace。两个候选入口共用同一标记规则：活跃删除 guard 对应名称不可选（`PVC_DELETION_IN_PROGRESS`）；引用台账中 `pending/active/retiring`（按 pvc_name+pvc_uid）的卷不可选（`PVC_IN_USE`）。三个新动作和候选的权限、五个 Resource RPC 及精确 mTLS 登记见[实例 API 合同](instance-mvp.md#111-用户-api)；只读 Lookup 不访问 Kubernetes、不产生受理或占额副作用。
 
 实例详情增加独立的 `network_state/network_reason/network_cleaned` 和卷引用状态；无网络选择为 `not_requested`。显式联网实例只有当前 Pod Ready 且 Network 核验 attached 后才展示整体 running；部分就绪保留 pending/reason，暂停后不保留旧 IP 的地址资格。
 
@@ -128,7 +128,7 @@ VPC/Subnet 继续复用现有租户列表，前端按 VPC 筛选 Subnet；CPU/GP
 2. 合法 Pending PVC 可以使用，包含 WaitForFirstConsumer；不能要求所有候选先 Bound。绑定、调度及 CSI 挂载问题作为真实状态和原因返回。
 3. 挂载路径必须绝对、规范，拒绝 `/`、系统关键目录、重复路径及与工作目录相互遮盖的路径；具体受保护目录集中在 adapter 校验，不提供任意 volume source 或 hostPath。
 4. 创建 Notebook 前、Start 前检查当前冻结 PVC UID，运行观察核对当前 claimName/mountPath/readOnly。运行态 Attach 首次停止前只复核新增冻结身份；Detach 不因剩余失效 PVC 阻塞安全移除。卷替换或访问失败明确返回原因，不重选数据。
-5. RWO/RWOP/RWX 按实际存储和调度能力解释，不用无锁计数宣称独占。候选可选不保证并发挂载成功；访问模式及占用原因需可见。
+5. RWO/RWOP/RWX 按实际存储和调度能力解释；访问模式及占用原因需可见。本版按产品口径执行"一盘单实例"绑定：一块盘同一时刻只能被一个实例引用（含停止态、挂载预占与未结束的卸载）；候选是观测值，受理期由 `borrowed_pvc_guards` 行锁 + `borrowed_volume_references` 台账在同一事务内做原子预占，冲突返回 `INSTANCE_PVC_IN_USE`，不是只由前端过滤。
 
 Pod PVC 引用只有 claimName，没有 UID 前置条件。应用层 UID 冻结、GET 和平台内部 name guard 不能消除绕过平台删除后同名重建的竞态，不能宣称严格防替换。当前 Goal 的 A36 外部准入/RBAC 保护按用户决定为 **DEFERRED_USER_SCOPE**，不记 PASS；这不削减本节 UID 校验及以下平台内部引用/删除保护。
 

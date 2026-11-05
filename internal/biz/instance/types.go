@@ -40,6 +40,7 @@ var (
 	ErrPVCNotFound            = errors.New("INSTANCE_PVC_NOT_FOUND")
 	ErrPVCReferenceChanged    = errors.New("INSTANCE_PVC_REFERENCE_CHANGED")
 	ErrPVCCatalogLimit        = errors.New("INSTANCE_PVC_CATALOG_LIMIT")
+	ErrPVCInUse               = errors.New("INSTANCE_PVC_IN_USE")
 	ErrReservedConfig         = errors.New("INSTANCE_RESERVED_CONFIG")
 	ErrNetworkNotFound        = errors.New("INSTANCE_NETWORK_NOT_FOUND")
 	ErrNetworkConflict        = errors.New("INSTANCE_NETWORK_CONFLICT")
@@ -133,6 +134,9 @@ type MountablePVC struct {
 	VolumeMode                        string
 	Selectable                        bool
 	UnavailableReason                 string
+	// PVCUID is internal occupancy matching only; it is never written to the
+	// public proto response.
+	PVCUID string
 }
 type VolumeResolver interface {
 	ResolveVolumes(context.Context, string, string, string, []VolumeMount) ([]VolumeMount, error)

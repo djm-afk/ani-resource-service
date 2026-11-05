@@ -163,20 +163,12 @@ func (s *Service) ListInstanceMountablePVCs(ctx context.Context, r *pb.ListInsta
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	guard, ok := s.repo.(biz.PVCGuardReader)
-	if !ok {
-		return nil, rpcError(biz.ErrNetworkUnavailable)
+	items, err = s.markMountablePVCs(ctx, r.TenantId, i.Spec.ClusterID, i.Spec.Namespace, items)
+	if err != nil {
+		return nil, rpcError(err)
 	}
 	out := &pb.ListMountablePVCsResponse{Items: []*pb.MountablePVC{}, Total: total}
 	for _, m := range items {
-		deleting, err := guard.PVCDeleting(ctx, r.TenantId, i.Spec.ClusterID, i.Spec.Namespace, m.PVCName)
-		if err != nil {
-			return nil, rpcError(err)
-		}
-		if deleting {
-			m.Selectable = false
-			m.UnavailableReason = "PVC_DELETION_IN_PROGRESS"
-		}
 		out.Items = append(out.Items, &pb.MountablePVC{PvcName: m.PVCName, Phase: m.Phase, RequestedCapacity: m.RequestedCapacity, AccessModes: m.AccessModes, VolumeMode: m.VolumeMode, Selectable: m.Selectable, UnavailableReason: m.UnavailableReason})
 	}
 	return out, nil

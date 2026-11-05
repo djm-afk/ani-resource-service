@@ -107,7 +107,7 @@ func rpcError(e error) error {
 		return status.Error(codes.AlreadyExists, "INSTANCE_IDEMPOTENCY_CONFLICT")
 	case errors.Is(e, biz.ErrActionUnavailable):
 		return status.Error(codes.Unavailable, e.Error())
-	case errors.Is(e, biz.ErrOperationInProgress), errors.Is(e, biz.ErrState), errors.Is(e, biz.ErrRequiresStop), errors.Is(e, biz.ErrDeleting), errors.Is(e, biz.ErrMountPathInUse), errors.Is(e, biz.ErrWorkspaceDetach), errors.Is(e, biz.ErrPVCDeleting):
+	case errors.Is(e, biz.ErrOperationInProgress), errors.Is(e, biz.ErrState), errors.Is(e, biz.ErrRequiresStop), errors.Is(e, biz.ErrDeleting), errors.Is(e, biz.ErrMountPathInUse), errors.Is(e, biz.ErrWorkspaceDetach), errors.Is(e, biz.ErrPVCDeleting), errors.Is(e, biz.ErrPVCInUse):
 		return status.Error(codes.FailedPrecondition, e.Error())
 	case errors.Is(e, biz.ErrMountNotFound):
 		return status.Error(codes.NotFound, e.Error())

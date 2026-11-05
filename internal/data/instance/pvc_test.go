@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
+	storagebiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/storage"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -25,11 +26,20 @@ func testBorrowedPVC(namespace, name, uid, phase, mode string) *unstructured.Uns
 	return &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": map[string]any{"namespace": namespace, "name": name, "uid": uid}, "spec": map[string]any{"volumeMode": mode, "accessModes": []any{"ReadWriteOnce"}, "resources": map[string]any{"requests": map[string]any{"storage": "20Gi"}}}, "status": map[string]any{"phase": phase}}}
 }
 
+// testManagedPVC 在 testBorrowedPVC 之上补 Storage 受管标签（与 /storage/volumes
+// 同一口径）。候选与挂载解析只接受受管卷；不带标签的 PVC 必须被排除。
+func testManagedPVC(namespace, name, uid, phase, mode, tenant string) *unstructured.Unstructured {
+	pvc := testBorrowedPVC(namespace, name, uid, phase, mode)
+	pvc.SetLabels(map[string]string{storagebiz.LabelManagedBy: storagebiz.ManagedByValue, storagebiz.LabelTenantID: tenant})
+	return pvc
+}
+
 func TestResolveBorrowedVolumesFreezesPendingUIDAndRejectsScope(t *testing.T) {
 	i := configuredInstance(t)
-	pending := testBorrowedPVC(i.Spec.Namespace, "dataset", "dataset-original", "Pending", "Filesystem")
-	models := testBorrowedPVC(i.Spec.Namespace, "models", "models-original", "Bound", "Filesystem")
-	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), tenantNamespace(i.TenantID, i.Spec.Namespace), pending, models)
+	pending := testManagedPVC(i.Spec.Namespace, "dataset", "dataset-original", "Pending", "Filesystem", i.TenantID)
+	models := testManagedPVC(i.Spec.Namespace, "models", "models-original", "Bound", "Filesystem", i.TenantID)
+	unmanaged := testBorrowedPVC(i.Spec.Namespace, "handmade", "handmade-uid", "Bound", "Filesystem")
+	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), tenantNamespace(i.TenantID, i.Spec.Namespace), pending, models, unmanaged)
 	n, _ := NewNotebook(client)
 	input := append([]biz.VolumeMount(nil), i.Spec.VolumeMounts...)
 	for k := range input {
@@ -41,6 +51,12 @@ func TestResolveBorrowedVolumesFreezesPendingUIDAndRejectsScope(t *testing.T) {
 	}
 	if input[0].PVCUID != "" || input[0].Ownership != "" {
 		t.Fatal("resolver mutated user input")
+	}
+	if _, err = n.ResolveVolumes(context.Background(), i.TenantID, i.Spec.ClusterID, i.Spec.Namespace, []biz.VolumeMount{{PVCName: "handmade", MountPath: "/handmade"}}); !errors.Is(err, biz.ErrPVCNotFound) {
+		t.Fatal("unmanaged volume must be rejected as not-found", err)
+	}
+	if _, err = n.ResolveVolumes(context.Background(), i.TenantID, i.Spec.ClusterID, i.Spec.Namespace, []biz.VolumeMount{{PVCName: "handmade", MountPath: "/handmade", ReadOnly: true}}); !errors.Is(err, biz.ErrPVCNotFound) {
+		t.Fatal("unmanaged read-only volume must also be rejected", err)
 	}
 	if _, err = n.ResolveVolumes(context.Background(), "22222222-2222-4222-8222-222222222222", i.Spec.ClusterID, i.Spec.Namespace, input); !errors.Is(err, biz.ErrPVCNotFound) {
 		t.Fatal("foreign Namespace must have non-enumerating not-found result", err)
@@ -81,17 +97,26 @@ func TestBorrowedPVCCatalogDeterministicBoundedSnapshot(t *testing.T) {
 		if options.Limit != 200 || action.GetNamespace() != i.Spec.Namespace {
 			t.Fatal("catalog list is not tenant scoped and bounded")
 		}
+		if options.LabelSelector != storagebiz.LabelManagedBy+"="+storagebiz.ManagedByValue+","+storagebiz.LabelTenantID+"="+i.TenantID {
+			t.Fatal("catalog list must be scoped to Storage managed volumes", options.LabelSelector)
+		}
 		list := &unstructured.UnstructuredList{}
 		list.SetAPIVersion("v1")
 		list.SetKind("PersistentVolumeClaimList")
 		list.SetResourceVersion("snapshot-1")
 		if options.Continue == "" {
-			list.Items = []unstructured.Unstructured{*testBorrowedPVC(i.Spec.Namespace, "zeta", "z", "Pending", "Filesystem"), *testBorrowedPVC(i.Spec.Namespace, "alpha", "a", "Bound", "Filesystem")}
+			list.Items = []unstructured.Unstructured{
+				*testManagedPVC(i.Spec.Namespace, "zeta", "z", "Pending", "Filesystem", i.TenantID),
+				*testManagedPVC(i.Spec.Namespace, "alpha", "a", "Bound", "Filesystem", i.TenantID),
+			}
 			list.SetContinue("second")
 		} else if options.Continue == "second" {
-			workspace := testBorrowedPVC(i.Spec.Namespace, "workspace", "work", "Bound", "Filesystem")
+			workspace := testManagedPVC(i.Spec.Namespace, "workspace", "work", "Bound", "Filesystem", i.TenantID)
 			workspace.SetLabels(labels(i))
-			list.Items = []unstructured.Unstructured{*workspace, *testBorrowedPVC(i.Spec.Namespace, "beta", "b", "Lost", "Filesystem")}
+			list.Items = []unstructured.Unstructured{
+				*workspace,
+				*testManagedPVC(i.Spec.Namespace, "beta", "b", "Lost", "Filesystem", i.TenantID),
+			}
 		} else {
 			t.Fatal("unexpected continuation", options.Continue)
 		}
@@ -116,14 +141,14 @@ func TestBorrowedPVCCatalogRestartsExpiredSnapshotAndFailsCapacity(t *testing.T)
 		list.SetKind("PersistentVolumeClaimList")
 		if calls == 1 {
 			list.SetContinue("expired")
-			list.Items = []unstructured.Unstructured{*testBorrowedPVC(i.Spec.Namespace, "old-snapshot", "old", "Pending", "Filesystem")}
+			list.Items = []unstructured.Unstructured{*testManagedPVC(i.Spec.Namespace, "old-snapshot", "old", "Pending", "Filesystem", i.TenantID)}
 		} else if calls == 2 {
 			return true, nil, apierrors.NewResourceExpired("expired")
 		} else if calls == 3 {
 			if options.Continue != "" {
 				t.Fatal("expired snapshot did not restart")
 			}
-			list.Items = []unstructured.Unstructured{*testBorrowedPVC(i.Spec.Namespace, "fresh-snapshot", "fresh", "Pending", "Filesystem")}
+			list.Items = []unstructured.Unstructured{*testManagedPVC(i.Spec.Namespace, "fresh-snapshot", "fresh", "Pending", "Filesystem", i.TenantID)}
 		}
 		return true, list, nil
 	})
@@ -138,7 +163,7 @@ func TestBorrowedPVCCatalogRestartsExpiredSnapshotAndFailsCapacity(t *testing.T)
 		list.SetAPIVersion("v1")
 		list.SetKind("PersistentVolumeClaimList")
 		for k := 0; k < 200; k++ {
-			list.Items = append(list.Items, *testBorrowedPVC(i.Spec.Namespace, fmt.Sprintf("claim-%d", k), fmt.Sprintf("uid-%d", k), "Pending", "Filesystem"))
+			list.Items = append(list.Items, *testManagedPVC(i.Spec.Namespace, fmt.Sprintf("claim-%d", k), fmt.Sprintf("uid-%d", k), "Pending", "Filesystem", i.TenantID))
 		}
 		list.SetContinue("more")
 		return true, list, nil
