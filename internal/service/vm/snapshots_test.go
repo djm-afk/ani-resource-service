@@ -130,6 +130,35 @@ func TestSnapshotServiceReadsAreScopedAndPreviewIsSideEffectFree(t *testing.T) {
 		t.Fatal("running target preview admitted", err)
 	}
 }
+
+// consoleStopNative exposes both observation scopes so the test can pin the
+// restore stop check to the console-scope (storage-free) observation.
+type consoleStopNative struct {
+	snapshotServiceNative
+	consoleCalls, fullCalls int
+}
+
+func (n *consoleStopNative) ObserveConsole(_ context.Context, v biz.VM) (biz.Observation, error) {
+	n.consoleCalls++
+	return biz.Observation{VM: v.Native, Stopped: true}, nil
+}
+func (n *consoleStopNative) Observe(_ context.Context, v biz.VM) (biz.Observation, error) {
+	n.fullCalls++
+	return biz.Observation{VM: v.Native, Stopped: true}, nil
+}
+
+func TestRestoreStopCheckUsesConsoleScopeObservation(t *testing.T) {
+	service, repo, native, ctx, s := serviceSnapshotFixture(t)
+	c := &consoleStopNative{snapshotServiceNative: *native}
+	service.native = c
+	preview, err := service.PreviewRestore(ctx, &pb.PreviewRestoreRequest{TenantId: repo.current.TenantID, VmId: repo.current.ID, SnapshotId: s.ID})
+	if err != nil || len(preview.PreviewDigest) != 64 {
+		t.Fatal(preview, err)
+	}
+	if c.consoleCalls == 0 || c.fullCalls != 0 {
+		t.Fatalf("restore stop check must use the console-scope observation: console=%d full=%d", c.consoleCalls, c.fullCalls)
+	}
+}
 func TestListSnapshotsReturnsPersistedObservationsWithoutNativeDependency(t *testing.T) {
 	service, repo, native, ctx, ready := serviceSnapshotFixture(t)
 	ready.ObservedAt = time.Date(2026, 10, 24, 10, 0, 0, 0, time.UTC)

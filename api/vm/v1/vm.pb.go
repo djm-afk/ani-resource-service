@@ -1588,11 +1588,16 @@ func (x *Acceptance) GetAccepted() bool {
 }
 
 type GetVMRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	VmId          string                 `protobuf:"bytes,2,opt,name=vm_id,json=vmId,proto3" json:"vm_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	VmId     string                 `protobuf:"bytes,2,opt,name=vm_id,json=vmId,proto3" json:"vm_id,omitempty"`
+	// Tri-state guest runtime switch: unset/true keeps the historical behavior of
+	// collecting runtime inside GetVM; explicit false skips guest reads so a
+	// dedicated runtime read can serve that data separately. With the explicit
+	// false, runtime.state is NOT_QUERIED.
+	IncludeRuntime *bool `protobuf:"varint,3,opt,name=include_runtime,json=includeRuntime,proto3,oneof" json:"include_runtime,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetVMRequest) Reset() {
@@ -1637,6 +1642,13 @@ func (x *GetVMRequest) GetVmId() string {
 		return x.VmId
 	}
 	return ""
+}
+
+func (x *GetVMRequest) GetIncludeRuntime() bool {
+	if x != nil && x.IncludeRuntime != nil {
+		return *x.IncludeRuntime
+	}
+	return false
 }
 
 type ListVMsRequest struct {
@@ -3583,7 +3595,8 @@ func (x *GuestFilesystem) GetUsedBytes() uint64 {
 
 type VMRuntime struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// AVAILABLE, NOT_RUNNING, AGENT_NOT_CONNECTED, UNAVAILABLE, or CHANGED.
+	// AVAILABLE, NOT_RUNNING, AGENT_NOT_CONNECTED, UNAVAILABLE, CHANGED, or
+	// NOT_QUERIED (only when GetVM was called with include_runtime=false).
 	State      string `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
 	AgentState string `protobuf:"bytes,2,opt,name=agent_state,json=agentState,proto3" json:"agent_state,omitempty"`
 	ObservedAt string `protobuf:"bytes,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
@@ -4755,10 +4768,12 @@ const file_vm_v1_vm_proto_rawDesc = "" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12\x1f\n" +
 	"\vresource_id\x18\x02 \x01(\tR\n" +
 	"resourceId\x12\x1a\n" +
-	"\baccepted\x18\x03 \x01(\bR\baccepted\"@\n" +
+	"\baccepted\x18\x03 \x01(\bR\baccepted\"\x82\x01\n" +
 	"\fGetVMRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x13\n" +
-	"\x05vm_id\x18\x02 \x01(\tR\x04vmId\"\x8e\x01\n" +
+	"\x05vm_id\x18\x02 \x01(\tR\x04vmId\x12,\n" +
+	"\x0finclude_runtime\x18\x03 \x01(\bH\x00R\x0eincludeRuntime\x88\x01\x01B\x12\n" +
+	"\x10_include_runtime\"\x8e\x01\n" +
 	"\x0eListVMsRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\rR\x04page\x12\x1b\n" +
@@ -5267,6 +5282,7 @@ func file_vm_v1_vm_proto_init() {
 		return
 	}
 	file_vm_v1_vm_proto_msgTypes[3].OneofWrappers = []any{}
+	file_vm_v1_vm_proto_msgTypes[18].OneofWrappers = []any{}
 	file_vm_v1_vm_proto_msgTypes[45].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

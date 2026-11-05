@@ -280,7 +280,7 @@ func (s *Service) GetVM(ctx context.Context, r *pb.GetVMRequest) (*pb.VirtualMac
 	if e != nil {
 		return nil, rpcError(e)
 	}
-	return s.projectDetail(ctx, v)
+	return s.projectDetail(ctx, v, r.IncludeRuntime == nil || r.GetIncludeRuntime())
 }
 func wireVM(v biz.VM) (*pb.VirtualMachine, error) {
 	spec, e := pb.DecodeCreateSpec(v.Spec.Canonical)
@@ -291,16 +291,24 @@ func wireVM(v biz.VM) (*pb.VirtualMachine, error) {
 	if !v.SecurityGroupsInitialized {
 		out.SecurityGroupIds = append([]string(nil), v.Spec.SecurityGroupIDs...)
 	}
-	for _, d := range v.Disks {
-		if !d.Tombstone {
-			out.Disks = append(out.Disks, &pb.Disk{DiskId: d.ID, Role: d.Role, Name: d.Name, SizeGb: d.SizeGB, RequestedBytes: d.RequestedBytes, ObservedCapacityBytes: d.ObservedCapacityBytes, VolumeName: d.VolumeName, Serial: d.Serial, Attached: d.Attached, PreparationState: d.Preparation, Reason: d.Reason})
-		}
-	}
+	out.Disks = wireDisks(v)
 	for _, a := range v.Addresses {
 		out.Addresses = append(out.Addresses, &pb.CurrentAddress{NicName: a.NIC, Address: a.Address, ObservedAt: observed(a.ObservedAt)})
 	}
 	wireMedia(v, out)
 	return out, nil
+}
+
+// wireDisks projects the persisted disk inventory only. Disk reads must never
+// depend on spec decoding, relations or guest runtime collection.
+func wireDisks(v biz.VM) []*pb.Disk {
+	var out []*pb.Disk
+	for _, d := range v.Disks {
+		if !d.Tombstone {
+			out = append(out, &pb.Disk{DiskId: d.ID, Role: d.Role, Name: d.Name, SizeGb: d.SizeGB, RequestedBytes: d.RequestedBytes, ObservedCapacityBytes: d.ObservedCapacityBytes, VolumeName: d.VolumeName, Serial: d.Serial, Attached: d.Attached, PreparationState: d.Preparation, Reason: d.Reason})
+		}
+	}
+	return out
 }
 func observed(t time.Time) string {
 	if t.IsZero() {
@@ -446,13 +454,12 @@ func (s *Service) command(ctx context.Context, m proto.Message, action string) (
 					return nil, rpcError(biz.ErrBusy)
 				}
 			} else {
-				if e = n.ValidateDiskAttachment(ctx, v, v.Disks[i], action == "attach-disk"); e != nil {
-					return nil, rpcError(e)
-				}
-				observed, e := s.native.Observe(ctx, v)
+				observed, e := n.ValidateDiskAttachment(ctx, v, v.Disks[i], action == "attach-disk")
 				if e != nil {
 					return nil, rpcError(e)
 				}
+				// Reuse the observation the validation already paid for instead of
+				// issuing a second full native observation on the accept path.
 				if action == "detach-disk" && observed.Running && !intent.GuestPrepared {
 					return nil, rpcError(biz.ErrInvalid)
 				}
@@ -519,11 +526,19 @@ func (s *Service) ForceStop(ctx context.Context, r *pb.ForceStopRequest) (*pb.Op
 	return s.command(ctx, r, "force-stop")
 }
 func (s *Service) ListDisks(ctx context.Context, r *pb.GetVMRequest) (*pb.ListDisksResponse, error) {
-	v, e := s.GetVM(ctx, r)
-	if e != nil {
-		return nil, e
+	if r == nil {
+		return nil, rpcError(biz.ErrInvalid)
 	}
-	return &pb.ListDisksResponse{Items: v.Disks}, nil
+	if e := biz.RequireTenant(ctx, r.TenantId); e != nil {
+		return nil, rpcError(e)
+	}
+	// Disks are a persisted projection. Reusing GetVM here used to pay the full
+	// detail projection (relations plus guest runtime) for data it never reads.
+	v, e := s.repo.Get(ctx, r.TenantId, r.VmId)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	return &pb.ListDisksResponse{Items: wireDisks(v)}, nil
 }
 func (s *Service) ListMedia(ctx context.Context, r *pb.ListMediaRequest) (*pb.ListMediaResponse, error) {
 	if r == nil {

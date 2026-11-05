@@ -13,7 +13,11 @@ func (s *Service) SetRuntimeReader(r biz.RuntimePort)     { s.runtime = r }
 func referenceWire(r biz.ResourceReference) *pb.ResourceReference {
 	return &pb.ResourceReference{Id: r.ID, Name: r.Name, State: r.State}
 }
-func (s *Service) projectDetail(ctx context.Context, v biz.VM) (*pb.VirtualMachine, error) {
+// projectDetail assembles the persisted detail plus optional guest runtime.
+// includeRuntime is tri-state: unset or true collects runtime exactly as
+// before; an explicit false skips guest reads because the runtime is served by
+// the dedicated read entry point.
+func (s *Service) projectDetail(ctx context.Context, v biz.VM, includeRuntime bool) (*pb.VirtualMachine, error) {
 	out, err := s.project(ctx, v)
 	if err != nil {
 		return nil, err
@@ -30,15 +34,20 @@ func (s *Service) projectDetail(ctx context.Context, v biz.VM) (*pb.VirtualMachi
 	if reader == nil {
 		reader, _ = s.native.(biz.RuntimePort)
 	}
-	if v.Native.UID == "" {
+	switch {
+	case v.Native.UID == "":
 		value.State = "NOT_RUNNING"
-	} else if reader != nil {
+	case reader != nil && includeRuntime:
 		value, err = reader.ReadRuntime(ctx, v)
 		if err != nil {
 			// A runtime dependency must not hide the persisted VM detail. Drop
 			// all unverified guest fields, retaining an explicit read failure.
 			value = biz.Runtime{State: "UNAVAILABLE", AgentState: "UNKNOWN", FilesystemsState: "NOT_QUERIED", ObservedAt: time.Now().UTC()}
 		}
+	default:
+		// Runtime skipped by request; keep an explicit marker instead of a
+		// stale-looking state.
+		value = biz.Runtime{State: "NOT_QUERIED", AgentState: "UNKNOWN", FilesystemsState: "NOT_QUERIED"}
 	}
 	out.Runtime = &pb.VMRuntime{State: value.State, AgentState: value.AgentState, FilesystemsState: value.FilesystemsState, ObservedAt: observed(value.ObservedAt), StartedAt: observed(value.StartedAt), NodeName: value.NodeName, Hostname: value.Hostname, AgentVersion: value.AgentVersion, OsName: value.OSName, OsVersion: value.OSVersion, KernelRelease: value.KernelRelease, KernelVersion: value.KernelVersion}
 	for _, nic := range value.Interfaces {

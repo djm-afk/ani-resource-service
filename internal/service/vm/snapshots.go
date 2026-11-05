@@ -135,7 +135,17 @@ func (s *Service) PreviewRestore(ctx context.Context, r *pb.PreviewRestoreReques
 	return result, nil
 }
 func (s *Service) restoreTargetStopped(ctx context.Context, v biz.VM) error {
-	observed, err := s.native.Observe(ctx, v)
+	// The stop decision only needs VM, VMI and launcher identities. Prefer the
+	// console-scope observation, which skips per-disk storage reads; fall back
+	// to the full observation when the native double does not offer it. This is
+	// the same assertion pattern the console path uses.
+	var observed biz.Observation
+	var err error
+	if console, ok := s.native.(biz.ConsoleNativePort); ok {
+		observed, err = console.ObserveConsole(ctx, v)
+	} else {
+		observed, err = s.native.Observe(ctx, v)
+	}
 	if err != nil {
 		return err
 	}

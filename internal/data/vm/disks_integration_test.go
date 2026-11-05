@@ -40,8 +40,8 @@ func (n *diskNativeBoundary) EnsureVolume(_ context.Context, v biz.VM, d biz.Dis
 func (n *diskNativeBoundary) Observe(_ context.Context, v biz.VM) (biz.Observation, error) {
 	return biz.Observation{VM: v.Native, Stopped: true, State: "Stopped"}, nil
 }
-func (n *diskNativeBoundary) ValidateDiskAttachment(context.Context, biz.VM, biz.Disk, bool) error {
-	return nil
+func (n *diskNativeBoundary) ValidateDiskAttachment(context.Context, biz.VM, biz.Disk, bool) (biz.Observation, error) {
+	return biz.Observation{}, nil
 }
 func (n *diskNativeBoundary) EnsureDiskAttachment(_ context.Context, _ biz.VM, d biz.Disk, attached bool) (bool, error) {
 	n.attached[d.ID] = attached

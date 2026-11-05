@@ -233,7 +233,7 @@ Gov 当前动作授权后，若删除已持久受理，仅调用该只读查询�
 
 `relations` 的 VPC/子网 ID 来自冻结网络，安全组 ID 来自 owner 当前绑定；名称按同一可信租户读取当前 Network 记录。引用各自带 `RESOLVED/NOT_FOUND/UNAVAILABLE/NOT_QUERIED` 状态，读取失败保留 ID、清除名称，不跨租户补查。平台地址的 `observed_at` 来自 Attachment 地址资格观测，缺少该时间保持空。
 
-仅 `GetVM` 读取 `runtime`；列表不逐台查询 VMI 或 QGA。Native 验证 namespace UID、VM 归属/UID、VMI controller owner；对无 UID 返回的 `guestosinfo/filesystemlist` 在读取前后复核当前 VMI UID。总读取预算 5 秒；换代时丢弃来宾内容，返回 `CHANGED`。`runtime.state` 为 `AVAILABLE/NOT_RUNNING/AGENT_NOT_CONNECTED/UNAVAILABLE/CHANGED`；代理未连接不足以证明未安装。来宾依赖不可用不隐藏基础 VM 详情，也不伪造成功。`started_at` 是 VMI Running 阶段转换时间，不是 guest OS 启动时间。
+`runtime` 由独立只读入口提供，列表不逐台查询 VMI 或 QGA。`GetVMRequest.include_runtime` 为三态开关：缺省或 true 时 `GetVM` 内联收集 `runtime`（与既有行为一致，旧调用方不受影响）；显式 false 时跳过全部来宾读取，`runtime.state` 返回 `NOT_QUERIED`。Native 验证 namespace UID、VM 归属/UID、VMI controller owner；对无 UID 返回的 `guestosinfo/filesystemlist` 在读取前后复核当前 VMI UID，两段来宾读取并行发起、按代理支持结果采用。总读取预算 5 秒；换代时丢弃来宾内容，返回 `CHANGED`。`runtime.state` 为 `AVAILABLE/NOT_RUNNING/AGENT_NOT_CONNECTED/UNAVAILABLE/CHANGED/NOT_QUERIED`（`NOT_QUERIED` 仅出现在显式 `include_runtime=false` 的响应里）；代理未连接不足以证明未安装。来宾依赖不可用不隐藏基础 VM 详情，也不伪造成功。`started_at` 是 VMI Running 阶段转换时间，不是 guest OS 启动时间。
 
 `runtime.interfaces` 独立展示 VMI 报告的 MAC、来宾网卡名、地址与来源，不替代 Network 的当前地址资格。文件系统来自 QGA；`filesystems_state` 区分 `AVAILABLE/UNSUPPORTED/UNAVAILABLE/NOT_QUERIED`。容量字段为 optional uint64，缺失与真实零值不同；按挂载点展示，不凭 vdX 名称推断 owner 云盘绑定。查询时间不代表 QGA 在该时刻重新采样，容量也不构成计量账本。所需只读 Kubernetes 权限见 [guest-info-rbac.yaml](../../deployments/vm/guest-info-rbac.yaml)，部署另行执行。
 

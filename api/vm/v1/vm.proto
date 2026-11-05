@@ -128,7 +128,14 @@ message AcceptDeleteRequest {
   int64 expected_version = 3; uint32 vm_contract_version = 4;
 }
 message Acceptance { string operation_id = 1; string resource_id = 2; bool accepted = 3; }
-message GetVMRequest { string tenant_id = 1; string vm_id = 2; }
+message GetVMRequest {
+  string tenant_id = 1; string vm_id = 2;
+  // Tri-state guest runtime switch: unset/true keeps the historical behavior of
+  // collecting runtime inside GetVM; explicit false skips guest reads so a
+  // dedicated runtime read can serve that data separately. With the explicit
+  // false, runtime.state is NOT_QUERIED.
+  optional bool include_runtime = 3;
+}
 message ListVMsRequest {
   string tenant_id = 1; uint32 page = 2; uint32 page_size = 3;
   // Display-state group filter; empty means all except deleted tombstones.
@@ -208,7 +215,8 @@ message GuestFilesystem {
   optional uint64 total_bytes = 4; optional uint64 used_bytes = 5;
 }
 message VMRuntime {
-  // AVAILABLE, NOT_RUNNING, AGENT_NOT_CONNECTED, UNAVAILABLE, or CHANGED.
+  // AVAILABLE, NOT_RUNNING, AGENT_NOT_CONNECTED, UNAVAILABLE, CHANGED, or
+  // NOT_QUERIED (only when GetVM was called with include_runtime=false).
   string state = 1; string agent_state = 2; string observed_at = 3;
   string node_name = 4;
   // VMI Running phase transition, not guest OS boot time.

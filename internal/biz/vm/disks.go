@@ -8,8 +8,10 @@ import (
 
 // DiskNativePort changes one owned disk through the native declarative API.
 // A false result means the persistent or running configuration still converges.
+// ValidateDiskAttachment returns the observation it judged on so callers can
+// reuse it instead of observing the same native state twice.
 type DiskNativePort interface {
-	ValidateDiskAttachment(context.Context, VM, Disk, bool) error
+	ValidateDiskAttachment(context.Context, VM, Disk, bool) (Observation, error)
 	EnsureDiskAttachment(context.Context, VM, Disk, bool) (bool, error)
 	DiskUnreferenced(context.Context, VM, Disk) (bool, error)
 }
@@ -142,7 +144,7 @@ func (w *Worker) disk(ctx context.Context, o *Operation, v *VM) error {
 				v.Disks[i] = current
 			}
 		}
-		if e := n.ValidateDiskAttachment(ctx, *v, d, attached); e != nil {
+		if _, e := n.ValidateDiskAttachment(ctx, *v, d, attached); e != nil {
 			return e
 		}
 		if e := w.checkpoint(ctx, o, *v, o.Action, d.DV); e != nil {

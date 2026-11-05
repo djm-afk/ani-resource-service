@@ -13,33 +13,33 @@ import (
 
 var kubevirtResource = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "kubevirts"}
 
-func (n *Native) ValidateDiskAttachment(ctx context.Context, v biz.VM, d biz.Disk, attached bool) error {
+func (n *Native) ValidateDiskAttachment(ctx context.Context, v biz.VM, d biz.Disk, attached bool) (biz.Observation, error) {
 	if d.Role != "data" || d.Tombstone {
-		return biz.ErrInvalid
+		return biz.Observation{}, biz.ErrInvalid
 	}
 	x, e := n.Observe(ctx, v)
 	if e != nil {
-		return e
+		return x, e
 	}
 	if x.VM.UID != v.Native.UID || v.Native.UID == "" {
-		return biz.ErrOwnership
+		return x, biz.ErrOwnership
 	}
 	if x.VMI == nil && x.Stopped {
-		return nil
+		return x, nil
 	}
 	if !x.Running {
-		return biz.ErrDependency
+		return x, biz.ErrDependency
 	}
 	// This service only implements the native declarative path. It must never
 	// silently submit a template-only change as a successful live disk change.
 	enabled, e := n.declarativeHotplugEnabled(ctx)
 	if e != nil {
-		return e
+		return x, e
 	}
 	if !enabled {
-		return biz.ErrDependency
+		return x, biz.ErrDependency
 	}
-	return nil
+	return x, nil
 }
 
 func (n *Native) declarativeHotplugEnabled(ctx context.Context) (bool, error) {
@@ -126,7 +126,7 @@ func namedItems(items []any, name string) ([]any, map[string]any, error) {
 	return keep, found, nil
 }
 func (n *Native) EnsureDiskAttachment(ctx context.Context, v biz.VM, d biz.Disk, attached bool) (bool, error) {
-	if e := n.ValidateDiskAttachment(ctx, v, d, attached); e != nil {
+	if _, e := n.ValidateDiskAttachment(ctx, v, d, attached); e != nil {
 		return false, e
 	}
 	observed, e := n.observeDisk(ctx, v, d)
