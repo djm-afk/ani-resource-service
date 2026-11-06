@@ -34,7 +34,8 @@ func TestDeleteImageObjectsRemovesTheDataVolumeBeforeItsChildren(t *testing.T) {
 	child := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "PersistentVolumeClaim",
 		"metadata": map[string]any{"name": "prime-parent-pvc-uid", "namespace": i.Native.Namespace, "uid": "rebuilt-child-uid"}}}
 	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		dvResource: "DataVolumeList", pvcResource: "PersistentVolumeClaimList", pvResource: "PersistentVolumeList"}, dv, parent, child)
+		dvResource: "DataVolumeList", pvcResource: "PersistentVolumeClaimList", pvResource: "PersistentVolumeList",
+		podResource: "PodList"}, dv, parent, child)
 	n := &ImageNative{client: c}
 
 	out, done, err := n.DeleteImageObjects(ctx, i)
@@ -66,7 +67,7 @@ func TestDeleteImageObjectsStillRefusesAForeignObjectAtTheChainHead(t *testing.T
 	foreign := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "PersistentVolumeClaim",
 		"metadata": map[string]any{"name": "someone-elses-pvc", "namespace": i.Native.Namespace, "uid": "new-uid"}}}
 	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		pvcResource: "PersistentVolumeClaimList"}, foreign)
+		pvcResource: "PersistentVolumeClaimList", podResource: "PodList"}, foreign)
 	n := &ImageNative{client: c}
 	if _, _, err := n.DeleteImageObjects(ctx, i); err != biz.ErrOwnership {
 		t.Fatalf("foreign object at the chain head was not refused: %v", err)

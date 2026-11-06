@@ -137,8 +137,8 @@ func (n *workerNative) DeleteImageObjects(_ context.Context, i Image) (Image, bo
 	// exactly like the real adapter.
 	return i, n.deleteDone, nil
 }
-func (n *workerNative) ObserveImageClone(context.Context, VM, Image, ImageReference) (bool, error) {
-	return false, ErrInvalid
+func (n *workerNative) ObserveImageClone(context.Context, VM, Image, ImageReference) (CloneState, error) {
+	return ClonePending, ErrInvalid
 }
 
 type workerEnv struct{ err error }

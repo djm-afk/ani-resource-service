@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -704,6 +705,15 @@ func (n *ImageNative) DeleteImageObjects(ctx context.Context, i biz.Image) (biz.
 	}
 	// Populator and scratch PVCs are removed from the registered list head, so a
 	// partial pass never loses track of what is still outstanding.
+	// A failed upload server Pod can outlive its transfer and hold a PVC of this
+	// chain through pvc-protection, which stalls the whole drain. Retire those Pods
+	// first; the head alone is not enough, because the blocked PVC may sit deeper in
+	// the chain (CDI owns the uploader with the populator PVC, not the source PVC).
+	if cleared, e := n.retireFailedUploaders(ctx, i); e != nil {
+		return i, false, e
+	} else if cleared {
+		return i, false, nil
+	}
 	if len(i.Cleanup) > 0 {
 		ref := i.Cleanup[0]
 		switch ref.Kind {
@@ -825,6 +835,86 @@ func cdiChildName(i biz.Image, name string) bool {
 		name == parent+"-scratch"
 }
 
+// retireFailedUploaders clears the finalizer deadlock that keeps an upload PVC stuck.
+//
+// CDI deletes the DataVolume with foreground propagation, and the API server stamps the
+// same finalizer onto the upload server Pod. That Pod in turn is the workload holding
+// its PVC, and pvc-protection refuses to release the PVC while any Pod mounts it, so the
+// two objects wait on each other forever and the image never leaves DELETING.
+//
+// Deleting the Pod does not break the cycle: the delete is refused while it is still
+// finalised. Removing foregroundDeletion from a finished Pod lets the garbage collector
+// reclaim it; pvc-protection then clears on its own and the drain continues.
+func (n *ImageNative) retireFailedUploaders(ctx context.Context, i biz.Image) (bool, error) {
+	owned := make(map[string]bool, len(i.Cleanup))
+	for _, ref := range i.Cleanup {
+		if ref.Kind == "PersistentVolumeClaim" && ref.UID != "" {
+			owned[ref.UID] = true
+		}
+	}
+	if len(owned) == 0 {
+		return false, nil
+	}
+	pods, e := n.client.Resource(podResource).Namespace(i.Native.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "cdi.kubevirt.io=cdi-upload-server"})
+	if e != nil {
+		return false, e
+	}
+	released := false
+	for index := range pods.Items {
+		pod := &pods.Items[index]
+		owner := ""
+		for _, r := range pod.GetOwnerReferences() {
+			if r.Kind == "PersistentVolumeClaim" && r.Controller != nil && *r.Controller {
+				owner = string(r.UID)
+			}
+		}
+		if !owned[owner] {
+			continue
+		}
+		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
+		// A Running uploader is a live transfer; killing it would corrupt data instead
+		// of draining the chain, and a Pod without the deadlock has nothing to release.
+		if phase != "Failed" && phase != "Succeeded" {
+			continue
+		}
+		if !containsString(pod.GetFinalizers(), "foregroundDeletion") {
+			continue
+		}
+		// Merge patch replaces the whole list, so everything that is not ours has to be
+		// sent back. A foreign finalizer is another controller's cleanup contract;
+		// dropping it here would retire work this service cannot know about.
+		var remaining []string
+		for _, finalizer := range pod.GetFinalizers() {
+			if finalizer != "foregroundDeletion" {
+				remaining = append(remaining, finalizer)
+			}
+		}
+		patch, e := json.Marshal(map[string]any{"metadata": map[string]any{"finalizers": remaining}})
+		if e != nil {
+			return false, e
+		}
+		if _, e := n.client.Resource(podResource).Namespace(i.Native.Namespace).Patch(ctx, pod.GetName(),
+			types.MergePatchType, patch, metav1.PatchOptions{}); e != nil && !apierrors.IsNotFound(e) {
+			return false, e
+		}
+		// Kept in production: an uploader that had to be unstuck explains a slow
+		// delete, and the Pod name is the only handle an operator needs.
+		slog.Info("released stuck upload pod", "image_id", i.ID, "pod", pod.GetName())
+		released = true
+	}
+	return released, nil
+}
+
+func containsString(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 func uidPointer(uid string) *types.UID {
 	if uid == "" {
 		return nil
@@ -847,9 +937,11 @@ func containsRef(list []biz.ObjectRef, kind, name string) bool {
 	return false
 }
 
-// ObserveImageClone proves the consumer's own copy finished. Operation success,
-// PVC binding alone, progress or a timeout are never sufficient evidence.
-func (n *ImageNative) ObserveImageClone(ctx context.Context, v biz.VM, i biz.Image, r biz.ImageReference) (bool, error) {
+// ObserveImageClone proves the consumer's own copy finished, is still pending, or is
+// gone. Operation success, PVC binding alone, progress or a timeout are never
+// sufficient evidence; absence is only evidence for a retiring consumer, which the
+// caller decides.
+func (n *ImageNative) ObserveImageClone(ctx context.Context, v biz.VM, i biz.Image, r biz.ImageReference) (biz.CloneState, error) {
 	target := biz.ObjectRef{}
 	if r.ConsumerKind == "SYSTEM_DISK" {
 		for _, d := range v.Disks {
@@ -865,46 +957,46 @@ func (n *ImageNative) ObserveImageClone(ctx context.Context, v biz.VM, i biz.Ima
 		}
 	}
 	if target.Namespace == "" || target.Name == "" {
-		return false, nil
+		return biz.ClonePending, nil
 	}
 	dv, e := n.client.Resource(dvResource).Namespace(target.Namespace).Get(ctx, target.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(e) {
-		return false, nil
+		return biz.CloneAbsent, nil
 	}
 	if e != nil {
-		return false, e
+		return biz.ClonePending, e
 	}
 	if target.UID != "" && string(dv.GetUID()) != target.UID {
-		return false, biz.ErrOwnership
+		return biz.ClonePending, biz.ErrOwnership
 	}
 	phase, _, _ := unstructured.NestedString(dv.Object, "status", "phase")
 	if phase != "Succeeded" {
-		return false, nil
+		return biz.ClonePending, nil
 	}
 	namespace, _, _ := unstructured.NestedString(dv.Object, "spec", "source", "pvc", "namespace")
 	name, _, _ := unstructured.NestedString(dv.Object, "spec", "source", "pvc", "name")
 	if namespace != i.Native.Namespace || name != i.Native.PVCName {
-		return false, biz.ErrImageIdentity
+		return biz.ClonePending, biz.ErrImageIdentity
 	}
 	pvc, e := n.client.Resource(pvcResource).Namespace(target.Namespace).Get(ctx, target.Name, metav1.GetOptions{})
 	if e != nil {
 		if apierrors.IsNotFound(e) {
-			return false, nil
+			return biz.ClonePending, nil
 		}
-		return false, e
+		return biz.ClonePending, e
 	}
 	phase, _, _ = unstructured.NestedString(pvc.Object, "status", "phase")
 	mode, _, _ := unstructured.NestedString(pvc.Object, "spec", "volumeMode")
 	if phase != "Bound" || pvc.GetDeletionTimestamp() != nil {
-		return false, nil
+		return biz.ClonePending, nil
 	}
 	if mode == "" {
 		mode = "Filesystem"
 	}
 	if mode != biz.SourceVolumeMode(i.Kind) {
-		return false, biz.ErrImageIdentity
+		return biz.ClonePending, biz.ErrImageIdentity
 	}
-	return true, nil
+	return biz.CloneCompleted, nil
 }
 
 var _ biz.ImageNativePort = (*ImageNative)(nil)

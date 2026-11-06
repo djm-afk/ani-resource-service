@@ -80,24 +80,33 @@ func (w *ReferenceWorker) settle(ctx context.Context, ref ImageReference) (bool,
 	if ImageSourceFingerprint(i) != ref.SourceFingerprint {
 		return false, ErrImageIdentity
 	}
-	completed, e := w.native.ObserveImageClone(ctx, v, i, ref)
+	return w.settleClone(ctx, i, v, ref)
+}
+
+func (w *ReferenceWorker) settleClone(ctx context.Context, i Image, v VM, ref ImageReference) (bool, error) {
+	state, e := w.native.ObserveImageClone(ctx, v, i, ref)
 	if e != nil {
 		if errors.Is(e, ErrOwnership) || errors.Is(e, ErrImageIdentity) {
 			return false, ErrImageIdentity
 		}
 		return false, e
 	}
-	if completed {
+	if state == CloneCompleted {
 		return true, w.repo.ReleaseImageReference(ctx, ref, ReferenceReleasedClone)
 	}
-	// A retiring VM releases only after its own copy objects are proven absent.
-	if v.Closing && (v.Observed == "Deleted" || v.Desired == "Deleted") && w.consumerAbsent(v, ref) {
+	// A retiring consumer releases on proven absence. The delete path only sets
+	// Tombstone and keeps the historical DV/PVC UID, so demanding empty UIDs made
+	// this condition unreachable and the source stayed pinned forever.
+	if v.Closing && (v.Observed == "Deleted" || v.Desired == "Deleted") &&
+		(state == CloneAbsent || w.consumerAbsent(v, ref)) {
 		return true, w.repo.ReleaseImageReference(ctx, ref, ReferenceReleasedRetired)
 	}
 	return false, nil
 }
 
-// consumerAbsent checks the registered identity, not the operation state.
+// consumerAbsent is the fallback for consumers with no cluster identity left to
+// probe (an unregistered copy). It is no longer the primary proof: the clone probe
+// answers absence directly.
 func (w *ReferenceWorker) consumerAbsent(v VM, ref ImageReference) bool {
 	if ref.ConsumerKind == "SYSTEM_DISK" {
 		for _, d := range v.Disks {

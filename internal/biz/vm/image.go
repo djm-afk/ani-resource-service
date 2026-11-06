@@ -484,8 +484,20 @@ type ImageNativePort interface {
 	// close the tombstone when it returns nothing.
 	ObserveManagedSources(context.Context, Image) ([]ObjectRef, error)
 	DeleteImageObjects(context.Context, Image) (Image, bool, error)
-	ObserveImageClone(context.Context, VM, Image, ImageReference) (bool, error)
+	// ObserveImageClone reports the consumer's own copy: completed, still pending, or
+	// proven absent from the cluster. Absence is real evidence only for a retiring VM.
+	ObserveImageClone(context.Context, VM, Image, ImageReference) (CloneState, error)
 }
+
+// CloneState is the three answers a clone probe may give. "Not finished" and "gone"
+// are different facts: only the second one can retire a consumer's pin.
+type CloneState int
+
+const (
+	ClonePending CloneState = iota
+	CloneCompleted
+	CloneAbsent
+)
 
 // VerificationResult is what the fixed read-only validator reports back through
 // the bounded termination message. Res re-checks every identity field.
