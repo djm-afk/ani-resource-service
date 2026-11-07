@@ -1,0 +1,259 @@
+{
+  "image_id": "797b73ec-80d3-4dc1-b6e8-0134c762031c",
+  "source_dv": {
+    "kind": "DataVolume",
+    "metadata": {
+      "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "name": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+      "uid": "ce916f6e-8f07-4a62-91b6-1795eae1d341",
+      "resourceVersion": "41401986",
+      "ownerReferences": null,
+      "finalizers": [
+        "foregroundDeletion"
+      ],
+      "deletionTimestamp": "2026-11-06T17:18:56Z"
+    },
+    "status": {
+      "claimName": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+      "conditions": [
+        {
+          "lastHeartbeatTime": "2026-11-06T17:07:41Z",
+          "lastTransitionTime": "2026-11-06T17:07:40Z",
+          "message": "target PVC vmi-src-797b73ec80d34dc1b6e80134c762031c Pending and [prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb] : Successfully provisioned volume pvc-8cb90773-7db6-437b-91c6-4f1ee52369ab",
+          "reason": "Pending",
+          "status": "False",
+          "type": "Bound"
+        },
+        {
+          "lastHeartbeatTime": "2026-11-06T17:18:56Z",
+          "lastTransitionTime": "2026-11-06T17:07:40Z",
+          "reason": "TransferRunning",
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastHeartbeatTime": "2026-11-06T17:10:51Z",
+          "lastTransitionTime": "2026-11-06T17:10:51Z",
+          "reason": "Pod is running",
+          "status": "True",
+          "type": "Running"
+        }
+      ],
+      "phase": "UploadReady",
+      "progress": "N/A",
+      "restartCount": 1
+    }
+  },
+  "source_pvc": {
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "name": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+      "uid": "2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+      "resourceVersion": "41401997",
+      "ownerReferences": [
+        {
+          "apiVersion": "cdi.kubevirt.io/v1beta1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "DataVolume",
+          "name": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+          "uid": "ce916f6e-8f07-4a62-91b6-1795eae1d341"
+        }
+      ],
+      "finalizers": [
+        "foregroundDeletion"
+      ],
+      "deletionTimestamp": "2026-11-06T17:18:56Z"
+    },
+    "status": {
+      "phase": "Pending"
+    }
+  },
+  "prime_pvc": {
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "name": "prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+      "uid": "8cb90773-7db6-437b-91c6-4f1ee52369ab",
+      "resourceVersion": "41401990",
+      "ownerReferences": [
+        {
+          "apiVersion": "v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "PersistentVolumeClaim",
+          "name": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+          "uid": "2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb"
+        }
+      ],
+      "finalizers": [
+        "kubernetes.io/pvc-protection",
+        "foregroundDeletion"
+      ],
+      "deletionTimestamp": "2026-11-06T17:18:56Z"
+    },
+    "status": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "1Gi"
+      },
+      "phase": "Bound"
+    }
+  },
+  "uploader_pods": [
+    {
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+        "name": "cdi-upload-prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+        "uid": "56cff51e-3e65-45aa-a849-9306d91039dd",
+        "resourceVersion": "41402059",
+        "ownerReferences": [
+          {
+            "apiVersion": "v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "PersistentVolumeClaim",
+            "name": "prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+            "uid": "8cb90773-7db6-437b-91c6-4f1ee52369ab"
+          }
+        ],
+        "finalizers": [
+          "foregroundDeletion"
+        ],
+        "deletionTimestamp": "2026-11-06T17:18:57Z"
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-06T17:18:56Z",
+            "observedGeneration": 2,
+            "status": "False",
+            "type": "PodReadyToStartContainers"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-06T17:07:41Z",
+            "observedGeneration": 2,
+            "status": "True",
+            "type": "Initialized"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-06T17:18:56Z",
+            "observedGeneration": 2,
+            "reason": "PodFailed",
+            "status": "False",
+            "type": "Ready"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-06T17:18:56Z",
+            "observedGeneration": 2,
+            "reason": "PodFailed",
+            "status": "False",
+            "type": "ContainersReady"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-06T17:07:41Z",
+            "observedGeneration": 2,
+            "status": "True",
+            "type": "PodScheduled"
+          }
+        ],
+        "containerStatuses": [
+          {
+            "allocatedResources": {
+              "cpu": "100m",
+              "memory": "60M"
+            },
+            "containerID": "containerd://a97c4d5a1b359b932c147893e141a580758ee85f1659d8a442eb25d1a2567f35",
+            "image": "10.10.1.66:5001/kubevirt/cdi-uploadserver:v1.66.1",
+            "imageID": "10.10.1.66:5001/kubevirt/cdi-uploadserver@sha256:3050dd110803123a3a9fa3d4b69ed61b2fdc6589ce9396b77db2ec2bdf63e1c5",
+            "lastState": {
+              "terminated": {
+                "containerID": "containerd://9308b1d9338f4496bd0e870c363ce7acb886a8c3792b381b90a9d5c09b78e0dd",
+                "exitCode": 1,
+                "finishedAt": "2026-11-06T17:10:49Z",
+                "message": "-data-importer/pkg/importer.(*DataProcessor).initDefaultPhases.func7\n\tpkg/importer/data-processor.go:218\nkubevirt.io/containerized-data-importer/pkg/importer.(*DataProcessor).ProcessDataWithPause\n\tpkg/importer/data-processor.go:253\nkubevirt.io/containerized-data-importer/pkg/importer.(*DataProcessor).ProcessDataResume\n\tpkg/importer/data-processor.go:162\nkubevirt.io/containerized-data-importer/pkg/uploadserver.NewUploadServer.(*uploadServerApp).uploadHandlerAsync.func2.1\n\tpkg/uploadserver/uploadserver.go:383\nruntime.goexit\n\tsrc/runtime/asm_amd64.s:1700\nUnable to convert source data to target format\nkubevirt.io/containerized-data-importer/pkg/importer.(*DataProcessor).initDefaultPhases.func7\n\tpkg/importer/data-processor.go:220\nkubevirt.io/containerized-data-importer/pkg/importer.(*DataProcessor).ProcessDataWithPause\n\tpkg/importer/data-processor.go:253\nkubevirt.io/containerized-data-importer/pkg/importer.(*DataProcessor).ProcessDataResume\n\tpkg/importer/data-processor.go:162\nkubevirt.io/containerized-data-importer/pkg/uploadserver.NewUploadServer.(*uploadServerApp).uploadHandlerAsync.func2.1\n\tpkg/uploadserver/uploadserver.go:383\nruntime.goexit\n\tsrc/runtime/asm_amd64.s:1700\nE1106 17:10:49.650307       1 uploadserver.go:388] Error during resumed processing: Unable to convert source data to target format: Conversion to Raw failed: could not convert image to raw: qemu-img execution failed: qemu-img: error while reading at byte 0: Input/output error\n: exit status 1\nE1106 17:10:49.650358       1 uploadserver.go:211] HTTP server returned error Unable to convert source data to target format: Conversion to Raw failed: could not convert image to raw: qemu-img execution failed: qemu-img: error while reading at byte 0: Input/output error\n: exit status 1\nE1106 17:10:49.650380       1 uploadserver.go:85] UploadServer failed: Unable to convert source data to target format: Conversion to Raw failed: could not convert image to raw: qemu-img execution failed: qemu-img: error while reading at byte 0: Input/output error\n: exit status 1\n",
+                "reason": "Error",
+                "startedAt": "2026-11-06T17:07:47Z"
+              }
+            },
+            "name": "cdi-upload-server",
+            "ready": false,
+            "resources": {
+              "limits": {
+                "cpu": "750m",
+                "memory": "600M"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "60M"
+              }
+            },
+            "restartCount": 1,
+            "started": false,
+            "state": {
+              "terminated": {
+                "containerID": "containerd://a97c4d5a1b359b932c147893e141a580758ee85f1659d8a442eb25d1a2567f35",
+                "exitCode": 2,
+                "finishedAt": "2026-11-06T17:18:56Z",
+                "message": "I1106 17:10:50.323232       1 uploadserver.go:81] Running server on 0.0.0.0:8443\n",
+                "reason": "Error",
+                "startedAt": "2026-11-06T17:10:50Z"
+              }
+            },
+            "user": {
+              "linux": {
+                "gid": 0,
+                "supplementalGroups": [
+                  0,
+                  107
+                ],
+                "uid": 107
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/etc/tls/",
+                "name": "tls-config"
+              },
+              {
+                "mountPath": "/scratch",
+                "name": "cdi-scratch-vol"
+              },
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-wq99f",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              }
+            ]
+          }
+        ],
+        "hostIP": "10.10.1.67",
+        "hostIPs": [
+          {
+            "ip": "10.10.1.67"
+          }
+        ],
+        "observedGeneration": 2,
+        "phase": "Failed",
+        "podIP": "10.16.5.224",
+        "podIPs": [
+          {
+            "ip": "10.16.5.224"
+          }
+        ],
+        "qosClass": "Burstable",
+        "startTime": "2026-11-06T17:07:41Z"
+      }
+    }
+  ]
+}

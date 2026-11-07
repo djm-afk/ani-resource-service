@@ -1,0 +1,16 @@
+{
+  "entry": "10.10.1.66",
+  "ssh": "kubercloud@10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "namespace": "ani-system",
+  "step": "reader",
+  "started_at": "2026-11-06T16:42:29.809622+00:00",
+  "finished_at": "2026-11-06T16:42:37.793256+00:00",
+  "deployment_uid": "9b17ed7e-6521-40e8-8bf5-70a44237e501",
+  "resource_version": "41286073",
+  "before_image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e",
+  "after_image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:40fca58c931fa69c7bb71c71e18c66611c944c94e3dcfedd688c55ca69a5f9c3",
+  "verifier": "old writer retained for compatibility rollout",
+  "rollout": "Waiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"ani-resource-service\" successfully rolled out",
+  "authorization": "current user Goal: candidate service deployment and necessary managed acceptance"
+}

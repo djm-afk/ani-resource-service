@@ -1,0 +1,31 @@
+10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e: Pulling from ani-gpu-platform/ani-resource-service
+b58d7a95b49c: Pulling fs layer
+d557676654e5: Pulling fs layer
+d82bc7a76a83: Pulling fs layer
+efae86a3fb38: Pulling fs layer
+6e6cfc6a1a74: Pulling fs layer
+68e4cd60e60f: Pulling fs layer
+0f8b424aa0b9: Pulling fs layer
+2e4cf50eeb92: Pulling fs layer
+c36c4b61cfba: Pulling fs layer
+0783a66ae749: Pulling fs layer
+6b72b81ed966: Pulling fs layer
+e1089d61b200: Pulling fs layer
+ad7fcb30079d: Pulling fs layer
+efae86a3fb38: Download complete
+d557676654e5: Download complete
+d82bc7a76a83: Download complete
+e1089d61b200: Download complete
+6e6cfc6a1a74: Download complete
+c36c4b61cfba: Download complete
+0f8b424aa0b9: Download complete
+2e4cf50eeb92: Download complete
+b58d7a95b49c: Download complete
+6b72b81ed966: Download complete
+68e4cd60e60f: Download complete
+0783a66ae749: Download complete
+ad7fcb30079d: Download complete
+b58d7a95b49c: Pull complete
+Digest: sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e
+Status: Downloaded newer image for 10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e
+10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e

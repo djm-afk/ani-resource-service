@@ -1,0 +1,42 @@
+The push refers to repository [10.10.1.66:30003/ani-gpu-platform/ani-resource-service]
+2e4cf50eeb92: Waiting
+b187e03bfb7e: Waiting
+ad7fcb30079d: Waiting
+44136fa355b3: Waiting
+2e4cf50eeb92: Waiting
+b187e03bfb7e: Waiting
+ad7fcb30079d: Waiting
+44136fa355b3: Waiting
+e1089d61b200: Waiting
+0f8b424aa0b9: Waiting
+2e4cf50eeb92: Layer already exists
+b187e03bfb7e: Waiting
+ad7fcb30079d: Layer already exists
+44136fa355b3: Already exists
+c36c4b61cfba: Waiting
+d82bc7a76a83: Waiting
+68e4cd60e60f: Waiting
+c36c4b61cfba: Layer already exists
+e1089d61b200: Layer already exists
+0f8b424aa0b9: Layer already exists
+d557676654e5: Waiting
+6b72b81ed966: Waiting
+6e6cfc6a1a74: Waiting
+d82bc7a76a83: Layer already exists
+0783a66ae749: Layer already exists
+b58d7a95b49c: Waiting
+befd4552c023: Waiting
+d557676654e5: Layer already exists
+b187e03bfb7e: Pushed
+68e4cd60e60f: Layer already exists
+efae86a3fb38: Waiting
+6e6cfc6a1a74: Layer already exists
+3b90a6790dd9: Waiting
+b58d7a95b49c: Layer already exists
+befd4552c023: Layer already exists
+7e3532840bc3: Waiting
+efae86a3fb38: Layer already exists
+6b72b81ed966: Layer already exists
+3b90a6790dd9: Pushed
+7e3532840bc3: Pushed
+vm-phase1-20261107-r3: digest: sha256:7fe62795e5cab56b8e24171a4dc741f32ba602c961fb46094dd80d7744aba840 size: 856

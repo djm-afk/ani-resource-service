@@ -313,20 +313,38 @@ func (n *Native) observeDisk(ctx context.Context, v biz.VM, d biz.Disk) (biz.Dis
 		}
 		d.ObservedCapacityBytes = size
 	}
-	pvName, _, _ := unstructured.NestedString(o.Object, "spec", "volumeName")
-	if pvName != "" {
-		pv, e := n.client.Resource(pvResource).Get(ctx, pvName, metav1.GetOptions{})
-		if e != nil {
-			return d, e
-		}
-		claim, _, _ := unstructured.NestedString(pv.Object, "spec", "claimRef", "uid")
-		policy, _, _ := unstructured.NestedString(pv.Object, "spec", "persistentVolumeReclaimPolicy")
-		if claim != d.PVC.UID || policy != "Delete" {
-			return d, biz.ErrOwnership
-		}
-		d.Cleanup = []biz.ObjectRef{objectRef(pv)}
-	}
 	return d, nil
+}
+
+// ObserveDiskPreparation reads only registered, unfinished user-disk inventory.
+// It is called by the independent durable observer, never by a power request.
+// A bounded attempt can retain a successful prefix and retry the remainder.
+func (n *Native) ObserveDiskPreparation(ctx context.Context, v biz.VM) ([]biz.Disk, error) {
+	var pending []biz.Disk
+	for _, d := range v.Disks {
+		if biz.DiskPreparationPending(d) && (d.DV.UID != "" || d.PVC.UID != "") {
+			pending = append(pending, d)
+		}
+	}
+	if len(pending) == 0 {
+		return nil, nil
+	}
+	if _, err := n.snapshotRoot(ctx, v); err != nil {
+		return nil, err
+	}
+	var result []biz.Disk
+	for _, d := range pending {
+		observed, err := n.observeDisk(ctx, v, d)
+		if err != nil {
+			return result, err
+		}
+		result = append(result, observed)
+	}
+	return result, nil
+}
+
+func (n *Native) ObserveLifecycle(ctx context.Context, v biz.VM) (biz.Observation, error) {
+	return n.observe(ctx, v, false)
 }
 func (n *Native) ObserveConsole(ctx context.Context, v biz.VM) (biz.Observation, error) {
 	return n.observe(ctx, v, false)
@@ -366,56 +384,44 @@ func (n *Native) observe(ctx context.Context, v biz.VM, includeStorage bool) (bi
 		x.Running = phase == "Running"
 		x.Terminal = phase == "Succeeded" || phase == "Failed"
 	}
+	// Both selectors are limited to this VM's runtime relations. Ambiguous
+	// launchers affect consumers needing a Pod, never the VMI power fact.
+	podsByUID := map[string]*unstructured.Unstructured{}
+	selectors := []string{"vm.ani.io/vm-id=" + v.ID}
 	if x.VMI != nil {
-		pods, z := n.client.Resource(podResource).Namespace(v.Spec.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "kubevirt.io/created-by=" + x.VMI.UID})
-		if z != nil {
-			return x, z
+		selectors = append(selectors, "kubevirt.io/created-by="+x.VMI.UID)
+	}
+	for _, selector := range selectors {
+		pods, err := n.client.Resource(podResource).Namespace(v.Spec.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+		if err != nil {
+			return x, err
 		}
-		for i := range pods.Items {
-			pod := &pods.Items[i]
-			phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
-			if phase == "Succeeded" || phase == "Failed" {
-				continue
-			}
-			if !owned(pod, "VirtualMachineInstance", x.VMI.UID) {
-				return x, biz.ErrOwnership
-			}
-			if x.Launcher != nil {
-				return x, biz.ErrDependency
-			}
-			ref := objectRef(pod)
-			x.Launcher = &ref
+		for j := range pods.Items {
+			pod := &pods.Items[j]
+			podsByUID[pod.GetNamespace()+"/"+pod.GetName()] = pod
 		}
 	}
-	// A vanished VMI is insufficient while an old launcher still runs.
-	if x.Launcher == nil {
-		pods, pe := n.client.Resource(podResource).Namespace(v.Spec.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "vm.ani.io/vm-id=" + v.ID})
-		if pe != nil {
-			return x, pe
-		}
-		for i := range pods.Items {
-			pod := &pods.Items[i]
-			phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
-			if phase == "Succeeded" || phase == "Failed" {
-				continue
-			}
-			if !matches(pod, v) {
-				return x, biz.ErrOwnership
-			}
-			if x.Launcher != nil {
-				return x, biz.ErrDependency
-			}
-			ref := objectRef(pod)
-			x.Launcher = &ref
-		}
+	pods := make([]*unstructured.Unstructured, 0, len(podsByUID))
+	for _, pod := range podsByUID {
+		pods = append(pods, pod)
 	}
-	x.Deleted = apierrors.IsNotFound(e) && apierrors.IsNotFound(z) && x.Launcher == nil
-	x.Stopped = e == nil && apierrors.IsNotFound(z) && x.Launcher == nil && len(x.StateChangeRequests) == 0
+	if err := observeRuntimePods(v, &x, pods); err != nil {
+		return x, err
+	}
+	x.Deleted = apierrors.IsNotFound(e) && apierrors.IsNotFound(z) && !x.RelatedPodsPresent
+	x.Stopped = e == nil && apierrors.IsNotFound(z) && !x.RelatedPodsPresent && len(x.StateChangeRequests) == 0
 	if x.Stopped {
 		x.State = "Stopped"
 	}
 	if x.Deleted {
 		x.State = "Deleted"
+	}
+	// Media projection shares these runtime objects. Invalid or unavailable
+	// media cannot prevent a power request or root deletion.
+	if o != nil && len(v.MediaSlots) > 0 {
+		if media, err := n.observeMediaRuntime(v, o, vmi); err == nil {
+			x.MediaSlots = media.Slots
+		}
 	}
 	x.ObservedAt = time.Now().UTC()
 	if !includeStorage {
@@ -438,7 +444,7 @@ func (n *Native) observe(ctx context.Context, v biz.VM, includeStorage bool) (bi
 	return x, nil
 }
 func (n *Native) controlVM(ctx context.Context, v biz.VM, action string, options map[string]any) error {
-	x, e := n.Observe(ctx, v)
+	x, e := n.ObserveLifecycle(ctx, v)
 	if e != nil {
 		return &biz.NativeNotSubmittedError{Err: e}
 	}
@@ -452,9 +458,7 @@ func (n *Native) controlVM(ctx context.Context, v biz.VM, action string, options
 	return n.control.Put().SetHeader("Accept", "*/*").SetHeader("Content-Type", "application/json").Namespace(v.Spec.Namespace).Resource("virtualmachines").Name(v.Native.Name).SubResource(action).Body(body).Do(ctx).Error()
 }
 func (n *Native) Start(ctx context.Context, v biz.VM) error {
-	if e := n.ValidateBackendConfiguration(ctx, v.Spec); e != nil {
-		return &biz.NativeNotSubmittedError{Err: e}
-	}
+
 	if e := n.ensureWindowsDomain(ctx, v); e != nil {
 		return &biz.NativeNotSubmittedError{Err: e}
 	}
@@ -471,9 +475,7 @@ func (n *Native) Stop(ctx context.Context, v biz.VM, force bool) error {
 	return n.controlVM(ctx, v, "stop", options)
 }
 func (n *Native) Restart(ctx context.Context, v biz.VM) error {
-	if e := n.ValidateBackendConfiguration(ctx, v.Spec); e != nil {
-		return e
-	}
+
 	return n.controlVM(ctx, v, "restart", map[string]any{})
 }
 func (n *Native) Delete(ctx context.Context, v biz.VM) error {
@@ -489,13 +491,38 @@ func (n *Native) Delete(ctx context.Context, v biz.VM) error {
 	return e
 }
 func (n *Native) DeleteVolume(ctx context.Context, v biz.VM, d biz.Disk) (bool, error) {
-	for _, item := range []struct {
+	items := []struct {
 		r   schema.GroupVersionResource
 		ref biz.ObjectRef
-	}{{dvResource, d.DV}, {pvcResource, d.PVC}} {
+	}{{dvResource, d.DV}, {pvcResource, d.PVC}}
+	for _, ref := range d.Cleanup {
+		var gvr schema.GroupVersionResource
+		switch ref.Kind {
+		case "PersistentVolume":
+			continue // historical storage diagnostic
+		case "PersistentVolumeClaim":
+			gvr = pvcResource
+		case "DataVolume":
+			gvr = dvResource
+		case "Job":
+			gvr = jobResource
+		case "Secret":
+			gvr = secretResource
+		default:
+			return false, biz.ErrOwnership
+		}
+		items = append(items, struct {
+			r   schema.GroupVersionResource
+			ref biz.ObjectRef
+		}{gvr, ref})
+	}
+	for _, item := range items {
 		ref := item.ref
 		if ref.Name == "" {
 			continue
+		}
+		if ref.Namespace != v.Spec.Namespace {
+			return false, biz.ErrOwnership
 		}
 		o, e := n.client.Resource(item.r).Namespace(v.Spec.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
 		if apierrors.IsNotFound(e) {
@@ -515,21 +542,7 @@ func (n *Native) DeleteVolume(ctx context.Context, v biz.VM, d biz.Disk) (bool, 
 		}
 		return false, nil
 	}
-	for _, ref := range d.Cleanup {
-		if ref.Kind != "PersistentVolume" {
-			return false, biz.ErrOwnership
-		}
-		o, e := n.client.Resource(pvResource).Get(ctx, ref.Name, metav1.GetOptions{})
-		if apierrors.IsNotFound(e) {
-			continue
-		}
-		if e != nil {
-			return false, e
-		}
-		if string(o.GetUID()) != ref.UID {
-			return false, biz.ErrOwnership
-		}
-		return false, nil
-	}
+	// Legacy PV entries are diagnostics. Exact business DV/PVC identities
+	// above remain mandatory; their lifecycle is the deletion boundary.
 	return true, nil
 }

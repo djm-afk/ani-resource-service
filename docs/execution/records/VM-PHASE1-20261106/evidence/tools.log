@@ -1,0 +1,8 @@
+mkdir -p /home/ubuntu/workspace/ani-resource-service/.tools/bin
+GOBIN=/home/ubuntu/workspace/ani-resource-service/.tools/bin go install github.com/bufbuild/buf/cmd/buf@v1.60.0
+test "$(/home/ubuntu/workspace/ani-resource-service/.tools/bin/buf --version)" = "1.60.0"
+test "$(go version -m /home/ubuntu/workspace/ani-resource-service/.tools/bin/buf | awk '$1 == "mod" {print $2 "@" $3; exit}')" = "github.com/bufbuild/buf@v1.60.0"
+mkdir -p /home/ubuntu/workspace/ani-resource-service/.tools/bin
+GOBIN=/home/ubuntu/workspace/ani-resource-service/.tools/bin go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+test "$(/home/ubuntu/workspace/ani-resource-service/.tools/bin/sqlc version)" = "v1.31.1"
+test "$(go version -m /home/ubuntu/workspace/ani-resource-service/.tools/bin/sqlc | awk '$1 == "mod" {print $2 "@" $3; exit}')" = "github.com/sqlc-dev/sqlc@v1.31.1"

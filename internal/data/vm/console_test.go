@@ -66,8 +66,8 @@ func TestConsoleIdentityObservationDoesNotDependOnStorage(t *testing.T) {
 					t.Fatalf("identity mismatch accepted: %v", err)
 				}
 			case "two-launchers":
-				if !errors.Is(err, biz.ErrDependency) {
-					t.Fatalf("ambiguous launcher accepted: %v", err)
+				if err != nil || !x.Running || x.Launcher != nil || !x.RelatedPodsPresent {
+					t.Fatalf("ambiguous launcher changed VMI power fact: %+v %v", x, err)
 				}
 			default:
 				if err != nil || x.VM.UID != v.Native.UID || x.VMI == nil || x.VMI.UID != string(vmi.GetUID()) || x.Launcher == nil || x.Launcher.UID != string(pod.GetUID()) || x.Running != (mode == "running") || len(x.Volumes) != 0 || len(x.BackendStates) != 0 {

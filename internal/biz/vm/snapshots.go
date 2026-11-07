@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -21,14 +22,16 @@ type SnapshotVolume struct {
 }
 
 type Snapshot struct {
-	ID, Name, SourceVMID, SourceVMUID  string
-	Native, Content                    ObjectRef
-	Inventory                          []Disk
-	Required                           []SnapshotVolume
-	MediaSlots                         []MediaSlot
-	MediaCopies                        []MediaCopy
-	BootDevice                         string
-	Artifacts, Restores                []ObjectRef
+	ID, Name, SourceVMID, SourceVMUID string
+	Native, Content                   ObjectRef
+	Inventory                         []Disk
+	Required                          []SnapshotVolume
+	MediaSlots                        []MediaSlot
+	MediaCopies                       []MediaCopy
+	BootDevice                        string
+	Artifacts, Restores               []ObjectRef
+	// RestoreOutputsRecorded marks a checkpointed named-output handoff.
+	RestoreOutputsRecorded             []ObjectRef
 	Ready, Complete, Failed, Tombstone bool
 	Included, Excluded, Indications    []string
 	Reason                             string
@@ -47,6 +50,7 @@ type RestorePlan struct {
 type RestoreObservation struct {
 	Native                   ObjectRef
 	Complete, Failed, Absent bool
+	OutputsKnown             bool
 	Disks                    []Disk
 	MediaCopies              []MediaCopy
 	BackendStates            []BackendState
@@ -75,7 +79,7 @@ type SnapshotNativePort interface {
 }
 
 // Retired volumes are observed separately from the restored current mapping.
-// The adapter must preserve exact old PVC/PV identities, including late binding.
+// The adapter preserves exact business DV/PVC identities. PVs are diagnostics.
 type RestoreObserver interface {
 	ObserveRestore(context.Context, VM, Snapshot, ObjectRef) (RestoreObservation, error)
 }
@@ -206,7 +210,7 @@ func NewSnapshot(v VM, operationID, name string) (Snapshot, error) {
 }
 
 func SnapshotComplete(s Snapshot) bool {
-	if !s.Ready || s.Failed || s.Tombstone || s.Native.UID == "" || s.Content.UID == "" || len(s.Required) == 0 {
+	if !s.Ready || s.Failed || s.Tombstone || s.Native.UID == "" || len(s.Required) == 0 {
 		return false
 	}
 	included := map[string]bool{}
@@ -227,7 +231,8 @@ func SnapshotComplete(s Snapshot) bool {
 
 // PreviewSnapshotRestore freezes all five logical disk sets, including removed
 // disks retained only in the snapshot inventory. Observation time is excluded
-// from the digest, while the source identity, version and physical refs are not.
+// from the digest. Only business identities, intent and actual affected DV/PVCs
+// participate; native storage diagnostics never change the confirmation.
 func PreviewSnapshotRestore(v VM, s Snapshot) (RestorePlan, error) {
 	plan := RestorePlan{Version: v.Version, SnapshotID: s.ID, SnapshotUID: s.Native.UID, SourceVMUID: v.Native.UID}
 	if v.Closing {
@@ -299,20 +304,53 @@ func PreviewSnapshotRestore(v VM, s Snapshot) (RestorePlan, error) {
 	sort.Slice(plan.Impacts, func(i, j int) bool { return plan.Impacts[i].DiskID < plan.Impacts[j].DiskID })
 	sort.Slice(plan.Cleanup, func(i, j int) bool { return plan.Cleanup[i].ID < plan.Cleanup[j].ID })
 	sort.Slice(plan.CleanupMedia, func(i, j int) bool { return plan.CleanupMedia[i].ID < plan.CleanupMedia[j].ID })
-	identity := struct {
-		Version      int64
-		VMID, VMUID  string
-		Snapshot     Snapshot
-		CurrentDisks []Disk
-		Slots        []MediaSlot
-		Boot         string
-		Plan         RestorePlan
-	}{
-		v.Version, v.ID, v.Native.UID, s, append([]Disk(nil), v.Disks...), append([]MediaSlot(nil), v.MediaSlots...), v.CurrentBootDevice, plan}
-	identity.Snapshot.ObservedAt = time.Time{}
-	identity.Snapshot.Reason = ""
-	identity.Snapshot.Restores = nil
-	sort.Slice(identity.CurrentDisks, func(i, j int) bool { return identity.CurrentDisks[i].ID < identity.CurrentDisks[j].ID })
+	// Use an explicit projection; nested inventory/cleanup structures cannot
+	// accidentally reintroduce Content/Class/PV or observation timestamps.
+	businessRefs := func(items []ObjectRef) []ObjectRef {
+		refs := []ObjectRef{}
+		for _, ref := range items {
+			switch ref.Kind {
+			case "DataVolume", "PersistentVolumeClaim", "Job", "Secret":
+				refs = append(refs, ref)
+			}
+		}
+		sort.Slice(refs, func(i, j int) bool {
+			a, b := refs[i], refs[j]
+			return strings.Join([]string{a.Kind, a.Namespace, a.Name, a.UID}, "/") < strings.Join([]string{b.Kind, b.Namespace, b.Name, b.UID}, "/")
+		})
+		return refs
+	}
+	disks := func(items []Disk) []any {
+		items = append([]Disk(nil), items...)
+		sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+		result := []any{}
+		for _, d := range items {
+			result = append(result, []any{d.ID, d.Role, d.Name, d.SizeGB, d.RequestedBytes, d.VolumeName, d.Serial, d.Attached, d.Tombstone, d.DV, d.PVC, businessRefs(d.Cleanup)})
+		}
+		return result
+	}
+	media := func(items []MediaCopy) []any {
+		items = append([]MediaCopy(nil), items...)
+		sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+		result := []any{}
+		for _, c := range items {
+			result = append(result, []any{c.ID, c.SourceDigest, c.DV, c.PVC, c.Tombstone, businessRefs(c.Cleanup)})
+		}
+		return result
+	}
+	slots := func(items []MediaSlot) []any {
+		items = append([]MediaSlot(nil), items...)
+		sort.Slice(items, func(i, j int) bool { return items[i].Slot < items[j].Slot })
+		result := []any{}
+		for _, slot := range items {
+			result = append(result, []string{slot.Slot, slot.DesiredCopyID})
+		}
+		return result
+	}
+	identity := []any{v.Version, v.ID, v.Native.UID, s.ID, s.Native.UID,
+		disks(s.Inventory), disks(v.Disks), disks(plan.Cleanup),
+		media(s.MediaCopies), media(plan.CleanupMedia), slots(s.MediaSlots),
+		slots(v.MediaSlots), s.BootDevice, v.CurrentBootDevice, plan.Impacts}
 	body, err := json.Marshal(identity)
 	if err != nil {
 		return plan, err
@@ -571,15 +609,14 @@ func (w *Worker) snapshot(ctx context.Context, o *Operation, v *VM) error {
 	if !intent.DestructiveConfirmation {
 		return ErrInvalid
 	}
-	x, err := w.native.Observe(ctx, *v)
+	x, err := w.observeLifecycle(ctx, *v)
 	if err != nil {
 		return err
 	}
 	if x.VM.UID != v.Native.UID {
 		return ErrOwnership
 	}
-	v.BackendStates = x.BackendStates
-	if x.VMI != nil || x.Launcher != nil || !x.Stopped {
+	if x.VMI != nil || x.Launcher != nil || x.RelatedPodsPresent || !x.Stopped {
 		return ErrBusy
 	}
 	if o.Snapshot == nil {
@@ -701,7 +738,7 @@ func (w *Worker) removeSnapshots(ctx context.Context, o *Operation, v *VM) (bool
 }
 
 // Both restore and superseding VM deletion drain this aggregate inventory. A
-// false native result retains the ref; PVC absence alone does not prove PV GC.
+// false native result retains the ref until its business DV/PVC lifecycle exits.
 func (w *Worker) removeRetiredVolumes(ctx context.Context, o *Operation, v *VM) (bool, error) {
 	if len(v.RetiredDisks) == 0 && len(v.RetiredMediaCopies) == 0 {
 		return true, nil
@@ -718,7 +755,7 @@ func (w *Worker) removeRetiredVolumes(ctx context.Context, o *Operation, v *VM) 
 	} else {
 		disk = v.RetiredDisks[0]
 	}
-	if disk.PVC.UID == "" || disk.PVC.Namespace != v.Spec.Namespace {
+	if disk.PVC.Name == "" || disk.PVC.Namespace != v.Spec.Namespace {
 		return false, ErrOwnership
 	}
 	for _, current := range v.Disks {
@@ -735,12 +772,13 @@ func (w *Worker) removeRetiredVolumes(ctx context.Context, o *Operation, v *VM) 
 	if err != nil {
 		return false, err
 	}
-	if observed.PVC != disk.PVC || observed.DV != disk.DV {
+	if observed.PVC.Kind != disk.PVC.Kind || observed.PVC.Namespace != disk.PVC.Namespace || observed.PVC.Name != disk.PVC.Name || (disk.PVC.UID != "" && observed.PVC.UID != disk.PVC.UID) || observed.DV != disk.DV {
 		return false, ErrOwnership
 	}
 	if media {
 		copy := &v.RetiredMediaCopies[0]
 		copy.Cleanup = observed.Cleanup
+		copy.PVC = observed.PVC
 	} else {
 		v.RetiredDisks[0] = observed
 	}
@@ -766,16 +804,49 @@ func (w *Worker) removeRetiredVolumes(ctx context.Context, o *Operation, v *VM) 
 	return false, nil
 }
 
+// mergeRegisteredRef preserves a registered identity when an observation has
+// no UID. A different observed UID is still a replacement, never an adoption.
+func mergeRegisteredRef(old, observed ObjectRef) (ObjectRef, error) {
+	if old.Kind != observed.Kind || old.Namespace != observed.Namespace || old.Name != observed.Name ||
+		(old.UID != "" && observed.UID != "" && old.UID != observed.UID) {
+		return ObjectRef{}, ErrOwnership
+	}
+	if observed.UID == "" {
+		return old, nil
+	}
+	return observed, nil
+}
+
+func restoreCleanupRefs(old, observed []ObjectRef) []ObjectRef {
+	result := append([]ObjectRef(nil), old...)
+	for _, ref := range observed {
+		found := false
+		for _, saved := range result {
+			if saved == ref {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, ref)
+		}
+	}
+	return result
+}
+
 // Native completion may precede the mapping checkpoint (or its ACK). Keep all
 // newly observed physical refs in the aggregate before either operation wins.
 func recordRestoreVolumes(v *VM, x RestoreObservation) error {
 	for _, disk := range x.Disks {
-		if disk.PVC.UID == "" || disk.PVC.Namespace != v.Spec.Namespace || disk.DV.Name != "" || disk.DV.UID != "" {
+		if disk.PVC.Kind != "PersistentVolumeClaim" || disk.PVC.Name == "" || disk.PVC.Namespace != v.Spec.Namespace || disk.DV.Name != "" || disk.DV.UID != "" {
 			return ErrOwnership
 		}
 		current := false
 		for _, d := range v.Disks {
-			if d.PVC == disk.PVC {
+			if d.PVC.Namespace == disk.PVC.Namespace && d.PVC.Name == disk.PVC.Name {
+				if _, err := mergeRegisteredRef(d.PVC, disk.PVC); err != nil {
+					return err
+				}
 				current = true
 				break
 			}
@@ -785,11 +856,16 @@ func recordRestoreVolumes(v *VM, x RestoreObservation) error {
 		}
 		found := false
 		for i, old := range v.RetiredDisks {
-			if old.PVC.UID == disk.PVC.UID {
-				if old.PVC != disk.PVC {
-					return ErrOwnership
+			if old.PVC.Namespace == disk.PVC.Namespace && old.PVC.Name == disk.PVC.Name {
+				ref, err := mergeRegisteredRef(old.PVC, disk.PVC)
+				if err != nil {
+					return err
 				}
-				v.RetiredDisks[i] = disk
+				if disk.PVC.UID != "" {
+					disk.PVC = ref
+					disk.Cleanup = restoreCleanupRefs(old.Cleanup, disk.Cleanup)
+					v.RetiredDisks[i] = disk
+				}
 				found = true
 				break
 			}
@@ -799,12 +875,15 @@ func recordRestoreVolumes(v *VM, x RestoreObservation) error {
 		}
 	}
 	for _, copy := range x.MediaCopies {
-		if copy.PVC.UID == "" || copy.PVC.Namespace != v.Spec.Namespace || copy.DV.Name != "" || copy.DV.UID != "" {
+		if copy.PVC.Kind != "PersistentVolumeClaim" || copy.PVC.Name == "" || copy.PVC.Namespace != v.Spec.Namespace || copy.DV.Name != "" || copy.DV.UID != "" {
 			return ErrOwnership
 		}
 		current := false
 		for _, c := range v.MediaCopies {
-			if c.PVC == copy.PVC {
+			if c.PVC.Namespace == copy.PVC.Namespace && c.PVC.Name == copy.PVC.Name {
+				if _, err := mergeRegisteredRef(c.PVC, copy.PVC); err != nil {
+					return err
+				}
 				current = true
 				break
 			}
@@ -814,11 +893,16 @@ func recordRestoreVolumes(v *VM, x RestoreObservation) error {
 		}
 		found := false
 		for i, old := range v.RetiredMediaCopies {
-			if old.PVC.UID == copy.PVC.UID {
-				if old.PVC != copy.PVC {
-					return ErrOwnership
+			if old.PVC.Namespace == copy.PVC.Namespace && old.PVC.Name == copy.PVC.Name {
+				ref, err := mergeRegisteredRef(old.PVC, copy.PVC)
+				if err != nil {
+					return err
 				}
-				v.RetiredMediaCopies[i] = copy
+				if copy.PVC.UID != "" {
+					copy.PVC = ref
+					copy.Cleanup = restoreCleanupRefs(old.Cleanup, copy.Cleanup)
+					v.RetiredMediaCopies[i] = copy
+				}
 				found = true
 				break
 			}
@@ -828,14 +912,26 @@ func recordRestoreVolumes(v *VM, x RestoreObservation) error {
 		}
 	}
 	for _, state := range x.BackendStates {
-		if state.PVC.UID == "" || state.Owner != v.Native || state.PVC.Namespace != v.Spec.Namespace {
+		if state.PVC.Kind != "PersistentVolumeClaim" || state.PVC.Name == "" || state.Owner != v.Native || state.PVC.Namespace != v.Spec.Namespace {
 			return ErrOwnership
 		}
 		found := false
 		for i, old := range v.BackendStates {
-			if old.PVC.UID == state.PVC.UID {
-				if old.PVC != state.PVC {
+			if old.PVC.Namespace == state.PVC.Namespace && old.PVC.Name == state.PVC.Name {
+				if old.Owner != v.Native {
 					return ErrOwnership
+				}
+				ref, err := mergeRegisteredRef(old.PVC, state.PVC)
+				if err != nil {
+					return err
+				}
+				if state.PVC.UID == "" {
+					state = old
+					state.Current, state.Present = false, false
+				} else {
+					state.PVC = ref
+					// Legacy lower-layer fields remain diagnostics for the same identity.
+					state.PV, state.ReclaimPolicy, state.CSIDriver, state.VolumeHandle = old.PV, old.ReclaimPolicy, old.CSIDriver, old.VolumeHandle
 				}
 				v.BackendStates[i] = state
 				found = true
@@ -858,6 +954,26 @@ func (w *Worker) observeRestoreCleanup(ctx context.Context, v *VM, s *Snapshot) 
 	}
 	for i, ref := range s.Restores {
 		observed, err := observer.ObserveRestore(ctx, *v, *s, ref)
+		if errors.Is(err, ErrUnknown) {
+			// Compatibility for a registered old Restore whose complete outputs
+			// were already checkpointed before its CR disappeared. The original
+			// operation is durable output, not a native marker or namespace scan.
+			id := strings.TrimPrefix(ref.Name, "vm-restore-")
+			if id != ref.Name && UUID(id) {
+				old, readErr := w.repo.GetOperation(ctx, v.TenantID, v.ID, id)
+				if readErr != nil {
+					return readErr
+				}
+				p := old.Snapshot
+				if p != nil && p.NativeRestore == ref && ref.UID != "" && p.NativeRestoreCompleted && p.Plan != nil &&
+					p.Plan.SourceVMUID == v.Native.UID && p.Plan.SnapshotUID == s.Native.UID &&
+					len(p.RestoredDisks) == len(s.Inventory) && len(p.RestoredMediaCopies) == len(s.MediaCopies) {
+					observed = RestoreObservation{Native: ref, Complete: true, Absent: true, OutputsKnown: true,
+						Disks: p.RestoredDisks, MediaCopies: p.RestoredMediaCopies}
+					err = nil
+				}
+			}
+		}
 		if err != nil {
 			return err
 		}
@@ -867,6 +983,18 @@ func (w *Worker) observeRestoreCleanup(ctx context.Context, v *VM, s *Snapshot) 
 		s.Restores[i] = observed.Native
 		if err = recordRestoreVolumes(v, observed); err != nil {
 			return err
+		}
+		if !observed.OutputsKnown {
+			return ErrUnknown
+		}
+		known := false
+		for _, saved := range s.RestoreOutputsRecorded {
+			if saved == observed.Native {
+				known = true
+			}
+		}
+		if !known {
+			s.RestoreOutputsRecorded = append(s.RestoreOutputsRecorded, observed.Native)
 		}
 	}
 	return nil

@@ -1,0 +1,22 @@
+[
+  {
+    "job": "phase1-readonly-block-20261107",
+    "uid": "8d0ad075-4c2f-4f0e-ae67-8954e8075660",
+    "gone": true
+  },
+  {
+    "job": "phase1-readonly-filesystem-20261107",
+    "uid": "4efaf50a-7141-4e31-9bcf-af0d09d42f43",
+    "gone": true
+  },
+  {
+    "job": "phase1-readonly-block-20261107-r2",
+    "uid": "a78d69f7-2da2-41d7-a69e-4390b18524f1",
+    "gone": true
+  },
+  {
+    "job": "phase1-readonly-filesystem-20261107-r2",
+    "uid": "a7303d3e-a815-4bef-aa69-460639181662",
+    "gone": true
+  }
+]

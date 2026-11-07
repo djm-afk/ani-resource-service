@@ -1,0 +1,444 @@
+{
+  "queried_at": "2026-11-06T16:10:14.834418+00:00",
+  "entry": "10.10.1.66",
+  "ssh": "kubercloud@10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "database": "ani_resource",
+  "scope": "platform registered affected records only",
+  "queries": {
+    "registered_restore_operations": {
+      "sql": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT tenant_id,id,vm_id,state,record->'Snapshot'->'Plan' IS NOT NULL AS has_plan,record->'Snapshot'->'NativeRestore' AS native_restore FROM vm.operations WHERE action='restore-snapshot' AND state IN ('accepted','running','unknown')) x",
+      "exit_code": 0,
+      "stderr": "",
+      "rows": []
+    },
+    "registered_legacy_cleanup": {
+      "sql": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT tenant_id,id,current_configuration->'RetiredDisks' AS retired_disks,current_configuration->'RetiredMediaCopies' AS retired_media,current_configuration->'Cleanup' AS cleanup,current_configuration->'BackendStates' AS backend FROM vm.virtual_machines WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(nullif(current_configuration->'Disks','null'),'[]')) d WHERE jsonb_array_length(coalesce(nullif(d->'Cleanup','null'),'[]'))>0) OR jsonb_array_length(coalesce(nullif(current_configuration->'RetiredDisks','null'),'[]'))>0 OR jsonb_array_length(coalesce(nullif(current_configuration->'Cleanup','null'),'[]'))>0) x",
+      "exit_code": 0,
+      "stderr": "",
+      "rows": [
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "0f1ca6ba-a128-4292-a0ba-5f702e383145",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "ab30e85b-55f9-43a1-b299-fdd8d0ab92da",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "6f8ee0cf-cada-4224-9ac0-bb1394408a25",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "b027f704-d514-4521-821b-2b0d4ea8700b",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "c8b8c93e-70ef-40bb-9554-36e4d6ecd903",
+          "retired_disks": [],
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "8bc17e0e-a09a-4bb1-a838-e54dc6a84550",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "bc4b9b77-8cae-4b4c-8a05-a25c4712a927",
+          "retired_disks": [],
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "1823315c-e0ae-421a-b76d-e27f97343160",
+          "retired_disks": [],
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "207328fc-f08d-4dc4-b403-16ec86396ce2",
+          "id": "fe41e319-3a84-4b7b-a09f-152829f83168",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "b5fcc280-d1fd-4c20-96f4-730d8630bbc4",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "6c7bf328-a27c-4598-98f0-ea5af4addb11",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "4fab3b8e-a8a5-4891-b3a7-da5c5022dd7f",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "7aef1e31-0cc3-44a1-a30d-0a53007a0b51",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "8e7937b1-8111-4d7c-a6e5-fac7b0e67073",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "16fd4897-e90a-4c40-901d-e24c8c43817a",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "8a27c0cf-b38a-4906-87e7-0700b07703e6",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "b74dfd34-c0cb-416b-ad5c-e02afabec7fb",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "f3cdb1f1-cbdc-41a9-9b3f-4cce236c3ad6",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "c3dfc350-dc51-4d37-a796-c8e01d70a26e",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "fbef215a-7f2c-4f4e-9137-21fb2e2f342d",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "f3c2eab8-2047-4d55-99ea-a9b74b08d595",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "6a9537ac-e3dc-4564-85a7-9a07428fad53",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "86370eb4-8f7e-4320-8645-dc6175c8e95a",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "d62c69b7-f47f-4922-9f61-c90a94c02513",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "3762b94c-1c8b-4018-a99f-37aee120fecf",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "3fe710f6-0552-4b8a-861a-0143305f37a3",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "5c4aead8-9c48-4a15-9ae9-f7721934e29d",
+          "retired_disks": null,
+          "retired_media": [],
+          "cleanup": [],
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "978c70c3-ecc2-45c9-aacc-bbdbf56f1f73",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "bf320c9b-018f-4dfa-afd8-007142159805",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "c4fdb935-5357-42e7-b6c6-194c475de9a7",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "e739fb1a-4921-472d-baa3-743616aa7c42",
+          "retired_disks": null,
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "3be21c33-31be-4e7c-93b5-b8e91bd9b855",
+          "retired_disks": [],
+          "retired_media": null,
+          "cleanup": null,
+          "backend": null
+        }
+      ]
+    },
+    "registered_snapshot_diagnostics": {
+      "sql": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT tenant_id,vm_id,snapshot_id,record->'Native' AS native,record->'Artifacts' AS artifacts,record->'Restores' AS restores FROM vm.snapshots WHERE record->>'Tombstone' IS DISTINCT FROM 'true') x",
+      "exit_code": 0,
+      "stderr": "",
+      "rows": [
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "vm_id": "e739fb1a-4921-472d-baa3-743616aa7c42",
+          "snapshot_id": "15cae7d5-74c8-5629-bece-89f868893a88",
+          "native": {
+            "UID": "0d6a8da2-1337-4099-9a4c-df5a8ec0b706",
+            "Kind": "VirtualMachineSnapshot",
+            "Name": "vm-snap-15cae7d5-74c8-5629-bece-89f868893a88",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "artifacts": [
+            {
+              "UID": "a881275d-b542-43e4-b903-6688e8e16d5f",
+              "Kind": "VirtualMachineSnapshotContent",
+              "Name": "vmsnapshot-content-0d6a8da2-1337-4099-9a4c-df5a8ec0b706",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "c4a5afa9-502f-431f-b9a7-eee2d225766c",
+              "Kind": "VolumeSnapshot",
+              "Name": "vmsnapshot-0d6a8da2-1337-4099-9a4c-df5a8ec0b706-volume-disk-c274d718f28459d3849ac65ca1e519ae",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "f587d820-c5e0-4661-869e-eba94a8c0220",
+              "Kind": "VolumeSnapshotContent",
+              "Name": "snapcontent-c4a5afa9-502f-431f-b9a7-eee2d225766c",
+              "Namespace": ""
+            },
+            {
+              "UID": "321608fe-77b6-4a95-a2a1-4f2473ad3ed7",
+              "Kind": "VolumeSnapshot",
+              "Name": "vmsnapshot-0d6a8da2-1337-4099-9a4c-df5a8ec0b706-volume-disk-e5938b7d081e5b928c10d0cec78c9012",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "8df4a7d2-71ff-4ca9-86b9-df4ab0a897bd",
+              "Kind": "VolumeSnapshot",
+              "Name": "vmsnapshot-0d6a8da2-1337-4099-9a4c-df5a8ec0b706-volume-media-install",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "08a8b3b8-5653-4132-8e14-b32f0a525503",
+              "Kind": "VolumeSnapshotContent",
+              "Name": "snapcontent-8df4a7d2-71ff-4ca9-86b9-df4ab0a897bd",
+              "Namespace": ""
+            },
+            {
+              "UID": "c8f868f9-2688-4541-a214-a7f9f1893d71",
+              "Kind": "VolumeSnapshotContent",
+              "Name": "snapcontent-321608fe-77b6-4a95-a2a1-4f2473ad3ed7",
+              "Namespace": ""
+            }
+          ],
+          "restores": null
+        },
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "vm_id": "3be21c33-31be-4e7c-93b5-b8e91bd9b855",
+          "snapshot_id": "5b650353-da14-5f94-9680-93068f63c02e",
+          "native": {
+            "UID": "cd6a3684-bca3-4aad-986e-35eddde794a4",
+            "Kind": "VirtualMachineSnapshot",
+            "Name": "vm-snap-5b650353-da14-5f94-9680-93068f63c02e",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "artifacts": [
+            {
+              "UID": "711b716b-8e7f-444f-9b93-4f4b764a42cb",
+              "Kind": "VirtualMachineSnapshotContent",
+              "Name": "vmsnapshot-content-cd6a3684-bca3-4aad-986e-35eddde794a4",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "dbcaac2c-878d-47e7-8b5a-9edafb6258fe",
+              "Kind": "VolumeSnapshot",
+              "Name": "vmsnapshot-cd6a3684-bca3-4aad-986e-35eddde794a4-volume-disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "5e7ffda6-fc09-4ad1-a9de-b8a4144a0d1c",
+              "Kind": "VolumeSnapshotContent",
+              "Name": "snapcontent-dbcaac2c-878d-47e7-8b5a-9edafb6258fe",
+              "Namespace": ""
+            },
+            {
+              "UID": "3f897e0f-a232-4843-8010-2c32045e469c",
+              "Kind": "VolumeSnapshot",
+              "Name": "vmsnapshot-cd6a3684-bca3-4aad-986e-35eddde794a4-volume-disk-8970a77845d756a7bf7dba6deabd6fb5",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            },
+            {
+              "UID": "0e23ee66-6805-49b6-949d-ee3737266805",
+              "Kind": "VolumeSnapshotContent",
+              "Name": "snapcontent-3f897e0f-a232-4843-8010-2c32045e469c",
+              "Namespace": ""
+            }
+          ],
+          "restores": [
+            {
+              "UID": "70733ddb-dce5-4c91-b387-051116e3ec87",
+              "Kind": "VirtualMachineRestore",
+              "Name": "vm-restore-a4fd8624-50b7-42f4-b8de-d17c0c05eda9",
+              "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+            }
+          ]
+        }
+      ]
+    },
+    "registered_affected_images": {
+      "sql": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT tenant_id,id,state,reason,cleanup_state,native,cleanup,source_sha256,source_checksum_bytes FROM vm.images WHERE state IN ('PREPARING','IMPORTING','VERIFYING','UNAVAILABLE','DELETING') OR cleanup_state IN ('PENDING','RUNNING','BLOCKED') OR jsonb_array_length(cleanup)>0) x",
+      "exit_code": 0,
+      "stderr": "",
+      "rows": [
+        {
+          "tenant_id": "64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "id": "fac3e890-89f3-497b-a45d-9c9ee2e79f4e",
+          "state": "IMPORTING",
+          "reason": "",
+          "cleanup_state": "NONE",
+          "native": {
+            "DVUID": "5fff1a32-76b6-49e2-bc3f-3f29f7de607f",
+            "PVUID": "",
+            "DVName": "vmi-src-fac3e89089f3497ba45d9c9ee2e79f4e",
+            "JobUID": "",
+            "PVCUID": "",
+            "PVName": "",
+            "PodUID": "",
+            "DVPhase": "",
+            "JobName": "",
+            "PVCName": "",
+            "TokenUID": "",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "00def93c-066d-4123-9077-279b9a482272",
+            "TokenName": "vmi-tok-00def93c066d41239077279b9a482272",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "",
+            "ReadyPublishedAt": "0001-01-01T00:00:00Z",
+            "SourceVolumeMode": "Block",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": ""
+          },
+          "cleanup": [],
+          "source_sha256": "",
+          "source_checksum_bytes": 0
+        }
+      ]
+    },
+    "image_reference_states": {
+      "sql": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT state,count(*) FROM vm.image_source_references GROUP BY state) x",
+      "exit_code": 0,
+      "stderr": "",
+      "rows": [
+        {
+          "state": "RELEASED",
+          "count": 5
+        }
+      ]
+    }
+  }
+}

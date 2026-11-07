@@ -96,7 +96,7 @@ func (n snapshotProcessNative) EnsureRestore(_ context.Context, _ biz.VM, s biz.
 	if err := n.effect("ensure_restore", ref, nil); err != nil {
 		return biz.RestoreObservation{}, err
 	}
-	return biz.RestoreObservation{Native: ref, Complete: true, Disks: []biz.Disk{n.input.NewDisk}}, nil
+	return biz.RestoreObservation{Native: ref, Complete: true, OutputsKnown: true, Disks: []biz.Disk{n.input.NewDisk}}, nil
 }
 
 func (n snapshotProcessNative) ApplyRestoredConfiguration(_ context.Context, v biz.VM, _ biz.Snapshot) (bool, error) {

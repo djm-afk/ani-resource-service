@@ -1,0 +1,38 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 263B done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55
+#2 DONE 0.4s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.1s
+
+#4 [internal] load build context
+#4 transferring context: 1.86MB 0.1s done
+#4 DONE 0.2s
+
+#5 [1/2] FROM 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55
+#5 resolve 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55 0.1s done
+#5 DONE 0.2s
+
+#6 [2/2] COPY --chmod=0555 readonly-check /readonly-check
+#6 DONE 0.2s
+
+#7 exporting to image
+#7 exporting layers
+#7 exporting layers 0.5s done
+#7 exporting manifest sha256:e8c22d51a110c22c8f501059f5253fb35ae48d9b140700300f3eead3f7b099eb 0.1s done
+#7 exporting config sha256:26381eb763d2337f5241a60d4a9b14a6b4409de12675099f0c55e9108e24c418 0.1s done
+#7 exporting attestation manifest sha256:ec98de7a711f29eb11918f1a04b1d5cc33ee2e325e14faa5890d0c2bccacc7ca 0.1s done
+#7 exporting manifest list sha256:19337c2555ab4ecfadc393a492c34160dce5901f2aa0db48f6ddb50506976ff0
+#7 exporting manifest list sha256:19337c2555ab4ecfadc393a492c34160dce5901f2aa0db48f6ddb50506976ff0 0.1s done
+#7 naming to 10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check:20261107 0.0s done
+#7 unpacking to 10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check:20261107 0.1s done
+#7 DONE 1.1s
+
+#8 resolving provenance for metadata file
+#8 DONE 0.0s

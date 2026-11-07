@@ -1,0 +1,1534 @@
+{
+  "document_type": "IMPLEMENTATION_RESULT",
+  "plan_version": "ANI-VM-Clone-Plan-v1.3-20261106",
+  "run_id": "VM-PHASE1-20261106",
+  "executed_at": "2026-11-07T08:07:41.493061+08:00",
+  "timezone": "Asia/Shanghai",
+  "stage1": {
+    "phase": "PHASE1",
+    "conclusion": "PASS",
+    "repository": {
+      "name": "ani-resource-service",
+      "path": "/home/ubuntu/workspace/ani-resource-service",
+      "wsl_distribution": "Ubuntu",
+      "branch": "codex/vm-phase1-remediation-20261106",
+      "audit_base_sha": "1498c223d902f24b2786ac017514087a476da091",
+      "actual_base_sha": "1498c223d902f24b2786ac017514087a476da091",
+      "tested_head_sha": "1498c223d902f24b2786ac017514087a476da091",
+      "head_is_only_base_of_dirty_snapshot": true,
+      "source_dirty": true,
+      "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+      "build_source_snapshot": "sha256:b3f13212578885a391c6e9a6e1253d23f6b0642e4328f1dc323b546c0448001c",
+      "pr_url": "https://github.com/zhangzhe-ctrl/ani-resource-service/pull/66",
+      "integration_state": "PR_OPEN; unmerged; acceptance product sources byte-matched to code commit",
+      "related_uncommitted_changes": [
+        " M cmd/vm-image-verify/main.go",
+        " M cmd/vm-image-verify/mode_test.go",
+        " M docs/START-HERE.md",
+        " M docs/contracts/vm-v1.md",
+        " M docs/execution/status.md",
+        " M docs/specs/vm-mvp.md",
+        " M internal/biz/vm/image.go",
+        " M internal/biz/vm/image_test.go",
+        " M internal/biz/vm/image_worker.go",
+        " M internal/biz/vm/image_worker_test.go",
+        " M internal/biz/vm/observation.go",
+        " M internal/biz/vm/snapshots.go",
+        " M internal/biz/vm/snapshots_test.go",
+        " M internal/biz/vm/types.go",
+        " M internal/biz/vm/worker.go",
+        " M internal/data/vm/backend_state.go",
+        " M internal/data/vm/backend_state_test.go",
+        " M internal/data/vm/console_test.go",
+        " M internal/data/vm/disks.go",
+        " M internal/data/vm/image_native.go",
+        " M internal/data/vm/image_native_cleanup_pod_test.go",
+        " M internal/data/vm/image_native_cleanup_test.go",
+        " M internal/data/vm/media.go",
+        " M internal/data/vm/native.go",
+        " M internal/data/vm/network_acceptance_integration_test.go",
+        " M internal/data/vm/observation.go",
+        " M internal/data/vm/observation_integration_test.go",
+        " M internal/data/vm/observation_native.go",
+        " M internal/data/vm/observation_native_test.go",
+        " M internal/data/vm/observation_recovery_integration_test.go",
+        " M internal/data/vm/observation_scope_test.go",
+        " M internal/data/vm/power_worker_integration_test.go",
+        " M internal/data/vm/snapshots.go",
+        " M internal/data/vm/snapshots_integration_test.go",
+        " M internal/data/vm/snapshots_process_integration_test.go",
+        " M internal/data/vm/snapshots_test.go",
+        " M internal/service/vm/detail.go",
+        " M internal/service/vm/preflight_test.go",
+        " M internal/service/vm/service.go",
+        " M internal/service/vm/snapshots.go",
+        " M internal/service/vm/snapshots_test.go",
+        "?? docs/execution/records/VM-PHASE1-20261106/",
+        "?? docs/runbooks/vm-image-cdi-handoff.md",
+        "?? internal/biz/vm/phase1_create_test.go",
+        "?? internal/data/vm/phase1_boundaries_test.go",
+        "?? internal/data/vm/phase1_worker_integration_test.go"
+      ],
+      "related_repository": {
+        "path": "/home/ubuntu/workspace/ani-governance",
+        "head": "61b7b6c74bd16d32f327aef42182566a87fe024f",
+        "changed": false
+      },
+      "committed_implementation_sha": "991eb61a8acf245662a9cea70074835121415439"
+    },
+    "remediation_items": [
+      {
+        "id": "R01",
+        "status": "PASS",
+        "title": "电源与根删除",
+        "changed_methods_fields": [
+          "Native.ObserveLifecycle/controlVM",
+          "Worker.power/remove",
+          "observeRuntimePods"
+        ],
+        "preserved_business_contracts": [
+          "tenant/VM/VMI UID、owner、Restart 新旧代次、非终态关联 Pod 和真正完成判断；介质投影复用 VM/VMI，不读存储"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/native.go; internal/biz/vm/worker.go; internal/data/vm/phase1_boundaries_test.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A01",
+          "P1L01"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R02",
+        "status": "PASS",
+        "title": "原生 Snapshot 状态",
+        "changed_methods_fields": [
+          "ObserveSnapshot/EnsureSnapshot",
+          "SnapshotComplete",
+          "PreviewRestore/previewDigest"
+        ],
+        "preserved_business_contracts": [
+          "Required/Inventory 与 included/excluded 覆盖、原生错误、首次 Class 支持策略、停止态/版本/确认；预览摘要仅含业务身份及清理责任"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/snapshots.go; internal/biz/vm/snapshots.go; internal/service/vm/snapshots.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A02",
+          "P1L02"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R03",
+        "status": "PASS",
+        "title": "Restore 具名输出",
+        "changed_methods_fields": [
+          "ObserveRestore",
+          "observeRestoreCleanup",
+          "RestoreOutputsRecorded",
+          "durable legacy checkpoint reuse"
+        ],
+        "preserved_business_contracts": [
+          "具名输出登记 actual PVC UID/容量；DiskID/volumeName/serial、旧盘和取消清理责任；Pending/WFFC；保留结果载体至持久交接"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/snapshots.go; internal/biz/vm/snapshots.go; internal/data/vm/snapshots_process_integration_test.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A03",
+          "P1L02"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R04",
+        "status": "PASS",
+        "title": "标准状态观察",
+        "changed_methods_fields": [
+          "StateObservation informer/index/trackingWatch",
+          "Postgres.SaveObservation"
+        ],
+        "preserved_business_contracts": [
+          "初次同步、已知断连反馈、正常重连；有界队列、独立预算、lease/version/generation/closing 和只更新投影；无 audit/proof/续签/专用恢复"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/observation_native.go; internal/data/vm/observation.go; internal/data/vm/observation_scope_test.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A04",
+          "P1L01"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R05",
+        "status": "PASS",
+        "title": "业务删除边界",
+        "changed_methods_fields": [
+          "DeleteVolume",
+          "DeleteBackendState",
+          "DeleteSnapshot",
+          "ImageNative.DeleteImageObjects"
+        ],
+        "preserved_business_contracts": [
+          "精确业务 DV/PVC/Secret/Job/Snapshot/Restore 身份与真实消失；当前引用保护；PV/CSI/Artifacts 仅诊断；正常 Network/SG 关闭"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/native.go; internal/data/vm/backend_state.go; internal/data/vm/snapshots.go; internal/data/vm/image_native.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A05",
+          "P1L01",
+          "P1L02",
+          "P1L03"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R06",
+        "status": "PASS",
+        "title": "既有身份与默认配置解耦",
+        "changed_methods_fields": [
+          "Start/Restart service/native preflight",
+          "registered image/media/disk identity"
+        ],
+        "preserved_business_contracts": [
+          "新建支持范围仍有效；既有 UID/owner/mode/capacity 和真实功能合同保留；不让新默认 SC/Class/全局版本否定旧对象"
+        ],
+        "docs_tests_updated": [
+          "internal/service/vm/service.go; internal/data/vm/native.go; internal/data/vm/media.go; internal/data/vm/disks.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A06",
+          "P1L01",
+          "P1L03"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R07",
+        "status": "PASS",
+        "title": "CDI 完成结算引用",
+        "changed_methods_fields": [
+          "ObserveImageClone",
+          "existing reference reconciliation/retirement"
+        ],
+        "preserved_business_contracts": [
+          "目标 DV 身份与来源请求匹配且 Succeeded 即 Completed；inventory 独立；Pending/Completed/Absent 和 PR65 退休 CloneAbsent 释放不变"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/image_native.go; internal/data/vm/image_reference_retire_integration_test.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A07",
+          "P1L03"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R08",
+        "status": "PASS",
+        "title": "镜像内容校验",
+        "changed_methods_fields": [
+          "vm-image-verify main",
+          "VerificationResult reader/validation",
+          "restricted Job"
+        ],
+        "preserved_business_contracts": [
+          "O_RDONLY、最小长度/ISO 签名/CDI 处理后 SHA、结果归属与 READY 顺序；ReadOnlyProof 兼容但非必填；部署只读一次验收"
+        ],
+        "docs_tests_updated": [
+          "cmd/vm-image-verify/main.go; internal/biz/vm/image.go; internal/data/vm/image_native.go",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A08",
+          "P1L03"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json"
+        ],
+        "blockers": []
+      },
+      {
+        "id": "R09",
+        "status": "PASS",
+        "title": "CDI 运维接替",
+        "changed_methods_fields": [
+          "ObserveManagedSources/DeleteImageObjects",
+          "ImageCleanupObjects",
+          "scoped operator runbook"
+        ],
+        "preserved_business_contracts": [
+          "自有 source DV/PVC/Job/token 精确清理与 producer 先退出；旧 CDI/PV 引用仍可读；常规 worker 不接管 prime/scratch、不改 uploader finalizer；保留 PR65"
+        ],
+        "docs_tests_updated": [
+          "internal/data/vm/image_native.go; internal/biz/vm/image.go; internal/biz/vm/image_worker.go; docs/runbooks/vm-image-cdi-handoff.md",
+          "docs/specs/vm-mvp.md",
+          "docs/contracts/vm-v1.md"
+        ],
+        "check_ids": [
+          "P1A09",
+          "P1L04"
+        ],
+        "evidence": [
+          "evidence/final-source-provenance.json",
+          "evidence/cdi-takeover-executed.json"
+        ],
+        "blockers": []
+      }
+    ],
+    "checks": [
+      {
+        "id": "P1A01",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "电源/根删除不读存储；UID/owner、Restart 代次、提交与完成分离；关联 Pod 歧义不否定电源；轻量介质投影回归通过。",
+        "test_names": [
+          "TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID",
+          "TestVMPowerUnknownRecoveryDoesNotRepeatRestart",
+          "TestVMSharedStateAmbiguousPodsPreservePowerButNotLauncher",
+          "TestPhase1LifecycleRefreshesRuntimeMediaWithoutStorageReads"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A02",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "原生 Snapshot Ready/失败及必要卷覆盖；重放不重选 Class；运行态 Preview、停止态执行与版本/摘要；底层诊断不入摘要。",
+        "test_names": [
+          "TestPhase1SnapshotReplayAndReadyUseOnlyNativeObject",
+          "TestNativeSnapshotInventoryCompletenessUIDFencesAndControllerCleanup",
+          "TestRestorePreviewFiveSetsAndVersionIdentityDigest",
+          "TestRestorePreviewIgnoresNestedStorageDiagnostics",
+          "TestSnapshotServiceReadsAreScopedAndPreviewIsSideEffectFree"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A03",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "Restore 具名输出、Pending 与未知输出区分、取消交接、持久 checkpoint、丢 ACK/进程退出恢复、旧 Plan 不改写。",
+        "test_names": [
+          "TestPhase1RestoreKeepsNamedPendingOutputsWithoutScanning",
+          "TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitialization",
+          "TestRestoreDurableCheckpointsResumeWithoutRepeatingNativeOrRollingBackMapping",
+          "TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint",
+          "TestSnapshotRestoreActualProcessExitRecovery",
+          "TestRestoreCleanupReusesDurableLegacyOutputsWithoutRewritingPlan"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A04",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "标准 informer 同步/重连、健康缓存不因旧 proof 窗口失效；真实不可用、队列/并发栅栏/故障退避仍受保护。",
+        "test_names": [
+          "TestVMSharedStateHealthyCacheNeedsNoExpiringProof",
+          "TestVMSharedStateReconnectReportsOutageAndRecovers",
+          "TestVMSharedStatePreservesIdentityAndBoundsNotificationQueue",
+          "TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry",
+          "TestVMObservationContinuousFailureRetainsBoundedBackoff"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A05",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "精确业务对象生命周期、UID 替换与当前引用保护；PV/CSI 诊断不挡完成；业务清理与空探测保留。",
+        "test_names": [
+          "TestPhase1MixedVolumeCleanupRetainsBusinessResponsibilities",
+          "TestBackendCleanupIgnoresLatePVAndCurrentDefaults",
+          "TestNativeSnapshotInventoryCompletenessUIDFencesAndControllerCleanup",
+          "TestImageWorkerClosesTombstoneOnlyAfterAnEmptyProbe",
+          "TestDeleteImageObjectsStillRefusesAForeignObjectAtTheChainHead"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A06",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "新默认 SC/Class/配置不否定既有身份；新建能力门槛、真实功能、UID/容量和 Pending/WFFC 保留。",
+        "test_names": [
+          "TestPhase1ExistingImageSurvivesNewDefaultStorageClass",
+          "TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID",
+          "TestBackendFrozenDevicesAndConfiguration",
+          "TestCreateRefreshesDeclaredVolumeInventoryWithoutWaitingForBinding",
+          "TestVMDisksDurableWFFCReplayDetachAndDelete"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A07",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "匹配 DV Succeeded 直接 Completed；不读目标 PVC 证明复制；Pending/Completed/Absent 与 PR65 退休释放不变。",
+        "test_names": [
+          "TestPhase1CDICompletionDoesNotReadTargetPVC",
+          "TestVMImageRetireReleasesThePinOnceTheCloneTargetIsGone",
+          "TestVMImageRetireKeepsThePinWhileTheVMLives",
+          "TestImageReferenceRetiringVMWithStillPresentCloneKeepsThePin",
+          "TestImageReferenceOwnershipDoubtKeepsThePin"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A08",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "新结果无 ReadOnlyProof 可通过；只读访问、内容校验、身份与摘要发布顺序保留；错误输入拒绝。",
+        "test_names": [
+          "TestFilesystemContentValidationWithoutReadOnlyProof",
+          "TestEnsureImageVerificationFreezesTheVerifierImage",
+          "TestEnsureImageVerificationAdoptsTheExistingJobDigest",
+          "TestImageWorkerPublishesTheVerifiedChecksumAnnotation",
+          "TestImageTransitionTableClosesTerminalStates"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A09",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "常规 worker 不读取/接管 CDI 派生对象、不修改 uploader finalizer；producer 顺序、自有业务对象和 PR65 保留。",
+        "test_names": [
+          "TestDeleteImageObjectsLeavesAllCDIUploadersToOperations",
+          "TestDeleteImageObjectsRemovesTheDataVolumeBeforeItsChildren",
+          "TestImageWorkerPreservesLegacyBusinessObjectsInCleanup",
+          "TestVMImageRetireReleasesThePinOnceTheCloneTargetIsGone"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1A10",
+        "level": "AUTOMATED",
+        "required": true,
+        "status": "PASS",
+        "environment": "Windows 本机 WSL2 Ubuntu /home/ubuntu/workspace/ani-resource-service",
+        "command_or_request": [
+          [
+            "make",
+            "verify"
+          ],
+          [
+            "./scripts/integration",
+            "-tags=instanceintegration",
+            "-timeout=20m",
+            "-v",
+            "./internal/data/vm"
+          ]
+        ],
+        "exit_code": 0,
+        "actual_result": "生成物、边界、全量单测/vet/build/module、PostgreSQL 事务/租约/版本/关闭/重放及旧记录兼容均通过；未新增克隆协议或表。",
+        "test_names": [
+          "make verify",
+          "TestVMImageCreateReplayConflictAndTenantIsolation",
+          "TestVMImageClaimLeaseAndDeadlineCAS",
+          "TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints",
+          "TestMediaPostgresFrozenSourceReplayCurrentConfigurationAndClosing",
+          "TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare",
+          "TestRestoreCleanupReusesDurableLegacyOutputsWithoutRewritingPlan"
+        ],
+        "started_at": "2026-11-06T17:29:35.573354+00:00",
+        "finished_at": "2026-11-06T17:31:49.777848+00:00",
+        "tested_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+        "evidence": [
+          "evidence/verify-06.json",
+          "evidence/verify-06.log",
+          "evidence/postgres-04.json",
+          "evidence/postgres-04.log"
+        ]
+      },
+      {
+        "id": "P1L01",
+        "level": "LIVE",
+        "required": true,
+        "status": "PASS",
+        "environment": "10.10.1.66 via WSL ssh kubercloud@10.10.1.66; kubernetes-admin@ani-kcn-full",
+        "command_or_request": "Gov HTTP /api/v1/virtual-machines and /virtual-machine-images through SSH tunnel; exact commands/request IDs/accepted operation IDs in live-actions.jsonl and evidence/drivers; native read-only exact identities via kubectl",
+        "exit_code": 0,
+        "actual_result": "Gov→Res Create/Start/Stop/Start/Restart/ForceStop；原生完成及 Restart VMI UID 更换；R4 再跑 Restart/Stop/Start/ForceStop/Start、Console RFB 101、稳定观察跨 60 秒；两台 Delete succeeded，根/盘清理及 Attachment consumer closed。未分配 SG，最终 SG IDs 为空；未宣称物理擦除。",
+        "started_at": "2026-11-06T16:43:44.409438+00:00",
+        "finished_at": "2026-11-06T17:37:51.923413+00:00",
+        "evidence": [
+          "evidence/live-actions.jsonl",
+          "evidence/live-r4-lifecycle.json",
+          "evidence/console-probe-r4.json",
+          "evidence/live-final-cleanup.json"
+        ],
+        "candidate_scope": "R2/R3 full normal-path evidence plus documented R4 source delta and targeted LIVE rechecks; verifier digest unchanged; no claim that earlier calls ran on R4"
+      },
+      {
+        "id": "P1L02",
+        "level": "LIVE",
+        "required": true,
+        "status": "PASS",
+        "environment": "10.10.1.66 via WSL ssh kubercloud@10.10.1.66; kubernetes-admin@ani-kcn-full",
+        "command_or_request": "Gov HTTP /api/v1/virtual-machines and /virtual-machine-images through SSH tunnel; exact commands/request IDs/accepted operation IDs in live-actions.jsonl and evidence/drivers; native read-only exact identities via kubectl",
+        "exit_code": 0,
+        "actual_result": "系统盘与数据盘小样本写入→Snapshot Ready Complete（含两业务卷，NoGuestAgent）→运行态 Preview v2→更改样本→停机后 Preview v8→确认 Restore v9；公开 complete 与具名输出、PVC UID/容量/serial 映射一致，checkpoint durable 且 CR 保留至登记之后；恢复及热插拔后均读回快照前样本。Snapshot/Restore/VM 正常删除。",
+        "started_at": "2026-11-06T16:52:00.499283+00:00",
+        "finished_at": "2026-11-06T17:22:54.981943+00:00",
+        "evidence": [
+          "evidence/live-actions.jsonl",
+          "evidence/live-before-cleanup-exact.json",
+          "evidence/live-final-cleanup.json"
+        ],
+        "candidate_scope": "R2/R3 full normal-path evidence plus documented R4 source delta and targeted LIVE rechecks; verifier digest unchanged; no claim that earlier calls ran on R4"
+      },
+      {
+        "id": "P1L03",
+        "level": "LIVE",
+        "required": true,
+        "status": "PASS",
+        "environment": "10.10.1.66 via WSL ssh kubercloud@10.10.1.66; kubernetes-admin@ani-kcn-full",
+        "command_or_request": "Gov HTTP /api/v1/virtual-machines and /virtual-machine-images through SSH tunnel; exact commands/request IDs/accepted operation IDs in live-actions.jsonl and evidence/drivers; native read-only exact identities via kubectl",
+        "exit_code": 0,
+        "actual_result": "合法 qcow2 Block 与 ISO 经新 verifier READY，CDI 处理后 SHA 可用；无效 ISO FAILED/SOURCE_VALIDATION_FAILED，未 READY。正式 consumer 两个目标 DV Succeeded、来源引用 RELEASED/CLONE_COMPLETED，目标盘 inventory 完整；一次适用模板的 Block/Filesystem 写打开均拒绝且零数据写入。来源删除后 R4 consumer 重启与介质 effective 正常，全部正常清理。",
+        "started_at": "2026-11-06T16:44:56.677897+00:00",
+        "finished_at": "2026-11-06T17:37:51.923413+00:00",
+        "evidence": [
+          "evidence/live-actions.jsonl",
+          "evidence/live-before-cleanup-exact.json",
+          "evidence/readonly-environment-opens.json",
+          "evidence/live-r4-lifecycle.json",
+          "evidence/live-final-cleanup.json",
+          "evidence/environment-cleanup.json"
+        ],
+        "candidate_scope": "R2/R3 full normal-path evidence plus documented R4 source delta and targeted LIVE rechecks; verifier digest unchanged; no claim that earlier calls ran on R4"
+      },
+      {
+        "id": "P1L04",
+        "level": "LIVE",
+        "required": true,
+        "status": "PASS",
+        "environment": "10.10.1.66 via WSL ssh kubercloud@10.10.1.66; kubernetes-admin@ani-kcn-full",
+        "command_or_request": "Gov HTTP /api/v1/virtual-machines and /virtual-machine-images through SSH tunnel; exact commands/request IDs/accepted operation IDs in live-actions.jsonl and evidence/drivers; native read-only exact identities via kubectl",
+        "exit_code": 0,
+        "actual_result": "已按用户单 Pod 授权执行 UID/resourceVersion/完整 finalizer JSON Patch，只移除 foregroundDeletion；原生 GC 精确清理已知五个对象，平台镜像 DELETED；用户接收现有运维路径责任。",
+        "started_at": "2026-11-06T17:07:42.768206+00:00",
+        "finished_at": "2026-11-07T00:01:26.540638+00:00",
+        "evidence": [
+          "evidence/cdi-takeover-executed.json"
+        ],
+        "candidate_scope": "Actual R4 deployed digest 10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78 revalidated before one-shot takeover; original failed uploader reproduced on unchanged R09 implementation; actual authorized patch, exact GC reads and managed DELETED observed on R4."
+      }
+    ],
+    "cluster": {
+      "entry": "10.10.1.66",
+      "ssh_host": "kubercloud@10.10.1.66",
+      "host_alias": null,
+      "accessed": true,
+      "api_server": "https://lb.kubesphere.local:6443",
+      "context": "kubernetes-admin@ani-kcn-full",
+      "namespace": "ani-system",
+      "fixture_namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+      "versions": {
+        "Kubernetes": "v1.35.8",
+        "KubeVirt": "v1.9.0",
+        "CDI": "v1.66.1",
+        "CSI": "actual driver names/component images in evidence/cluster-version-scoped.json"
+      },
+      "fixture_inventory": [
+        {
+          "kind": "VM",
+          "platform_id": "58c38dbc-c4c7-43eb-9eb6-5cf6fa42ac76",
+          "native": {
+            "UID": "eae4252d-e42e-4d4e-8e22-902bedcb3ae9",
+            "Kind": "VirtualMachine",
+            "Name": "vm-58c38dbc-c4c7-43eb-9eb6-5cf6fa42ac76",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "disks": [
+            {
+              "DV": {
+                "UID": "",
+                "Kind": "",
+                "Name": "",
+                "Namespace": ""
+              },
+              "ID": "c0101713-cbda-591b-b922-ab466cff637b",
+              "PVC": {
+                "UID": "af2fcf57-10ba-4d5f-9650-b00c570e5ef7",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "restore-18854de8-0c4e-46c3-86d0-26a6b2d36a85-disk-c0101713cbda591bb922ab466cff637b",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "system",
+              "Role": "system",
+              "Reason": "",
+              "Serial": "c0101713-cbda-591b-b922-ab466cff637b",
+              "SizeGB": 8,
+              "Cleanup": null,
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-c0101713cbda591bb922ab466cff637b",
+              "Preparation": "Bound",
+              "RequestedBytes": 8589934592,
+              "ObservedCapacityBytes": 8589934592
+            },
+            {
+              "DV": {
+                "UID": "",
+                "Kind": "",
+                "Name": "",
+                "Namespace": ""
+              },
+              "ID": "0ecb19fe-45cc-5d58-864a-8b4cf7f045cd",
+              "PVC": {
+                "UID": "f32f409d-4a22-4131-a2ff-9ae5178a52df",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "restore-18854de8-0c4e-46c3-86d0-26a6b2d36a85-disk-0ecb19fe45cc5d58864a8b4cf7f045cd",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "phase1-data",
+              "Role": "data",
+              "Reason": "",
+              "Serial": "0ecb19fe-45cc-5d58-864a-8b4cf7f045cd",
+              "SizeGB": 1,
+              "Cleanup": null,
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-0ecb19fe45cc5d58864a8b4cf7f045cd",
+              "Preparation": "Bound",
+              "RequestedBytes": 1000341504,
+              "ObservedCapacityBytes": 1000341504
+            }
+          ],
+          "media_copies": null,
+          "attachment_id": "att_2ca1d1bffe154377b6770bcc7903efb6",
+          "security_group_ids": [],
+          "final_state": "Deleted",
+          "network_consumer": {
+            "State": "closed",
+            "ClosedAt": "2026-11-06T17:22:46.633307071Z",
+            "CurrentVMI": null,
+            "FinalizationID": "b4100cf6-3a23-5a5f-a5e8-1985d0a5a12b",
+            "CurrentLauncher": null,
+            "DesiredRunState": "deleted"
+          }
+        },
+        {
+          "kind": "VM",
+          "platform_id": "ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+          "native": {
+            "UID": "cd63e3f1-132a-4043-a919-64342f46b385",
+            "Kind": "VirtualMachine",
+            "Name": "vm-ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "disks": [
+            {
+              "DV": {
+                "UID": "61f7d290-119e-45d7-9af6-5c7606763476",
+                "Kind": "DataVolume",
+                "Name": "vd-5a1341bd-85da-590b-b861-d71820e9b1ce",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "ID": "5a1341bd-85da-590b-b861-d71820e9b1ce",
+              "PVC": {
+                "UID": "1c401da7-9c89-4baf-bf23-db22fa61a028",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "vd-5a1341bd-85da-590b-b861-d71820e9b1ce",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "system",
+              "Role": "system",
+              "Reason": "",
+              "Serial": "5a1341bd-85da-590b-b861-d71820e9b1ce",
+              "SizeGB": 2,
+              "Cleanup": null,
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-5a1341bd85da590bb861d71820e9b1ce",
+              "Preparation": "Bound",
+              "RequestedBytes": 2000000000,
+              "ObservedCapacityBytes": 2147483648
+            }
+          ],
+          "media_copies": [
+            {
+              "DV": {
+                "UID": "4a644d58-c9fd-46fc-bd1c-99b0c1a23327",
+                "Kind": "DataVolume",
+                "Name": "vm-media-0a1468f6-49a4-56cb-ab93-23652f1d789b",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "ID": "0a1468f6-49a4-56cb-ab93-23652f1d789b",
+              "PVC": {
+                "UID": "ff46eb68-0430-42f9-a0cc-5d09ff108a51",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "vm-media-0a1468f6-49a4-56cb-ab93-23652f1d789b",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Ready": true,
+              "Reason": "",
+              "Source": {
+                "Key": "vmimg:785372ad-19de-4124-b338-15b35f94eb7f",
+                "Kind": "INSTALL_ISO",
+                "PVCUID": "fcec3071-e5ba-449b-96e4-fe0c9d552954",
+                "DataBus": "scsi",
+                "PVCName": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+                "RootBus": "virtio",
+                "Checksum": "6e8e5e323279955ffe2ff203cf8405d061c09fc090a8f408c64c103347e53478",
+                "Firmware": "bios",
+                "NICModel": "virtio",
+                "OSFamily": "linux",
+                "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+                "OSVersion": "phase1",
+                "VolumeMode": "Filesystem",
+                "ContentType": "kubevirt",
+                "Architecture": "amd64",
+                "VirtualBytes": 2147483648,
+                "PersistentTPM": false,
+                "PersistentUEFI": false,
+                "RequestedBytes": 1138166334
+              },
+              "Cleanup": null,
+              "Tombstone": false,
+              "SourceDigest": "8127fc402fab54a2a01d4bc3259d7be2d5cff1a3a6b7ec5a5d21eeb708686030"
+            }
+          ],
+          "attachment_id": "att_92f30504ae7442158790a65dbc9c02ee",
+          "security_group_ids": [],
+          "final_state": "Deleted",
+          "network_consumer": {
+            "State": "closed",
+            "ClosedAt": "2026-11-06T17:37:46.038629838Z",
+            "CurrentVMI": null,
+            "FinalizationID": "0bc28630-e608-59bf-9f91-c1eefd2b3e90",
+            "CurrentLauncher": null,
+            "DesiredRunState": "deleted"
+          }
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "785372ad-19de-4124-b338-15b35f94eb7f",
+          "native": {
+            "DVUID": "e9f9cb25-bf41-4e39-bfef-a790c9f8ec60",
+            "PVUID": "",
+            "DVName": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+            "JobUID": "ae738667-344c-4078-9da5-e642987aba46",
+            "PVCUID": "fcec3071-e5ba-449b-96e4-fe0c9d552954",
+            "PVName": "",
+            "PodUID": "e5d06f88-694e-4430-b9a4-e3d9858ca5d5",
+            "DVPhase": "Succeeded",
+            "JobName": "vmi-verify-785372ad19de4124b33815b35f94eb7f",
+            "PVCName": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "22ba9d08-4a29-4b69-af14-fe0b5934db96",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+            "ReadyPublishedAt": "2026-11-06T17:00:25.666705278Z",
+            "SourceVolumeMode": "Filesystem",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": "41338272"
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "516572a2-ed34-41f4-aadf-c18927521934",
+          "native": {
+            "DVUID": "b8af7d5d-0c69-4e69-8b68-71166377c86f",
+            "PVUID": "",
+            "DVName": "vmi-src-516572a2ed3441f4aadfc18927521934",
+            "JobUID": "87f06b6e-21a2-433e-99c4-2451b5aa4848",
+            "PVCUID": "88318742-9cd7-4469-a5a6-7063c50336fb",
+            "PVName": "",
+            "PodUID": "",
+            "DVPhase": "Succeeded",
+            "JobName": "vmi-verify-516572a2ed3441f4aadfc18927521934",
+            "PVCName": "vmi-src-516572a2ed3441f4aadfc18927521934",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "701e0268-168b-4392-9cc7-533c15696404",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+            "ReadyPublishedAt": "0001-01-01T00:00:00Z",
+            "SourceVolumeMode": "Filesystem",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": "41343905"
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "d6cbecd0-8248-4fd0-9586-10e8d1a43007",
+          "native": {
+            "DVUID": "36bbc0dd-5f54-420f-97ec-78d06d87a394",
+            "PVUID": "",
+            "DVName": "vmi-src-d6cbecd082484fd0958610e8d1a43007",
+            "JobUID": "4afd5371-b8a9-40ca-af47-20508bbef0e7",
+            "PVCUID": "2cd51111-5981-4765-ae1c-f4bfd0b009ef",
+            "PVName": "",
+            "PodUID": "0ad01ffd-fd1e-413f-8a6c-d5c7912f4952",
+            "DVPhase": "Succeeded",
+            "JobName": "vmi-verify-d6cbecd082484fd0958610e8d1a43007",
+            "PVCName": "vmi-src-d6cbecd082484fd0958610e8d1a43007",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "3cbb6fd0-bc91-43f1-993a-d9fef61c2852",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+            "ReadyPublishedAt": "2026-11-06T16:47:09.635045634Z",
+            "SourceVolumeMode": "Block",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": "41298013"
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "797b73ec-80d3-4dc1-b6e8-0134c762031c",
+          "native": {
+            "DVUID": "ce916f6e-8f07-4a62-91b6-1795eae1d341",
+            "PVUID": "",
+            "DVName": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+            "JobUID": "",
+            "PVCUID": "2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+            "PVName": "",
+            "PodUID": "",
+            "DVPhase": "",
+            "JobName": "",
+            "PVCName": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "f66b07f3-477e-44bc-8dbb-634913618d53",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "",
+            "ReadyPublishedAt": "0001-01-01T00:00:00Z",
+            "SourceVolumeMode": "Block",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": ""
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "Snapshot",
+          "platform_id": "42196e14-179f-5209-acd7-177ee0407d1d",
+          "native": {
+            "UID": "a1d232fd-5fa9-4ffc-b9da-4509c18e665e",
+            "Kind": "VirtualMachineSnapshot",
+            "Name": "vm-snap-42196e14-179f-5209-acd7-177ee0407d1d",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "final_state": "tombstone and native absent"
+        },
+        {
+          "kind": "Restore",
+          "operation_id": "c0b7be73-87ac-4e76-a5f7-308ab11ee4aa",
+          "native": {
+            "UID": "18854de8-0c4e-46c3-86d0-26a6b2d36a85",
+            "Kind": "VirtualMachineRestore",
+            "Name": "vm-restore-c0b7be73-87ac-4e76-a5f7-308ab11ee4aa",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "mapping_committed": true,
+          "cleanup_completed": true,
+          "final_state": "native absent after normal snapshot delete"
+        }
+      ],
+      "deployed_changes": [
+        "R2 compatible reader first",
+        "verifier writer digest switched after reader",
+        "R3 create inventory refresh",
+        "R4 runtime media projection fix"
+      ],
+      "deployed_artifact": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78",
+      "verifier_artifact": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+      "authorization_reference": "user goal-objective.md sections 2/3/7; direct SSH entry supplied by user; test login supplied separately",
+      "authorization_scope": "WSL implementation/build/test; candidate service and verifier deployment; managed disposable fixtures and normal cleanup. No shared runtime/SC/component upgrade/direct DB writes. User explicitly authorized one Pod UID 56cff51e-3e65-45aa-a849-9306d91039dd foregroundDeletion removal and accepted responsibility; one-shot maintenance completed."
+    },
+    "cdi_handoff": {
+      "status": "PASS",
+      "approach": "existing operator route, single terminal Pod exact-UID JSON Patch; no standing helper",
+      "component_revision_or_existing_operations_entry": "CDI v1.66.1; ssh kubercloud@10.10.1.66 / kubernetes-admin@ani-kcn-full",
+      "responsibility_role": "user accepted operator responsibility in explicit reply",
+      "authorization_scope": "only Pod UID 56cff51e-3e65-45aa-a849-9306d91039dd, only foregroundDeletion, with UID/RV/full-finalizer tests",
+      "known_failure_case_result": "已按用户单 Pod 授权执行 UID/resourceVersion/完整 finalizer JSON Patch，只移除 foregroundDeletion；原生 GC 精确清理已知五个对象，平台镜像 DELETED；用户接收现有运维路径责任。",
+      "regular_worker_compensation_removed": true,
+      "pr65_consumer_retirement_preserved": true,
+      "registered_cleanup_records_disposition": "initial affected platform image cleanup query found 0 legacy internal CDI cleanup records; exact self-owned source objects remain normal worker responsibility; historical PV/CDI diagnostics remain readable",
+      "evidence": [
+        "evidence/cdi-takeover-executed.json",
+        "evidence/cdi-takeover-authorization.json"
+      ]
+    },
+    "existing_records": {
+      "scope": "platform-registered affected records only; same initial IDs reread; no cluster-wide orphan proof",
+      "restore_with_plan_count": 0,
+      "restore_without_plan_count": 0,
+      "restore_output_missing_count": 0,
+      "completed_restore_carriers_checked": 1,
+      "legacy_cleanup_count": 32,
+      "legacy_cleanup_refs_by_kind": {
+        "PersistentVolume": 47
+      },
+      "legacy_snapshot_record_count": 2,
+      "legacy_snapshot_artifacts_by_kind": {
+        "VirtualMachineSnapshotContent": 2,
+        "VolumeSnapshot": 5,
+        "VolumeSnapshotContent": 5
+      },
+      "legacy_image_record_count": 1,
+      "legacy_cdi_cleanup_count": 0,
+      "initial_image_source_reference_states": [
+        {
+          "state": "RELEASED",
+          "count": 5
+        }
+      ],
+      "business_dv_pvc_uid_fields_retained": 82,
+      "disposition": [
+        "32 VM rows: 9 Running / 1 Stopped / 22 Deleted at followup; 47 PV diagnostics retained/readable, not business completion gates",
+        "2 active snapshots: 12 child diagnostics retained/readable; completed Restore carrier and original durable checkpoint checked, no intent/Plan rewrite",
+        "0 in-flight Restore, no missing registered carrier in scoped followup; no data migration necessary or executed",
+        "1 unrelated existing importing image left unchanged; 0 affected UNAVAILABLE and 0 legacy internal CDI cleanup records",
+        "ReadOnlyProof is a transient verifier result field, not a separate product DB column; old/new reader compatibility covered automatically; existing persisted SHA and references retained"
+      ],
+      "remaining_blockers": [],
+      "query_scope": "queries retained verbatim in initial/followup/final JSON; all SQL BEGIN READ ONLY",
+      "queried_at": {
+        "initial": "2026-11-06T16:10:14.834418+00:00",
+        "final": "2026-11-06T17:38:46.524117+00:00"
+      },
+      "query_or_entry": "WSL SSH kubectl exec postgresql-0 psql -X -U postgres -d ani_resource; BEGIN READ ONLY; SELECT; COMMIT",
+      "evidence": [
+        "evidence/existing-records-initial.json",
+        "evidence/existing-records-followup.json",
+        "evidence/existing-records-final.json"
+      ]
+    },
+    "handoff": {
+      "report_path": "/home/ubuntu/workspace/ani-resource-service/docs/execution/records/VM-PHASE1-20261106/PHASE1-REPORT.md",
+      "result_path": "/home/ubuntu/workspace/ani-resource-service/docs/execution/records/VM-PHASE1-20261106/PHASE1-RESULT.json",
+      "validated_res_sha": "991eb61a8acf245662a9cea70074835121415439",
+      "validated_dirty_snapshot": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+      "integration_reference": "https://github.com/zhangzhe-ctrl/ani-resource-service/pull/66",
+      "related_post_validation_changes": [
+        "docs/execution/status.md"
+      ],
+      "targeted_rechecks": "targeted-15, verify-06, postgres-04; actual R4 Restart/Stop/Start/ForceStop/Start, runtime media effective/pending, source-independent consumer, Console, >60s observation and normal Delete",
+      "phase2_authorized": false,
+      "final_completion_audit": "evidence/final-delivery-check.json",
+      "publication_record": "PR-HANDOFF.json",
+      "publication_check": "evidence/pr-verify-03.json; no post-acceptance service/test-source differences"
+    },
+    "cleanup": {
+      "state": "PASS",
+      "owned_fixture_inventory": [
+        {
+          "kind": "VM",
+          "platform_id": "58c38dbc-c4c7-43eb-9eb6-5cf6fa42ac76",
+          "native": {
+            "UID": "eae4252d-e42e-4d4e-8e22-902bedcb3ae9",
+            "Kind": "VirtualMachine",
+            "Name": "vm-58c38dbc-c4c7-43eb-9eb6-5cf6fa42ac76",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "disks": [
+            {
+              "DV": {
+                "UID": "",
+                "Kind": "",
+                "Name": "",
+                "Namespace": ""
+              },
+              "ID": "c0101713-cbda-591b-b922-ab466cff637b",
+              "PVC": {
+                "UID": "af2fcf57-10ba-4d5f-9650-b00c570e5ef7",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "restore-18854de8-0c4e-46c3-86d0-26a6b2d36a85-disk-c0101713cbda591bb922ab466cff637b",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "system",
+              "Role": "system",
+              "Reason": "",
+              "Serial": "c0101713-cbda-591b-b922-ab466cff637b",
+              "SizeGB": 8,
+              "Cleanup": null,
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-c0101713cbda591bb922ab466cff637b",
+              "Preparation": "Bound",
+              "RequestedBytes": 8589934592,
+              "ObservedCapacityBytes": 8589934592
+            },
+            {
+              "DV": {
+                "UID": "",
+                "Kind": "",
+                "Name": "",
+                "Namespace": ""
+              },
+              "ID": "0ecb19fe-45cc-5d58-864a-8b4cf7f045cd",
+              "PVC": {
+                "UID": "f32f409d-4a22-4131-a2ff-9ae5178a52df",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "restore-18854de8-0c4e-46c3-86d0-26a6b2d36a85-disk-0ecb19fe45cc5d58864a8b4cf7f045cd",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "phase1-data",
+              "Role": "data",
+              "Reason": "",
+              "Serial": "0ecb19fe-45cc-5d58-864a-8b4cf7f045cd",
+              "SizeGB": 1,
+              "Cleanup": null,
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-0ecb19fe45cc5d58864a8b4cf7f045cd",
+              "Preparation": "Bound",
+              "RequestedBytes": 1000341504,
+              "ObservedCapacityBytes": 1000341504
+            }
+          ],
+          "media_copies": null,
+          "attachment_id": "att_2ca1d1bffe154377b6770bcc7903efb6",
+          "security_group_ids": [],
+          "final_state": "Deleted",
+          "network_consumer": {
+            "State": "closed",
+            "ClosedAt": "2026-11-06T17:22:46.633307071Z",
+            "CurrentVMI": null,
+            "FinalizationID": "b4100cf6-3a23-5a5f-a5e8-1985d0a5a12b",
+            "CurrentLauncher": null,
+            "DesiredRunState": "deleted"
+          }
+        },
+        {
+          "kind": "VM",
+          "platform_id": "ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+          "native": {
+            "UID": "cd63e3f1-132a-4043-a919-64342f46b385",
+            "Kind": "VirtualMachine",
+            "Name": "vm-ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "disks": [
+            {
+              "DV": {
+                "UID": "61f7d290-119e-45d7-9af6-5c7606763476",
+                "Kind": "DataVolume",
+                "Name": "vd-5a1341bd-85da-590b-b861-d71820e9b1ce",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "ID": "5a1341bd-85da-590b-b861-d71820e9b1ce",
+              "PVC": {
+                "UID": "1c401da7-9c89-4baf-bf23-db22fa61a028",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "vd-5a1341bd-85da-590b-b861-d71820e9b1ce",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "system",
+              "Role": "system",
+              "Reason": "",
+              "Serial": "5a1341bd-85da-590b-b861-d71820e9b1ce",
+              "SizeGB": 2,
+              "Cleanup": null,
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-5a1341bd85da590bb861d71820e9b1ce",
+              "Preparation": "Bound",
+              "RequestedBytes": 2000000000,
+              "ObservedCapacityBytes": 2147483648
+            }
+          ],
+          "media_copies": [
+            {
+              "DV": {
+                "UID": "4a644d58-c9fd-46fc-bd1c-99b0c1a23327",
+                "Kind": "DataVolume",
+                "Name": "vm-media-0a1468f6-49a4-56cb-ab93-23652f1d789b",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "ID": "0a1468f6-49a4-56cb-ab93-23652f1d789b",
+              "PVC": {
+                "UID": "ff46eb68-0430-42f9-a0cc-5d09ff108a51",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "vm-media-0a1468f6-49a4-56cb-ab93-23652f1d789b",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Ready": true,
+              "Reason": "",
+              "Source": {
+                "Key": "vmimg:785372ad-19de-4124-b338-15b35f94eb7f",
+                "Kind": "INSTALL_ISO",
+                "PVCUID": "fcec3071-e5ba-449b-96e4-fe0c9d552954",
+                "DataBus": "scsi",
+                "PVCName": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+                "RootBus": "virtio",
+                "Checksum": "6e8e5e323279955ffe2ff203cf8405d061c09fc090a8f408c64c103347e53478",
+                "Firmware": "bios",
+                "NICModel": "virtio",
+                "OSFamily": "linux",
+                "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+                "OSVersion": "phase1",
+                "VolumeMode": "Filesystem",
+                "ContentType": "kubevirt",
+                "Architecture": "amd64",
+                "VirtualBytes": 2147483648,
+                "PersistentTPM": false,
+                "PersistentUEFI": false,
+                "RequestedBytes": 1138166334
+              },
+              "Cleanup": null,
+              "Tombstone": false,
+              "SourceDigest": "8127fc402fab54a2a01d4bc3259d7be2d5cff1a3a6b7ec5a5d21eeb708686030"
+            }
+          ],
+          "attachment_id": "att_92f30504ae7442158790a65dbc9c02ee",
+          "security_group_ids": [],
+          "final_state": "Deleted",
+          "network_consumer": {
+            "State": "closed",
+            "ClosedAt": "2026-11-06T17:37:46.038629838Z",
+            "CurrentVMI": null,
+            "FinalizationID": "0bc28630-e608-59bf-9f91-c1eefd2b3e90",
+            "CurrentLauncher": null,
+            "DesiredRunState": "deleted"
+          }
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "785372ad-19de-4124-b338-15b35f94eb7f",
+          "native": {
+            "DVUID": "e9f9cb25-bf41-4e39-bfef-a790c9f8ec60",
+            "PVUID": "",
+            "DVName": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+            "JobUID": "ae738667-344c-4078-9da5-e642987aba46",
+            "PVCUID": "fcec3071-e5ba-449b-96e4-fe0c9d552954",
+            "PVName": "",
+            "PodUID": "e5d06f88-694e-4430-b9a4-e3d9858ca5d5",
+            "DVPhase": "Succeeded",
+            "JobName": "vmi-verify-785372ad19de4124b33815b35f94eb7f",
+            "PVCName": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "22ba9d08-4a29-4b69-af14-fe0b5934db96",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+            "ReadyPublishedAt": "2026-11-06T17:00:25.666705278Z",
+            "SourceVolumeMode": "Filesystem",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": "41338272"
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "516572a2-ed34-41f4-aadf-c18927521934",
+          "native": {
+            "DVUID": "b8af7d5d-0c69-4e69-8b68-71166377c86f",
+            "PVUID": "",
+            "DVName": "vmi-src-516572a2ed3441f4aadfc18927521934",
+            "JobUID": "87f06b6e-21a2-433e-99c4-2451b5aa4848",
+            "PVCUID": "88318742-9cd7-4469-a5a6-7063c50336fb",
+            "PVName": "",
+            "PodUID": "",
+            "DVPhase": "Succeeded",
+            "JobName": "vmi-verify-516572a2ed3441f4aadfc18927521934",
+            "PVCName": "vmi-src-516572a2ed3441f4aadfc18927521934",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "701e0268-168b-4392-9cc7-533c15696404",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+            "ReadyPublishedAt": "0001-01-01T00:00:00Z",
+            "SourceVolumeMode": "Filesystem",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": "41343905"
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "d6cbecd0-8248-4fd0-9586-10e8d1a43007",
+          "native": {
+            "DVUID": "36bbc0dd-5f54-420f-97ec-78d06d87a394",
+            "PVUID": "",
+            "DVName": "vmi-src-d6cbecd082484fd0958610e8d1a43007",
+            "JobUID": "4afd5371-b8a9-40ca-af47-20508bbef0e7",
+            "PVCUID": "2cd51111-5981-4765-ae1c-f4bfd0b009ef",
+            "PVName": "",
+            "PodUID": "0ad01ffd-fd1e-413f-8a6c-d5c7912f4952",
+            "DVPhase": "Succeeded",
+            "JobName": "vmi-verify-d6cbecd082484fd0958610e8d1a43007",
+            "PVCName": "vmi-src-d6cbecd082484fd0958610e8d1a43007",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "3cbb6fd0-bc91-43f1-993a-d9fef61c2852",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+            "ReadyPublishedAt": "2026-11-06T16:47:09.635045634Z",
+            "SourceVolumeMode": "Block",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": "41298013"
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "VMImage",
+          "platform_id": "797b73ec-80d3-4dc1-b6e8-0134c762031c",
+          "native": {
+            "DVUID": "ce916f6e-8f07-4a62-91b6-1795eae1d341",
+            "PVUID": "",
+            "DVName": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+            "JobUID": "",
+            "PVCUID": "2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+            "PVName": "",
+            "PodUID": "",
+            "DVPhase": "",
+            "JobName": "",
+            "PVCName": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+            "TokenUID": "[REDACTED]",
+            "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+            "SessionID": "f66b07f3-477e-44bc-8dbb-634913618d53",
+            "TokenName": "[REDACTED]",
+            "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+            "VerifierImage": "",
+            "ReadyPublishedAt": "0001-01-01T00:00:00Z",
+            "SourceVolumeMode": "Block",
+            "SourceContentType": "kubevirt",
+            "AnnotationResourceVersion": ""
+          },
+          "final_state": "DELETED"
+        },
+        {
+          "kind": "Snapshot",
+          "platform_id": "42196e14-179f-5209-acd7-177ee0407d1d",
+          "native": {
+            "UID": "a1d232fd-5fa9-4ffc-b9da-4509c18e665e",
+            "Kind": "VirtualMachineSnapshot",
+            "Name": "vm-snap-42196e14-179f-5209-acd7-177ee0407d1d",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "final_state": "tombstone and native absent"
+        },
+        {
+          "kind": "Restore",
+          "operation_id": "c0b7be73-87ac-4e76-a5f7-308ab11ee4aa",
+          "native": {
+            "UID": "18854de8-0c4e-46c3-86d0-26a6b2d36a85",
+            "Kind": "VirtualMachineRestore",
+            "Name": "vm-restore-c0b7be73-87ac-4e76-a5f7-308ab11ee4aa",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "mapping_committed": true,
+          "cleanup_completed": true,
+          "final_state": "native absent after normal snapshot delete"
+        }
+      ],
+      "normal_delete_results": {
+        "VMs": "both Deleted; root/managed volumes and initialization Secret absent; Network consumers closed; SG IDs empty",
+        "Snapshot_Restore": "normal Delete succeeded; native absent",
+        "images": "disk/iso/invalid-iso DELETED; failed-uploader DELETED",
+        "environment_jobs": "all four exact-UID checked Jobs deleted"
+      },
+      "remaining_owned_objects": [],
+      "local_session_artifacts": {
+        "state": "PASS",
+        "evidence": "evidence/local-session-cleanup.json",
+        "current_login_session_revoked": true,
+        "task_forward_listeners_remaining": []
+      }
+    },
+    "blockers": [],
+    "plan_deviations": [
+      "user goal overrides old remote build rules: all development/build/test/image drivers ran in local WSL",
+      "user goal overrides old cluster address: only 10.10.1.66",
+      "SSH config absent in both locations; user supplied direct kubercloud@10.10.1.66",
+      "baseline PG test fixtures corrected after isolated baseline reproduced failures; no production Network behavior changed",
+      "R3 stale runtime media projection observed and repaired; final R4 full checks and affected LIVE paths rerun",
+      "uncommitted reviewable diff and exact dirty source manifests supplied; HEAD alone is not the tested implementation"
+    ]
+  },
+  "stage2": {
+    "phase": "PHASE2",
+    "conclusion": "NOT_STARTED",
+    "source": null,
+    "target": null,
+    "clone": null,
+    "clone_reference_table": null,
+    "worker": null,
+    "checks": [],
+    "repositories": {},
+    "entry_checked_at": null
+  }
+}

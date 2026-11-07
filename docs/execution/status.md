@@ -1,5 +1,28 @@
 # Network 执行状态
 
+## VM-PHASE1-20261106
+
+2026-11-07 PR #66 局部补充：审核基准 `241bacd8cd001f4d0075707311c225a36876656b` 上两项问题仍存在，
+现已修复恢复产物正常消失时的 UID 合并，以及停机创建后异步磁盘准备的后台台账刷新。
+本机 WSL 的 `make verify`、VM 包 PostgreSQL 回归（111 pass，13 个明确 skip）及新增定点 PG race 回归 **PASS**。
+电源继续使用窄 `ObserveLifecycle`，存储错误不影响提交/完成；归属和版本/租约/并发栅栏保留。
+本次没有使用集群、发布或新增 LIVE 验收；CI 按用户要求暂不处理且未复查，PR 不合并。
+[本次补充及源文件/命令/原始失败记录](records/VM-PHASE1-20261106/PHASE1-REPORT.md#pr66-local-fixes-20261107)。
+
+以下为原一阶段部署与 LIVE 验收结果，保留原时间和版本：
+
+状态 **PASS**：R01–R09、P1A01–P1A10 和 P1L01–P1L04 均已完成本次验收。
+本机 WSL2 Ubuntu 完成代码、生成/编译、make verify 与 PostgreSQL 回归；实际集群为 10.10.1.66。
+最终 R4 候选已部署；验收源码已逐文件对应代码提交 991eb61a8acf245662a9cea70074835121415439，
+[PR #66](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/66) 已提交、尚未合并。原 dirty snapshot 与提交映射见报告内 PR-HANDOFF.json。
+2026-11-07 北京时间 08:01，按用户明确单 Pod 授权，以 UID/resourceVersion/完整 finalizer 校验
+仅移除失败 uploader 的 foregroundDeletion；原生 GC 完成已知对象清理，平台镜像 DELETED。
+用户已接收既有运维路径责任；Res 常规补偿未恢复，PR65 引用退休回归保留。
+两台 VM、Snapshot/Restore、四份测试镜像和四个环境 Job 均已正常收尾。
+二阶段 **NOT_STARTED**。实际源码、制品、时间、授权、存量处置及清理回执见
+[执行报告](records/VM-PHASE1-20261106/PHASE1-REPORT.md)、
+[机器可读结果](records/VM-PHASE1-20261106/PHASE1-RESULT.json)。
+
 <a id="platform-base-network-tenant-access-20261105"></a>
 
 ## 2026-11-05：平台基础网络租户接入发布

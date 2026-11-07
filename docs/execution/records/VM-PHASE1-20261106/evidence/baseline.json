@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-11-06T15:52:56.703410+00:00",
+  "wsl_distribution": "Ubuntu",
+  "path": "/home/ubuntu/workspace/ani-resource-service",
+  "audit_base": "1498c223d902f24b2786ac017514087a476da091",
+  "initial_branch": "main",
+  "branch": "codex/vm-phase1-remediation-20261106",
+  "head": "1498c223d902f24b2786ac017514087a476da091",
+  "initial_tracked_worktree": "clean",
+  "remote": "origin\tgit@github.com:zhangzhe-ctrl/ani-resource-service.git (fetch)\norigin\tgit@github.com:zhangzhe-ctrl/ani-resource-service.git (push)",
+  "audit_diff": ""
+}

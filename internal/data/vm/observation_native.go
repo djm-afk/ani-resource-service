@@ -23,21 +23,14 @@ import (
 const runtimeRelations = "runtime-relations"
 
 type stateCache struct {
-	gvr       schema.GroupVersionResource
-	index     cache.Indexer
-	collected time.Time
-	valid     bool
+	gvr        schema.GroupVersionResource
+	index      cache.Indexer
+	valid      bool // current standard List/Watch connection, not an expiring proof
+	connection uint64
 }
 
-type stateProof struct {
-	uid        string
-	verifiedAt time.Time
-	invalid    error
-}
-
-// StateObservation is independent from lifecycle clients and their budgets.
-// Watch provides prompt changes; three shared, bounded LISTs periodically renew
-// actual evidence and recover missing events. VM reads never contact Kubernetes.
+// StateObservation uses standard informer List/Watch, independently of lifecycle
+// request budgets. It never audits a second full copy of the native state.
 type StateObservation struct {
 	client        dynamic.Interface
 	notifier      biz.ObservationNotifier
@@ -50,13 +43,8 @@ type StateObservation struct {
 	cancel        context.CancelFunc
 	started       bool
 	done          chan struct{}
-	auditInterval time.Duration
 	capacity      int
 	retryAfter    time.Time
-	changesAt     map[string]time.Time
-	proofs        map[string]stateProof
-	recoveries    map[string]biz.ObservationRecovery
-	recoveryRetry time.Time
 	synced        bool
 }
 
@@ -65,8 +53,8 @@ func NewStateObservation(config *rest.Config, notifier biz.ObservationNotifier) 
 		return nil, biz.ErrInvalid
 	}
 	cfg := rest.CopyConfig(config)
-	// Never inherit a control client's limiter. Watch reconnects and shared
-	// audits must not consume Start/Stop/Delete request tokens.
+	// Never inherit a control client's limiter. Watch reconnects
+	// must not consume Start/Stop/Delete request tokens.
 	cfg.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(2, 4)
 	cfg.Timeout = 0 // individual LISTs are bounded; watches own their lifetime
 	cfg.UserAgent = "ani-resource-vm-state-observation"
@@ -74,11 +62,11 @@ func NewStateObservation(config *rest.Config, notifier biz.ObservationNotifier) 
 	if err != nil {
 		return nil, err
 	}
-	return newStateObservation(client, notifier, 30*time.Second), nil
+	return newStateObservation(client, notifier), nil
 }
 
-func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotifier, auditInterval time.Duration) *StateObservation {
-	o := &StateObservation{client: client, notifier: notifier, pending: map[string]biz.ObjectRef{}, changesAt: map[string]time.Time{}, proofs: map[string]stateProof{}, recoveries: map[string]biz.ObservationRecovery{}, done: make(chan struct{}), auditInterval: auditInterval, capacity: 4096}
+func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotifier) *StateObservation {
+	o := &StateObservation{client: client, notifier: notifier, pending: map[string]biz.ObjectRef{}, done: make(chan struct{}), capacity: 4096}
 	for _, gvr := range []schema.GroupVersionResource{vmResource, vmiResource, podResource} {
 		r := &stateCache{gvr: gvr, index: newStateIndex()}
 		o.resources = append(o.resources, r)
@@ -90,7 +78,24 @@ func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotif
 				return resource.List(read, opts)
 			},
 			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-				return resource.Watch(ctx, opts)
+				w, err := resource.Watch(ctx, opts)
+				o.mu.Lock()
+				r.connection++
+				connection := r.connection
+				r.valid = err == nil
+				o.overflow = true
+				o.mu.Unlock()
+				if err != nil {
+					return nil, err
+				}
+				return trackStateWatch(w, func() {
+					o.mu.Lock()
+					defer o.mu.Unlock()
+					if r.connection == connection {
+						r.valid = false
+						o.overflow = true
+					}
+				}), nil
 			},
 		}
 		informer := cache.NewSharedIndexInformer(cache.ToListWatcherWithWatchListSemantics(listWatch, client), &unstructured.Unstructured{}, 0, cache.Indexers{})
@@ -101,8 +106,8 @@ func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotif
 		})
 		_ = informer.SetWatchErrorHandler(func(_ *cache.Reflector, _ error) {
 			o.mu.Lock()
-			// A reconnect does not contradict the last real audit. Its proof
-			// still expires after 60 seconds, even if events keep arriving.
+			// Reflector owns retries. Reads report known source unavailability
+			// until its standard List/Watch reconnects.
 			r.valid = false
 			o.overflow = true
 			o.mu.Unlock()
@@ -179,22 +184,14 @@ func (o *StateObservation) changed(r *stateCache, old, value any) {
 		return
 	}
 	meaningful := !reflect.DeepEqual(stateProjection(before), stateProjection(after))
-	received := time.Now().UTC()
-	for _, u := range []*unstructured.Unstructured{before, after} {
-		if u == nil {
-			continue
-		}
-		if !meaningful {
-			continue
-		}
-		for _, ref := range o.eventRoots(u) {
-			o.enqueue(ref)
-			key := ref.Namespace + "/" + ref.Name
-			if len(o.changesAt) >= o.capacity {
-				clear(o.changesAt)
-				o.overflow = true
+	if meaningful {
+		for _, u := range []*unstructured.Unstructured{before, after} {
+			if u == nil {
+				continue
 			}
-			o.changesAt[key] = received
+			for _, ref := range o.eventRoots(u) {
+				o.enqueue(ref)
+			}
 		}
 	}
 	if before != nil {
@@ -282,17 +279,9 @@ func (o *StateObservation) run(ctx context.Context) {
 		o.mu.Lock()
 		o.synced = true
 		o.mu.Unlock()
-		o.audit(ctx)
-		ticker := time.NewTicker(o.auditInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				o.audit(ctx)
-			}
-		}
+		o.mu.Lock()
+		o.overflow = true
+		o.mu.Unlock()
 	}()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -305,79 +294,6 @@ func (o *StateObservation) run(ctx context.Context) {
 			o.flush(ctx)
 		}
 	}
-}
-
-func (o *StateObservation) audit(ctx context.Context) {
-	started := time.Now().UTC()
-	listed := make([]cache.Indexer, len(o.resources))
-	for i, r := range o.resources {
-		if ctx.Err() != nil {
-			return
-		}
-		read, cancel := context.WithTimeout(ctx, 5*time.Second)
-		list, err := o.client.Resource(r.gvr).List(read, metav1.ListOptions{})
-		cancel()
-		if err == nil && list != nil {
-			listed[i] = newStateIndex()
-			for j := range list.Items {
-				_ = listed[i].Add(list.Items[j].DeepCopy())
-			}
-		}
-		o.mu.Lock()
-		// Informer callbacks are the only ordered fact source. In particular,
-		// an older LIST response cannot overwrite a later Watch event, and an
-		// already queued older Watch callback cannot roll back a newer LIST.
-		// Compare each VM's runtime evidence only after all three LISTs. A
-		// newer event can make one proof temporarily unverifiable, without
-		// invalidating another VM or deleting a still-live earlier proof.
-		r.valid = listed[i] != nil
-		if r.valid {
-			r.collected = started
-		}
-		o.mu.Unlock()
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if listed[0] != nil && listed[1] != nil && listed[2] != nil {
-		current := []cache.Indexer{o.resources[0].index, o.resources[1].index, o.resources[2].index}
-		for _, item := range current[0].List() {
-			root := item.(*unstructured.Unstructured)
-			key := root.GetNamespace() + "/" + root.GetName()
-			other, exists, _ := listed[0].GetByKey(key)
-			if !exists || other.(*unstructured.Unstructured).GetUID() != root.GetUID() {
-				// Missing roots and UID conflicts are positive contradictory
-				// evidence, not an ordinary List/Watch timing difference.
-				invalid := biz.ErrUnknown
-				if exists {
-					invalid = biz.ErrOwnership
-				}
-				proof := o.proofs[key]
-				proof.invalid = invalid
-				o.proofs[key] = proof
-				continue
-			}
-			if !reflect.DeepEqual(runtimeProjection(current, root), runtimeProjection(listed, other.(*unstructured.Unstructured))) {
-				continue
-			}
-			o.proofs[key] = stateProof{uid: string(root.GetUID()), verifiedAt: started}
-			if changed := o.changesAt[key]; !changed.After(started) {
-				delete(o.changesAt, key)
-			}
-			// Recovery is only a fresh proof hint, not an Observed write.
-			// Durable registrations fence its UID and the subsequent read
-			// still performs every tenant/owner/runtime validation.
-			o.enqueueRecovery(key, biz.ObservationRecovery{Native: objectRef(root), ObservedAt: started})
-		}
-	}
-	// Drop vanished roots rather than allowing retained proof maps to grow.
-	for key := range o.proofs {
-		if _, exists, _ := o.resources[0].index.GetByKey(key); !exists {
-			delete(o.proofs, key)
-			delete(o.changesAt, key)
-			delete(o.recoveries, key)
-		}
-	}
-	o.overflow = true
 }
 
 // stateProjection contains the identity, relation and runtime fields actually
@@ -450,19 +366,7 @@ func runtimeObjects(indices []cache.Indexer, namespace, name, id string) (*unstr
 	return instance, pods
 }
 
-func runtimeProjection(indices []cache.Indexer, root *unstructured.Unstructured) any {
-	instance, pods := runtimeObjects(indices, root.GetNamespace(), root.GetName(), root.GetLabels()["vm.ani.io/vm-id"])
-	projected := map[string]any{}
-	for _, pod := range pods {
-		if evidence := stateProjection(pod); evidence != nil {
-			projected[pod.GetNamespace()+"/"+pod.GetName()] = evidence
-		}
-	}
-	return []any{stateProjection(root), stateProjection(instance), projected}
-}
-
 func (o *StateObservation) flush(ctx context.Context) {
-	o.flushRecoveries(ctx)
 	o.mu.Lock()
 	if time.Now().Before(o.retryAfter) {
 		o.mu.Unlock()
@@ -505,59 +409,6 @@ func (o *StateObservation) flush(ctx context.Context) {
 	}
 }
 
-func (o *StateObservation) enqueueRecovery(key string, recovery biz.ObservationRecovery) {
-	if _, ok := o.recoveries[key]; !ok && len(o.recoveries) >= o.capacity {
-		// The next shared audit retries this proof. Falling back to an
-		// ordinary rescan must never bypass durable failure backoff.
-		o.overflow = true
-		return
-	}
-	o.recoveries[key] = recovery
-}
-
-func (o *StateObservation) flushRecoveries(ctx context.Context) {
-	notifier, ok := o.notifier.(biz.ObservationRecoveryNotifier)
-	if !ok {
-		return
-	}
-	o.mu.Lock()
-	if time.Now().Before(o.recoveryRetry) {
-		o.mu.Unlock()
-		return
-	}
-	batch := []biz.ObservationRecovery{}
-	for key, recovery := range o.recoveries {
-		proof := o.proofs[key]
-		delete(o.recoveries, key)
-		root, exists, _ := o.resources[0].index.GetByKey(key)
-		if !exists || string(root.(*unstructured.Unstructured).GetUID()) != recovery.Native.UID || proof.invalid != nil || proof.uid != recovery.Native.UID || !proof.verifiedAt.Equal(recovery.ObservedAt) || time.Since(proof.verifiedAt) > 60*time.Second {
-			continue
-		}
-		batch = append(batch, recovery)
-		if len(batch) == 128 {
-			break
-		}
-	}
-	o.mu.Unlock()
-	if len(batch) == 0 {
-		return
-	}
-	write, cancel := context.WithTimeout(ctx, time.Second)
-	err := notifier.RecoverObservations(write, batch)
-	cancel()
-	if err != nil {
-		o.mu.Lock()
-		for _, recovery := range batch {
-			key := recovery.Native.Namespace + "/" + recovery.Native.Name
-			if queued, ok := o.recoveries[key]; !ok || queued.ObservedAt.Before(recovery.ObservedAt) {
-				o.enqueueRecovery(key, recovery)
-			}
-		}
-		o.recoveryRetry = time.Now().Add(5 * time.Second)
-		o.mu.Unlock()
-	}
-}
-
 func (o *StateObservation) Stop(ctx context.Context) error {
 	o.mu.Lock()
 	cancel, started := o.cancel, o.started
@@ -572,6 +423,12 @@ func (o *StateObservation) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// Preparation uses this read client's budget, isolated from lifecycle clients.
+// The existing observation job owns retries; no storage watch/controller is added.
+func (o *StateObservation) ObserveDiskPreparation(ctx context.Context, v biz.VM) ([]biz.Disk, error) {
+	return NewNativeWithClients(o.client, nil).ObserveDiskPreparation(ctx, v)
 }
 
 func (o *StateObservation) ObserveState(ctx context.Context, v biz.VM) (biz.Observation, error) {
@@ -593,29 +450,18 @@ func (o *StateObservation) ObserveState(ctx context.Context, v biz.VM) (biz.Obse
 	indices := []cache.Indexer{o.resources[0].index, o.resources[1].index, o.resources[2].index}
 	instance, pods := runtimeObjects(indices, v.Spec.Namespace, v.Native.Name, v.ID)
 	x, err := runtimeObservation(v, root.(*unstructured.Unstructured), instance, pods)
-	proof, proven := o.proofs[key]
-	collected := proof.verifiedAt
-	if changed := o.changesAt[key]; changed.After(collected) {
-		collected = changed
+	for _, r := range o.resources {
+		if !r.valid {
+			o.mu.Unlock()
+			return unknown, biz.ErrObservationUnavailable
+		}
 	}
 	o.mu.Unlock()
 	if err != nil {
 		return x, err
 	}
-	if proof.invalid != nil {
-		return unknown, proof.invalid
-	}
-	if !proven || proof.verifiedAt.IsZero() {
-		return unknown, biz.ErrObservationUnavailable
-	}
-	if proof.uid != v.Native.UID {
-		return unknown, biz.ErrOwnership
-	}
-	if time.Since(proof.verifiedAt) > 60*time.Second {
-		return unknown, biz.ErrUnknown
-	}
-	x.ObservedAt = collected
-	return x, err
+	x.ObservedAt = time.Now().UTC()
+	return x, nil
 }
 
 func nativePowerState(phase string) string {
@@ -656,36 +502,87 @@ func runtimeObservation(v biz.VM, root, instance *unstructured.Unstructured, pod
 		x.Running = phase == "Running"
 		x.Terminal = phase == "Succeeded" || phase == "Failed"
 	}
-	for _, pod := range pods {
-		// Hotplug helpers are owned by the VMI but are not its runtime
-		// launcher. They cannot make a single running VM appear ambiguous.
-		if pod.GetLabels()["kubevirt.io"] == "hotplug-disk" {
-			continue
-		}
-		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
-		if phase == "Succeeded" || phase == "Failed" {
-			continue
-		}
-		if pod.GetNamespace() != v.Spec.Namespace {
-			return x, biz.ErrOwnership
-		}
-		current := x.VMI != nil && (pod.GetLabels()["kubevirt.io/created-by"] == x.VMI.UID || owned(pod, "VirtualMachineInstance", x.VMI.UID))
-		if current {
-			if !owned(pod, "VirtualMachineInstance", x.VMI.UID) {
-				return x, biz.ErrOwnership
-			}
-		} else if !matches(pod, v) {
-			return x, biz.ErrOwnership
-		}
-		if x.Launcher != nil {
-			return x, biz.ErrDependency
-		}
-		ref := objectRef(pod)
-		x.Launcher = &ref
+	if err := observeRuntimePods(v, &x, pods); err != nil {
+		return x, err
 	}
-	x.Stopped = instance == nil && x.Launcher == nil && len(x.StateChangeRequests) == 0
+	x.Stopped = instance == nil && !x.RelatedPodsPresent && len(x.StateChangeRequests) == 0
 	if x.Stopped {
 		x.State = "Stopped"
 	}
 	return x, nil
 }
+
+// Only consumers requiring a launcher use Launcher. Runtime exit is tracked
+// independently, so an ambiguous or helper Pod cannot masquerade as absence.
+func observeRuntimePods(v biz.VM, x *biz.Observation, pods []*unstructured.Unstructured) error {
+	launchers := 0
+	for _, pod := range pods {
+		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
+		if phase == "Succeeded" || phase == "Failed" {
+			continue
+		}
+		if pod.GetNamespace() != v.Spec.Namespace {
+			return biz.ErrOwnership
+		}
+		current := x.VMI != nil && (pod.GetLabels()["kubevirt.io/created-by"] == x.VMI.UID || owned(pod, "VirtualMachineInstance", x.VMI.UID))
+		if current {
+			if !owned(pod, "VirtualMachineInstance", x.VMI.UID) {
+				return biz.ErrOwnership
+			}
+		} else if !matches(pod, v) {
+			return biz.ErrOwnership
+		}
+		x.RelatedPodsPresent = true
+		if current && pod.GetLabels()["kubevirt.io"] != "hotplug-disk" {
+			launchers++
+			ref := objectRef(pod)
+			x.Launcher = &ref
+		}
+	}
+	if launchers != 1 {
+		x.Launcher = nil
+	}
+	return nil
+}
+
+// trackingWatch reports stream closure immediately, including a clean EOF.
+// Reflector still owns all relists, resourceVersion handling and reconnects.
+type trackingWatch struct {
+	watch.Interface
+	results chan watch.Event
+	done    chan struct{}
+	once    sync.Once
+}
+
+func (w *trackingWatch) ResultChan() <-chan watch.Event { return w.results }
+func (w *trackingWatch) Stop() {
+	w.once.Do(func() { close(w.done); w.Interface.Stop() })
+}
+func trackStateWatch(raw watch.Interface, disconnected func()) watch.Interface {
+	w := &trackingWatch{Interface: raw, results: make(chan watch.Event), done: make(chan struct{})}
+	go func() {
+		defer close(w.results)
+		defer disconnected()
+		for {
+			select {
+			case <-w.done:
+				return
+			case event, ok := <-raw.ResultChan():
+				if !ok {
+					return
+				}
+				if event.Type == watch.Error {
+					disconnected()
+				}
+				select {
+				case w.results <- event:
+				case <-w.done:
+					return
+				}
+			}
+		}
+	}()
+	return w
+}
+
+var _ biz.DiskPreparationSource = (*StateObservation)(nil)

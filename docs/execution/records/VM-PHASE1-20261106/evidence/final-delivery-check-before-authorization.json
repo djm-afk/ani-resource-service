@@ -1,0 +1,31 @@
+{
+  "at": "2026-11-06T17:49:21.645724+00:00",
+  "report_json_valid": true,
+  "check_counts": {
+    "PASS": 13,
+    "BLOCKED": 1
+  },
+  "nonpassing_check": "P1L04",
+  "nonpassing_remediation": "R09",
+  "phase2": "NOT_STARTED",
+  "product_sources_match_verify_06": true,
+  "deployment": {
+    "uid": "9b17ed7e-6521-40e8-8bf5-70a44237e501",
+    "ready_replicas": 1,
+    "images": [
+      {
+        "container": "resource",
+        "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78"
+      }
+    ]
+  },
+  "pending_pod": {
+    "uid": "56cff51e-3e65-45aa-a849-9306d91039dd",
+    "phase": "Failed",
+    "deletionTimestamp": "2026-11-06T17:18:57Z",
+    "finalizers": [
+      "foregroundDeletion"
+    ]
+  },
+  "no_finalizer_write_executed": true
+}

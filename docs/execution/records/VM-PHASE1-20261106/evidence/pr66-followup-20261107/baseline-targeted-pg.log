@@ -1,0 +1,20 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=776dbb23b8dfadc5832c54fe8736b76786a9ac8c6b57656d3536f04e808df548
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-absent
+    async_inventory_integration_test.go:230: storage error not isolated to background attempt true <nil>
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-Pending-WFFC
+    async_inventory_integration_test.go:230: storage error not isolated to background attempt true <nil>
+--- FAIL: TestStoppedCreateInventoryRefreshAfterIndependentStart (1.78s)
+    --- FAIL: TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-absent (0.89s)
+    --- FAIL: TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-Pending-WFFC (0.89s)
+=== RUN   TestObservationPreparationFencesRemapAndPreservesIntentFields
+    async_inventory_integration_test.go:356: {[] [] [] false 3338e8c2-0b3f-43e6-b009-4675b45402a6 ae7a9e73-371d-435e-8c5f-325d85788fcb observation a6e513c6-07c3-4738-8822-5fa7be695fe5 {[] [123 34 111 98 115 101 114 118 97 116 105 111 110 34 58 32 34 110 97 116 105 118 101 45 98 111 117 110 100 97 114 121 34 125] bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  observation    tenant-observation       0 0 0 {         0 0        false false} <nil> {     {   }  } <nil>  true [] <nil>} 1 false {VirtualMachine tenant-observation vm-ae7a9e73-371d-435e-8c5f-325d85788fcb 22e5f7fd-98f6-4fcf-958f-03a8e0960d97} {   } {60f00338-4800-4919-8b7d-409a35fe800c   0 0 1 0 0x1b4c0b693900       map[]} [{f3f84d1b-73a4-5608-819a-5e372c005e3d data new-name disk-f3f84d1b73a45608819a5e372c005e3d f3f84d1b-73a4-5608-819a-5e372c005e3d 1 1000000000 0 false false {DataVolume tenant-observation vd-f3f84d1b-73a4-5608-819a-5e372c005e3d 82df0609-82d5-435f-b5c3-03849c513dc8} {   } PendingPopulation  [{Secret tenant-observation cleanup known}]}] [] [] [] [] [] [{INSTALL   false false} {DRIVER   false false}] [] SYSTEM_DISK [] Running Stopped  a6e513c6-07c3-4738-8822-5fa7be695fe5 [] 2026-11-07 06:00:10.28615068 +0000 UTC 2026-11-07 06:00:10.253325 +0000 UTC} <nil>
+--- FAIL: TestObservationPreparationFencesRemapAndPreservesIntentFields (0.71s)
+=== RUN   TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete
+    restore_output_cleanup_integration_test.go:117: normal disappearance failed snapshot deletion: {TenantID:381838bf-c141-4054-af63-4e6ab6bb8125 ID:31585a54-9b3b-49a1-afcf-baa669ea1dcb VMID:a162c44d-a19a-4a44-a845-0aaeebfc0ada Action:delete-snapshot Key:delete-after-old-output-gone RequestDigest:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee Intent:[123 34 115 110 97 112 115 104 111 116 95 105 100 34 58 32 34 54 100 99 101 54 55 100 97 45 57 55 51 54 45 53 57 50 48 45 56 102 99 51 45 100 55 48 54 57 57 48 49 53 48 55 50 34 125] IntentVersion:2 State:failed Reason:VM_OBJECT_OWNERSHIP_CONFLICT Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:18ce6a62-9a0d-46ac-95ec-c75df2ecf9d8 LeaseUntil:2026-11-07 14:00:41.004679153 +0800 CST ObservedAt:2026-11-07 06:00:11.008303057 +0000 UTC}
+--- FAIL: TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete (0.72s)
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	3.231s
+FAIL
+removed task container=776dbb23b8dfadc5832c54fe8736b76786a9ac8c6b57656d3536f04e808df548

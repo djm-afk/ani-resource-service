@@ -1,0 +1,25 @@
+test "$(/home/ubuntu/workspace/ani-resource-service/.tools/bin/buf --version)" = "1.60.0"
+test "$(go version -m /home/ubuntu/workspace/ani-resource-service/.tools/bin/buf | awk '$1 == "mod" {print $2 "@" $3; exit}')" = "github.com/bufbuild/buf@v1.60.0"
+test "$(/home/ubuntu/workspace/ani-resource-service/.tools/bin/sqlc version)" = "v1.31.1"
+test "$(go version -m /home/ubuntu/workspace/ani-resource-service/.tools/bin/sqlc | awk '$1 == "mod" {print $2 "@" $3; exit}')" = "github.com/sqlc-dev/sqlc@v1.31.1"
+./scripts/verify-source /home/ubuntu/workspace/ani-resource-service/.tools/bin/buf /home/ubuntu/workspace/ani-resource-service/.tools/bin/sqlc
+--- /tmp/ani-source.4jMtnU/before	2026-11-07 00:20:16.414171885 +0800
++++ /tmp/ani-source.4jMtnU/after	2026-11-07 00:21:03.066298891 +0800
+@@ -712,6 +712,7 @@
+ 1598864348d8600b9383a3787ceb4818dce0e384a96889dc9fa012102fa58ebe  docs/execution/records/VM-MVP/checks/nad-dns-20261025/linux-cleanup-before-network-fix.json
+ 15a4beeccf25161e51f1f3717c68ac868ec902850f124758b605eec4489776e9  api/vm/v1/image.proto
+ 15a62a5b858c1d18d04b5b0bca73cecdaff89ed666e2bb37b51556824aae9463  docs/execution/records/IMAGE-MVP/frontend-demo-tenant-a-20261013/update-97b13968/evidence/image.json
++15a9c1b830f126506af7409d5fddd8edb7a5d867dac08c66df822d06042e24f2  docs/execution/records/VM-PHASE1-20261106/evidence/postgres-01.log
+ 15adf31467f6f456465f5419897cfd36ecd800208ce66f02a97040f20e43f462  docs/execution/records/NET-05A/live/pause-worker-3407c61c.hit.json
+ 15adf31467f6f456465f5419897cfd36ecd800208ce66f02a97040f20e43f462  docs/execution/records/NET-05A/live/prior-runtime-43c54c010ab5/pause-worker-3407c61c.hit.json
+ 15bc7474918aa63437cc5a9f42cc10647707498d2a7c12b786b83fd68cf305cb  internal/data/sandbox/unknown_review_integration_test.go
+@@ -7458,7 +7459,6 @@
+ da647cd7eadf01119a974d5a019f413af21fe6460f709024ab84e1ca5f23f5b6  docs/execution/records/NET-VPC-BASE-01/runs/20260914T130754Z-52b757e1/run.sh
+ da66522340642e425c661267350496ac341beb29057a193f741851d1d8150341  internal/data/sandbox/image_test.go
+ da702d3b50be7ea902e4f1849f05ae1f0fc978e7baa21f06709ea1df1f7ddff2  docs/execution/records/LIST-TOTAL-20261008/governance-source.sha256
+-da731129863b54ab4589f1d74ee7556c86a767c58e7f84c3033da7a4769277d4  docs/execution/records/VM-PHASE1-20261106/evidence/postgres-01.log
+ da8571952a7403cfc53dca0628cd9fa4461abbc9a55ff3e6fb2f4ab63e701c6d  docs/execution/records/RESOURCE-MOD-20260922/evidence/live/isolation/product-driver/calls/000047-outcome.json
+ da8751b2496145b7ee850b82dc7968a836c0cf79a4ee946bd7aff1b4b9ed3fd8  docs/execution/records/VM-MVP/checks/formal-provider-02/download-session-relay02.json
+ da9069286dee90bf76280b133ed390bbacfa2e4b765268b0fa48e7854fc6ba1b  docs/execution/records/MODELDEV-TENANT-ENV-20261101/generation.log
+verify-source: generation changed the repository tree
+make: *** [Makefile:110: verify] Error 1

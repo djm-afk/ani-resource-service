@@ -3,7 +3,9 @@
 package vm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -58,7 +60,11 @@ func TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if v.Spec.Network.Reference != reference || v.Spec.Network.NADConfig == "" || v.Spec.Network.NADUID != "" || string(v.Spec.Canonical) != `{"network":{"nad_uid":""}}` {
+			var canonical bytes.Buffer
+			if err := json.Compact(&canonical, v.Spec.Canonical); err != nil {
+				t.Fatal(err)
+			}
+			if v.Spec.Network.Reference != reference || v.Spec.Network.NADConfig == "" || v.Spec.Network.NADUID != "" || canonical.String() != `{"network":{"nad_uid":""}}` {
 				t.Fatal("accepted snapshot lost internal data or rewrote canonical")
 			}
 			v.Network = biz.NetworkPlan{NADUID: "actual-nad", NADName: v.Spec.Network.NADName, NADDigest: v.Spec.Network.NADDigest, BindingRevision: reference.SubnetBindingID}

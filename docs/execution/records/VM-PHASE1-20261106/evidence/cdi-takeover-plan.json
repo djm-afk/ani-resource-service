@@ -1,0 +1,39 @@
+{
+  "prepared_at": "2026-11-06T17:20:29.816637+00:00",
+  "status": "AWAITING_EXPLICIT_USER_AUTHORIZATION",
+  "entry": "kubercloud@10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "kind": "Pod",
+  "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+  "name": "cdi-upload-prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+  "uid": "56cff51e-3e65-45aa-a849-9306d91039dd",
+  "phase": "Failed",
+  "deletionTimestamp": "2026-11-06T17:18:57Z",
+  "operation": "one-shot existing operator route; remove only foregroundDeletion; allow GC to continue",
+  "preconditions": "exact same registered fixture/source/prime owner chain; Failed and deleting; UID/resourceVersion/full finalizer tests; refresh resourceVersion at execution and abort if identity, phase or finalizers differ",
+  "json_patch_preview": [
+    {
+      "op": "test",
+      "path": "/metadata/uid",
+      "value": "56cff51e-3e65-45aa-a849-9306d91039dd"
+    },
+    {
+      "op": "test",
+      "path": "/metadata/resourceVersion",
+      "value": "41402059"
+    },
+    {
+      "op": "test",
+      "path": "/metadata/finalizers",
+      "value": [
+        "foregroundDeletion"
+      ]
+    },
+    {
+      "op": "remove",
+      "path": "/metadata/finalizers/0"
+    }
+  ],
+  "evidence": "cdi-failure-deletion-current.json",
+  "authorization_reason": "goal-objective.md section 3 retains separate authorization for native finalizer maintenance"
+}

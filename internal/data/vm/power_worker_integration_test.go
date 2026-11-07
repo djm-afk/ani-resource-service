@@ -73,7 +73,7 @@ func TestVMPowerUnknownRecoveryDoesNotRepeatRestart(t *testing.T) {
 		t.Helper()
 		until := time.Now().Add(3 * time.Second)
 		for time.Now().Before(until) {
-			worked, err := w.Step(ctx)
+			worked, err := stepPastNetworkPublication(t, ctx, db, p, w, tenant, id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +170,7 @@ func TestVMStartPreflightFailureRetriesOriginalOperation(t *testing.T) {
 				t.Helper()
 				end := time.Now().Add(3 * time.Second)
 				for time.Now().Before(end) {
-					worked, err := w.Step(ctx)
+					worked, err := stepPastNetworkPublication(t, ctx, db, p, w, tenant, id)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -269,7 +269,7 @@ func TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending(t *test
 				t.Helper()
 				deadline := time.Now().Add(3 * time.Second)
 				for time.Now().Before(deadline) {
-					worked, err := worker.Step(ctx)
+					worked, err := stepPastNetworkPublication(t, ctx, db, p, worker, tenant, id)
 					if err != nil {
 						t.Fatal(err)
 					}

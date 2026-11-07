@@ -2,7 +2,6 @@ package vm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -73,56 +72,6 @@ func (p *Postgres) NotifyAllObservations(ctx context.Context) error {
 	return err
 }
 
-// RecoverObservations releases failure backoff only after the shared native
-// source has verified a newer, fresh proof for exactly the registered object.
-// Ordinary Watch notifications deliberately cannot perform this transition.
-func (p *Postgres) RecoverObservations(ctx context.Context, proofs []biz.ObservationRecovery) error {
-	if len(proofs) > 128 {
-		return biz.ErrInvalid
-	}
-	if len(proofs) == 0 {
-		return nil
-	}
-	type recovery struct {
-		Kind       string    `json:"kind"`
-		Namespace  string    `json:"namespace"`
-		Name       string    `json:"name"`
-		UID        string    `json:"uid"`
-		ObservedAt time.Time `json:"observed_at"`
-	}
-	batch := make([]recovery, 0, len(proofs))
-	for _, proof := range proofs {
-		ref := proof.Native
-		if ref.Kind != "VirtualMachine" || ref.Namespace == "" || ref.Name == "" || ref.UID == "" || proof.ObservedAt.IsZero() {
-			return biz.ErrInvalid
-		}
-		batch = append(batch, recovery{ref.Kind, ref.Namespace, ref.Name, ref.UID, proof.ObservedAt.UTC()})
-	}
-	payload, err := json.Marshal(batch)
-	if err != nil {
-		return err
-	}
-	_, err = p.pool.Exec(ctx, `UPDATE vm.observation_work w SET
- notification_generation=w.notification_generation+1,
- not_before=LEAST(w.not_before,now()+interval '1 second'),
- next_attempt_at=LEAST(w.next_attempt_at,now()+interval '1 second')
- FROM vm.virtual_machines v,
- jsonb_to_recordset($1::jsonb) AS proof(kind text,namespace text,name text,uid text,observed_at timestamptz)
- WHERE v.tenant_id=w.tenant_id AND v.id=w.vm_id AND NOT v.closing AND w.failures>0
- AND v.current_configuration #>> '{Native,Kind}'=proof.kind
- AND v.current_configuration #>> '{Native,Namespace}'=proof.namespace
- AND v.current_configuration #>> '{Native,Name}'=proof.name
- AND v.current_configuration #>> '{Native,UID}'=proof.uid
- AND proof.observed_at>COALESCE((v.current_configuration->>'ObservedAt')::timestamptz,'epoch'::timestamptz)
- AND proof.observed_at<=now() AND proof.observed_at>=now()-interval '60 seconds'
- AND ((v.current_configuration->>'Observed'='Unknown'
-       AND v.current_configuration->>'Reason' IN ('VM_OBSERVATION_UNAVAILABLE','VM_OBSERVATION_TIMEOUT'))
-   OR (v.current_configuration->>'Observed' IN ('Running','Stopped','Pending','Provisioning','Starting','Stopping','Failed')
-       AND (v.current_configuration->>'ObservedAt')::timestamptz>=now()-interval '60 seconds'
-       AND (v.current_configuration->>'ObservedAt')::timestamptz<=now()))`, payload)
-	return err
-}
-
 func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork, observed biz.Observation, readErr error) error {
 	if !biz.UUID(work.TenantID) || !biz.UUID(work.VMID) || !biz.UUID(work.Lease) {
 		return biz.ErrInvalid
@@ -156,6 +105,20 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 	} else if generation != work.Generation {
 		fence = biz.ErrLease
 	}
+	if readErr == nil {
+		if observed.VM != current.Native {
+			readErr = biz.ErrOwnership
+		} else if observed.ObservedAt.IsZero() || observed.ObservedAt.After(now.Add(time.Second)) || observed.ObservedAt.Before(now.Add(-60*time.Second)) {
+			readErr = biz.ErrDependency
+		} else if !observationState(observed) {
+			readErr = biz.ErrInvalid
+		}
+	}
+	if fence == nil && readErr == nil && len(observed.Volumes) > 0 {
+		if err := biz.ApplyDiskPreparation(&current, observed.Volumes); err != nil {
+			fence = err
+		}
+	}
 	if fence != nil {
 		_, err = tx.Exec(ctx, `UPDATE vm.observation_work SET lease_token=NULL,lease_until=NULL,
  next_attempt_at=GREATEST(not_before,now()+interval '1 second') WHERE tenant_id=$1 AND vm_id=$2`, work.TenantID, work.VMID)
@@ -166,15 +129,6 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 			return err
 		}
 		return fence
-	}
-	if readErr == nil {
-		if observed.VM != current.Native {
-			readErr = biz.ErrOwnership
-		} else if observed.ObservedAt.IsZero() || observed.ObservedAt.After(now.Add(time.Second)) || observed.ObservedAt.Before(now.Add(-60*time.Second)) {
-			readErr = biz.ErrDependency
-		} else if !observationState(observed) {
-			readErr = biz.ErrInvalid
-		}
 	}
 	interval := 30 * time.Second
 	if readErr != nil {
@@ -210,10 +164,15 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 	// a concurrent UpdateNetwork and user intent cannot be replaced by the VM
 	// snapshot captured at claim time.
 	_, err = tx.Exec(ctx, `UPDATE vm.virtual_machines SET current_configuration=
- jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(current_configuration,'{Observed}',$3::jsonb),'{Reason}',$4::jsonb),'{ObservedAt}',$5::jsonb),'{Addresses}',$6::jsonb),'{Network}',$7::jsonb),updated_at=now()
- WHERE tenant_id=$1 AND id=$2`, work.TenantID, work.VMID, encode(current.Observed), encode(current.Reason), encode(current.ObservedAt), encode(current.Addresses), encode(current.Network))
+ jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(current_configuration,'{Observed}',$3::jsonb),'{Reason}',$4::jsonb),'{ObservedAt}',$5::jsonb),'{Addresses}',$6::jsonb),'{Network}',$7::jsonb),'{Disks}',$8::jsonb),updated_at=now()
+ WHERE tenant_id=$1 AND id=$2`, work.TenantID, work.VMID, encode(current.Observed), encode(current.Reason), encode(current.ObservedAt), encode(current.Addresses), encode(current.Network), encode(current.Disks))
 	if err != nil {
 		return err
+	}
+	if readErr == nil && len(observed.Volumes) > 0 {
+		if err = saveDisks(ctx, tx, current); err != nil {
+			return err
+		}
 	}
 	minimum := time.Second
 	if readErr != nil {
@@ -222,8 +181,8 @@ func (p *Postgres) SaveObservation(ctx context.Context, work biz.ObservationWork
 	notBefore, nextAttempt := now.Add(minimum), now.Add(interval)
 	// Retained facts get an expiry retry even during a long failure backoff.
 	// Otherwise a 60/120/300 second backoff could leave Running visible long
-	// after the last real proof has expired.
-	if knownObservationState(current.Observed) && !current.ObservedAt.IsZero() {
+	// after the last healthy observation has expired.
+	if readErr != nil && knownObservationState(current.Observed) && !current.ObservedAt.IsZero() {
 		expires := current.ObservedAt.Add(time.Minute)
 		if expires.Before(notBefore) {
 			notBefore = expires
@@ -281,4 +240,3 @@ func observationFailureReason(err error) string {
 var _ biz.ObservationRepository = (*Postgres)(nil)
 var _ biz.ObservationNotifier = (*Postgres)(nil)
 var _ biz.ObservationRescanNotifier = (*Postgres)(nil)
-var _ biz.ObservationRecoveryNotifier = (*Postgres)(nil)

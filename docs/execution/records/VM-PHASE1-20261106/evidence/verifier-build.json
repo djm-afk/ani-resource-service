@@ -1,0 +1,15 @@
+{
+  "built_at": "2026-11-06T16:36:40.798962+00:00",
+  "host": "WSL2 Ubuntu",
+  "image": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify:vm-phase1-20261107-r1",
+  "base": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a",
+  "local_digest": "sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+  "binary_sha256": "e6c7c1785dcf8c38528bfc5f84933bc243c1bc2becdd9ccf14e8bb6dc0cce29f",
+  "source": {
+    "cmd/vm-image-verify/main.go": "02657dbf5aec34fea6064eea333e545fccb52fdea507b04e42cdef4da7003686",
+    "go.mod": "a346a82e5a37d3dddb1261891435eacc2bdc9d602540492adad80e38fef35076",
+    "go.sum": "9461b19b1bc4c14d76e1335e78c6d5a22b563d4899126d07a1aa781f5a83502d"
+  },
+  "pushed": false,
+  "deployed": false
+}

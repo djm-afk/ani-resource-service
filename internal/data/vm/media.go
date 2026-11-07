@@ -251,19 +251,6 @@ func (n *Native) observeMediaCopy(ctx context.Context, v biz.VM, copy biz.MediaC
 		phase, _, _ := unstructured.NestedString(pvc.Object, "status", "phase")
 		copy.Ready = phase == "Bound"
 	}
-	pvName, _, _ := unstructured.NestedString(pvc.Object, "spec", "volumeName")
-	if pvName != "" {
-		pv, e := n.client.Resource(pvResource).Get(ctx, pvName, metav1.GetOptions{})
-		if e != nil {
-			return copy, e
-		}
-		uid, _, _ := unstructured.NestedString(pv.Object, "spec", "claimRef", "uid")
-		policy, _, _ := unstructured.NestedString(pv.Object, "spec", "persistentVolumeReclaimPolicy")
-		if uid != copy.PVC.UID || policy != "Delete" {
-			return copy, biz.ErrOwnership
-		}
-		copy.Cleanup = []biz.ObjectRef{objectRef(pv)}
-	}
 	return copy, nil
 }
 func (n *Native) EnsureMediaCopy(ctx context.Context, v biz.VM, copy biz.MediaCopy) (biz.MediaCopy, error) {
@@ -456,6 +443,20 @@ func (n *Native) ObserveMedia(ctx context.Context, v biz.VM) (biz.MediaObservati
 		}
 		v.MediaCopies[i] = observed
 	}
+	vmi, e := n.client.Resource(vmiResource).Namespace(v.Spec.Namespace).Get(ctx, v.Native.Name, metav1.GetOptions{})
+	if e != nil && !apierrors.IsNotFound(e) {
+		return result, e
+	}
+	return n.observeMediaRuntime(v, object, vmi)
+}
+
+// observeMediaRuntime projects only the VM/VMI already read for lifecycle.
+// It never resolves a source or reads DV/PVC/storage inventory.
+func (n *Native) observeMediaRuntime(v biz.VM, object, vmi *unstructured.Unstructured) (biz.MediaObservation, error) {
+	result := biz.MediaObservation{}
+	if err := biz.InitializeMedia(&v); err != nil {
+		return result, err
+	}
 	result.Copies = v.MediaCopies
 	var desiredDisks []any
 	if object != nil {
@@ -472,19 +473,16 @@ func (n *Native) ObserveMedia(ctx context.Context, v biz.VM) (biz.MediaObservati
 	} else {
 		result.TemplateMatches = v.Closing
 	}
-	vmi, e := n.client.Resource(vmiResource).Namespace(v.Spec.Namespace).Get(ctx, v.Native.Name, metav1.GetOptions{})
-	if e != nil && !apierrors.IsNotFound(e) {
-		return result, e
-	}
 	var runtimeVolumes, runtimeDisks []any
-	if e == nil {
+	if vmi != nil {
 		if !owned(vmi, "VirtualMachine", v.Native.UID) {
 			return result, biz.ErrOwnership
 		}
 		result.HasVMI = true
-		runtimeVolumes, runtimeDisks, e = mediaLists(vmi, "spec")
-		if e != nil {
-			return result, e
+		var err error
+		runtimeVolumes, runtimeDisks, err = mediaLists(vmi, "spec")
+		if err != nil {
+			return result, err
 		}
 	}
 	bootMatches := !result.HasVMI || nativeBootMatches(v, runtimeDisks, desiredDisks)

@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-11-07T12:55:14.798759+08:00",
+  "pull_request": "https://github.com/zhangzhe-ctrl/ani-resource-service/pull/66",
+  "number": 66,
+  "base": "main",
+  "base_sha": "1498c223d902f24b2786ac017514087a476da091",
+  "branch": "codex/vm-phase1-remediation-20261106",
+  "code_commit": "991eb61a8acf245662a9cea70074835121415439",
+  "acceptance_source": "dirty snapshot recorded before commit, now byte-matched to committed product/test sources",
+  "acceptance_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+  "precommit_gate": "make verify; PASS; evidence/pr-verify-03.json",
+  "publication_only_changes": "repository/PR metadata, documentation, evidence and gofmt on standalone evidence drivers; no service behavior changed",
+  "phase1": "PASS",
+  "phase2": "NOT_STARTED"
+}

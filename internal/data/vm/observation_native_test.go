@@ -61,7 +61,7 @@ func sharedStateFixture(t *testing.T) (*StateObservation, biz.VM, *fake.FakeDyna
 	_ = original // actual source fixture only contains the three observed resources
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{vmResource: "VirtualMachineList", vmiResource: "VirtualMachineInstanceList", podResource: "PodList"}, root, vmi, pod)
 	notifier := &stateNotifications{}
-	return newStateObservation(client, notifier, time.Hour), v, client, notifier
+	return newStateObservation(client, notifier), v, client, notifier
 }
 
 func waitState(t *testing.T, o *StateObservation, v biz.VM, state string) biz.Observation {
@@ -85,11 +85,13 @@ func primeSharedState(t *testing.T, o *StateObservation, v biz.VM) {
 		t.Fatal(err)
 	}
 	waitState(t, o, v, "Running")
-	stop, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := o.Stop(stop); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(func() {
+		stop, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := o.Stop(stop); err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 func TestVMSharedStateWatchTracksGuestShutdownWithoutPerVMReads(t *testing.T) {
@@ -173,33 +175,25 @@ func TestVMSharedStateWatchTracksGuestShutdownWithoutPerVMReads(t *testing.T) {
 	}
 }
 
-func TestVMSharedStateNeverRenewsOldOrFailedEvidence(t *testing.T) {
+func TestVMSharedStateHealthyCacheNeedsNoExpiringProof(t *testing.T) {
 	o, v, client, _ := sharedStateFixture(t)
 	primeSharedState(t, o, v)
-	first, err := o.ObserveState(context.Background(), v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 10 {
+	v.ObservedAt = time.Now().Add(-2 * time.Minute)
+	before := len(client.Actions())
+	for range 100 {
 		x, err := o.ObserveState(context.Background(), v)
-		if err != nil || !x.ObservedAt.Equal(first.ObservedAt) {
-			t.Fatal("cache read renewed evidence", x, err)
+		if err != nil || !x.Running || time.Since(x.ObservedAt) > time.Second {
+			t.Fatal(x, err)
 		}
 	}
-	o.mu.Lock()
-	proof := o.proofs[v.Spec.Namespace+"/"+v.Native.Name]
-	proof.verifiedAt = time.Now().Add(-61 * time.Second)
-	o.proofs[v.Spec.Namespace+"/"+v.Native.Name] = proof
-	o.mu.Unlock()
-	if x, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrUnknown) || x.State != "Unknown" {
-		t.Fatal("stale source reported healthy stopped/running", x, err)
+	if len(client.Actions()) != before {
+		t.Fatal("cache reads made extra audit requests")
 	}
-	client.PrependReactor("list", "virtualmachines", func(ktesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewForbidden(vmResource.GroupResource(), "", errors.New("denied"))
-	})
-	o.audit(context.Background())
-	if x, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrUnknown) || x.Stopped {
-		t.Fatal("RBAC failure forged stopped", x, err)
+	o.mu.Lock()
+	o.resources[0].valid = false
+	o.mu.Unlock()
+	if x, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrObservationUnavailable) || x.State != "Unknown" {
+		t.Fatal("known disconnected source renewed cached facts", x, err)
 	}
 }
 
@@ -252,45 +246,19 @@ func TestVMSharedStateStartupAndShutdownDoNotWaitForRBAC(t *testing.T) {
 	}
 }
 
-func TestVMSharedStateOldListCannotOverwriteNewWatchEvent(t *testing.T) {
+func TestVMSharedStateDelayedCallbackCannotOverwriteNewWatchEvent(t *testing.T) {
 	o, v, client, _ := sharedStateFixture(t)
 	primeSharedState(t, o, v)
 	old, _ := client.Resource(vmiResource).Namespace(v.Spec.Namespace).Get(context.Background(), v.Native.Name, metav1.GetOptions{})
 	newer := old.DeepCopy()
+	newer.SetResourceVersion("later-opaque-revision")
 	_ = unstructured.SetNestedField(newer.Object, "Succeeded", "status", "phase")
-	newer.SetResourceVersion("12")
-	first := true
-	client.PrependReactor("list", "virtualmachineinstances", func(ktesting.Action) (bool, runtime.Object, error) {
-		if !first {
-			return false, nil, nil
-		}
-		first = false
-		// A watch event is received after LIST begins but before its older
-		// response is installed. Its overlay must win over that response.
-		o.changed(o.resources[1], old, newer)
-		return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*old}}, nil
-	})
-	o.audit(context.Background())
-	x, err := o.ObserveState(context.Background(), v)
-	if err != nil || x.State != "Stopped" || !x.Terminal {
-		t.Fatal("older shared LIST hid the newer ordered Watch fact", x, err)
-	}
-	if err := client.Tracker().Update(vmiResource, newer, v.Spec.Namespace); err != nil {
-		t.Fatal(err)
-	}
-	o.audit(context.Background())
-	x, err = o.ObserveState(context.Background(), v)
-	if err != nil || !x.Terminal || x.State != "Stopped" {
-		t.Fatal("consistent shared audit did not recover the preserved Watch fact", x, err)
-	}
-	// A delayed callback carries the version it replaces. It cannot replace
-	// a later Watch fact already received, even after a newer audit.
+	o.changed(o.resources[1], old, newer)
 	queued := old.DeepCopy()
-	queued.SetResourceVersion("queued-version-is-opaque")
+	queued.SetResourceVersion("queued-revision")
 	o.changed(o.resources[1], old, queued)
-	o.audit(context.Background())
-	if x, err := o.ObserveState(context.Background(), v); err != nil || x.State != "Stopped" || !x.Terminal {
-		t.Fatal("queued older callback rolled back the later Watch fact", x, err)
+	if x, err := o.ObserveState(context.Background(), v); err != nil || !x.Terminal || x.State != "Stopped" {
+		t.Fatal(x, err)
 	}
 }
 

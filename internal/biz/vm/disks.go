@@ -163,3 +163,61 @@ func (w *Worker) disk(ctx context.Context, o *Operation, v *VM) error {
 	o.State = "succeeded"
 	return nil
 }
+
+// DiskPreparationPending limits background reads to unfinished inventory.
+// Bound, identified disks are not subjected to a periodic storage audit.
+func DiskPreparationPending(d Disk) bool {
+	return !d.Tombstone && (d.PVC.UID == "" || d.Preparation != "Bound" || d.ObservedCapacityBytes <= 0 || d.ObservedCapacityBytes < d.RequestedBytes)
+}
+
+// ApplyDiskPreparation patches only physical preparation facts on the current
+// locked aggregate. A remapped/retired disk makes a claimed observation stale.
+func ApplyDiskPreparation(v *VM, observed []Disk) error {
+	disks := append([]Disk(nil), v.Disks...)
+	for _, found := range observed {
+		index := -1
+		for i, current := range disks {
+			if current.ID == found.ID && !current.Tombstone {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			return ErrVersion
+		}
+		current := disks[index]
+		if current.VolumeName != found.VolumeName || current.Serial != found.Serial || current.RequestedBytes != found.RequestedBytes {
+			return ErrVersion
+		}
+		dv, err := mergeRegisteredRef(current.DV, found.DV)
+		if err != nil {
+			return ErrVersion
+		}
+		pvc := current.PVC
+		if current.PVC.Name == "" {
+			if found.PVC.Name != "" {
+				if found.PVC.Kind != "PersistentVolumeClaim" || found.PVC.Namespace != v.Spec.Namespace || current.DV.Name == "" || found.PVC.Name != current.DV.Name {
+					return ErrVersion
+				}
+				pvc = found.PVC
+			} else if found.PVC != (ObjectRef{}) {
+				return ErrVersion
+			}
+		} else {
+			pvc, err = mergeRegisteredRef(current.PVC, found.PVC)
+			if err != nil {
+				return ErrVersion
+			}
+		}
+		current.DV, current.PVC = dv, pvc
+		if found.Preparation != "" {
+			current.Preparation = found.Preparation
+		}
+		if found.ObservedCapacityBytes > 0 {
+			current.ObservedCapacityBytes = found.ObservedCapacityBytes
+		}
+		disks[index] = current
+	}
+	v.Disks = disks
+	return nil
+}

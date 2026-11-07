@@ -249,8 +249,8 @@ func TestVerificationResultValidatedFor(t *testing.T) {
 	}
 	unproven := good
 	unproven.ReadOnlyProof = ""
-	if e := unproven.ValidatedFor(i); e != ErrImageIdentity {
-		t.Errorf("write-open probe skipped: %v", e)
+	if e := unproven.ValidatedFor(i); e != nil {
+		t.Errorf("optional legacy proof rejected: %v", e)
 	}
 	truncated := good
 	truncated.Bytes = 1024

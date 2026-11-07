@@ -1,0 +1,42 @@
+[
+  {
+    "path": "internal/biz/vm/disks.go",
+    "sha256": "7c4b3013795796e19613950c794e355e9df839328ec0a3ea00277ae2092b04b4"
+  },
+  {
+    "path": "internal/biz/vm/observation.go",
+    "sha256": "db36667195a1972a4110f6e1a9a80a8e08c2f0091dfcef241210e0fa69b5100b"
+  },
+  {
+    "path": "internal/biz/vm/restore_output_merge_test.go",
+    "sha256": "5697db411e66f98041a11c850e9f3a10dbe00fcce94fc60783d0d821c7e2ab9e"
+  },
+  {
+    "path": "internal/biz/vm/snapshots.go",
+    "sha256": "a01617b9ce195e4ac2c927316b4789dfda68d2f23e862339328b0c27abe24503"
+  },
+  {
+    "path": "internal/biz/vm/worker.go",
+    "sha256": "2cf386816a3aa1259e8d84e07701436678eb26a741f7af858d6c0c1f2a082e74"
+  },
+  {
+    "path": "internal/data/vm/async_inventory_integration_test.go",
+    "sha256": "9447fc06691c96d95ca1fcbdd6b10209f0eb98df00dd8391c37f1a6f7e0302e1"
+  },
+  {
+    "path": "internal/data/vm/native.go",
+    "sha256": "9a498a128a7d55af3aed47b7f53a3646db050f64d10e216d775ca02b85c15fab"
+  },
+  {
+    "path": "internal/data/vm/observation.go",
+    "sha256": "e2e0f03b237b125e9133f9d009f9b21d134ded60f2ee92222e0d864dbb7a6f81"
+  },
+  {
+    "path": "internal/data/vm/observation_native.go",
+    "sha256": "71e521d11ffb151eec47e116eb27ab76817c66885768a84893de5b9b8b41625d"
+  },
+  {
+    "path": "internal/data/vm/restore_output_cleanup_integration_test.go",
+    "sha256": "444b2fa024fadefc6f14500069376d5eb246cfe86f7cd6369a79c3e24213aa71"
+  }
+]

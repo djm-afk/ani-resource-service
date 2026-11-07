@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -221,7 +222,7 @@ func TestImageWorkerClosesTombstoneOnlyAfterAnEmptyProbe(t *testing.T) {
 	i.CleanupState = CleanupPending
 	i.Native.DVUID = ""
 	i.Native.PVCUID = ""
-	leftover := ObjectRef{Kind: "PersistentVolumeClaim", Namespace: i.Native.Namespace, Name: "prime-" + i.ID, UID: "prime-uid"}
+	leftover := ObjectRef{Kind: "PersistentVolumeClaim", Namespace: i.Native.Namespace, Name: "vmi-src-" + strings.ReplaceAll(i.ID, "-", ""), UID: "pvc-uid"}
 	source := ObjectRef{Kind: "DataVolume", Namespace: i.Native.Namespace, Name: "vmi-src-" + i.ID, UID: "dv-uid"}
 	repo := &workerRepo{queue: []Image{i}}
 	native := &workerNative{probeRefs: []ObjectRef{leftover, source}}
@@ -238,7 +239,7 @@ func TestImageWorkerClosesTombstoneOnlyAfterAnEmptyProbe(t *testing.T) {
 	if saved.CleanupState == CleanupBlocked {
 		t.Fatalf("probe result blocked the drain chain: reason=%q cleanup=%+v", saved.Reason, saved.Cleanup)
 	}
-	if len(saved.Cleanup) != 1 || saved.Cleanup[0].Name != leftover.Name {
+	if len(saved.Cleanup) != 2 || saved.Cleanup[0].Name != leftover.Name {
 		t.Fatalf("observed leftover not registered on its own: %+v", saved.Cleanup)
 	}
 
@@ -282,11 +283,9 @@ func TestImageWorkerClosesTombstoneOnlyAfterAnEmptyProbe(t *testing.T) {
 	}
 }
 
-// TestImageWorkerDropsProbeKindsLeftInARegisteredChain covers the records that were
-// already BLOCKED in the cluster: an older worker had stored probe kinds in the chain,
-// and the drain switch only knows PVC/PV, so every pass ended on ErrOwnership and the
-// tombstone could never close even though the probe found nothing.
-func TestImageWorkerDropsProbeKindsLeftInARegisteredChain(t *testing.T) {
+// Legacy cleanup kinds remain business responsibilities. Their presence must
+// not be discarded by a type-only filter before the native delete adapter runs.
+func TestImageWorkerPreservesLegacyBusinessObjectsInCleanup(t *testing.T) {
 	i := readyImage(t)
 	i.State = StateDeleting
 	i.CleanupState = CleanupBlocked
@@ -295,7 +294,7 @@ func TestImageWorkerDropsProbeKindsLeftInARegisteredChain(t *testing.T) {
 	i.Native.PVCUID = ""
 	i.Cleanup = []ObjectRef{
 		{Kind: "DataVolume", Namespace: i.Native.Namespace, Name: "vmi-src-" + i.ID, UID: "dv-uid"},
-		{Kind: "PersistentVolumeClaim", Namespace: i.Native.Namespace, Name: "prime-" + i.ID, UID: "prime-uid"},
+		{Kind: "PersistentVolumeClaim", Namespace: i.Native.Namespace, Name: "vmi-src-" + strings.ReplaceAll(i.ID, "-", ""), UID: "pvc-uid"},
 	}
 	repo := &workerRepo{queue: []Image{i}}
 	native := &workerNative{}
@@ -309,8 +308,8 @@ func TestImageWorkerDropsProbeKindsLeftInARegisteredChain(t *testing.T) {
 	if saved.CleanupState == CleanupBlocked {
 		t.Fatalf("legacy chain blocked the drain again: %+v", saved.Cleanup)
 	}
-	if len(saved.Cleanup) != 1 || saved.Cleanup[0].Kind != "PersistentVolumeClaim" {
-		t.Fatalf("legacy probe kind survived in the chain: %+v", saved.Cleanup)
+	if len(saved.Cleanup) != 2 || saved.Cleanup[0].Kind != "DataVolume" {
+		t.Fatalf("legacy business responsibility disappeared: %+v", saved.Cleanup)
 	}
 	if native.deleted == 0 {
 		t.Fatal("drain step never reached the native adapter")

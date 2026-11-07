@@ -13,6 +13,7 @@ func (s *Service) SetRuntimeReader(r biz.RuntimePort)     { s.runtime = r }
 func referenceWire(r biz.ResourceReference) *pb.ResourceReference {
 	return &pb.ResourceReference{Id: r.ID, Name: r.Name, State: r.State}
 }
+
 // projectDetail assembles the persisted detail plus optional guest runtime.
 // includeRuntime is tri-state: unset or true collects runtime exactly as
 // before; an explicit false skips guest reads because the runtime is served by

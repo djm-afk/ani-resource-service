@@ -1,0 +1,20 @@
+package main
+import("encoding/json";"os";"syscall";"unsafe")
+func main(){
+ mode:=os.Args[1];path:="/dev/source";if mode=="Filesystem"{path="/source/disk.img"}
+ out:=map[string]any{"mode":mode,"read_open":false,"read_only":false}
+ f,err:=os.OpenFile(path,os.O_RDONLY,0)
+ if err==nil{
+  defer f.Close();b:=make([]byte,4);_,err=f.ReadAt(b,0)
+  if err==nil{out["read_open"]=true}
+  if mode=="Block"{
+   var flag int32;_,_,e:=syscall.Syscall(syscall.SYS_IOCTL,f.Fd(),0x125e,uintptr(unsafe.Pointer(&flag)))
+   if e==0{out["read_only"]=flag==1;out["kernel_read_only_flag"]=flag}else{out["error"]=e.Error()}
+  }else{
+   var fs syscall.Statfs_t
+   if e:=syscall.Statfs(path,&fs);e==nil{out["read_only"]=fs.Flags&1!=0;out["filesystem_flags"]=fs.Flags}else{out["error"]=e.Error()}
+  }
+ }else{out["error"]=err.Error()}
+ encoded,_:=json.Marshal(out);os.Stdout.Write(append(encoded,'\n'))
+ if out["read_open"]!=true || out["read_only"]!=true{os.Exit(1)}
+}

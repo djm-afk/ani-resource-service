@@ -121,9 +121,6 @@ func (s *Service) PreviewRestore(ctx context.Context, r *pb.PreviewRestoreReques
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	if err = s.restoreTargetStopped(ctx, v); err != nil {
-		return nil, rpcError(err)
-	}
 	plan, err := biz.PreviewSnapshotRestore(v, item)
 	if err != nil {
 		return nil, rpcError(err)
@@ -141,8 +138,10 @@ func (s *Service) restoreTargetStopped(ctx context.Context, v biz.VM) error {
 	// the same assertion pattern the console path uses.
 	var observed biz.Observation
 	var err error
-	if console, ok := s.native.(biz.ConsoleNativePort); ok {
-		observed, err = console.ObserveConsole(ctx, v)
+	if lifecycle, ok := s.native.(interface {
+		ObserveLifecycle(context.Context, biz.VM) (biz.Observation, error)
+	}); ok {
+		observed, err = lifecycle.ObserveLifecycle(ctx, v)
 	} else {
 		observed, err = s.native.Observe(ctx, v)
 	}
@@ -152,7 +151,7 @@ func (s *Service) restoreTargetStopped(ctx context.Context, v biz.VM) error {
 	if observed.VM.UID != v.Native.UID || v.Native.UID == "" {
 		return biz.ErrOwnership
 	}
-	if !observed.Stopped || observed.VMI != nil || observed.Launcher != nil {
+	if !observed.Stopped || observed.VMI != nil || observed.Launcher != nil || observed.RelatedPodsPresent {
 		return biz.ErrBusy
 	}
 	return nil
@@ -202,6 +201,9 @@ func (s *Service) validateSnapshotCommand(ctx context.Context, c biz.Command) er
 		}
 		_, err = native.PrepareSnapshot(ctx, v, item)
 		return err
+	}
+	if c.Action == "delete-snapshot" {
+		return nil
 	}
 	var request struct {
 		SnapshotID    string `json:"snapshot_id"`

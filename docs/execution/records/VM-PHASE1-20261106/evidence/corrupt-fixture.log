@@ -1,0 +1,21 @@
+Formatting '.work/phase1/assets/corrupt-conversion.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=1073741824 lazy_refcounts=off refcount_bits=16
+wrote 65536/65536 bytes at offset 0
+64 KiB, 1 ops; 00.04 sec (1.691 MiB/sec and 27.0489 ops/sec)
+image: .work/phase1/assets/corrupt-conversion.qcow2
+file format: qcow2
+virtual size: 1 GiB (1073741824 bytes)
+disk size: 384 KiB
+cluster_size: 65536
+Format specific information:
+    compat: 1.1
+    compression type: zlib
+    lazy refcounts: false
+    refcount bits: 16
+    corrupt: false
+    extended l2: false
+Child node '/file':
+    filename: .work/phase1/assets/corrupt-conversion.qcow2
+    protocol type: file
+    file length: 384 KiB (393216 bytes)
+    disk size: 384 KiB
+qemu-img: error while reading at byte 0: Input/output error

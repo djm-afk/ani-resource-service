@@ -285,7 +285,7 @@ func TestVMObservationFailureSurvivesOlderOperationSave(t *testing.T) {
 }
 
 func TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker(t *testing.T) {
-	p, _, v := observationRegisteredVM(t)
+	p, db, v := observationRegisteredVM(t)
 	ctx := context.Background()
 	entered, release := make(chan struct{}), make(chan struct{})
 	observer, err := biz.NewObserver(p, observationRead(func(ctx context.Context, _ biz.VM) (biz.Observation, error) {
@@ -318,7 +318,7 @@ func TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if worked, err := worker.Step(ctx); err != nil || !worked {
+	if worked, err := stepPastNetworkPublication(t, ctx, db, p, worker, v.TenantID, v.ID); err != nil || !worked {
 		t.Fatalf("observer blocked operation worker: %v %v", worked, err)
 	}
 	if time.Since(start) > time.Second {

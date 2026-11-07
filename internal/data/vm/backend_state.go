@@ -47,8 +47,8 @@ func (n *Native) ConfigureBackendDomain(v biz.VM, domain map[string]any) error {
 	return nil
 }
 
-// Start validates the actual operator setting against the frozen selection;
-// it never consults the administrator's original image or a default class.
+// ValidateBackendConfiguration validates deployment support for first creation.
+// Existing VM power requests use their registered native identity.
 func (n *Native) ValidateBackendConfiguration(ctx context.Context, s biz.Spec) error {
 	if !biz.NeedsBackendState(s) {
 		return nil
@@ -185,70 +185,6 @@ func (n *Native) observeBackendPVC(ctx context.Context, v biz.VM, pvc *unstructu
 		}
 		state.CapacityBytes = q.Value()
 	}
-	pvName, _, _ := unstructured.NestedString(pvc.Object, "spec", "volumeName")
-	if pvName != "" {
-		pv, err := n.client.Resource(pvResource).Get(ctx, pvName, metav1.GetOptions{})
-		if err != nil {
-			return old, err
-		}
-		if err = backendPVMatches(pv, state); err != nil {
-			return old, err
-		}
-		state.PV = objectRef(pv)
-		state.ReclaimPolicy = "Delete"
-		state.CSIDriver, _, _ = unstructured.NestedString(pv.Object, "spec", "csi", "driver")
-		state.VolumeHandle, _, _ = unstructured.NestedString(pv.Object, "spec", "csi", "volumeHandle")
-	}
-	return state, nil
-}
-
-func backendPVMatches(pv *unstructured.Unstructured, state biz.BackendState) error {
-	if pv.GetKind() != "PersistentVolume" || pv.GetAPIVersion() != "v1" || pv.GetUID() == "" || (state.PV.UID != "" && objectRef(pv) != state.PV) {
-		return biz.ErrOwnership
-	}
-	uid, _, _ := unstructured.NestedString(pv.Object, "spec", "claimRef", "uid")
-	namespace, _, _ := unstructured.NestedString(pv.Object, "spec", "claimRef", "namespace")
-	name, _, _ := unstructured.NestedString(pv.Object, "spec", "claimRef", "name")
-	class, _, _ := unstructured.NestedString(pv.Object, "spec", "storageClassName")
-	mode, _, _ := unstructured.NestedString(pv.Object, "spec", "volumeMode")
-	if mode == "" {
-		mode = "Filesystem"
-	}
-	policy, _, _ := unstructured.NestedString(pv.Object, "spec", "persistentVolumeReclaimPolicy")
-	driver, _, _ := unstructured.NestedString(pv.Object, "spec", "csi", "driver")
-	handle, _, _ := unstructured.NestedString(pv.Object, "spec", "csi", "volumeHandle")
-	if uid != state.PVC.UID || namespace != state.PVC.Namespace || name != state.PVC.Name || class != state.StorageClass || mode != "Filesystem" || policy != "Delete" || driver == "" || handle == "" {
-		return biz.ErrOwnership
-	}
-	if (state.CSIDriver != "" && state.CSIDriver != driver) || (state.VolumeHandle != "" && state.VolumeHandle != handle) {
-		return biz.ErrOwnership
-	}
-	return nil
-}
-
-func (n *Native) lateBackendPV(ctx context.Context, state biz.BackendState) (biz.BackendState, error) {
-	if state.PV.UID != "" {
-		return state, nil
-	}
-	list, err := n.client.Resource(pvResource).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return state, err
-	}
-	for i := range list.Items {
-		pv := &list.Items[i]
-		uid, _, _ := unstructured.NestedString(pv.Object, "spec", "claimRef", "uid")
-		if uid != state.PVC.UID {
-			continue
-		}
-		if err = backendPVMatches(pv, state); err != nil {
-			return state, err
-		}
-		state.PV = objectRef(pv)
-		state.ReclaimPolicy = "Delete"
-		state.CSIDriver, _, _ = unstructured.NestedString(pv.Object, "spec", "csi", "driver")
-		state.VolumeHandle, _, _ = unstructured.NestedString(pv.Object, "spec", "csi", "volumeHandle")
-		return state, nil
-	}
 	return state, nil
 }
 
@@ -352,10 +288,6 @@ func (n *Native) ObserveBackendState(ctx context.Context, v biz.VM, registered [
 		if apierrors.IsNotFound(err) {
 			state.Current = false
 			state.Present = false
-			state, err = n.lateBackendPV(ctx, state)
-			if err != nil {
-				return states, err
-			}
 			states[i] = state
 			continue
 		}
@@ -389,7 +321,7 @@ func (n *Native) ObserveBackendState(ctx context.Context, v biz.VM, registered [
 	if !v.Closing && running && biz.NeedsBackendState(v.Spec) {
 		ready := false
 		for _, state := range states {
-			if state.Current && state.Present && state.Phase == "Bound" && state.PV.UID != "" {
+			if state.Current && state.Present && state.Phase == "Bound" {
 				ready = true
 			}
 		}
@@ -403,12 +335,12 @@ func (n *Native) ObserveBackendState(ctx context.Context, v biz.VM, registered [
 // This only confirms native GC/restore cleanup. It never deletes a PVC/PV or
 // weakens its finalizers, and does not claim CSI backend reclamation from HTTP.
 func (n *Native) BackendStateRemoved(ctx context.Context, v biz.VM, state biz.BackendState) (bool, error) {
-	if state.Owner != v.Native || state.PVC.Kind != "PersistentVolumeClaim" || state.PVC.UID == "" || state.PVC.Namespace != v.Spec.Namespace || v.Native.UID == "" {
+	if state.Owner != v.Native || state.PVC.Kind != "PersistentVolumeClaim" || state.PVC.Name == "" || state.PVC.Namespace != v.Spec.Namespace || v.Native.UID == "" {
 		return false, biz.ErrOwnership
 	}
 	pvc, err := n.client.Resource(pvcResource).Namespace(state.PVC.Namespace).Get(ctx, state.PVC.Name, metav1.GetOptions{})
 	if err == nil {
-		if objectRef(pvc) != state.PVC || !backendOwned(pvc, v) {
+		if (state.PVC.UID != "" && objectRef(pvc) != state.PVC) || !backendOwned(pvc, v) {
 			return false, biz.ErrOwnership
 		}
 		return false, nil
@@ -416,37 +348,5 @@ func (n *Native) BackendStateRemoved(ctx context.Context, v biz.VM, state biz.Ba
 	if !apierrors.IsNotFound(err) {
 		return false, err
 	}
-	if state.PV.UID == "" {
-		// A provisioner may bind after our last PVC observation. Check the
-		// registered claim UID, never an assumed PV name or namespace match.
-		list, err := n.client.Resource(pvResource).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return false, err
-		}
-		for i := range list.Items {
-			uid, _, _ := unstructured.NestedString(list.Items[i].Object, "spec", "claimRef", "uid")
-			if uid != state.PVC.UID {
-				continue
-			}
-			if err = backendPVMatches(&list.Items[i], state); err != nil {
-				return false, err
-			}
-			return false, nil
-		}
-		return true, nil
-	}
-	if state.PV.Kind != "PersistentVolume" || state.PV.Namespace != "" || state.PV.Name == "" {
-		return false, biz.ErrOwnership
-	}
-	pv, err := n.client.Resource(pvResource).Get(ctx, state.PV.Name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if err = backendPVMatches(pv, state); err != nil {
-		return false, err
-	}
-	return false, nil
+	return true, nil
 }

@@ -126,8 +126,8 @@ func TestSnapshotServiceReadsAreScopedAndPreviewIsSideEffectFree(t *testing.T) {
 		t.Fatal(preview, err)
 	}
 	native.running = true
-	if _, err = service.PreviewRestore(ctx, &pb.PreviewRestoreRequest{TenantId: repo.current.TenantID, VmId: repo.current.ID, SnapshotId: s.ID}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatal("running target preview admitted", err)
+	if _, err = service.PreviewRestore(ctx, &pb.PreviewRestoreRequest{TenantId: repo.current.TenantID, VmId: repo.current.ID, SnapshotId: s.ID}); err != nil || repo.accepts != 0 {
+		t.Fatal("running target read-only preview rejected", err)
 	}
 }
 
@@ -138,7 +138,7 @@ type consoleStopNative struct {
 	consoleCalls, fullCalls int
 }
 
-func (n *consoleStopNative) ObserveConsole(_ context.Context, v biz.VM) (biz.Observation, error) {
+func (n *consoleStopNative) ObserveLifecycle(_ context.Context, v biz.VM) (biz.Observation, error) {
 	n.consoleCalls++
 	return biz.Observation{VM: v.Native, Stopped: true}, nil
 }
@@ -147,13 +147,19 @@ func (n *consoleStopNative) Observe(_ context.Context, v biz.VM) (biz.Observatio
 	return biz.Observation{VM: v.Native, Stopped: true}, nil
 }
 
-func TestRestoreStopCheckUsesConsoleScopeObservation(t *testing.T) {
+func TestRestoreStopCheckUsesLifecycleObservation(t *testing.T) {
 	service, repo, native, ctx, s := serviceSnapshotFixture(t)
 	c := &consoleStopNative{snapshotServiceNative: *native}
 	service.native = c
 	preview, err := service.PreviewRestore(ctx, &pb.PreviewRestoreRequest{TenantId: repo.current.TenantID, VmId: repo.current.ID, SnapshotId: s.ID})
 	if err != nil || len(preview.PreviewDigest) != 64 {
 		t.Fatal(preview, err)
+	}
+	if c.consoleCalls != 0 || c.fullCalls != 0 {
+		t.Fatal("preview read runtime state")
+	}
+	if err := service.restoreTargetStopped(ctx, repo.current); err != nil {
+		t.Fatal(err)
 	}
 	if c.consoleCalls == 0 || c.fullCalls != 0 {
 		t.Fatalf("restore stop check must use the console-scope observation: console=%d full=%d", c.consoleCalls, c.fullCalls)
@@ -218,7 +224,7 @@ func TestRestoreAdmissionRechecksFreshNativeSnapshotBeforeAccept(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := &pb.RestoreSnapshotRequest{TenantId: repo.current.TenantID, VmId: repo.current.ID, SnapshotId: s.ID, ExpectedVersion: 4, IdempotencyKey: "restore-key", PreviewDigest: preview.PreviewDigest, DestructiveConfirmation: true}
-	native.fresh.Content.UID = "replacement-content"
+	native.fresh.Native.UID = "replacement-snapshot"
 	if _, err = service.RestoreSnapshot(ctx, request); status.Code(err) != codes.FailedPrecondition || repo.accepts != 0 {
 		t.Fatal("fresh native snapshot mismatch reached acceptance", err)
 	}

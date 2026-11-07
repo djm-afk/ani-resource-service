@@ -17,7 +17,7 @@ func (n *Native) ValidateDiskAttachment(ctx context.Context, v biz.VM, d biz.Dis
 	if d.Role != "data" || d.Tombstone {
 		return biz.Observation{}, biz.ErrInvalid
 	}
-	x, e := n.Observe(ctx, v)
+	x, e := n.ObserveLifecycle(ctx, v)
 	if e != nil {
 		return x, e
 	}
@@ -126,7 +126,8 @@ func namedItems(items []any, name string) ([]any, map[string]any, error) {
 	return keep, found, nil
 }
 func (n *Native) EnsureDiskAttachment(ctx context.Context, v biz.VM, d biz.Disk, attached bool) (bool, error) {
-	if _, e := n.ValidateDiskAttachment(ctx, v, d, attached); e != nil {
+	x, e := n.ValidateDiskAttachment(ctx, v, d, attached)
+	if e != nil {
 		return false, e
 	}
 	observed, e := n.observeDisk(ctx, v, d)
@@ -174,10 +175,6 @@ func (n *Native) EnsureDiskAttachment(ctx context.Context, v biz.VM, d biz.Disk,
 		_, e = n.client.Resource(vmResource).Namespace(v.Spec.Namespace).Patch(ctx, v.Native.Name, types.JSONPatchType, body, metav1.PatchOptions{})
 		return false, e
 	}
-	x, e := n.Observe(ctx, v)
-	if e != nil {
-		return false, e
-	}
 	if x.Stopped && x.VMI == nil {
 		return true, nil
 	}
@@ -213,7 +210,7 @@ func (n *Native) EnsureDiskAttachment(ctx context.Context, v biz.VM, d biz.Disk,
 }
 
 func (n *Native) DiskUnreferenced(ctx context.Context, v biz.VM, d biz.Disk) (bool, error) {
-	x, e := n.Observe(ctx, v)
+	x, e := n.ObserveLifecycle(ctx, v)
 	if e != nil {
 		return false, e
 	}

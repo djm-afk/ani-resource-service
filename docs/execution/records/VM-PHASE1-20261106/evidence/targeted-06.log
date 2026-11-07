@@ -1,0 +1,7 @@
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm	0.022s
+# github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.test]
+internal/data/vm/phase1_boundaries_test.go:21:18: assignment mismatch: 3 variables but nativeSnapshotFixture returns 4 values
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [build failed]
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm	0.040s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify	0.007s
+FAIL

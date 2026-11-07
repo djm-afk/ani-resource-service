@@ -1,0 +1,34 @@
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm	0.019s
+I1107 00:12:58.759586    6402 reflector.go:664] "Warning: watch ended with error" reflector="pkg/mod/k8s.io/client-go@v0.36.0/tools/cache/reflector.go:343" type="*unstructured.Unstructured" err="very short watch: pkg/mod/k8s.io/client-go@v0.36.0/tools/cache/reflector.go:343: Unexpected watch close - watch lasted less than a second and no items received"
+--- FAIL: TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID (0.00s)
+panic: coding error: you must register resource to list kind for every resource you're going to LIST when creating the client.  See NewSimpleDynamicClientWithCustomListKinds or register the list into the scheme: /v1, Resource=pods out of map[/v1, Resource=namespaces:NamespaceList /v1, Resource=persistentvolumeclaims:PersistentVolumeClaimList kubevirt.io/v1, Resource=virtualmachines:VirtualMachineList] [recovered, repanicked]
+
+goroutine 643 [running]:
+testing.tRunner.func1.2({0x12d7680, 0x2e2c1eeb8a80})
+	/usr/local/go/src/testing/testing.go:1974 +0x232
+testing.tRunner.func1()
+	/usr/local/go/src/testing/testing.go:1977 +0x349
+panic({0x12d7680?, 0x2e2c1eeb8a80?})
+	/usr/local/go/src/runtime/panic.go:860 +0x13a
+k8s.io/client-go/dynamic/fake.(*dynamicResourceClient).List(0x2e2c1f0b2960, {0x0?, 0x0?}, {{{0x0, 0x0}, {0x0, 0x0}}, {0x2e2c1f016a40, 0x34}, {0x0, ...}, ...})
+	/home/ubuntu/go/pkg/mod/k8s.io/client-go@v0.36.0/dynamic/fake/simple.go:361 +0xa25
+github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.(*Native).observe(_, {_, _}, {{0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...}, ...)
+	/home/ubuntu/workspace/ani-resource-service/internal/data/vm/native.go:367 +0xcbe
+github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.(*Native).ObserveLifecycle(...)
+	/home/ubuntu/workspace/ani-resource-service/internal/data/vm/native.go:319
+github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.(*Native).controlVM(_, {_, _}, {{0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...}, ...)
+	/home/ubuntu/workspace/ani-resource-service/internal/data/vm/native.go:412 +0xb8
+github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.(*Native).Stop(...)
+	/home/ubuntu/workspace/ani-resource-service/internal/data/vm/native.go:440
+github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID.func3()
+	/home/ubuntu/workspace/ani-resource-service/internal/data/vm/phase1_boundaries_test.go:46 +0xb2
+github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID(0x2e2c1f080008)
+	/home/ubuntu/workspace/ani-resource-service/internal/data/vm/phase1_boundaries_test.go:51 +0x4db
+testing.tRunner(0x2e2c1f080008, 0x15d2958)
+	/usr/local/go/src/testing/testing.go:2036 +0xea
+created by testing.(*T).Run in goroutine 1
+	/usr/local/go/src/testing/testing.go:2101 +0x4c5
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	3.385s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm	0.017s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify	0.005s
+FAIL

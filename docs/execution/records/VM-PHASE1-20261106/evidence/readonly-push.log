@@ -1,0 +1,28 @@
+The push refers to repository [10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check]
+def63a514020: Waiting
+87587cdeb674: Waiting
+63e7e49699e8: Waiting
+44136fa355b3: Waiting
+def63a514020: Waiting
+87587cdeb674: Waiting
+63e7e49699e8: Waiting
+44136fa355b3: Waiting
+def63a514020: Waiting
+63e7e49699e8: Waiting
+44136fa355b3: Waiting
+63e7e49699e8: Waiting
+44136fa355b3: Waiting
+871eedcd73c9: Waiting
+bd866ac1a3a4: Waiting
+def63a514020: Waiting
+87587cdeb674: Pushed
+bd866ac1a3a4: Waiting
+def63a514020: Mounted from ani-gpu-platform/ani-vm-image-verify
+df3afcc80544: Waiting
+63e7e49699e8: Mounted from ani-gpu-platform/ani-vm-image-verify
+44136fa355b3: Mounted from ani-gpu-platform/ani-vm-image-verify
+871eedcd73c9: Waiting
+871eedcd73c9: Mounted from ani-gpu-platform/ani-vm-image-verify
+bd866ac1a3a4: Mounted from ani-gpu-platform/ani-vm-image-verify
+df3afcc80544: Pushed
+20261107: digest: sha256:19337c2555ab4ecfadc393a492c34160dce5901f2aa0db48f6ddb50506976ff0 size: 856

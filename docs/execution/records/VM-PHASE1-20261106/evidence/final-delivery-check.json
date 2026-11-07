@@ -1,0 +1,143 @@
+{
+  "at": "2026-11-07T00:07:41.492098+00:00",
+  "conclusion": "PASS",
+  "report_json_valid": true,
+  "required_check_count": 14,
+  "remediation_count": 9,
+  "all_required_checks_pass": true,
+  "all_remediations_pass": true,
+  "product_sources_match_verify_06": true,
+  "no_unverified_added_product_files": true,
+  "phase2": "NOT_STARTED",
+  "deployment": {
+    "uid": "9b17ed7e-6521-40e8-8bf5-70a44237e501",
+    "ready_replicas": 1,
+    "images": [
+      {
+        "container": "resource",
+        "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78"
+      }
+    ]
+  },
+  "single_authorized_patch": [
+    {
+      "op": "test",
+      "path": "/metadata/uid",
+      "value": "56cff51e-3e65-45aa-a849-9306d91039dd"
+    },
+    {
+      "op": "test",
+      "path": "/metadata/resourceVersion",
+      "value": "41402059"
+    },
+    {
+      "op": "test",
+      "path": "/metadata/finalizers",
+      "value": [
+        "foregroundDeletion"
+      ]
+    },
+    {
+      "op": "remove",
+      "path": "/metadata/finalizers/0"
+    }
+  ],
+  "failed_fixture_fresh_exact_reads": [
+    {
+      "kind": "datavolume",
+      "name": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+      "uid": "ce916f6e-8f07-4a62-91b6-1795eae1d341",
+      "gone": true,
+      "current_uid": null,
+      "fresh_get": "NotFound"
+    },
+    {
+      "kind": "pvc",
+      "name": "vmi-src-797b73ec80d34dc1b6e80134c762031c",
+      "uid": "2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+      "gone": true,
+      "current_uid": null,
+      "fresh_get": "NotFound"
+    },
+    {
+      "kind": "pvc",
+      "name": "prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+      "uid": "8cb90773-7db6-437b-91c6-4f1ee52369ab",
+      "gone": true,
+      "current_uid": null,
+      "fresh_get": "NotFound"
+    },
+    {
+      "kind": "pod",
+      "name": "cdi-upload-prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb",
+      "uid": "56cff51e-3e65-45aa-a849-9306d91039dd",
+      "gone": true,
+      "current_uid": null,
+      "fresh_get": "NotFound"
+    },
+    {
+      "kind": "pvc",
+      "name": "prime-2f4f19ae-fbfc-4344-bd1d-4e87df2ecbeb-scratch",
+      "uid": "32f8785b-984e-4bdc-a71a-a4d01dbf9bc7",
+      "gone": true,
+      "current_uid": null,
+      "fresh_get": "NotFound"
+    }
+  ],
+  "registered_sql": "BEGIN READ ONLY; SELECT json_build_object('images',(SELECT coalesce(json_agg(x),'[]') FROM (SELECT id,state,cleanup_state FROM vm.images WHERE id IN ('d6cbecd0-8248-4fd0-9586-10e8d1a43007','785372ad-19de-4124-b338-15b35f94eb7f','516572a2-ed34-41f4-aadf-c18927521934','797b73ec-80d3-4dc1-b6e8-0134c762031c')) x),'vms',(SELECT coalesce(json_agg(x),'[]') FROM (SELECT id,current_configuration->>'Observed' AS observed,current_configuration->'Network'->'Consumer'->>'State' AS network_consumer,current_configuration->'SecurityGroupIDs' AS security_group_ids FROM vm.virtual_machines WHERE id IN ('58c38dbc-c4c7-43eb-9eb6-5cf6fa42ac76','ed05c03b-7e95-4622-b36d-0c5fcb88c977')) x),'pins',(SELECT coalesce(json_agg(x),'[]') FROM (SELECT vm_id,consumer_id,state,reason FROM vm.image_source_references WHERE vm_id='ed05c03b-7e95-4622-b36d-0c5fcb88c977') x)); COMMIT;",
+  "registered_final_states": {
+    "images": [
+      {
+        "id": "d6cbecd0-8248-4fd0-9586-10e8d1a43007",
+        "state": "DELETED",
+        "cleanup_state": "COMPLETE"
+      },
+      {
+        "id": "785372ad-19de-4124-b338-15b35f94eb7f",
+        "state": "DELETED",
+        "cleanup_state": "COMPLETE"
+      },
+      {
+        "id": "516572a2-ed34-41f4-aadf-c18927521934",
+        "state": "DELETED",
+        "cleanup_state": "COMPLETE"
+      },
+      {
+        "id": "797b73ec-80d3-4dc1-b6e8-0134c762031c",
+        "state": "DELETED",
+        "cleanup_state": "COMPLETE"
+      }
+    ],
+    "vms": [
+      {
+        "id": "58c38dbc-c4c7-43eb-9eb6-5cf6fa42ac76",
+        "observed": "Deleted",
+        "network_consumer": "closed",
+        "security_group_ids": []
+      },
+      {
+        "id": "ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+        "observed": "Deleted",
+        "network_consumer": "closed",
+        "security_group_ids": []
+      }
+    ],
+    "pins": [
+      {
+        "vm_id": "ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+        "consumer_id": "5a1341bd-85da-590b-b861-d71820e9b1ce",
+        "state": "RELEASED",
+        "reason": "CLONE_COMPLETED"
+      },
+      {
+        "vm_id": "ed05c03b-7e95-4622-b36d-0c5fcb88c977",
+        "consumer_id": "0a1468f6-49a4-56cb-ab93-23652f1d789b",
+        "state": "RELEASED",
+        "reason": "CLONE_COMPLETED"
+      }
+    ]
+  },
+  "cleanup_remaining_owned_objects": [],
+  "local_session_cleanup": "PASS",
+  "document_links": "changed links PASS; 45 pre-existing historical failures retained separately"
+}

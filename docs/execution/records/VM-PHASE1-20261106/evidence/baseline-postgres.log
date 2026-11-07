@@ -1,0 +1,20 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=fef13774d911201132453d4eda19d866cc5ccee19ac2506c9f425e013ccb0871
+=== RUN   TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare
+=== RUN   TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/first-round-saved
+    network_acceptance_integration_test.go:62: accepted snapshot lost internal data or rewrote canonical
+=== RUN   TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/second-round-checkpoint
+    network_acceptance_integration_test.go:62: accepted snapshot lost internal data or rewrote canonical
+--- FAIL: TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare (1.34s)
+    --- FAIL: TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/first-round-saved (0.71s)
+    --- FAIL: TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/second-round-checkpoint (0.63s)
+=== RUN   TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker
+    observation_integration_test.go:328: operation did not finish while observer blocked: {TenantID:a0f22f1f-d65f-43b8-95be-3a4845651824 ID:ed60420e-c38e-4242-bc27-523c7f1e47ff VMID:37450b58-4094-49a2-82b7-afe1a826128e Action:start Key:during-slow-observer RequestDigest:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee Intent:[123 125] IntentVersion:2 State:running Reason: Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:92b232a8-4fa1-4975-bc77-104320f7e423 LeaseUntil:2026-11-07 00:24:19.684195851 +0800 CST ObservedAt:2026-11-06 16:23:49.68659875 +0000 UTC} <nil>
+--- FAIL: TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker (0.69s)
+=== RUN   TestVMPowerUnknownRecoveryDoesNotRepeatRestart
+    power_worker_integration_test.go:91: first start count 0
+--- FAIL: TestVMPowerUnknownRecoveryDoesNotRepeatRestart (2.68s)
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	4.727s
+FAIL
+removed task container=fef13774d911201132453d4eda19d866cc5ccee19ac2506c9f425e013ccb0871

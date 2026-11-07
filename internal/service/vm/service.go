@@ -478,15 +478,6 @@ func (s *Service) command(ctx context.Context, m proto.Message, action string) (
 		if ns.UID != v.Spec.NamespaceUID {
 			return nil, commandPreflightError(ctx, c, "namespace_identity", biz.ErrChanged)
 		}
-		if biz.NeedsBackendState(v.Spec) {
-			native, ok := s.native.(biz.BackendNativePort)
-			if !ok {
-				return nil, commandPreflightError(ctx, c, "backend_configuration", biz.ErrDependency)
-			}
-			if e = native.ValidateBackendConfiguration(ctx, v.Spec); e != nil {
-				return nil, commandPreflightError(ctx, c, "backend_configuration", e)
-			}
-		}
 		if e := s.environment.ValidateExistingNetwork(ctx, v); e != nil {
 			stage := "network"
 			if errors.Is(e, biz.ErrChanged) || errors.Is(e, biz.ErrOwnership) {

@@ -99,7 +99,7 @@ func TestBackendNativeGeneratedIdentityAndStoppedRetention(t *testing.T) {
 		t.Fatal(states, err)
 	}
 	state := states[0]
-	if state.PVC.UID != string(f.pvc.GetUID()) || state.PV.UID != string(f.pv.GetUID()) || state.Owner != f.v.Native || !state.Current || !state.Present || state.RequestedBytes != 10<<20 || state.CapacityBytes != 16<<20 || state.VolumeName != backendStateLabel+"-"+f.v.Native.Name {
+	if state.PVC.UID != string(f.pvc.GetUID()) || state.Owner != f.v.Native || !state.Current || !state.Present || state.RequestedBytes != 10<<20 || state.CapacityBytes != 16<<20 || state.VolumeName != backendStateLabel+"-"+f.v.Native.Name {
 		t.Fatal("actual generated identity/capacity was not frozen", state)
 	}
 	states, err = f.n.ObserveBackendState(ctx, f.v, states)
@@ -109,7 +109,7 @@ func TestBackendNativeGeneratedIdentityAndStoppedRetention(t *testing.T) {
 	backendReadsOnly(t, f, from)
 }
 
-func TestBackendRejectsForeignPVCAndPVDrift(t *testing.T) {
+func TestBackendRejectsForeignPVCAndMode(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		mutate func(backendFixture)
@@ -123,12 +123,6 @@ func TestBackendRejectsForeignPVCAndPVDrift(t *testing.T) {
 			owners := f.pvc.GetOwnerReferences()
 			owners[0].Kind = "VirtualMachineInstance"
 			f.pvc.SetOwnerReferences(owners)
-		}},
-		{"wrong-pv-claim", func(f backendFixture) {
-			_ = unstructured.SetNestedField(f.pv.Object, uuid.NewString(), "spec", "claimRef", "uid")
-		}},
-		{"retain-pv", func(f backendFixture) {
-			_ = unstructured.SetNestedField(f.pv.Object, "Retain", "spec", "persistentVolumeReclaimPolicy")
 		}},
 		{"block-backend", func(f backendFixture) { _ = unstructured.SetNestedField(f.pvc.Object, "Block", "spec", "volumeMode") }},
 	} {
@@ -144,7 +138,7 @@ func TestBackendRejectsForeignPVCAndPVDrift(t *testing.T) {
 			}
 			f.v.Closing = true
 			if _, err := f.n.ObserveBackendState(ctx, f.v, nil); err == nil {
-				t.Fatal("closing bypassed backend owner/PV identity fencing")
+				t.Fatal("closing bypassed backend owner/mode identity fencing")
 			}
 			backendReadsOnly(t, f, from)
 		})
@@ -164,7 +158,7 @@ func TestBackendClosingRegistersTerminatingVolumeWithoutReadiness(t *testing.T) 
 	f.v.Closing = true
 	from := len(f.c.Actions())
 	states, err := f.n.ObserveBackendState(ctx, f.v, nil)
-	if err != nil || len(states) != 1 || states[0].Current || !states[0].Present || states[0].PVC.UID != string(f.pvc.GetUID()) || states[0].PV.UID != string(f.pv.GetUID()) {
+	if err != nil || len(states) != 1 || states[0].Current || !states[0].Present || states[0].PVC.UID != string(f.pvc.GetUID()) {
 		t.Fatal("backend readiness blocked root deletion or lost cleanup identity", states, err)
 	}
 	if gone, err := f.n.BackendStateRemoved(ctx, f.v, states[0]); err != nil || gone {
@@ -228,11 +222,11 @@ func TestBackendRestoreKeepsOldUIDsUntilNativeReclamation(t *testing.T) {
 	backendReadsOnly(t, f, from)
 	_ = f.c.Resource(pvcResource).Namespace(f.v.Spec.Namespace).Delete(ctx, old.PVC.Name, metav1.DeleteOptions{})
 	from = len(f.c.Actions())
-	if gone, err := f.n.BackendStateRemoved(ctx, f.v, old); err != nil || gone {
-		t.Fatal("PVC absence was confused with PV reclamation", gone, err)
+	if gone, err := f.n.BackendStateRemoved(ctx, f.v, old); err != nil || !gone {
+		t.Fatal("legacy PV blocked business PVC completion", gone, err)
 	}
 	backendReadsOnly(t, f, from)
-	_ = f.c.Resource(pvResource).Delete(ctx, old.PV.Name, metav1.DeleteOptions{})
+	_ = f.c.Resource(pvResource).Delete(ctx, f.pv.GetName(), metav1.DeleteOptions{})
 	from = len(f.c.Actions())
 	states, err = f.n.ObserveBackendState(ctx, f.v, states)
 	if err != nil || len(states) != 2 || states[0].Current || states[0].Present || states[0].PVC != old.PVC || states[0].PV != old.PV {
@@ -244,7 +238,7 @@ func TestBackendRestoreKeepsOldUIDsUntilNativeReclamation(t *testing.T) {
 	backendReadsOnly(t, f, from)
 }
 
-func TestBackendCleanupChecksLatePVAndDoesNotDependOnClassOrSource(t *testing.T) {
+func TestBackendCleanupIgnoresLatePVAndCurrentDefaults(t *testing.T) {
 	ctx := context.Background()
 	f := newBackendFixture(t)
 	states, err := f.n.ObserveBackendState(ctx, f.v, nil)
@@ -256,15 +250,15 @@ func TestBackendCleanupChecksLatePVAndDoesNotDependOnClassOrSource(t *testing.T)
 	_ = f.c.Resource(backendStorageClasses).Delete(ctx, "backend-fs", metav1.DeleteOptions{})
 	state.PV = biz.ObjectRef{}
 	from := len(f.c.Actions())
-	if gone, err := f.n.BackendStateRemoved(ctx, f.v, state); err != nil || gone {
-		t.Fatal("late native PV ignored", gone, err)
+	if gone, err := f.n.BackendStateRemoved(ctx, f.v, state); err != nil || !gone {
+		t.Fatal("late PV became a business cleanup gate", gone, err)
 	}
 	backendReadsOnly(t, f, from)
 	f.v.Closing = true
 	from = len(f.c.Actions())
 	late, err := f.n.ObserveBackendState(ctx, f.v, []biz.BackendState{state})
-	if err != nil || len(late) != 1 || late[0].PV.UID != string(f.pv.GetUID()) || late[0].Current || late[0].Present {
-		t.Fatal("late native PV identity was not retained for cleanup", late, err)
+	if err != nil || len(late) != 1 || late[0].PV.UID != "" || late[0].Current || late[0].Present {
+		t.Fatal("unexpected late PV discovery during business cleanup", late, err)
 	}
 	backendReadsOnly(t, f, from)
 	_ = f.c.Resource(pvResource).Delete(ctx, f.pv.GetName(), metav1.DeleteOptions{})

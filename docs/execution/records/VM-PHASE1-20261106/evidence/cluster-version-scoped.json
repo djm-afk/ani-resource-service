@@ -1,0 +1,100 @@
+{
+  "at": "2026-11-06T17:35:10.955219+00:00",
+  "entry": "10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "server_version": {
+    "major": "1",
+    "minor": "35",
+    "emulationMajor": "1",
+    "emulationMinor": "35",
+    "minCompatibilityMajor": "1",
+    "minCompatibilityMinor": "34",
+    "gitVersion": "v1.35.8",
+    "gitCommit": "1c2e10a409eb1b03f2f28f401ce935312e20d9fb",
+    "gitTreeState": "clean",
+    "buildDate": "2026-08-20T15:16:16Z",
+    "goVersion": "go1.26.5",
+    "compiler": "gc",
+    "platform": "linux/amd64"
+  },
+  "csi_drivers": [
+    {
+      "name": "rook-ceph.cephfs.csi.ceph.com",
+      "uid": "a2d36387-a227-4323-aecd-d59ef5674f51",
+      "spec": {
+        "attachRequired": true,
+        "fsGroupPolicy": "File",
+        "podInfoOnMount": false,
+        "requiresRepublish": false,
+        "seLinuxMount": true,
+        "storageCapacity": false,
+        "volumeLifecycleModes": [
+          "Persistent"
+        ]
+      }
+    },
+    {
+      "name": "rook-ceph.rbd.csi.ceph.com",
+      "uid": "536cfa94-b11f-4f05-bfaa-86ade84023e7",
+      "spec": {
+        "attachRequired": true,
+        "fsGroupPolicy": "File",
+        "podInfoOnMount": false,
+        "requiresRepublish": false,
+        "seLinuxMount": true,
+        "storageCapacity": false,
+        "volumeLifecycleModes": [
+          "Persistent"
+        ]
+      }
+    }
+  ],
+  "csi_component_query_exit": 0,
+  "csi_component_images": [
+    {
+      "kind": "Deployment",
+      "name": "ceph-csi-controller-manager",
+      "images": [
+        "10.10.1.66:5001/cephcsi/ceph-csi-operator:v1.0.4"
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "name": "rook-ceph.cephfs.csi.ceph.com-ctrlplugin",
+      "images": [
+        "10.10.1.66:5001/cephcsi/cephcsi:v3.17.1",
+        "10.10.1.66:5001/sig-storage/csi-provisioner:v6.2.0",
+        "10.10.1.66:5001/sig-storage/csi-resizer:v2.1.0",
+        "10.10.1.66:5001/sig-storage/csi-attacher:v4.12.0",
+        "10.10.1.66:5001/sig-storage/csi-snapshotter:v8.5.0"
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "name": "rook-ceph.rbd.csi.ceph.com-ctrlplugin",
+      "images": [
+        "10.10.1.66:5001/cephcsi/cephcsi:v3.17.1",
+        "10.10.1.66:5001/sig-storage/csi-provisioner:v6.2.0",
+        "10.10.1.66:5001/sig-storage/csi-resizer:v2.1.0",
+        "10.10.1.66:5001/sig-storage/csi-attacher:v4.12.0",
+        "10.10.1.66:5001/sig-storage/csi-snapshotter:v8.5.0"
+      ]
+    },
+    {
+      "kind": "DaemonSet",
+      "name": "rook-ceph.cephfs.csi.ceph.com-nodeplugin",
+      "images": [
+        "10.10.1.66:5001/cephcsi/cephcsi:v3.17.1",
+        "10.10.1.66:5001/sig-storage/csi-node-driver-registrar:v2.17.0"
+      ]
+    },
+    {
+      "kind": "DaemonSet",
+      "name": "rook-ceph.rbd.csi.ceph.com-nodeplugin",
+      "images": [
+        "10.10.1.66:5001/cephcsi/cephcsi:v3.17.1",
+        "10.10.1.66:5001/sig-storage/csi-node-driver-registrar:v2.17.0"
+      ]
+    }
+  ]
+}

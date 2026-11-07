@@ -1,0 +1,52 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 383B done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+#2 DONE 0.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.1s
+
+#4 [internal] load build context
+#4 transferring context: 2.39MB 0.0s done
+#4 DONE 0.2s
+
+#5 [1/2] FROM 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+#5 resolve 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a 0.1s done
+#5 DONE 0.3s
+
+#5 [1/2] FROM 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+#5 extracting sha256:63e7e49699e8f5b93162e14c630db8294f87799bfec4376677160876bd6840dc
+#5 extracting sha256:63e7e49699e8f5b93162e14c630db8294f87799bfec4376677160876bd6840dc 0.2s done
+#5 DONE 0.5s
+
+#5 [1/2] FROM 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+#5 extracting sha256:def63a514020a5d586710d1a570fb7c4b697cc27e18976816e2b846dd8f25126
+#5 extracting sha256:def63a514020a5d586710d1a570fb7c4b697cc27e18976816e2b846dd8f25126 0.2s done
+#5 DONE 0.7s
+
+#5 [1/2] FROM 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+#5 extracting sha256:871eedcd73c90a3900a84cce3addcc53fa0a0dd481843781e4922944b7f91ec5 0.1s done
+#5 DONE 0.8s
+
+#6 [2/2] COPY --chmod=0555 vm-image-verify /vm-image-verify
+#6 DONE 0.7s
+
+#7 exporting to image
+#7 exporting layers
+#7 exporting layers 0.6s done
+#7 exporting manifest sha256:f4ae3b52fb11f9f2b8134bd9043669dce6c5f902304962d039893c0612abad93 0.1s done
+#7 exporting config sha256:ff7143e27a79e0bda76143679bdff1febcda7bb88d80721fef1089c76903f04b 0.1s done
+#7 exporting attestation manifest sha256:d91389c4d0ac502a698ce82ae083e345213bcbd3195ff453a6a6c7b467747f57 0.1s done
+#7 exporting manifest list sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55
+#7 exporting manifest list sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55 0.1s done
+#7 naming to 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify:vm-phase1-20261107-r1 done
+#7 unpacking to 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify:vm-phase1-20261107-r1 0.1s done
+#7 DONE 1.0s
+
+#8 resolving provenance for metadata file
+#8 DONE 0.0s

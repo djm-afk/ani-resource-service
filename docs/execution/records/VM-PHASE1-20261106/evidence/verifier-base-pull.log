@@ -1,0 +1,13 @@
+10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a: Pulling from ani-gpu-platform/ani-vm-image-verify
+871eedcd73c9: Pulling fs layer
+def63a514020: Pulling fs layer
+63e7e49699e8: Pulling fs layer
+871eedcd73c9: Download complete
+def63a514020: Download complete
+63e7e49699e8: Download complete
+63e7e49699e8: Pull complete
+def63a514020: Pull complete
+871eedcd73c9: Pull complete
+Digest: sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+Status: Downloaded newer image for 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a
+10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:0141dd5bc764309f73a4ff340b081f30fd3233fc482aab23dab52ee59db4be7a

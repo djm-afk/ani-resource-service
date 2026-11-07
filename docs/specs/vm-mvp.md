@@ -41,7 +41,7 @@
 
 核对目标版本 KubeVirt 1.9.0、CDI 1.66.1；附件中的 Kubernetes 1.35.8、Multus 4.3.1-thick 和 KCN 现场记录仅为既有探测信息，须在实施时读取实际版本、镜像 digest、CRD served version 与节点能力，不自动升级。
 
-任务包记录的 `device_ownership_from_security_context` 缺项与 Block 导入权限错误来自此前环境，只作线索。本轮唯一目标为 172.16.101.10、172.16.101.11、172.16.101.12，先只读固定集群与节点身份，再核验有效 runtime 配置和 Block 路径；不得沿用 100.64.128.12 / 10.10.1.66～68 的结论。若无需变更，记录当前事实并验证原生 Block 能力；若确有缺项才登记 ENV-BLOCK，并按下述具体批准执行。该配置与 CDI 官方说明相关，不宣称它是唯一可能原因。[U01](../references/vm-mvp-sources.md)
+任务包记录的 `device_ownership_from_security_context` 缺项、Block 导入错误与节点地址均为历史环境线索。实际执行环境及授权依据见[执行状态](../execution/status.md)，不继承旧环境结论或旧维护授权。先只读固定集群与节点身份，再核验当前 Block 路径；若无需变更则记录事实，确有缺项才登记 ENV-BLOCK 并按下述具体批准执行。该配置与 CDI 官方说明相关，不宣称它是唯一可能原因。[U01](../references/vm-mvp-sources.md)
 
 VM-00 只读取获准访问的环境、准备具体配置差异、备份/恢复方式和节点顺序。VM-00R 只在以下两个条件都成立后写入：
 
@@ -67,9 +67,19 @@ Resource 的 ResolveCreateSpec 只读组合 compute 一次，再校验介质/磁
 
 来源与原生资源规则依据 [U02/U03](../references/vm-mvp-sources.md)。
 
+### 既有资源与镜像来源职责
+
+新建默认配置只影响未来创建，不否定已登记 VM、Snapshot 或镜像的原 UID/owner。既有 backend 的 Start/Restart 不反复要求全局精确版本或当前默认 SC 与冻结值相等；TPM/EFI persistent、backend Filesystem、真实 declarative hotplug 支持及目标 VMI 完成判断保留，未测试版本不因此获得支持。
+
+租户镜像沿既有受管上传流程提供。source pin 按目标 DV 的已登记 UID、消费者归属及 source namespace/name 匹配结算：CDI Succeeded 即 Completed，不再 GET 目标 PVC 重新要求 Bound/mode；目标盘 inventory 独立维护。Pending/Completed/Absent 三态及退休消费者的 CloneAbsent 释放保持，活消费者的 Absent 不释放，READY 发布与已释放引用不能倒退。
+
+固定受限验证 Job 保留只读声明、O_RDONLY 文件访问、可读性、最小长度、ISO iso9660/udf、SHA-256 及 Job/Pod/PVC/镜像结果归属。SHA 指 CDI 处理后的 source 内容。ReadOnlyProof 仅兼容历史读取，新结果可省略；每次上传不再尝试 O_WRONLY/O_RDWR。只读挂载策略在适用部署/存储验收一次，先部署兼容 reader 再切换 verifier，迟到结果不能复活删除/失败记录。
+
+镜像正常删除负责自身 source DV/业务 PVC、验证 Job 和短时上传请求。source DV producer 优先进入原生删除并等待生命周期退出；CDI prime/scratch/uploader 和其 finalizer 由组件或已落实运维接替，见 [限定故障处置](../runbooks/vm-image-cdi-handoff.md)。旧 Cleanup 中业务对象继续精确清理，PV/已交接 CDI 引用保留历史可读，不枚举内部名字、追换 UID 或由 worker 摘 finalizer。发布前有限盘点和实际接替结果只记录在 [执行状态](../execution/status.md)。
+
 ## S05 预置介质与设备默认值
 
-管理员维护受管只读配置目录；不提供上传、发布、登记、删除或版本管理页面。每项包含 media_key、name、kind（DISK_IMAGE/INSTALL_ISO/DRIVER_ISO）、source cluster/namespace/PVC name/UID、content checksum、source volumeMode/contentType、实际/虚拟容量、os_family/os_version、architecture、firmware、root/data bus、网卡型号、TPM/UEFI 持久要求、driver_media_key。
+管理员预置目录继续作为受管只读配置；既有租户上传镜像另沿本节的受管上传与来源引用规则，不增加新镜像产品入口。每项包含 media_key、name、kind（DISK_IMAGE/INSTALL_ISO/DRIVER_ISO）、source cluster/namespace/PVC name/UID、content checksum、source volumeMode/contentType、实际/虚拟容量、os_family/os_version、architecture、firmware、root/data bus、网卡型号、TPM/UEFI 持久要求、driver_media_key。
 
 来源内容必须按管理约定冻结；同名换 UID 或校验值变化不能被静默采用。Resolve 校验并冻结来源，真正克隆前重新校验已冻结身份；已完成系统盘的 Start 不依赖管理员源仍存在。重新挂载未保留的介质副本只能使用该冻结来源，来源失效则报依赖变化。
 
@@ -145,9 +155,15 @@ CurrentPods 仅为当前 launcher，最多一个；CDI/hotplug helper 不作 VM 
 
 默认 runStrategy=Manual。
 
-VM 电源事实在操作结束后仍独立持续观测，不依赖用户停留在页面或发起新操作。共享 VM/VMI/Pod Watch 唤醒已登记 VM 的持久观察任务，每 30 秒共享 LIST 核验各 VM 的原生身份、运行事实及关联 launcher 集合；每个 VM 的状态读取只查共享索引，不重新扫描集群。Informer 是事实的唯一有序来源，LIST 不覆盖事件。无关 Pod 或不影响运行事实的 metadata/resourceVersion 更新不使其他 VM 的证明失效；旧 LIST 与新 Watch 交错时保留未过期的真实证明，不为缓存读取或无关事件续期。每个证明绑定原 VM UID，持续无法核验超过 60 秒时显示 Unknown；对象缺失、UID/归属冲突立即失效，断线由 client-go 恢复。临时来源故障可保留尚未过期的真实状态及原观测时间，最迟在其时效到期时重新判断，不能因故障退避长期显示陈旧 Running。观测只更新事实，不修改 Desired、业务 version 或重放 Start。调度通过显式 `migrations/vm/003_observation.sql` 回填既有 VM；部署同时应用 [只读观察 RBAC](../../deployments/vm/observation-rbac.yaml)。
+电源操作的介质 effective/pending 投影复用已读取的 VM/VMI 与冻结副本引用，不读取源目录或 DV/PVC，不作为电源提交与完成的前置条件。
 
-观察任务使用独立租约与执行通道，来源使用独立 2 QPS / burst 4 预算；首次同步、Watch 故障、队列积压不作为开关机受理或执行的新闸门。事件合并后至多每秒调度一次，真实故障退避 30 秒至 5 分钟，普通事件不能绕过。共享核验完成后，只有携带精确原生 UID 与更新且未过期证明时间的恢复通知，才能提前唤醒相应临时故障任务；恢复批次有界，不改变其他 VM、关闭资源或归属冲突的调度，不依赖进程内曾经观察过该 VM。详情中可选的 Guest Agent 读取另用独立 2 QPS / burst 4 预算，最多两个在途读取，避免页面刷新耗尽操作请求额度。
+VM 电源事实在操作结束后仍独立持续观测，不依赖页面访问或新操作。标准 VM/VMI/Pod informer 完成初次同步后，通过共享索引提供原生事实、合并通知已登记 VM 的持久观察任务；List/Watch 断连、版本失效与重新同步由 client-go 处理。不增加第二轮全量对拍、独立 proof、续签或专用恢复通道。健康同步中的稳定对象不会因为没有新事件而自动 Unknown；已知连接中断时返回来源不可用，不能读旧缓存刷新事实时间。临时来源故障可短时保留原事实及原时间，过期则显示 Unknown；故障退避有界，正常恢复通过既有任务重试推进。
+
+观察任务保留独立租约、generation/version/closing 栅栏及只更新观察投影的事务，来源使用独立 2 QPS / burst 4 预算。首次同步、Watch 故障、队列积压不作为开关机的新闸门；事件有界合并，普通通知不绕过真实故障退避。调度继续使用 vm.observation_work 与 [只读观察 RBAC](../../deployments/vm/observation-rbac.yaml)，不新建证明表。Guest Agent 详情读取另用独立预算，不改变电源判断。
+
+异步磁盘准备由既有持久观察任务独立刷新：对已登记但尚未完成准备的盘，定向读取 DV/PVC 的 UID、preparation 与观察容量，并在原租约、generation/version/closing 及当前盘映射校验下更新当前配置和磁盘台账。存储读取失败保留已有库存并由观察任务后续重试，不改变独立电源操作的提交或完成结果；无需额外磁盘、介质或快照操作触发刷新。
+
+生命周期读取与盘、介质和 backend inventory 分开。Stop/ForceStop/Restart、根 VM 删除及原生提交身份检查不依赖无关盘或介质的存储读取；未读取的库存不能用空值覆盖。VM/VMI UID/owner、原生请求与 Restart 代次继续有效。多个关联 Pod 不否定 Running VMI 或 Console 的当前 VMI 归属；需要具体 launcher 的 Network/日志保持唯一当前目标，歧义不提供错误 Pod。停止/删除完成仍检查所有相关非终态 Pod 已退出，不能把空 Launcher 当作无运行依赖。
 
 Manual 下客机关机会保留终态 VMI。Succeeded 投影为 Stopped；Failed 保持失败状态。它们不等于对象已清理：Stop 仍要求已退出、无活跃 launcher、无原生变更请求及旧网络地址资格撤销；显式 Start 由 KubeVirt 原生 Start 处理终态 VMI 的替换。未知启动结果重试和快照恢复继续要求 VMI 对象不存在，不能用电源显示状态代替该证明。
 
@@ -174,15 +190,15 @@ VNC 不依赖 guest IP、Network attached、AgentConnected、OS 安装完成或�
 
 ## S09 快照与原 VM 恢复
 
-只创建/读取/删除 KubeVirt VirtualMachineSnapshot/Restore；CSI 由原生 controller 管理，不逐盘拼装快照。前置为实际可用 Snapshot API/controller、匹配 driver 的 VolumeSnapshotClass、所需 gate。持久状态卷如启用也必须在原生支持与验收范围。
+只创建/读取/删除 KubeVirt VirtualMachineSnapshot/Restore；CSI 由原生 controller 管理，不逐盘拼装快照。前置为实际可用 Snapshot API/controller、匹配 driver 的 VolumeSnapshotClass、所需 gate。持久状态卷如启用也必须在原生支持与验收范围。首次支持条件在创建与部署入口验证；既有 Snapshot 重放先认回原 UID，不随当前默认 Class 再选。错误或不完整 Snapshot 也可按身份删除，不先判断是否可恢复。
 
-快照覆盖“该快照时当前持久挂载的 root/data”，记录 disk_id↔volume_name/serial、role/size、必要介质/设备配置、source VM UID、完整性与原生 indications。当前未挂载盘不宣称受保护。必要卷未 included 或原生未 Ready，不能标记完整可恢复快照；本期 Restore 只接受必要卷完整且原生可用的快照。Guest Agent 参与与 freeze 结果按实际展示，不承诺数据库/外部系统事务一致性；不提供可恢复 RAM 状态，也不称多卷快照为原子 group snapshot。
+快照覆盖“该快照时当前持久挂载的 root/data”，记录 disk_id↔volume_name/serial、role/size、必要介质/设备配置、source VM UID、完整性与原生 indications。当前未挂载盘不宣称受保护。直接采用该 VirtualMachineSnapshot 的原生 phase、readyToUse、error、included/excluded 与 indications，不通过 Content→VS→VSC 重复证明 Ready。必要卷未 included、被 excluded 或原生未 Ready，不能标记完整可恢复快照；本期 Restore 只接受必要卷完整且原生可用的快照。Guest Agent 参与与 freeze 结果按实际展示，不承诺数据库/外部系统事务一致性；不提供可恢复 RAM 状态，也不称多卷快照为原子 group snapshot。
 
 恢复只针对同租户、同一根 VM UID；要求已停止且 VMI 对象不存在，targetReadinessPolicy=FailImmediate、volumeRestorePolicy=RandomizeNames、volumeOwnershipPolicy=Vm。不隐式关机/开机，不提供策略选择。
 
 ### 恢复盘集合与确认
 
-PreviewRestore 返回当前 vm.version、snapshot UID、完整影响清单和 preview_digest。提交携带同版本及摘要，服务端重新核对并取得 VM 变更互斥；变更则要求重新预览。
+运行态允许只读 PreviewRestore。PreviewRestore 返回当前 vm.version、snapshot UID、完整影响清单和 preview_digest。停止改变业务版本后须重新预览；真正恢复仍要求停止态、VMI 不存在和破坏性确认。摘要只包含业务身份、五组盘影响、介质/启动意图和实际替换或删除的 DV/PVC；Content/Class/Artifacts、嵌套 Cleanup 的 PV/CSI 诊断及观察时间不参与。提交携带同版本及摘要，服务端重新核对并取得 VM 变更互斥；变更则要求重新预览。
 
 | 逻辑盘位置 | 本期恢复行为 |
 |---|---|
@@ -199,11 +215,15 @@ PreviewRestore 返回当前 vm.version、snapshot UID、完整影响清单和 pr
 既有 operation 只保存三个必要进展点：native_restore_completed、mapping_committed、cleanup_completed。
 
 1. 原生 Restore 完成并核对新映射前，平台不主动删除旧 root/data 自有卷；失败或结果未知时保留其 cleanup refs 并继续查证。backend state 的切换及旧卷清理由 KubeVirt 原生 Restore 管理，不承诺失败时自动回滚或保留全部原生状态卷。
-2. 原生完成后读取 status.restores、实际 VM/PVC 与 UID，核对保存新的 current configuration/逻辑盘映射；恢复到 PVC 引用是合法结果。
+2. 重试先认回同一 Restore。读取 status.complete、失败 conditions、status.restores 的具名输出及目标 VM volumes，只 GET 这些 PVC 并登记 UID、容量、mode/准备状态，再保存 current configuration/逻辑盘映射；direct-PVC 为合法结果。不依赖 lastRestoreUID、namespace 全 PVC 扫描、VS 来源链或 PV/CSI 证明，保留原生 provenance 元数据。
 3. 目标仍保持停止态，按已冻结数据盘设备合同补回 PVC hotpluggable=true、SCSI/serial 等必要字段；不能整份覆盖模板或改回初始旧 DV。
 4. 映射持久后，按预览冻结清单、所有权与 UID 精确删除被替换旧盘及新增挂载盘。独立 DV 不依赖 deletedDataVolumes 自动列出旧卷。
 5. 清理未确认时 operation 保持处理中，reason 明确“恢复完成，旧卷清理中”；保留新映射及旧 cleanup refs，继续同一操作，不重复 Restore。
 6. 新映射、必要原生配置和清理都完成后才结束 operation，用户随后显式 Start。恢复后 Start 不重解析 compute 或重写创建快照。
+
+Restore CR 在输出映射或取消清理清单持久交接前保留。取消先保存公开输出名称（包含未创建/未取得 UID 的名称）及已知 UID 到现有退休盘/介质/backend 清单，再终止 producer 并定向清理。结果载体丢失且没有持久输出时保持 Unknown，不能将空清单解释为无产物。旧已 checkpoint 的 Plan/intent 原样继续；已接受但尚无 Plan 的旧摘要须在切换前由旧规则排空或登记。旧已完成输出 checkpoint 可用于有限兼容，不重新推导底层产物。
+
+具名恢复输出重新观察为不存在时，只在相同 kind/namespace/name 和归属范围内合并，保留已登记 UID 及退休盘、介质、backend state 的既有清理信息，继续缺失收尾。缺少新 UID 不表示替换；新旧 UID 均非空且不同仍是身份冲突。
 
 恢复后的 WFFC PVC 可保持 Pending；完成核验不要求先 Bound/Succeeded，也不启动消费者，后续用户显式 Start 再驱动绑定与准备。
 
@@ -215,9 +235,9 @@ PreviewRestore 返回当前 vm.version、snapshot UID、完整影响清单和 pr
 
 删除先持久 closing，拒绝新副作用/新 VNC，处理已投递但未知的原生动作。枚举所有当前、卸载、已替换待清理盘、ISO副本、backend state、快照及操作创建的原生资源；不得只看当前 template.volumes。
 
-使用 OwnerReference/原生 GC 为主，必要显式删除只针对已登记且重新核验的自身 UID；无授权不得强删 finalizer 或顺手清理同 namespace 其他对象。selected SC/PV reclaimPolicy 和 VolumeSnapshotClass deletionPolicy 必须能兑现本期回收目标；采用已验证 Delete 策略，不静默改共享策略，也不把 PVC 消失当作后端卷已回收。[U10]
+使用 OwnerReference/原生 GC 为主，必要显式删除只针对已登记且重新核验的自身 UID；无授权不得强删 finalizer 或顺手清理同 namespace 其他对象。首次创建使用已验证的存储支持策略，不静默修改共享策略。逻辑删除边界为平台负责的业务原生对象生命周期退出；PV/CSI、Content/VS/VSC 和历史 Artifacts 为存储诊断，不再阻塞平台收尾，也不构成物理擦除承诺。[U10]
 
-VM operation 删除完成需：目标 VM/VMI/launcher 已退出，自有 DV/PVC/介质/backend state/快照及关联持久资源按原生策略完成清理，Network released，旧 VNC binding 已无效；SG 旧流关闭的实现与验收按 S08，不新增关闭回执依赖。没有 CPU/内存/磁盘退款前置。若某环节未知/残留，保留 closing、cleanup refs 和具体原因，不靠删除业务行宣告成功。
+VM operation 删除完成需：目标 VM/VMI/全部相关运行 Pod 已退出，自有 DV/业务 PVC、介质、Secret/Job、Snapshot/Restore 及当前与退休盘责任完成；KubeVirt backend 按其 owner/GC 生命周期退出，Network released，旧 VNC binding 已无效；SG 旧流关闭的实现与验收按 S08，不新增关闭回执依赖。没有 CPU/内存/磁盘退款前置。若某环节未知/残留，保留 closing、cleanup refs 和具体原因，不靠删除业务行宣告成功。
 
 原始共享源、租户 NAD、其他 VM/租户资源必须保持不变。导入中、停止态、多盘热插拔后、恢复清理中删除都纳入验收。
 

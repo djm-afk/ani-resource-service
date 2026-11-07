@@ -1,0 +1,42 @@
+[
+  {
+    "entry": "10.10.1.66",
+    "context": "kubernetes-admin@ani-kcn-full",
+    "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+    "at": "2026-11-06T17:11:49.761817+00:00",
+    "mode": "Block",
+    "job_name": "phase1-readonly-block-20261107",
+    "job_uid": "8d0ad075-4c2f-4f0e-ae67-8954e8075660",
+    "source_image_id": "d6cbecd0-8248-4fd0-9586-10e8d1a43007",
+    "source_pvc": "vmi-src-d6cbecd082484fd0958610e8d1a43007",
+    "source_pvc_uid": "2cd51111-5981-4765-ae1c-f4bfd0b009ef",
+    "template_origin_job": "vmi-verify-d6cbecd082484fd0958610e8d1a43007",
+    "probe_image": "10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check@sha256:19337c2555ab4ecfadc393a492c34160dce5901f2aa0db48f6ddb50506976ff0",
+    "result": {
+      "kernel_read_only_flag": 0,
+      "mode": "Block",
+      "read_only": false,
+      "read_open": true
+    }
+  },
+  {
+    "entry": "10.10.1.66",
+    "context": "kubernetes-admin@ani-kcn-full",
+    "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+    "at": "2026-11-06T17:11:58.728455+00:00",
+    "mode": "Filesystem",
+    "job_name": "phase1-readonly-filesystem-20261107",
+    "job_uid": "4efaf50a-7141-4e31-9bcf-af0d09d42f43",
+    "source_image_id": "785372ad-19de-4124-b338-15b35f94eb7f",
+    "source_pvc": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+    "source_pvc_uid": "fcec3071-e5ba-449b-96e4-fe0c9d552954",
+    "template_origin_job": "vmi-verify-785372ad19de4124b33815b35f94eb7f",
+    "probe_image": "10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check@sha256:19337c2555ab4ecfadc393a492c34160dce5901f2aa0db48f6ddb50506976ff0",
+    "result": {
+      "filesystem_flags": 4129,
+      "mode": "Filesystem",
+      "read_only": true,
+      "read_open": true
+    }
+  }
+]

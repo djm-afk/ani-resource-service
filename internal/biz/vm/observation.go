@@ -35,6 +35,13 @@ type ObservationSource interface {
 	ObserveState(context.Context, VM) (Observation, error)
 }
 
+// DiskPreparationSource is an optional read on the existing observation lane.
+// Partial successful reads may advance inventory; its error is independent of
+// runtime state and never becomes a user operation result.
+type DiskPreparationSource interface {
+	ObserveDiskPreparation(context.Context, VM) ([]Disk, error)
+}
+
 // ObservationNotifier wakes only previously registered VMs. Notifications do
 // not create resources and cannot bypass the durable failure backoff.
 type ObservationNotifier interface {
@@ -45,17 +52,6 @@ type ObservationNotifier interface {
 // or queue overflow. It wakes durable registrations, never creates VM rows.
 type ObservationRescanNotifier interface {
 	NotifyAllObservations(context.Context) error
-}
-
-// ObservationRecovery is a fresh, shared audit proof for one native VM. A
-// normal event hint cannot stand in for this proof when releasing backoff.
-type ObservationRecovery struct {
-	Native     ObjectRef
-	ObservedAt time.Time
-}
-
-type ObservationRecoveryNotifier interface {
-	RecoverObservations(context.Context, []ObservationRecovery) error
 }
 
 type Observer struct {
@@ -90,11 +86,19 @@ func (o *Observer) Step(ctx context.Context) (bool, error) {
 	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	observed, readErr := o.source.ObserveState(readCtx, v)
 	cancel()
+	var inventoryErr error
+	if readErr == nil {
+		if inventory, ok := o.source.(DiskPreparationSource); ok {
+			inventoryCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+			observed.Volumes, inventoryErr = inventory.ObserveDiskPreparation(inventoryCtx, v)
+			stop()
+		}
+	}
 	// Dependency failures belong to this durable observation job. They must not
 	// stop the service supervisor or cancel an independent operation worker.
 	err = o.repo.SaveObservation(ctx, work, observed, readErr)
 	if errors.Is(err, ErrVersion) || errors.Is(err, ErrLease) {
 		return true, notifyErr
 	}
-	return true, errors.Join(notifyErr, err)
+	return true, errors.Join(notifyErr, inventoryErr, err)
 }

@@ -107,6 +107,10 @@ ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段�
 本仓库独立拥有生成源码，不在构建或运行时依赖 layout 或 ANI 内部目录。
 旧版 START-HERE 中的初始化交接及待讨论问题由上述词汇、ADR、规格和来源记录取代；历史版本仍可从 Git 查询。
 
+## VM 一阶段职责整改
+
+本次仅实施 R01–R09；业务规则已收敛至 [VM 规格](specs/vm-mvp.md)，CDI 内部故障的限定入口见 [运维接替](runbooks/vm-image-cdi-handoff.md)。实际代码、测试、部署及未完成事项只见 [执行状态](execution/status.md#vm-phase1-20261106)。本次不进入虚拟机克隆二阶段。
+
 ## VM MVP
 
 - [虚拟机一期规格 v2](specs/vm-mvp.md)：Linux/Windows、ISO 与 qcow2/raw、Block/RWO 自有盘、多盘、VNC、原生热插拔、在线/离线快照恢复及租户主网的唯一业务规则。

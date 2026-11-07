@@ -1,0 +1,573 @@
+docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280: Pulling from library/postgres
+1bb54e8f7727: Pulling fs layer
+8d6422da287d: Pulling fs layer
+6310eb16bf42: Pulling fs layer
+ace4b5b96a91: Pulling fs layer
+2fc0e69f8d7d: Pulling fs layer
+6463c6b5c703: Pulling fs layer
+5fa29c524b4e: Pulling fs layer
+5ee6c6ca7fd9: Pulling fs layer
+c5694bff1357: Pulling fs layer
+a4635eaec9b8: Pulling fs layer
+aedab7177504: Pulling fs layer
+46e663abc8f5: Pulling fs layer
+af2a6480a058: Pulling fs layer
+1bb54e8f7727: Download complete
+ace4b5b96a91: Download complete
+6310eb16bf42: Download complete
+8d6422da287d: Download complete
+6463c6b5c703: Download complete
+5ee6c6ca7fd9: Download complete
+6310eb16bf42: Pull complete
+6463c6b5c703: Pull complete
+2fc0e69f8d7d: Download complete
+8d6422da287d: Pull complete
+2fc0e69f8d7d: Pull complete
+46e663abc8f5: Download complete
+aedab7177504: Download complete
+5fa29c524b4e: Download complete
+af2a6480a058: Download complete
+5fa29c524b4e: Pull complete
+a4635eaec9b8: Download complete
+ace4b5b96a91: Pull complete
+af2a6480a058: Pull complete
+5ee6c6ca7fd9: Pull complete
+041cb76c0e1d: Download complete
+6ff88415323f: Download complete
+c5694bff1357: Download complete
+c5694bff1357: Pull complete
+aedab7177504: Pull complete
+a4635eaec9b8: Pull complete
+46e663abc8f5: Pull complete
+1bb54e8f7727: Pull complete
+Digest: sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+Status: Downloaded newer image for postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=ecdbf120ea7929dcf99d806e5f9c474300664bfebe0a1dbf860bf36fdd77b817
+=== RUN   TestBackendFrozenDevicesAndConfiguration
+=== RUN   TestBackendFrozenDevicesAndConfiguration/default-is-not-frozen
+=== RUN   TestBackendFrozenDevicesAndConfiguration/class-drift
+=== RUN   TestBackendFrozenDevicesAndConfiguration/retain
+--- PASS: TestBackendFrozenDevicesAndConfiguration (0.00s)
+    --- PASS: TestBackendFrozenDevicesAndConfiguration/default-is-not-frozen (0.00s)
+    --- PASS: TestBackendFrozenDevicesAndConfiguration/class-drift (0.00s)
+    --- PASS: TestBackendFrozenDevicesAndConfiguration/retain (0.00s)
+=== RUN   TestBackendNativeGeneratedIdentityAndStoppedRetention
+--- PASS: TestBackendNativeGeneratedIdentityAndStoppedRetention (0.00s)
+=== RUN   TestBackendRejectsForeignPVCAndPVDrift
+=== RUN   TestBackendRejectsForeignPVCAndPVDrift/owner-uid
+=== RUN   TestBackendRejectsForeignPVCAndPVDrift/vmi-owner-is-not-persistent-vm-owner
+=== RUN   TestBackendRejectsForeignPVCAndPVDrift/block-backend
+--- PASS: TestBackendRejectsForeignPVCAndPVDrift (0.00s)
+    --- PASS: TestBackendRejectsForeignPVCAndPVDrift/owner-uid (0.00s)
+    --- PASS: TestBackendRejectsForeignPVCAndPVDrift/vmi-owner-is-not-persistent-vm-owner (0.00s)
+    --- PASS: TestBackendRejectsForeignPVCAndPVDrift/block-backend (0.00s)
+=== RUN   TestBackendClosingRegistersTerminatingVolumeWithoutReadiness
+--- PASS: TestBackendClosingRegistersTerminatingVolumeWithoutReadiness (0.00s)
+=== RUN   TestBackendRunningRequiresNativeVolumeStatus
+--- PASS: TestBackendRunningRequiresNativeVolumeStatus (0.00s)
+=== RUN   TestBackendRestoreKeepsOldUIDsUntilNativeReclamation
+--- PASS: TestBackendRestoreKeepsOldUIDsUntilNativeReclamation (0.00s)
+=== RUN   TestBackendCleanupChecksLatePVAndDoesNotDependOnClassOrSource
+--- PASS: TestBackendCleanupChecksLatePVAndDoesNotDependOnClassOrSource (0.00s)
+=== RUN   TestNativeBlockCapacityIsObservedNotAssumed
+--- PASS: TestNativeBlockCapacityIsObservedNotAssumed (0.00s)
+=== RUN   TestConsoleIdentityObservationDoesNotDependOnStorage
+=== RUN   TestConsoleIdentityObservationDoesNotDependOnStorage/running
+=== RUN   TestConsoleIdentityObservationDoesNotDependOnStorage/wrong-vm
+=== RUN   TestConsoleIdentityObservationDoesNotDependOnStorage/wrong-vmi-owner
+=== RUN   TestConsoleIdentityObservationDoesNotDependOnStorage/two-launchers
+=== RUN   TestConsoleIdentityObservationDoesNotDependOnStorage/not-running
+--- PASS: TestConsoleIdentityObservationDoesNotDependOnStorage (0.00s)
+    --- PASS: TestConsoleIdentityObservationDoesNotDependOnStorage/running (0.00s)
+    --- PASS: TestConsoleIdentityObservationDoesNotDependOnStorage/wrong-vm (0.00s)
+    --- PASS: TestConsoleIdentityObservationDoesNotDependOnStorage/wrong-vmi-owner (0.00s)
+    --- PASS: TestConsoleIdentityObservationDoesNotDependOnStorage/two-launchers (0.00s)
+    --- PASS: TestConsoleIdentityObservationDoesNotDependOnStorage/not-running (0.00s)
+=== RUN   TestNativePowerUsesKubeVirtSubresource
+--- PASS: TestNativePowerUsesKubeVirtSubresource (0.01s)
+=== RUN   TestDetailRelationNamesUseTenantAndCurrentSecurityGroups
+--- PASS: TestDetailRelationNamesUseTenantAndCurrentSecurityGroups (0.00s)
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/available
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/no-agent
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/stopped
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/changed
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/foreign-vm
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/foreign-vmi
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/query-error
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/filesystem-error
+=== RUN   TestRuntimeReadsOwnedGuestAndFencesRestart/unsupported
+--- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart (0.01s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/available (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/no-agent (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/stopped (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/changed (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/foreign-vm (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/foreign-vmi (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/query-error (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/filesystem-error (0.00s)
+    --- PASS: TestRuntimeReadsOwnedGuestAndFencesRestart/unsupported (0.00s)
+=== RUN   TestVMDisksDurableWFFCReplayDetachAndDelete
+--- PASS: TestVMDisksDurableWFFCReplayDetachAndDelete (1.94s)
+=== RUN   TestNativeColdDiskReferencesWFFCAndStableIdentity
+--- PASS: TestNativeColdDiskReferencesWFFCAndStableIdentity (0.00s)
+=== RUN   TestNativeDeclarativeHotplugUsesPinnedVersionDefaults
+=== RUN   TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/beta-default
+=== RUN   TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/beta-disabled
+=== RUN   TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/enable-precedence
+=== RUN   TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/legacy-precedence
+=== RUN   TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/unknown-version
+--- PASS: TestNativeDeclarativeHotplugUsesPinnedVersionDefaults (0.00s)
+    --- PASS: TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/beta-default (0.00s)
+    --- PASS: TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/beta-disabled (0.00s)
+    --- PASS: TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/enable-precedence (0.00s)
+    --- PASS: TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/legacy-precedence (0.00s)
+    --- PASS: TestNativeDeclarativeHotplugUsesPinnedVersionDefaults/unknown-version (0.00s)
+=== RUN   TestNativeDNSUsesFrozenAddressesAndKeepsLegacyTemplates
+--- PASS: TestNativeDNSUsesFrozenAddressesAndKeepsLegacyTemplates (0.00s)
+=== RUN   TestMissingVMNamespaceNeverCreatedOrPatched
+--- PASS: TestMissingVMNamespaceNeverCreatedOrPatched (0.00s)
+=== RUN   TestVMGuestCredentialsDurablePrivateAcceptance
+--- PASS: TestVMGuestCredentialsDurablePrivateAcceptance (0.82s)
+=== RUN   TestNativeNoCloudUsesOneOwnedUserAndDHCPSecret
+--- PASS: TestNativeNoCloudUsesOneOwnedUserAndDHCPSecret (0.00s)
+=== RUN   TestVMImageMigrateIsRepeatableAndGrantsRuntimeAccess
+    image_integration_test.go:98: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageMigrateIsRepeatableAndGrantsRuntimeAccess (0.00s)
+=== RUN   TestVMImageCreateReplayConflictAndTenantIsolation
+    image_integration_test.go:144: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageCreateReplayConflictAndTenantIsolation (0.00s)
+=== RUN   TestVMImageUpdateVersionCASAndFieldWhitelist
+    image_integration_test.go:243: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageUpdateVersionCASAndFieldWhitelist (0.00s)
+=== RUN   TestVMImageDeleteRefusesWhilePinnedAndRecordsTombstone
+    image_integration_test.go:303: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageDeleteRefusesWhilePinnedAndRecordsTombstone (0.00s)
+=== RUN   TestVMImageClaimLeaseAndDeadlineCAS
+    image_integration_test.go:452: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageClaimLeaseAndDeadlineCAS (0.00s)
+=== RUN   TestVMImageSaveImageAcceptsFirstSourceRegistration
+    image_integration_test.go:519: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageSaveImageAcceptsFirstSourceRegistration (0.00s)
+=== RUN   TestVMImageSaveImageKeepsSessionStrict
+    image_integration_test.go:585: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageSaveImageKeepsSessionStrict (0.00s)
+=== RUN   TestVMImageSaveImageKeepsVersionWhenOnlyTheScheduleMoved
+    image_integration_test.go:645: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageSaveImageKeepsVersionWhenOnlyTheScheduleMoved (0.00s)
+=== RUN   TestDeleteImageObjectsLeavesAllCDIUploadersToOperations
+=== RUN   TestDeleteImageObjectsLeavesAllCDIUploadersToOperations/Failed
+=== RUN   TestDeleteImageObjectsLeavesAllCDIUploadersToOperations/Running
+=== RUN   TestDeleteImageObjectsLeavesAllCDIUploadersToOperations/Succeeded
+--- PASS: TestDeleteImageObjectsLeavesAllCDIUploadersToOperations (0.00s)
+    --- PASS: TestDeleteImageObjectsLeavesAllCDIUploadersToOperations/Failed (0.00s)
+    --- PASS: TestDeleteImageObjectsLeavesAllCDIUploadersToOperations/Running (0.00s)
+    --- PASS: TestDeleteImageObjectsLeavesAllCDIUploadersToOperations/Succeeded (0.00s)
+=== RUN   TestDeleteImageObjectsRemovesTheDataVolumeBeforeItsChildren
+--- PASS: TestDeleteImageObjectsRemovesTheDataVolumeBeforeItsChildren (0.00s)
+=== RUN   TestDeleteImageObjectsStillRefusesAForeignObjectAtTheChainHead
+--- PASS: TestDeleteImageObjectsStillRefusesAForeignObjectAtTheChainHead (0.00s)
+=== RUN   TestEnsureImageVerificationFreezesTheVerifierImage
+--- PASS: TestEnsureImageVerificationFreezesTheVerifierImage (0.00s)
+=== RUN   TestEnsureImageVerificationAdoptsTheExistingJobDigest
+--- PASS: TestEnsureImageVerificationAdoptsTheExistingJobDigest (0.00s)
+=== RUN   TestNewImageNativeValidatesOnlyWhatUploadNeeds
+--- PASS: TestNewImageNativeValidatesOnlyWhatUploadNeeds (0.00s)
+=== RUN   TestVMImageRetireReleasesThePinOnceTheCloneTargetIsGone
+    image_reference_retire_integration_test.go:82: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageRetireReleasesThePinOnceTheCloneTargetIsGone (0.00s)
+=== RUN   TestVMImageRetireKeepsThePinWhileTheVMLives
+    image_reference_retire_integration_test.go:116: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageRetireKeepsThePinWhileTheVMLives (0.00s)
+=== RUN   TestVMImagePinIgnoresConsumersAlreadyAccountedFor
+    image_reference_revalidation_integration_test.go:53: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImagePinIgnoresConsumersAlreadyAccountedFor (0.00s)
+=== RUN   TestVMImageISOBlankSystemDiskIsNotPinned
+    image_reference_revalidation_integration_test.go:124: VM_IMAGE_TEST_ADMIN_DSN is required: an isolated PostgreSQL owned by this task
+--- SKIP: TestVMImageISOBlankSystemDiskIsNotPinned (0.00s)
+=== RUN   TestNativeConsoleTabletRenderForBothOS
+=== RUN   TestNativeConsoleTabletRenderForBothOS/linux
+=== RUN   TestNativeConsoleTabletRenderForBothOS/windows
+--- PASS: TestNativeConsoleTabletRenderForBothOS (0.00s)
+    --- PASS: TestNativeConsoleTabletRenderForBothOS/linux (0.00s)
+    --- PASS: TestNativeConsoleTabletRenderForBothOS/windows (0.00s)
+=== RUN   TestNativeStartAddsTabletWithUIDRVFenceAndPreservesTemplate
+--- PASS: TestNativeStartAddsTabletWithUIDRVFenceAndPreservesTemplate (0.00s)
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/running-vmi
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/old-launcher
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/native-pending
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/namespace-replaced
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/tenant-label
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/vm-replaced
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/managed-name-conflict
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/missing-rv
+=== RUN   TestNativeStartTabletRequiresOwnedStoppedVM/closing
+--- PASS: TestNativeStartTabletRequiresOwnedStoppedVM (0.01s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/running-vmi (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/old-launcher (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/native-pending (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/namespace-replaced (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/tenant-label (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/vm-replaced (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/managed-name-conflict (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/missing-rv (0.00s)
+    --- PASS: TestNativeStartTabletRequiresOwnedStoppedVM/closing (0.00s)
+=== RUN   TestNativeStartTabletPatchRejectsConcurrentUIDOrRVChange
+=== RUN   TestNativeStartTabletPatchRejectsConcurrentUIDOrRVChange/uid
+=== RUN   TestNativeStartTabletPatchRejectsConcurrentUIDOrRVChange/resourceVersion
+--- PASS: TestNativeStartTabletPatchRejectsConcurrentUIDOrRVChange (0.00s)
+    --- PASS: TestNativeStartTabletPatchRejectsConcurrentUIDOrRVChange/uid (0.00s)
+    --- PASS: TestNativeStartTabletPatchRejectsConcurrentUIDOrRVChange/resourceVersion (0.00s)
+=== RUN   TestNativeExistingUSBTabletDoesNotDuplicate
+--- PASS: TestNativeExistingUSBTabletDoesNotDuplicate (0.00s)
+=== RUN   TestVMListFilterIntegration
+--- PASS: TestVMListFilterIntegration (0.70s)
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/GuestShutdownSucceeded
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/GuestShutdownFailed
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingAccepted
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingRunning
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingCreate
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingRestart
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/NativeUnknown
+=== RUN   TestVMListFilterSeparatesGuestShutdownFromPendingStart/CreateWithoutAutostart
+--- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart (0.80s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/GuestShutdownSucceeded (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/GuestShutdownFailed (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingAccepted (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingRunning (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingCreate (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/ListStartingRestart (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/NativeUnknown (0.01s)
+    --- PASS: TestVMListFilterSeparatesGuestShutdownFromPendingStart/CreateWithoutAutostart (0.01s)
+=== RUN   TestVMListWhereKeepsPlaceholdersAndArgumentsInSync
+--- PASS: TestVMListWhereKeepsPlaceholdersAndArgumentsInSync (0.00s)
+=== RUN   TestVMDisplayStateCoversEveryStoredState
+--- PASS: TestVMDisplayStateCoversEveryStoredState (0.00s)
+=== RUN   TestVMLogsPreferGuestConsoleAndReachEOF
+--- PASS: TestVMLogsPreferGuestConsoleAndReachEOF (0.00s)
+=== RUN   TestVMLogsVerifyBeforeReady
+--- PASS: TestVMLogsVerifyBeforeReady (0.00s)
+=== RUN   TestVMLogsPodChangeEndsStream
+--- PASS: TestVMLogsPodChangeEndsStream (1.00s)
+=== RUN   TestVMLogsRequireLauncher
+--- PASS: TestVMLogsRequireLauncher (0.00s)
+=== RUN   TestNativeManualGuestShutdownNormalizesStopped
+--- PASS: TestNativeManualGuestShutdownNormalizesStopped (0.00s)
+=== RUN   TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI
+=== RUN   TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/linux/Succeeded
+=== RUN   TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/linux/Failed
+=== RUN   TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/windows/Succeeded
+=== RUN   TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/windows/Failed
+--- PASS: TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI (0.01s)
+    --- PASS: TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/linux/Succeeded (0.00s)
+    --- PASS: TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/linux/Failed (0.00s)
+    --- PASS: TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/windows/Succeeded (0.01s)
+    --- PASS: TestNativeExplicitStartUsesKubeVirtForRetainedManualTerminalVMI/windows/Failed (0.00s)
+=== RUN   TestNativeStartResponseErrorDoesNotClaimUnsubmitted
+--- PASS: TestNativeStartResponseErrorDoesNotClaimUnsubmitted (0.00s)
+=== RUN   TestStoppedUnknownOrClosingVMDoesNotExposeOldNetworkAddress
+--- PASS: TestStoppedUnknownOrClosingVMDoesNotExposeOldNetworkAddress (0.00s)
+=== RUN   TestMediaPostgresFrozenSourceReplayCurrentConfigurationAndClosing
+--- PASS: TestMediaPostgresFrozenSourceReplayCurrentConfigurationAndClosing (0.84s)
+=== RUN   TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly
+    media_test.go:71: native optical render: host_readOnly=<nil> dedicated_claim=vm-media-0e9024f1-02b4-501c-b565-27adc190dd17 guest_readonly=true guest_bus=sata
+=== RUN   TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly/writable
+=== RUN   TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly/default
+=== RUN   TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly/legacy-readonly
+--- PASS: TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly (0.00s)
+    --- PASS: TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly/writable (0.00s)
+    --- PASS: TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly/default (0.00s)
+    --- PASS: TestMediaNativeFilesystemCopyHostInitializationAndGuestReadonly/legacy-readonly (0.00s)
+=== RUN   TestMediaTemplateAcceptsTypedPVCReadonlyDefaultWithoutUpdate
+=== RUN   TestMediaTemplateAcceptsTypedPVCReadonlyDefaultWithoutUpdate/typed-omitempty
+=== RUN   TestMediaTemplateAcceptsTypedPVCReadonlyDefaultWithoutUpdate/explicit-false
+--- PASS: TestMediaTemplateAcceptsTypedPVCReadonlyDefaultWithoutUpdate (0.00s)
+    --- PASS: TestMediaTemplateAcceptsTypedPVCReadonlyDefaultWithoutUpdate/typed-omitempty (0.00s)
+    --- PASS: TestMediaTemplateAcceptsTypedPVCReadonlyDefaultWithoutUpdate/explicit-false (0.00s)
+=== RUN   TestMediaNativeDedicatedReadonlyCopySourceRecheckAndUIDFence
+--- PASS: TestMediaNativeDedicatedReadonlyCopySourceRecheckAndUIDFence (0.00s)
+=== RUN   TestMediaPersistentOnlyUpdateReportsActualOldVMIAndAllowsNextStart
+--- PASS: TestMediaPersistentOnlyUpdateReportsActualOldVMIAndAllowsNextStart (0.00s)
+=== RUN   TestMediaRestoredPVCOnlyAndClosingAbsenceNeverReclone
+--- PASS: TestMediaRestoredPVCOnlyAndClosingAbsenceNeverReclone (0.00s)
+=== RUN   TestNativeIndependentBlockVolumesAndUIDOwnership
+--- PASS: TestNativeIndependentBlockVolumesAndUIDOwnership (0.00s)
+=== RUN   TestNativeGuestInitializationSecretRetryAndOwnership
+--- PASS: TestNativeGuestInitializationSecretRetryAndOwnership (0.00s)
+=== RUN   TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare
+=== RUN   TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/first-round-saved
+    network_acceptance_integration_test.go:62: accepted snapshot lost internal data or rewrote canonical
+=== RUN   TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/second-round-checkpoint
+    network_acceptance_integration_test.go:62: accepted snapshot lost internal data or rewrote canonical
+--- FAIL: TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare (1.36s)
+    --- FAIL: TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/first-round-saved (0.69s)
+    --- FAIL: TestVMPGAdmissionReplayAndDeleteCarryOnlyPendingPrepare/second-round-checkpoint (0.67s)
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/unconfigured_nil
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/unconfigured_empty
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/configured_automatic
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/configured_manual
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/invalid_automatic_revision
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/invalid_manual_revision
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/pending_restart
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/apply_failure
+=== RUN   TestReleaseNetworkInterfacesPreservesBindingValidation/release_failure
+--- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/unconfigured_nil (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/unconfigured_empty (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/configured_automatic (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/configured_manual (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/invalid_automatic_revision (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/invalid_manual_revision (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/pending_restart (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/apply_failure (0.00s)
+    --- PASS: TestReleaseNetworkInterfacesPreservesBindingValidation/release_failure (0.00s)
+=== RUN   TestVMPreparePersistsActualNADBeforeReplayableAttachment
+--- PASS: TestVMPreparePersistsActualNADBeforeReplayableAttachment (0.00s)
+=== RUN   TestOldPrivateVMSnapshotNeverInfersPlatform
+=== RUN   TestOldPrivateVMSnapshotNeverInfersPlatform/binding-old
+=== RUN   TestOldPrivateVMSnapshotNeverInfersPlatform/binding-old:original-subnet-uid
+--- PASS: TestOldPrivateVMSnapshotNeverInfersPlatform (0.00s)
+    --- PASS: TestOldPrivateVMSnapshotNeverInfersPlatform/binding-old (0.00s)
+    --- PASS: TestOldPrivateVMSnapshotNeverInfersPlatform/binding-old:original-subnet-uid (0.00s)
+=== RUN   TestVMNetworkAdmissionAndOwnershipErrorsRetainTheirDomain
+--- PASS: TestVMNetworkAdmissionAndOwnershipErrorsRetainTheirDomain (0.00s)
+=== RUN   TestVMCurrentSnapshotNotificationRetriesAfterOperationCompletion
+--- PASS: TestVMCurrentSnapshotNotificationRetriesAfterOperationCompletion (0.73s)
+=== RUN   TestVMClosedSnapshotNotificationDoesNotRequireNativeObservation
+--- PASS: TestVMClosedSnapshotNotificationDoesNotRequireNativeObservation (0.80s)
+=== RUN   TestVMNetworkSubmissionIsAPureCurrentRecordRead
+--- PASS: TestVMNetworkSubmissionIsAPureCurrentRecordRead (0.00s)
+=== RUN   TestVMIndependentObservationAfterSuccessfulStart
+--- PASS: TestVMIndependentObservationAfterSuccessfulStart (5.78s)
+=== RUN   TestVMObservationPreservesConcurrentNetworkAndNewerOperationFacts
+--- PASS: TestVMObservationPreservesConcurrentNetworkAndNewerOperationFacts (0.76s)
+=== RUN   TestVMObservationFencesIntentIdentityAndNotifications
+=== RUN   TestVMObservationFencesIntentIdentityAndNotifications/version
+=== RUN   TestVMObservationFencesIntentIdentityAndNotifications/native-uid
+=== RUN   TestVMObservationFencesIntentIdentityAndNotifications/closing
+=== RUN   TestVMObservationFencesIntentIdentityAndNotifications/notification
+=== RUN   TestVMObservationFencesIntentIdentityAndNotifications/lease
+--- PASS: TestVMObservationFencesIntentIdentityAndNotifications (3.48s)
+    --- PASS: TestVMObservationFencesIntentIdentityAndNotifications/version (0.64s)
+    --- PASS: TestVMObservationFencesIntentIdentityAndNotifications/native-uid (0.79s)
+    --- PASS: TestVMObservationFencesIntentIdentityAndNotifications/closing (0.65s)
+    --- PASS: TestVMObservationFencesIntentIdentityAndNotifications/notification (0.76s)
+    --- PASS: TestVMObservationFencesIntentIdentityAndNotifications/lease (0.65s)
+=== RUN   TestVMObservationFailureBackoffCannotBeBypassedByEvents
+--- PASS: TestVMObservationFailureBackoffCannotBeBypassedByEvents (0.66s)
+=== RUN   TestVMObservationFailureSurvivesOlderOperationSave
+--- PASS: TestVMObservationFailureSurvivesOlderOperationSave (0.66s)
+=== RUN   TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker
+    observation_integration_test.go:328: operation did not finish while observer blocked: {TenantID:4bbf9f50-2ac8-4699-ad04-bc72f0c17cbd ID:0f0c2946-ef48-43ed-ace2-94fba4d24189 VMID:27409cc9-82d8-44bd-aa1b-1c57add1cf00 Action:start Key:during-slow-observer RequestDigest:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee Intent:[123 125] IntentVersion:2 State:running Reason: Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:fc7da038-970c-4905-9ae1-ff72354e87bb LeaseUntil:2026-11-07 00:21:44.866669486 +0800 CST ObservedAt:2026-11-06 16:21:14.869768383 +0000 UTC} <nil>
+--- FAIL: TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker (0.65s)
+=== RUN   TestVMObservationMigrationBackfillsExistingRegistrations
+--- PASS: TestVMObservationMigrationBackfillsExistingRegistrations (0.67s)
+=== RUN   TestVMObservationEvidenceTimeAndExpiredLeaseRecovery
+--- PASS: TestVMObservationEvidenceTimeAndExpiredLeaseRecovery (0.65s)
+=== RUN   TestVMSharedStateWatchTracksGuestShutdownWithoutPerVMReads
+--- PASS: TestVMSharedStateWatchTracksGuestShutdownWithoutPerVMReads (0.25s)
+=== RUN   TestVMSharedStateHealthyCacheNeedsNoExpiringProof
+--- PASS: TestVMSharedStateHealthyCacheNeedsNoExpiringProof (0.11s)
+=== RUN   TestVMSharedStatePreservesIdentityAndBoundsNotificationQueue
+--- PASS: TestVMSharedStatePreservesIdentityAndBoundsNotificationQueue (0.11s)
+=== RUN   TestVMSharedStateStartupAndShutdownDoNotWaitForRBAC
+--- PASS: TestVMSharedStateStartupAndShutdownDoNotWaitForRBAC (0.00s)
+=== RUN   TestVMSharedStateDelayedCallbackCannotOverwriteNewWatchEvent
+--- PASS: TestVMSharedStateDelayedCallbackCannotOverwriteNewWatchEvent (0.11s)
+=== RUN   TestVMSharedStateNotifierFailureHasBoundedRetry
+--- PASS: TestVMSharedStateNotifierFailureHasBoundedRetry (0.00s)
+=== RUN   TestVMSharedStateSeparatesLauncherFromHotplugHelper
+--- PASS: TestVMSharedStateSeparatesLauncherFromHotplugHelper (0.11s)
+=== RUN   TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry
+=== RUN   TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry/VM_OBSERVATION_UNAVAILABLE
+=== RUN   TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry/context_deadline_exceeded
+--- PASS: TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry (1.46s)
+    --- PASS: TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry/VM_OBSERVATION_UNAVAILABLE (0.70s)
+    --- PASS: TestVMObservationTemporaryFailureRetainsFreshFactsUntilExpiry/context_deadline_exceeded (0.76s)
+=== RUN   TestVMObservationHardFailureDoesNotRetainFreshFacts
+=== RUN   TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_OBJECT_OWNERSHIP_CONFLICT
+=== RUN   TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_EXTERNAL_RESULT_UNKNOWN
+=== RUN   TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_DEPENDENCY_NOT_READY
+=== RUN   TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_INVALID_REQUEST
+--- PASS: TestVMObservationHardFailureDoesNotRetainFreshFacts (2.57s)
+    --- PASS: TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_OBJECT_OWNERSHIP_CONFLICT (0.62s)
+    --- PASS: TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_EXTERNAL_RESULT_UNKNOWN (0.67s)
+    --- PASS: TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_DEPENDENCY_NOT_READY (0.64s)
+    --- PASS: TestVMObservationHardFailureDoesNotRetainFreshFacts/VM_INVALID_REQUEST (0.64s)
+=== RUN   TestVMObservationContinuousFailureRetainsBoundedBackoff
+--- PASS: TestVMObservationContinuousFailureRetainsBoundedBackoff (0.72s)
+=== RUN   TestVMSharedStateDeletedVMIResourceVersionAllowsReplacement
+--- PASS: TestVMSharedStateDeletedVMIResourceVersionAllowsReplacement (0.13s)
+=== RUN   TestVMSharedStateReconnectReportsOutageAndRecovers
+I1107 00:21:21.886433   54315 reflector.go:664] "Warning: watch ended with error" reflector="pkg/mod/k8s.io/client-go@v0.36.0/tools/cache/reflector.go:343" type="*unstructured.Unstructured" err="very short watch: pkg/mod/k8s.io/client-go@v0.36.0/tools/cache/reflector.go:343: Unexpected watch close - watch lasted less than a second and no items received"
+--- PASS: TestVMSharedStateReconnectReportsOutageAndRecovers (1.08s)
+=== RUN   TestVMSharedStateAmbiguousPodsPreservePowerButNotLauncher
+--- PASS: TestVMSharedStateAmbiguousPodsPreservePowerButNotLauncher (0.11s)
+=== RUN   TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID
+--- PASS: TestPhase1PowerSubmissionsIgnoreStorageAndPreserveUID (0.01s)
+=== RUN   TestPhase1SnapshotReplayAndReadyUseOnlyNativeObject
+--- PASS: TestPhase1SnapshotReplayAndReadyUseOnlyNativeObject (0.00s)
+=== RUN   TestPhase1CDICompletionDoesNotReadTargetPVC
+=== RUN   TestPhase1CDICompletionDoesNotReadTargetPVC/Succeeded
+=== RUN   TestPhase1CDICompletionDoesNotReadTargetPVC/Pending
+--- PASS: TestPhase1CDICompletionDoesNotReadTargetPVC (0.00s)
+    --- PASS: TestPhase1CDICompletionDoesNotReadTargetPVC/Succeeded (0.00s)
+    --- PASS: TestPhase1CDICompletionDoesNotReadTargetPVC/Pending (0.00s)
+=== RUN   TestPhase1ExistingImageSurvivesNewDefaultStorageClass
+--- PASS: TestPhase1ExistingImageSurvivesNewDefaultStorageClass (0.00s)
+=== RUN   TestPhase1RestoreKeepsNamedPendingOutputsWithoutScanning
+--- PASS: TestPhase1RestoreKeepsNamedPendingOutputsWithoutScanning (0.00s)
+=== RUN   TestPhase1MixedVolumeCleanupRetainsBusinessResponsibilities
+--- PASS: TestPhase1MixedVolumeCleanupRetainsBusinessResponsibilities (0.00s)
+=== RUN   TestVMPostgresAcceptanceReplayVersionAndTenant
+--- PASS: TestVMPostgresAcceptanceReplayVersionAndTenant (0.75s)
+=== RUN   TestVMPowerUnknownRecoveryDoesNotRepeatRestart
+    power_worker_integration_test.go:91: first start count 0
+--- FAIL: TestVMPowerUnknownRecoveryDoesNotRepeatRestart (2.72s)
+=== RUN   TestVMStartPreflightFailureRetriesOriginalOperation
+=== RUN   TestVMStartPreflightFailureRetriesOriginalOperation/preflight-busy
+    power_worker_integration_test.go:198: submission evidence not preserved: {TenantID:78a248fd-0732-433c-a0a4-b93510b5bf63 ID:ca73ffc0-54cb-415d-9570-3106cafb20aa VMID:c70cc7c0-b32d-4fb4-bc64-5684fbf78aec Action:start Key:start-after-guest-shutdown RequestDigest:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc Intent:[123 34 101 120 112 101 99 116 101 100 95 118 101 114 115 105 111 110 34 58 32 49 125] IntentVersion:2 State:running Reason: Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:5ed348f8-5aaa-42d0-9eec-d7f69662c79e LeaseUntil:2026-11-07 00:21:59.181098222 +0800 CST ObservedAt:2026-11-06 16:21:29.184196379 +0000 UTC} starts=0 err=<nil>
+=== RUN   TestVMStartPreflightFailureRetriesOriginalOperation/lost-response
+    power_worker_integration_test.go:190: VM_OPERATION_CONFLICT
+--- FAIL: TestVMStartPreflightFailureRetriesOriginalOperation (3.79s)
+    --- FAIL: TestVMStartPreflightFailureRetriesOriginalOperation/preflight-busy (2.09s)
+    --- FAIL: TestVMStartPreflightFailureRetriesOriginalOperation/lost-response (1.04s)
+=== RUN   TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending
+=== RUN   TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending/failed-current
+    power_worker_integration_test.go:296: original Start was not retained after its unknown response: {TenantID:a33525ac-ecf5-4ce7-a110-9d46efbd3cca ID:0a7fba26-4b4d-4bdc-8f98-8d1e1aec0405 VMID:111f7731-ea0a-439d-ad9a-1eff62763abb Action:start Key:one-original-start RequestDigest:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc Intent:[123 34 101 120 112 101 99 116 101 100 95 118 101 114 115 105 111 110 34 58 32 49 125] IntentVersion:2 State:running Reason: Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:edfcd93d-5672-4783-81cb-72a2a1b92ce1 LeaseUntil:2026-11-07 00:22:02.927826544 +0800 CST ObservedAt:2026-11-06 16:21:32.930195206 +0000 UTC} starts=0 err=<nil>
+--- FAIL: TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending (2.71s)
+    --- FAIL: TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending/failed-current (2.10s)
+=== RUN   TestRuntimeReadsLeaveCommandBudgetAvailable
+--- PASS: TestRuntimeReadsLeaveCommandBudgetAvailable (0.01s)
+=== RUN   TestRuntimeReadersBoundConcurrentRequests
+--- PASS: TestRuntimeReadersBoundConcurrentRequests (0.00s)
+=== RUN   TestSecurityGroupsVMTemplateVMILauncherAndEmptyDetach
+--- PASS: TestSecurityGroupsVMTemplateVMILauncherAndEmptyDetach (0.00s)
+=== RUN   TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints
+=== RUN   TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints/cleanup-checkpoint
+=== RUN   TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints/delete-takeover
+    snapshots_integration_test.go:212: DELETE bypassed the old PV after PVC absence {553acac0-8b1e-4078-9dfa-920bc2de0e6e 8b5eb757-9cde-4046-9f75-6df6b551e1ea df56485f-dbfb-4d84-bf59-7e6b6fc30b59 /vm.v1.VMService/AcceptDelete 8b5eb757-9cde-4046-9f75-6df6b551e1ea dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd [123 34 101 120 112 101 99 116 101 100 95 118 101 114 115 105 111 110 34 58 32 50 44 32 34 99 114 101 97 116 101 95 111 112 101 114 97 116 105 111 110 95 105 100 34 58 32 34 57 50 52 53 52 52 100 57 45 101 50 52 99 45 52 55 49 55 45 56 56 55 52 45 100 52 50 98 102 102 102 56 97 48 48 57 34 125] 3 succeeded    <nil> <nil> 9af3a464-806e-4c82-a542-08ae6d91982f 2026-11-07 00:22:04.569256778 +0800 CST 2026-11-06 16:21:34.577202778 +0000 UTC} <nil>
+--- FAIL: TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints (1.65s)
+    --- PASS: TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints/cleanup-checkpoint (0.86s)
+    --- FAIL: TestSnapshotPostgresInventoryVersionFencesAndRestoreCheckpoints/delete-takeover (0.79s)
+=== RUN   TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint
+=== RUN   TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint/native-completed
+    snapshots_integration_test.go:406: new PVC/PV omitted before mapping {d5099583-bfef-4934-9d4e-a7855a196f3d 3384b0b2-032c-487e-b2dd-0832e45003db 065d17db-1b3e-4e63-8f85-b930cbdd8093 /vm.v1.VMService/AcceptDelete 3384b0b2-032c-487e-b2dd-0832e45003db dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd [123 34 101 120 112 101 99 116 101 100 95 118 101 114 115 105 111 110 34 58 32 50 44 32 34 99 114 101 97 116 101 95 111 112 101 114 97 116 105 111 110 95 105 100 34 58 32 34 49 100 53 54 102 99 97 100 45 99 97 97 56 45 52 57 50 53 45 98 100 51 54 45 101 55 49 57 55 50 50 48 49 52 56 97 34 125] 3 succeeded    <nil> <nil> a573911c-113f-4a1b-ba40-9761b2ee190b 2026-11-07 00:22:05.324885791 +0800 CST 2026-11-06 16:21:35.332715301 +0000 UTC} <nil>
+=== RUN   TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint/lost-checkpoint
+    snapshots_integration_test.go:406: new PVC/PV omitted before mapping {01f82f8c-b25c-496d-b1e2-fe4061c92263 c467e028-3f54-43a5-9e15-e7f126fcbcc9 e5b0201b-ecff-4b1b-95e2-8dba1837cea5 /vm.v1.VMService/AcceptDelete c467e028-3f54-43a5-9e15-e7f126fcbcc9 dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd [123 34 101 120 112 101 99 116 101 100 95 118 101 114 115 105 111 110 34 58 32 50 44 32 34 99 114 101 97 116 101 95 111 112 101 114 97 116 105 111 110 95 105 100 34 58 32 34 102 50 102 56 55 49 97 101 45 50 53 57 51 45 52 54 50 98 45 98 100 99 99 45 49 97 54 97 54 102 51 54 55 102 100 54 34 125] 3 succeeded    <nil> <nil> d2191c4d-9fe9-4040-a07e-c1e04f21538b 2026-11-07 00:22:06.047890176 +0800 CST 2026-11-06 16:21:36.055011406 +0000 UTC} <nil>
+--- FAIL: TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint (1.58s)
+    --- FAIL: TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint/native-completed (0.75s)
+    --- FAIL: TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint/lost-checkpoint (0.83s)
+=== RUN   TestSnapshotRestoreProcessChild
+    snapshots_process_integration_test.go:128: only invoked by the actual process-exit integration test
+--- SKIP: TestSnapshotRestoreProcessChild (0.00s)
+=== RUN   TestSnapshotRestoreActualProcessExitRecovery
+    snapshots_process_integration_test.go:232: waited actual child pid=60759 step="native_restore_completed" exit=73
+        === RUN   TestSnapshotRestoreProcessChild
+        committed checkpoint=native_restore_completed operation=69a8308e-b980-4c28-924f-741503baec99 pid=60759 exit=73
+    snapshots_process_integration_test.go:232: waited actual child pid=60768 step="mapping_committed" exit=74
+        === RUN   TestSnapshotRestoreProcessChild
+        committed checkpoint=mapping_committed operation=69a8308e-b980-4c28-924f-741503baec99 pid=60768 exit=74
+    snapshots_process_integration_test.go:232: waited actual child pid=60777 step="cleanup_completed" exit=75
+        === RUN   TestSnapshotRestoreProcessChild
+        committed checkpoint=cleanup_completed operation=69a8308e-b980-4c28-924f-741503baec99 pid=60777 exit=75
+    snapshots_process_integration_test.go:232: waited actual child pid=60786 step="" exit=0
+        === RUN   TestSnapshotRestoreProcessChild
+        original operation=69a8308e-b980-4c28-924f-741503baec99 converged pid=60786
+        --- PASS: TestSnapshotRestoreProcessChild (0.04s)
+        PASS
+    snapshots_process_integration_test.go:299: PG+BOUNDARY: three committed checkpoints survived actual exits 73/74/75; fourth process completed the same operation; native restore/apply/old-volume-delete each once
+--- PASS: TestSnapshotRestoreActualProcessExitRecovery (3.03s)
+=== RUN   TestSnapshotUsesNativeSelectedDeleteClassWithoutChangingSharedPolicy
+--- PASS: TestSnapshotUsesNativeSelectedDeleteClassWithoutChangingSharedPolicy (0.00s)
+=== RUN   TestNativeSnapshotInventoryCompletenessUIDFencesAndControllerCleanup
+--- PASS: TestNativeSnapshotInventoryCompletenessUIDFencesAndControllerCleanup (0.00s)
+=== RUN   TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitialization
+--- PASS: TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitialization (0.00s)
+=== RUN   TestRetiredVolumeIgnoresPVAndRejectsBusinessPVCReplacement
+--- PASS: TestRetiredVolumeIgnoresPVAndRejectsBusinessPVCReplacement (0.00s)
+=== RUN   TestNativeWindowsDomainStartFillsMissingOnlyAndIsIdempotent
+--- PASS: TestNativeWindowsDomainStartFillsMissingOnlyAndIsIdempotent (0.00s)
+=== RUN   TestNativeWindowsDomainExistingEnsureIsReadOnly
+--- PASS: TestNativeWindowsDomainExistingEnsureIsReadOnly (0.00s)
+=== RUN   TestNativeWindowsDomainLinuxStartPreservesCompleteTemplate
+--- PASS: TestNativeWindowsDomainLinuxStartPreservesCompleteTemplate (0.00s)
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/acpi-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/apic-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/relaxed-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/vapic-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/spinlocks-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/spinlocks-other-retries
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/hyperv-passthrough
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/timezone
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/utc-offset
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/hpet-enabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/pit-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/pit-other-policy
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/rtc-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/rtc-other-policy
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/hypervclock-disabled
+=== RUN   TestNativeWindowsDomainStartRejectsExplicitConflicts/malformed-clock
+--- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts (0.01s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/acpi-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/apic-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/relaxed-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/vapic-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/spinlocks-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/spinlocks-other-retries (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/hyperv-passthrough (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/timezone (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/utc-offset (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/hpet-enabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/pit-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/pit-other-policy (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/rtc-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/rtc-other-policy (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/hypervclock-disabled (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsExplicitConflicts/malformed-clock (0.00s)
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/running-vmi
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/old-launcher
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/pending
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/missing-rv
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/namespace-uid
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/vm-uid
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/tenant-label
+=== RUN   TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/closing
+--- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity (0.01s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/running-vmi (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/old-launcher (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/pending (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/missing-rv (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/namespace-uid (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/vm-uid (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/tenant-label (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRequiresOwnedStoppedIdentity/closing (0.00s)
+=== RUN   TestNativeWindowsDomainStartRejectsConcurrentUIDOrRVChange
+=== RUN   TestNativeWindowsDomainStartRejectsConcurrentUIDOrRVChange/uid
+=== RUN   TestNativeWindowsDomainStartRejectsConcurrentUIDOrRVChange/resourceVersion
+--- PASS: TestNativeWindowsDomainStartRejectsConcurrentUIDOrRVChange (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsConcurrentUIDOrRVChange/uid (0.00s)
+    --- PASS: TestNativeWindowsDomainStartRejectsConcurrentUIDOrRVChange/resourceVersion (0.00s)
+=== RUN   TestNativeWindowsDomainCreateProjection
+=== RUN   TestNativeWindowsDomainCreateProjection/windows
+=== RUN   TestNativeWindowsDomainCreateProjection/linux
+--- PASS: TestNativeWindowsDomainCreateProjection (0.00s)
+    --- PASS: TestNativeWindowsDomainCreateProjection/windows (0.00s)
+    --- PASS: TestNativeWindowsDomainCreateProjection/linux (0.00s)
+=== RUN   TestVMWorkerPersistsNativeFailureWithoutStoppingService
+=== RUN   TestVMWorkerPersistsNativeFailureWithoutStoppingService/running
+=== RUN   TestVMWorkerPersistsNativeFailureWithoutStoppingService/failed
+--- PASS: TestVMWorkerPersistsNativeFailureWithoutStoppingService (3.31s)
+    --- PASS: TestVMWorkerPersistsNativeFailureWithoutStoppingService/running (1.65s)
+    --- PASS: TestVMWorkerPersistsNativeFailureWithoutStoppingService/failed (1.66s)
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	48.760s
+FAIL
+removed task container=ecdbf120ea7929dcf99d806e5f9c474300664bfebe0a1dbf860bf36fdd77b817

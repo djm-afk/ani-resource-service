@@ -479,9 +479,9 @@ type ImageNativePort interface {
 	ObserveImageVerification(context.Context, Image) (Image, VerificationResult, error)
 	PublishSourceAnnotation(context.Context, Image) error
 	ObserveImageSourceIdentity(context.Context, Image) (Image, error)
-	// ObserveManagedSources reports the native objects still held for this image,
-	// including ones created but never registered after a crash. Cleanup may only
-	// close the tombstone when it returns nothing.
+	// ObserveManagedSources reports only platform source DV/PVC, verification
+	// Job and upload requests, including interrupted registrations. CDI children
+	// and legacy PV diagnostics are outside this business completion set.
 	ObserveManagedSources(context.Context, Image) ([]ObjectRef, error)
 	DeleteImageObjects(context.Context, Image) (Image, bool, error)
 	// ObserveImageClone reports the consumer's own copy: completed, still pending, or
@@ -510,7 +510,7 @@ type VerificationResult struct {
 	RequestedBytes int64
 	ObservedBytes  int64
 	FSType         string
-	ReadOnlyProof  string
+	ReadOnlyProof  string // legacy diagnostic; not required for content validation
 	JobUID         string
 	PodUID         string
 	VerifierImage  string
@@ -542,9 +542,6 @@ func (v VerificationResult) ValidatedFor(i Image) error {
 		return ErrImageIdentity
 	}
 	if i.Kind == "DISK_IMAGE" && v.FSType != "" {
-		return ErrImageIdentity
-	}
-	if v.ReadOnlyProof == "" {
 		return ErrImageIdentity
 	}
 	return nil

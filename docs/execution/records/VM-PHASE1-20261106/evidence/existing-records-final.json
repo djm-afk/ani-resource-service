@@ -1,0 +1,1907 @@
+{
+  "at": "2026-11-06T17:38:46.524117+00:00",
+  "entry": "10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "scope": "same platform IDs selected by initial affected-record inventory; no native orphan scan",
+  "vm_query": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT id,current_configuration->>'Observed' AS observed,current_configuration->'Disks' AS disks,current_configuration->'RetiredDisks' AS retired_disks,current_configuration->'Cleanup' AS cleanup FROM vm.virtual_machines WHERE id IN ('0f1ca6ba-a128-4292-a0ba-5f702e383145','ab30e85b-55f9-43a1-b299-fdd8d0ab92da','6f8ee0cf-cada-4224-9ac0-bb1394408a25','b027f704-d514-4521-821b-2b0d4ea8700b','c8b8c93e-70ef-40bb-9554-36e4d6ecd903','8bc17e0e-a09a-4bb1-a838-e54dc6a84550','bc4b9b77-8cae-4b4c-8a05-a25c4712a927','1823315c-e0ae-421a-b76d-e27f97343160','fe41e319-3a84-4b7b-a09f-152829f83168','b5fcc280-d1fd-4c20-96f4-730d8630bbc4','6c7bf328-a27c-4598-98f0-ea5af4addb11','4fab3b8e-a8a5-4891-b3a7-da5c5022dd7f','7aef1e31-0cc3-44a1-a30d-0a53007a0b51','8e7937b1-8111-4d7c-a6e5-fac7b0e67073','16fd4897-e90a-4c40-901d-e24c8c43817a','8a27c0cf-b38a-4906-87e7-0700b07703e6','b74dfd34-c0cb-416b-ad5c-e02afabec7fb','f3cdb1f1-cbdc-41a9-9b3f-4cce236c3ad6','c3dfc350-dc51-4d37-a796-c8e01d70a26e','fbef215a-7f2c-4f4e-9137-21fb2e2f342d','f3c2eab8-2047-4d55-99ea-a9b74b08d595','6a9537ac-e3dc-4564-85a7-9a07428fad53','86370eb4-8f7e-4320-8645-dc6175c8e95a','d62c69b7-f47f-4922-9f61-c90a94c02513','3762b94c-1c8b-4018-a99f-37aee120fecf','3fe710f6-0552-4b8a-861a-0143305f37a3','5c4aead8-9c48-4a15-9ae9-f7721934e29d','978c70c3-ecc2-45c9-aacc-bbdbf56f1f73','bf320c9b-018f-4dfa-afd8-007142159805','c4fdb935-5357-42e7-b6c6-194c475de9a7','e739fb1a-4921-472d-baa3-743616aa7c42','3be21c33-31be-4e7c-93b5-b8e91bd9b855')) x",
+  "vm_rows": [
+    {
+      "id": "0f1ca6ba-a128-4292-a0ba-5f702e383145",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "27510148-10b9-43d0-8c1e-b6738fd5944f",
+            "Kind": "DataVolume",
+            "Name": "vd-936a18bd-f5fb-5f9c-aa42-d6ecac42c7a9",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "936a18bd-f5fb-5f9c-aa42-d6ecac42c7a9",
+          "PVC": {
+            "UID": "87205590-5f9b-4942-abc3-66a009c43d02",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-936a18bd-f5fb-5f9c-aa42-d6ecac42c7a9",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "936a18bd-f5fb-5f9c-aa42-d6ecac42c7a9",
+          "SizeGB": 100,
+          "Cleanup": [
+            {
+              "UID": "e39fc106-2b58-487b-bbe1-1b25a2bae186",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-4f576590-c4aa-4188-9914-be3cbf642856",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-936a18bdf5fb5f9caa42d6ecac42c7a9",
+          "Preparation": "Bound",
+          "RequestedBytes": 100000000000,
+          "ObservedCapacityBytes": 100931731456
+        },
+        {
+          "DV": {
+            "UID": "65b425be-fc13-46f6-ad83-ea3e4246c2f8",
+            "Kind": "DataVolume",
+            "Name": "vd-e5129b9c-8d72-5b8c-9582-eaadcfe72902",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "e5129b9c-8d72-5b8c-9582-eaadcfe72902",
+          "PVC": {
+            "UID": "cd35f1a9-d378-4786-abaf-deae3927521d",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-e5129b9c-8d72-5b8c-9582-eaadcfe72902",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "e5129b9c-8d72-5b8c-9582-eaadcfe72902",
+          "SizeGB": 500,
+          "Cleanup": [
+            {
+              "UID": "6ccccff6-faef-4fc8-bc6c-80c210c7e402",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-fcb468c5-9efe-446a-a507-5955dd663ce4",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-e5129b9c8d725b8c9582eaadcfe72902",
+          "Preparation": "Bound",
+          "RequestedBytes": 500000000000,
+          "ObservedCapacityBytes": 500363689984
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "6f8ee0cf-cada-4224-9ac0-bb1394408a25",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "4d1f63bd-524c-4e61-9a8a-5606f8464423",
+            "Kind": "DataVolume",
+            "Name": "vd-5ac8534a-96fb-5ee7-9212-cab4cb75f97c",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "5ac8534a-96fb-5ee7-9212-cab4cb75f97c",
+          "PVC": {
+            "UID": "d9f0f98a-12e0-414d-8da8-a1727c50ea9b",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-5ac8534a-96fb-5ee7-9212-cab4cb75f97c",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "5ac8534a-96fb-5ee7-9212-cab4cb75f97c",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "3c6f5c78-28d4-42ef-8dc8-6bcf56f4f986",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-51e8bfac-87ef-4cc8-9234-b3361f6a2f01",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-5ac8534a96fb5ee79212cab4cb75f97c",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "ab30e85b-55f9-43a1-b299-fdd8d0ab92da",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "37fcd77f-fd84-4ec3-b380-2d523352fa1b",
+            "Kind": "DataVolume",
+            "Name": "vd-71fd60d9-7727-5af4-b724-402b4a86c52a",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "71fd60d9-7727-5af4-b724-402b4a86c52a",
+          "PVC": {
+            "UID": "806d0960-a8fb-45ad-becb-9c7bb5fb33fb",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-71fd60d9-7727-5af4-b724-402b4a86c52a",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "71fd60d9-7727-5af4-b724-402b4a86c52a",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "3329fcc8-51cf-4b3b-aeef-d293e98d97d1",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-3bb09220-fbab-4f8f-b5ff-c4a6bec69054",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-71fd60d977275af4b724402b4a86c52a",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "c8b8c93e-70ef-40bb-9554-36e4d6ecd903",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "fed6f0de-8b90-5df8-88e0-ce63895064ba",
+          "PVC": {
+            "UID": "f6898e0a-1966-4108-b578-bdcccbf8c0cc",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-6924b052-f95c-43f7-86fa-d301a26069b0-disk-fed6f0de8b905df888e0ce63895064ba",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "fed6f0de-8b90-5df8-88e0-ce63895064ba",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "129094f4-d7f5-4580-a476-894307761feb",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-f6898e0a-1966-4108-b578-bdcccbf8c0cc",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-fed6f0de8b905df888e0ce63895064ba",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "55350bd9-93fd-5b6a-b584-577f460a9a36",
+          "PVC": {
+            "UID": "d9344700-bc3b-430d-b972-8314fa98659f",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-6924b052-f95c-43f7-86fa-d301a26069b0-disk-55350bd993fd5b6ab584577f460a9a36",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "audit-data",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "55350bd9-93fd-5b6a-b584-577f460a9a36",
+          "SizeGB": 1,
+          "Cleanup": [
+            {
+              "UID": "2bb82ce1-21ee-4376-a9ff-ea1eebc1aa33",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-d9344700-bc3b-430d-b972-8314fa98659f",
+              "Namespace": ""
+            }
+          ],
+          "Attached": false,
+          "Tombstone": true,
+          "VolumeName": "disk-55350bd993fd5b6ab584577f460a9a36",
+          "Preparation": "Bound",
+          "RequestedBytes": 1000000000,
+          "ObservedCapacityBytes": 1000341504
+        }
+      ],
+      "retired_disks": [],
+      "cleanup": null
+    },
+    {
+      "id": "8bc17e0e-a09a-4bb1-a838-e54dc6a84550",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "285bec31-6992-4b01-addd-51455fa7b773",
+            "Kind": "DataVolume",
+            "Name": "vd-1d99935f-3d49-50c7-8090-f39eb85f9b2f",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "1d99935f-3d49-50c7-8090-f39eb85f9b2f",
+          "PVC": {
+            "UID": "2a881734-2fa7-450b-93fb-d466d6ddf836",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-1d99935f-3d49-50c7-8090-f39eb85f9b2f",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "1d99935f-3d49-50c7-8090-f39eb85f9b2f",
+          "SizeGB": 69,
+          "Cleanup": [
+            {
+              "UID": "8f6b374f-d064-4362-a7e4-da6b974c0d92",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-9b8f3bc8-b7f2-48d7-9d81-ab6f228c1568",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-1d99935f3d4950c78090f39eb85f9b2f",
+          "Preparation": "Bound",
+          "RequestedBytes": 69000000000,
+          "ObservedCapacityBytes": 69793218560
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "bc4b9b77-8cae-4b4c-8a05-a25c4712a927",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "cf3a4f3e-9a10-5197-8446-2fee133b81d2",
+          "PVC": {
+            "UID": "a763e288-9165-4ec5-92d2-edb1aaa306d6",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-31c78120-38c7-4b08-8537-f1c5957288ae-disk-cf3a4f3e9a10519784462fee133b81d2",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "cf3a4f3e-9a10-5197-8446-2fee133b81d2",
+          "SizeGB": 8,
+          "Cleanup": [
+            {
+              "UID": "645ab608-5873-4325-824b-ad8da9614bab",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a763e288-9165-4ec5-92d2-edb1aaa306d6",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-cf3a4f3e9a10519784462fee133b81d2",
+          "Preparation": "Bound",
+          "RequestedBytes": 8000000000,
+          "ObservedCapacityBytes": 8589934592
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "6fc44dc1-525d-5576-a575-05a3a806e72a",
+          "PVC": {
+            "UID": "14ae494a-6524-4579-855b-7dc594f3b697",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-31c78120-38c7-4b08-8537-f1c5957288ae-disk-6fc44dc1525d5576a57505a3a806e72a",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "product-linux-storage-01a168ce-d1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "6fc44dc1-525d-5576-a575-05a3a806e72a",
+          "SizeGB": 1,
+          "Cleanup": [
+            {
+              "UID": "99dea472-062c-43e3-8c69-bea4432220fc",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-14ae494a-6524-4579-855b-7dc594f3b697",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-6fc44dc1525d5576a57505a3a806e72a",
+          "Preparation": "Bound",
+          "RequestedBytes": 1000000000,
+          "ObservedCapacityBytes": 1000341504
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "2449bf42-61b7-50f8-a08b-024df164ba22",
+          "PVC": {
+            "UID": "a638e280-144d-40eb-bf0b-335491005389",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-31c78120-38c7-4b08-8537-f1c5957288ae-disk-2449bf4261b750f8a08b024df164ba22",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "product-linux-storage-01a168ce-d2",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "2449bf42-61b7-50f8-a08b-024df164ba22",
+          "SizeGB": 1,
+          "Cleanup": [
+            {
+              "UID": "9b776219-e901-4fc5-a53a-843aeb721747",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a638e280-144d-40eb-bf0b-335491005389",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-2449bf4261b750f8a08b024df164ba22",
+          "Preparation": "Bound",
+          "RequestedBytes": 1000000000,
+          "ObservedCapacityBytes": 1000341504
+        }
+      ],
+      "retired_disks": [],
+      "cleanup": null
+    },
+    {
+      "id": "1823315c-e0ae-421a-b76d-e27f97343160",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "7eaebbb4-4f04-5cc5-894e-a50e745c8839",
+          "PVC": {
+            "UID": "d7d7558d-e465-4876-b74d-e3c650a6bfa5",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-3cb78f78-1049-48d4-8f39-61c6f7a07339-disk-7eaebbb44f045cc5894ea50e745c8839",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "7eaebbb4-4f04-5cc5-894e-a50e745c8839",
+          "SizeGB": 64,
+          "Cleanup": [
+            {
+              "UID": "efae7427-5884-4761-ac6f-7a66851cb30b",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-d7d7558d-e465-4876-b74d-e3c650a6bfa5",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-7eaebbb44f045cc5894ea50e745c8839",
+          "Preparation": "Bound",
+          "RequestedBytes": 64000000000,
+          "ObservedCapacityBytes": 64424509440
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "c84d7449-5a07-5709-bfbf-3126c16f1e02",
+          "PVC": {
+            "UID": "9eb17ace-7cdb-441b-a792-ac9507f4e7b6",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-3cb78f78-1049-48d4-8f39-61c6f7a07339-disk-c84d74495a075709bfbf3126c16f1e02",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "product-windows-storage-01a168ce-d1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "c84d7449-5a07-5709-bfbf-3126c16f1e02",
+          "SizeGB": 1,
+          "Cleanup": [
+            {
+              "UID": "d08b7aa5-7b65-4e19-b0ed-60f2aba297dd",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-9eb17ace-7cdb-441b-a792-ac9507f4e7b6",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-c84d74495a075709bfbf3126c16f1e02",
+          "Preparation": "Bound",
+          "RequestedBytes": 1000000000,
+          "ObservedCapacityBytes": 1000341504
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "25d7502c-6c84-59cd-8edb-cdd64b0151db",
+          "PVC": {
+            "UID": "f9485e41-c825-4410-9280-d19bdd7760b7",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-3cb78f78-1049-48d4-8f39-61c6f7a07339-disk-25d7502c6c8459cd8edbcdd64b0151db",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "product-windows-storage-01a168ce-d2",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "25d7502c-6c84-59cd-8edb-cdd64b0151db",
+          "SizeGB": 1,
+          "Cleanup": [
+            {
+              "UID": "9240aeb1-1dd8-47f1-bcf0-ea37e876a822",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-f9485e41-c825-4410-9280-d19bdd7760b7",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-25d7502c6c8459cd8edbcdd64b0151db",
+          "Preparation": "Bound",
+          "RequestedBytes": 1000000000,
+          "ObservedCapacityBytes": 1000341504
+        }
+      ],
+      "retired_disks": [],
+      "cleanup": null
+    },
+    {
+      "id": "fe41e319-3a84-4b7b-a09f-152829f83168",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "5c05aad7-caab-4c93-b9ee-18313f12f208",
+            "Kind": "DataVolume",
+            "Name": "vd-86be14cf-2a16-5126-8beb-8fcc4f0b6269",
+            "Namespace": "tenant-207328fc-f08d-4dc4-b403-16ec86396ce2"
+          },
+          "ID": "86be14cf-2a16-5126-8beb-8fcc4f0b6269",
+          "PVC": {
+            "UID": "f9d83a53-4cbf-4bc9-81cb-6fb67e54bab4",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-86be14cf-2a16-5126-8beb-8fcc4f0b6269",
+            "Namespace": "tenant-207328fc-f08d-4dc4-b403-16ec86396ce2"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "86be14cf-2a16-5126-8beb-8fcc4f0b6269",
+          "SizeGB": 20,
+          "Cleanup": [
+            {
+              "UID": "5a11c4e1-2925-46a4-98a1-14390963f39f",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a44085f9-73ec-42e2-bb85-99bcb68a390f",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-86be14cf2a1651268beb8fcc4f0b6269",
+          "Preparation": "Bound",
+          "RequestedBytes": 20000000000,
+          "ObservedCapacityBytes": 20401094656
+        },
+        {
+          "DV": {
+            "UID": "99b71a9e-3b33-4ba3-a948-aefc762837a7",
+            "Kind": "DataVolume",
+            "Name": "vd-75ea2f6f-81e3-529e-b54b-1e26b430a7af",
+            "Namespace": "tenant-207328fc-f08d-4dc4-b403-16ec86396ce2"
+          },
+          "ID": "75ea2f6f-81e3-529e-b54b-1e26b430a7af",
+          "PVC": {
+            "UID": "3caafefe-9f8e-4e9e-ba7d-021eccbf2d33",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-75ea2f6f-81e3-529e-b54b-1e26b430a7af",
+            "Namespace": "tenant-207328fc-f08d-4dc4-b403-16ec86396ce2"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "75ea2f6f-81e3-529e-b54b-1e26b430a7af",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "7bb4c34f-32fe-43b1-b8c9-c3147864a0f1",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-8513f526-2d2d-4d6d-82c2-ebe8b9101159",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-75ea2f6f81e3529eb54b1e26b430a7af",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "b5fcc280-d1fd-4c20-96f4-730d8630bbc4",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "ae31275b-c0d3-4d49-b73a-3a6412c6f081",
+            "Kind": "DataVolume",
+            "Name": "vd-0b27f084-c522-570e-afd1-486837afc2bf",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "0b27f084-c522-570e-afd1-486837afc2bf",
+          "PVC": {
+            "UID": "4c9f0b1e-6765-4487-be18-a0816cc40fc1",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-0b27f084-c522-570e-afd1-486837afc2bf",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "0b27f084-c522-570e-afd1-486837afc2bf",
+          "SizeGB": 100,
+          "Cleanup": [
+            {
+              "UID": "c085166f-76f5-4c5c-8ed3-60f146b0ca09",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-0dd7dbe8-58e6-4c2b-82b8-814c5603b00d",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-0b27f084c522570eafd1486837afc2bf",
+          "Preparation": "Bound",
+          "RequestedBytes": 100000000000,
+          "ObservedCapacityBytes": 100931731456
+        },
+        {
+          "DV": {
+            "UID": "d479562a-f1e6-4d0f-9b05-f25244fac79a",
+            "Kind": "DataVolume",
+            "Name": "vd-2484712c-c6a4-5375-9c9f-333a25f3ed28",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "2484712c-c6a4-5375-9c9f-333a25f3ed28",
+          "PVC": {
+            "UID": "b5340772-ed63-4680-83d4-30cfe35e388c",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-2484712c-c6a4-5375-9c9f-333a25f3ed28",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "2484712c-c6a4-5375-9c9f-333a25f3ed28",
+          "SizeGB": 500,
+          "Cleanup": [
+            {
+              "UID": "83c2a1c9-1bf0-4d1b-9928-e07f030f8eb9",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-5e7f4f75-a9a0-4f6e-ad7c-7e4612ae1674",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-2484712cc6a453759c9f333a25f3ed28",
+          "Preparation": "Bound",
+          "RequestedBytes": 500000000000,
+          "ObservedCapacityBytes": 500363689984
+        },
+        {
+          "DV": {
+            "UID": "24480ab3-bfdd-4bd6-824f-6314c46412b3",
+            "Kind": "DataVolume",
+            "Name": "vd-1f57020e-b85e-5cc6-b479-f82eea1c63be",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "1f57020e-b85e-5cc6-b479-f82eea1c63be",
+          "PVC": {
+            "UID": "c8ce2989-47b9-40eb-9cf5-aae8113cebac",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-1f57020e-b85e-5cc6-b479-f82eea1c63be",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "test",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "1f57020e-b85e-5cc6-b479-f82eea1c63be",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "629d7bba-3332-4089-9f6f-3822838f3f77",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-226ff3c5-89ea-4083-a621-fa2e8ca0118c",
+              "Namespace": ""
+            }
+          ],
+          "Attached": false,
+          "Tombstone": true,
+          "VolumeName": "disk-1f57020eb85e5cc6b479f82eea1c63be",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "6c7bf328-a27c-4598-98f0-ea5af4addb11",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "d1960456-4c95-4a6b-85dc-fd93a1604f45",
+            "Kind": "DataVolume",
+            "Name": "vd-e91d42b1-04d0-5845-99ad-02a8d53b68a7",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "e91d42b1-04d0-5845-99ad-02a8d53b68a7",
+          "PVC": {
+            "UID": "734864dd-6fb1-48db-8a85-8cd2cbe57b5b",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-e91d42b1-04d0-5845-99ad-02a8d53b68a7",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "e91d42b1-04d0-5845-99ad-02a8d53b68a7",
+          "SizeGB": 20,
+          "Cleanup": [
+            {
+              "UID": "4a50edc1-40e3-4457-bc53-4d42b12b0f5a",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-4b565a61-fb0c-4c95-abc6-e523498d0f58",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-e91d42b104d0584599ad02a8d53b68a7",
+          "Preparation": "Bound",
+          "RequestedBytes": 20000000000,
+          "ObservedCapacityBytes": 20401094656
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "4fab3b8e-a8a5-4891-b3a7-da5c5022dd7f",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "914687b4-3a2e-421b-85a7-c11ae379e5d5",
+            "Kind": "DataVolume",
+            "Name": "vd-bddc7856-c582-53ed-875b-15389c7b88ff",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "bddc7856-c582-53ed-875b-15389c7b88ff",
+          "PVC": {
+            "UID": "89ddfcda-dff9-43bd-b86d-5d649b402e6e",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-bddc7856-c582-53ed-875b-15389c7b88ff",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "bddc7856-c582-53ed-875b-15389c7b88ff",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "d5c138c4-72c7-4f41-a860-b3e6df91bd6a",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-6451311f-984a-4737-a82a-11f20bd57a81",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-bddc7856c58253ed875b15389c7b88ff",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "7aef1e31-0cc3-44a1-a30d-0a53007a0b51",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "51de7233-0ed4-4634-b489-388a90edbc55",
+            "Kind": "DataVolume",
+            "Name": "vd-9e4868ba-e87c-5df4-bc7d-8e0fac10a5f6",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "9e4868ba-e87c-5df4-bc7d-8e0fac10a5f6",
+          "PVC": {
+            "UID": "0b169ac4-332d-4afb-a857-2209949907b2",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-9e4868ba-e87c-5df4-bc7d-8e0fac10a5f6",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "9e4868ba-e87c-5df4-bc7d-8e0fac10a5f6",
+          "SizeGB": 12,
+          "Cleanup": [
+            {
+              "UID": "88d6b325-d0aa-4a91-b46e-32a16749fb7c",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-88bf9cb3-cdc9-44f1-8e54-84e37aac3869",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-9e4868bae87c5df4bc7d8e0fac10a5f6",
+          "Preparation": "Bound",
+          "RequestedBytes": 12000000000,
+          "ObservedCapacityBytes": 12884901888
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "8e7937b1-8111-4d7c-a6e5-fac7b0e67073",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "6849470d-c117-475b-b06e-4a7a174eee25",
+            "Kind": "DataVolume",
+            "Name": "vd-e5ddaecd-df92-57ac-b85c-fe4e210a70a0",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "e5ddaecd-df92-57ac-b85c-fe4e210a70a0",
+          "PVC": {
+            "UID": "de165685-61b4-4f9f-93a6-1bb89325e610",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-e5ddaecd-df92-57ac-b85c-fe4e210a70a0",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "e5ddaecd-df92-57ac-b85c-fe4e210a70a0",
+          "SizeGB": 12,
+          "Cleanup": [
+            {
+              "UID": "b502e4e1-bbef-4d33-912e-413ee60af410",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-bc5b7735-bd00-49b3-80dc-02db067ad754",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-e5ddaecddf9257acb85cfe4e210a70a0",
+          "Preparation": "Bound",
+          "RequestedBytes": 12000000000,
+          "ObservedCapacityBytes": 12884901888
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "16fd4897-e90a-4c40-901d-e24c8c43817a",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "66c88c59-83aa-4b2c-8872-5f6e1b7ed97f",
+            "Kind": "DataVolume",
+            "Name": "vd-12090356-e424-58ec-8669-28360b0e389d",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "12090356-e424-58ec-8669-28360b0e389d",
+          "PVC": {
+            "UID": "93ddce8c-b303-4ab7-9172-8f376e978d74",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-12090356-e424-58ec-8669-28360b0e389d",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "12090356-e424-58ec-8669-28360b0e389d",
+          "SizeGB": 12,
+          "Cleanup": [
+            {
+              "UID": "33e9a24e-81aa-48fe-a28b-3e6307f65d1a",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-c2232e2b-f443-48b7-ac1d-0ccc3e4a5ae2",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-12090356e42458ec866928360b0e389d",
+          "Preparation": "Bound",
+          "RequestedBytes": 12000000000,
+          "ObservedCapacityBytes": 12884901888
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "8a27c0cf-b38a-4906-87e7-0700b07703e6",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "83b085ee-a1f9-49b0-a683-46b6a512e328",
+            "Kind": "DataVolume",
+            "Name": "vd-420ade03-dc65-5103-bdb1-35f45bb55582",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "420ade03-dc65-5103-bdb1-35f45bb55582",
+          "PVC": {
+            "UID": "86c9f60f-1c74-4bb9-8bfc-7ff8603833cb",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-420ade03-dc65-5103-bdb1-35f45bb55582",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "420ade03-dc65-5103-bdb1-35f45bb55582",
+          "SizeGB": 12,
+          "Cleanup": [
+            {
+              "UID": "14cb62c1-d1b1-40a2-ac92-71431a763230",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a0f26725-ccc9-4ab7-b04c-8fc68c1ca8fb",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-420ade03dc655103bdb135f45bb55582",
+          "Preparation": "Bound",
+          "RequestedBytes": 12000000000,
+          "ObservedCapacityBytes": 12884901888
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "b74dfd34-c0cb-416b-ad5c-e02afabec7fb",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "bc1cc008-b1e9-4322-b37c-f6f883e3d03d",
+            "Kind": "DataVolume",
+            "Name": "vd-3075ecf0-ffee-518b-9922-e93920732287",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "3075ecf0-ffee-518b-9922-e93920732287",
+          "PVC": {
+            "UID": "f9f4ecf3-af6c-41f4-b2c1-3ebcf49ca330",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-3075ecf0-ffee-518b-9922-e93920732287",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "3075ecf0-ffee-518b-9922-e93920732287",
+          "SizeGB": 20,
+          "Cleanup": [
+            {
+              "UID": "a194d077-b32d-463d-8b12-fd5953668ba4",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-bef79521-27df-4d87-9691-59f604fe45cf",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-3075ecf0ffee518b9922e93920732287",
+          "Preparation": "Bound",
+          "RequestedBytes": 20000000000,
+          "ObservedCapacityBytes": 20401094656
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "f3cdb1f1-cbdc-41a9-9b3f-4cce236c3ad6",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "808118e8-c2c3-4035-a467-b408c77a6969",
+            "Kind": "DataVolume",
+            "Name": "vd-4d352615-78d8-54b3-8105-c7137218c544",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "4d352615-78d8-54b3-8105-c7137218c544",
+          "PVC": {
+            "UID": "354ad77b-6dba-4d95-a2c0-1a92aecd3b61",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-4d352615-78d8-54b3-8105-c7137218c544",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "4d352615-78d8-54b3-8105-c7137218c544",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "e47381e2-99e6-47d2-b17d-3dde003911f2",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-0fbbb010-9c5c-4a79-bffb-54f7b6ca66bb",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-4d35261578d854b38105c7137218c544",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "c3dfc350-dc51-4d37-a796-c8e01d70a26e",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "1444baf3-0d26-48ae-a9d1-118f60e46ea8",
+            "Kind": "DataVolume",
+            "Name": "vd-a2dd2b8d-c65f-559b-aed5-c7f2b92c4967",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "a2dd2b8d-c65f-559b-aed5-c7f2b92c4967",
+          "PVC": {
+            "UID": "ac4f2087-89f5-4b4c-b774-69f4cce92c65",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-a2dd2b8d-c65f-559b-aed5-c7f2b92c4967",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "a2dd2b8d-c65f-559b-aed5-c7f2b92c4967",
+          "SizeGB": 20,
+          "Cleanup": [
+            {
+              "UID": "4e750cdb-5f63-44c9-8ccf-9c22b3a4cdaf",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-5c8650e9-9a22-4635-8d6c-da82b50d786a",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-a2dd2b8dc65f559baed5c7f2b92c4967",
+          "Preparation": "Bound",
+          "RequestedBytes": 20000000000,
+          "ObservedCapacityBytes": 20401094656
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "fbef215a-7f2c-4f4e-9137-21fb2e2f342d",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "d0a70ce9-d6fa-42cc-9690-b84a873c3676",
+            "Kind": "DataVolume",
+            "Name": "vd-3f863701-ac5e-572a-852f-3af4bc85ad91",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "3f863701-ac5e-572a-852f-3af4bc85ad91",
+          "PVC": {
+            "UID": "45df5916-f914-4956-80b5-d3be9b07fe3e",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-3f863701-ac5e-572a-852f-3af4bc85ad91",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "3f863701-ac5e-572a-852f-3af4bc85ad91",
+          "SizeGB": 20,
+          "Cleanup": [
+            {
+              "UID": "d7b831a8-b469-440c-a480-14c095aa2e9a",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-67d15909-325e-41c4-8d38-42d4314796a8",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-3f863701ac5e572a852f3af4bc85ad91",
+          "Preparation": "Bound",
+          "RequestedBytes": 20000000000,
+          "ObservedCapacityBytes": 20401094656
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "f3c2eab8-2047-4d55-99ea-a9b74b08d595",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "dc779df8-7c6c-4bb1-9560-5c2f0e1ec35c",
+            "Kind": "DataVolume",
+            "Name": "vd-121228b2-fc48-5da6-832c-7c374f8757ef",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "121228b2-fc48-5da6-832c-7c374f8757ef",
+          "PVC": {
+            "UID": "dae923c4-6201-4e6f-a0cf-dcfea747e88d",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-121228b2-fc48-5da6-832c-7c374f8757ef",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "121228b2-fc48-5da6-832c-7c374f8757ef",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "cdda44ef-4b43-484d-9e8d-d74ea73eb1ec",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a07224bf-4081-4db8-a81e-3cad78551a00",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-121228b2fc485da6832c7c374f8757ef",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "6a9537ac-e3dc-4564-85a7-9a07428fad53",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "4976746b-2431-4203-9369-c95976d3a947",
+            "Kind": "DataVolume",
+            "Name": "vd-3178025b-2aec-5170-9d00-14bfbb38ac6e",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "3178025b-2aec-5170-9d00-14bfbb38ac6e",
+          "PVC": {
+            "UID": "4d4989ec-d483-4136-8124-cc25b3f8fda8",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-3178025b-2aec-5170-9d00-14bfbb38ac6e",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "3178025b-2aec-5170-9d00-14bfbb38ac6e",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "e3a59626-e522-4483-a152-f77f932a5a85",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-e61d2bf3-b60f-44de-a703-6d9a76f5062a",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-3178025b2aec51709d0014bfbb38ac6e",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "86370eb4-8f7e-4320-8645-dc6175c8e95a",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "eec10799-62e9-4c9a-ae57-433645ddac15",
+            "Kind": "DataVolume",
+            "Name": "vd-8e94920d-ae97-59ba-9b1d-248bedff51ab",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "8e94920d-ae97-59ba-9b1d-248bedff51ab",
+          "PVC": {
+            "UID": "64ab0183-736c-4d70-94c0-68614bb00634",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-8e94920d-ae97-59ba-9b1d-248bedff51ab",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "8e94920d-ae97-59ba-9b1d-248bedff51ab",
+          "SizeGB": 20,
+          "Cleanup": [
+            {
+              "UID": "92932c1a-3d0c-46c7-b8c7-799a59864ed7",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-8a5cdbc0-e2c5-4959-881c-7d015cd04e6a",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-8e94920dae9759ba9b1d248bedff51ab",
+          "Preparation": "Bound",
+          "RequestedBytes": 20000000000,
+          "ObservedCapacityBytes": 20401094656
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "d62c69b7-f47f-4922-9f61-c90a94c02513",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "244fb0c6-34cf-41fe-9bf0-2c70591d967c",
+            "Kind": "DataVolume",
+            "Name": "vd-edaa335c-e71a-5edb-9cd9-587cf56b2466",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "edaa335c-e71a-5edb-9cd9-587cf56b2466",
+          "PVC": {
+            "UID": "27917c46-4c75-4a46-a83c-fe5ab1c45f34",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-edaa335c-e71a-5edb-9cd9-587cf56b2466",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "edaa335c-e71a-5edb-9cd9-587cf56b2466",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "e13fe6d0-cb64-4bbf-af7e-3e8b96ee64c7",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-1200e7b5-77f3-408d-a0a3-2a8e75dfeab2",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-edaa335ce71a5edb9cd9587cf56b2466",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "3fe710f6-0552-4b8a-861a-0143305f37a3",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "0b381952-a43e-48c0-b1fb-71e70993fd66",
+            "Kind": "DataVolume",
+            "Name": "vd-08c9a68c-50a7-5dce-8169-79ef95031f85",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "08c9a68c-50a7-5dce-8169-79ef95031f85",
+          "PVC": {
+            "UID": "1c3c9537-7580-49d1-9247-381fa691e983",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-08c9a68c-50a7-5dce-8169-79ef95031f85",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "08c9a68c-50a7-5dce-8169-79ef95031f85",
+          "SizeGB": 100,
+          "Cleanup": [
+            {
+              "UID": "40422441-7502-4427-8cb5-64689b23d3cf",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-62c97c61-d8ed-4b3f-9d38-a6073253e9ea",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-08c9a68c50a75dce816979ef95031f85",
+          "Preparation": "Bound",
+          "RequestedBytes": 100000000000,
+          "ObservedCapacityBytes": 100931731456
+        },
+        {
+          "DV": {
+            "UID": "b3fb0a05-c82a-485c-8cd0-015e3b9cd354",
+            "Kind": "DataVolume",
+            "Name": "vd-284589b9-6451-5f7e-ac9e-4d6322a53751",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "284589b9-6451-5f7e-ac9e-4d6322a53751",
+          "PVC": {
+            "UID": "3cd6fe55-476a-4469-af71-9aa0ee6429aa",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-284589b9-6451-5f7e-ac9e-4d6322a53751",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "284589b9-6451-5f7e-ac9e-4d6322a53751",
+          "SizeGB": 500,
+          "Cleanup": [
+            {
+              "UID": "ce6bd4b2-ef95-4723-a8fd-20846972de4f",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-b737ea10-202f-480f-84c6-c2ca4530712a",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-284589b964515f7eac9e4d6322a53751",
+          "Preparation": "Bound",
+          "RequestedBytes": 500000000000,
+          "ObservedCapacityBytes": 500363689984
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "5c4aead8-9c48-4a15-9ae9-f7721934e29d",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "70b6a829-d689-5dcd-969e-b19ec181ad97",
+          "PVC": {
+            "UID": "9cade4fb-bf06-4ac3-b5d6-b504c7378a45",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "clone-5c4aead8-system",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "70b6a829-d689-5dcd-969e-b19ec181ad97",
+          "SizeGB": 100,
+          "Cleanup": [
+            {
+              "UID": "2cc25faa-69ee-4a9f-a46b-3202d89136a8",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-9cade4fb-bf06-4ac3-b5d6-b504c7378a45",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-70b6a829d6895dcd969eb19ec181ad97",
+          "Preparation": "Bound",
+          "RequestedBytes": 100000000000,
+          "ObservedCapacityBytes": 100931731456
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "118243fa-be8a-5715-b09c-c554d7e29b95",
+          "PVC": {
+            "UID": "10d8427a-aeab-46b5-9ba3-d9ae59e738f5",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "clone-5c4aead8-data",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "118243fa-be8a-5715-b09c-c554d7e29b95",
+          "SizeGB": 500,
+          "Cleanup": [
+            {
+              "UID": "290a50e8-bc26-4c15-8d14-d7df9ecbbacc",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-10d8427a-aeab-46b5-9ba3-d9ae59e738f5",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-118243fabe8a5715b09cc554d7e29b95",
+          "Preparation": "Bound",
+          "RequestedBytes": 500000000000,
+          "ObservedCapacityBytes": 500363689984
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": []
+    },
+    {
+      "id": "978c70c3-ecc2-45c9-aacc-bbdbf56f1f73",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "cb5c157b-33f6-4ceb-9b5a-cce7097aabbe",
+            "Kind": "DataVolume",
+            "Name": "vd-88524198-3721-55b3-8fc4-8968118d3d97",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "88524198-3721-55b3-8fc4-8968118d3d97",
+          "PVC": {
+            "UID": "52e1fcf4-d514-4f4d-b09b-6e1fabed6efb",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-88524198-3721-55b3-8fc4-8968118d3d97",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "88524198-3721-55b3-8fc4-8968118d3d97",
+          "SizeGB": 100,
+          "Cleanup": [
+            {
+              "UID": "d1c5bb14-934d-4c18-9bbc-28c00af14cda",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-8f65935c-a7fd-4ab0-8e7d-f3ef317350e5",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-88524198372155b38fc48968118d3d97",
+          "Preparation": "Bound",
+          "RequestedBytes": 100000000000,
+          "ObservedCapacityBytes": 100931731456
+        },
+        {
+          "DV": {
+            "UID": "1450edeb-db71-4efe-a4b2-631365542723",
+            "Kind": "DataVolume",
+            "Name": "vd-b6b5285c-0384-5f74-9f8d-fedb9182180f",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "b6b5285c-0384-5f74-9f8d-fedb9182180f",
+          "PVC": {
+            "UID": "18510ba9-9e44-4f59-b9d7-b7b9794c1e1a",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-b6b5285c-0384-5f74-9f8d-fedb9182180f",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "b6b5285c-0384-5f74-9f8d-fedb9182180f",
+          "SizeGB": 100,
+          "Cleanup": [
+            {
+              "UID": "3c31c143-8cd6-4f65-96e6-80405da96d68",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-75ae7395-9011-490c-b99b-059c18d33b1b",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-b6b5285c03845f749f8dfedb9182180f",
+          "Preparation": "Bound",
+          "RequestedBytes": 100000000000,
+          "ObservedCapacityBytes": 100931731456
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "b027f704-d514-4521-821b-2b0d4ea8700b",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "6361590f-93d9-438d-aa49-23036f92dca7",
+            "Kind": "DataVolume",
+            "Name": "vd-18a661a8-efe9-5867-b5a3-552738c130c9",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "18a661a8-efe9-5867-b5a3-552738c130c9",
+          "PVC": {
+            "UID": "34d0f23e-6884-450b-807d-6c948b2d375c",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-18a661a8-efe9-5867-b5a3-552738c130c9",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "18a661a8-efe9-5867-b5a3-552738c130c9",
+          "SizeGB": 50,
+          "Cleanup": [
+            {
+              "UID": "6b2864b2-5732-4615-ba62-90779e339533",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-937188f0-693f-4678-9d63-e1ced231381e",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-18a661a8efe95867b5a3552738c130c9",
+          "Preparation": "Bound",
+          "RequestedBytes": 50000000000,
+          "ObservedCapacityBytes": 50465865728
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "bf320c9b-018f-4dfa-afd8-007142159805",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "65dac35d-c984-4549-acab-305d5ab6cff4",
+            "Kind": "DataVolume",
+            "Name": "vd-12ef0736-fa2a-5abb-8116-66451d63bde5",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "12ef0736-fa2a-5abb-8116-66451d63bde5",
+          "PVC": {
+            "UID": "3a013f0a-170f-491f-8cf3-281aed0ec795",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-12ef0736-fa2a-5abb-8116-66451d63bde5",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "12ef0736-fa2a-5abb-8116-66451d63bde5",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "4d5b2a49-ee82-491e-80b5-2b983508c8b5",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-cf63a3ac-2c1f-411f-bcd5-be326b42f46f",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-12ef0736fa2a5abb811666451d63bde5",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "c4fdb935-5357-42e7-b6c6-194c475de9a7",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "face8b4c-c7c9-480c-80f1-d855e8bb1c15",
+            "Kind": "DataVolume",
+            "Name": "vd-a0079f6a-7658-5559-a29d-b71cf0da5447",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "a0079f6a-7658-5559-a29d-b71cf0da5447",
+          "PVC": {
+            "UID": "63bcca55-c33a-4793-afcb-3a0bae6e4e84",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-a0079f6a-7658-5559-a29d-b71cf0da5447",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "a0079f6a-7658-5559-a29d-b71cf0da5447",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "41dbff52-aab5-4cc6-a205-d72a96538844",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a6a4201e-abe7-46cf-ac1b-c347bd4e5bcf",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-a0079f6a76585559a29db71cf0da5447",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "e739fb1a-4921-472d-baa3-743616aa7c42",
+      "observed": "Stopped",
+      "disks": [
+        {
+          "DV": {
+            "UID": "8df9f9e9-546e-4999-8836-57e1865c1dc7",
+            "Kind": "DataVolume",
+            "Name": "vd-c274d718-f284-59d3-849a-c65ca1e519ae",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "c274d718-f284-59d3-849a-c65ca1e519ae",
+          "PVC": {
+            "UID": "08cb161f-4d90-4d9b-87ea-92fdd1b78529",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-c274d718-f284-59d3-849a-c65ca1e519ae",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "c274d718-f284-59d3-849a-c65ca1e519ae",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "85a5f63e-bf55-4a4e-a760-fcd6eb16676d",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-64d18f09-d7f0-49cd-a595-4ff7283956b4",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-c274d718f28459d3849ac65ca1e519ae",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        },
+        {
+          "DV": {
+            "UID": "c495eedf-7922-4f31-92fd-d0cae55a9556",
+            "Kind": "DataVolume",
+            "Name": "vd-e5938b7d-081e-5b92-8c10-d0cec78c9012",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "e5938b7d-081e-5b92-8c10-d0cec78c9012",
+          "PVC": {
+            "UID": "37f44924-9f10-43ef-8213-d54f37fb226f",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-e5938b7d-081e-5b92-8c10-d0cec78c9012",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "e5938b7d-081e-5b92-8c10-d0cec78c9012",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "d55bba88-b05a-4bc9-bbfe-9f7574cd5066",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-a9e14c03-5bee-4021-9e92-317ea048b24e",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-e5938b7d081e5b928c10d0cec78c9012",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        },
+        {
+          "DV": {
+            "UID": "f4e5609d-4947-499f-917a-112975f6be1f",
+            "Kind": "DataVolume",
+            "Name": "vd-f538bcdd-1b0f-5ef1-9244-883452a2d617",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "f538bcdd-1b0f-5ef1-9244-883452a2d617",
+          "PVC": {
+            "UID": "1e0596aa-0ff6-44dd-9178-4a9bb9f1b724",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-f538bcdd-1b0f-5ef1-9244-883452a2d617",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "perf-disk-after-20261105",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "f538bcdd-1b0f-5ef1-9244-883452a2d617",
+          "SizeGB": 1,
+          "Cleanup": [
+            {
+              "UID": "d4faf2ac-38d6-4478-be0e-ffde8d0c1514",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-0da9074c-25b3-4f40-a461-40372adbbc9b",
+              "Namespace": ""
+            }
+          ],
+          "Attached": false,
+          "Tombstone": true,
+          "VolumeName": "disk-f538bcdd1b0f5ef19244883452a2d617",
+          "Preparation": "Bound",
+          "RequestedBytes": 1000000000,
+          "ObservedCapacityBytes": 1000341504
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    },
+    {
+      "id": "3be21c33-31be-4e7c-93b5-b8e91bd9b855",
+      "observed": "Running",
+      "disks": [
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "3777ccb7-b596-5ecf-9bd8-8e3cfc8158c8",
+          "PVC": {
+            "UID": "734bf717-1538-4f44-92e6-a754c4a6c922",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-70733ddb-dce5-4c91-b387-051116e3ec87-disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "3777ccb7-b596-5ecf-9bd8-8e3cfc8158c8",
+          "SizeGB": 30,
+          "Cleanup": [
+            {
+              "UID": "de288545-400c-4056-881d-815227af0c86",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-734bf717-1538-4f44-92e6-a754c4a6c922",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+          "Preparation": "Bound",
+          "RequestedBytes": 30000000000,
+          "ObservedCapacityBytes": 30064771072
+        },
+        {
+          "DV": {
+            "UID": "",
+            "Kind": "",
+            "Name": "",
+            "Namespace": ""
+          },
+          "ID": "8970a778-45d7-56a7-bf7d-ba6deabd6fb5",
+          "PVC": {
+            "UID": "496e1587-bdaa-4f60-92d7-2739540d3105",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "restore-70733ddb-dce5-4c91-b387-051116e3ec87-disk-8970a77845d756a7bf7dba6deabd6fb5",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "data-1",
+          "Role": "data",
+          "Reason": "",
+          "Serial": "8970a778-45d7-56a7-bf7d-ba6deabd6fb5",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "b7f5e1d3-5b16-4a90-92e7-86efbd584546",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-496e1587-bdaa-4f60-92d7-2739540d3105",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": false,
+          "VolumeName": "disk-8970a77845d756a7bf7dba6deabd6fb5",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": [],
+      "cleanup": null
+    },
+    {
+      "id": "3762b94c-1c8b-4018-a99f-37aee120fecf",
+      "observed": "Deleted",
+      "disks": [
+        {
+          "DV": {
+            "UID": "46277199-0243-47b7-b319-bf8570279483",
+            "Kind": "DataVolume",
+            "Name": "vd-4f319078-f59e-56be-bb40-4dad3a904725",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "ID": "4f319078-f59e-56be-bb40-4dad3a904725",
+          "PVC": {
+            "UID": "a70cc052-16d4-4025-8603-d92f877e3aa0",
+            "Kind": "PersistentVolumeClaim",
+            "Name": "vd-4f319078-f59e-56be-bb40-4dad3a904725",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "Name": "system",
+          "Role": "system",
+          "Reason": "",
+          "Serial": "4f319078-f59e-56be-bb40-4dad3a904725",
+          "SizeGB": 10,
+          "Cleanup": [
+            {
+              "UID": "0e43896a-293f-4ee5-b53c-67327ae22eb4",
+              "Kind": "PersistentVolume",
+              "Name": "pvc-2bd95189-d951-452d-8fdd-1f09a1bfa990",
+              "Namespace": ""
+            }
+          ],
+          "Attached": true,
+          "Tombstone": true,
+          "VolumeName": "disk-4f319078f59e56bebb404dad3a904725",
+          "Preparation": "Bound",
+          "RequestedBytes": 10000000000,
+          "ObservedCapacityBytes": 10737418240
+        }
+      ],
+      "retired_disks": null,
+      "cleanup": null
+    }
+  ],
+  "legacy_cleanup_refs_by_kind": {
+    "PersistentVolume": 47
+  },
+  "business_dv_pvc_uid_fields_retained": 82,
+  "initial_snapshot_artifacts_by_kind": {
+    "VirtualMachineSnapshotContent": 2,
+    "VolumeSnapshot": 5,
+    "VolumeSnapshotContent": 5
+  },
+  "old_image_query": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT id,state,reason,cleanup_state,native,cleanup FROM vm.images WHERE id IN ('fac3e890-89f3-497b-a45d-9c9ee2e79f4e')) x",
+  "old_image_rows": [
+    {
+      "id": "fac3e890-89f3-497b-a45d-9c9ee2e79f4e",
+      "state": "IMPORTING",
+      "reason": "",
+      "cleanup_state": "NONE",
+      "native": {
+        "DVUID": "5fff1a32-76b6-49e2-bc3f-3f29f7de607f",
+        "PVUID": "",
+        "DVName": "vmi-src-fac3e89089f3497ba45d9c9ee2e79f4e",
+        "JobUID": "",
+        "PVCUID": "",
+        "PVName": "",
+        "PodUID": "",
+        "DVPhase": "",
+        "JobName": "",
+        "PVCName": "",
+        "TokenUID": "",
+        "ClusterID": "f39bf6e2-f3ed-4191-ada3-caeebf86c220",
+        "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+        "SessionID": "00def93c-066d-4123-9077-279b9a482272",
+        "TokenName": "vmi-tok-00def93c066d41239077279b9a482272",
+        "NamespaceUID": "a8d8a472-8a8a-43cf-abf0-0e805bbe67b0",
+        "VerifierImage": "",
+        "ReadyPublishedAt": "0001-01-01T00:00:00Z",
+        "SourceVolumeMode": "Block",
+        "SourceContentType": "kubevirt",
+        "AnnotationResourceVersion": ""
+      },
+      "cleanup": []
+    }
+  ],
+  "old_cdi_cleanup_count": 0,
+  "disposition": "historical diagnostics retained; exact business identities retained; no direct database writes, no unrelated VM/image deletion; legacy completed restore carrier and durable checkpoint verified in existing-records-followup.json"
+}

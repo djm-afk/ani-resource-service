@@ -1,0 +1,24 @@
+# github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.test]
+internal/data/vm/snapshots_test.go:47:18: native.snapshotClassesUnchanged undefined (type *Native has no field or method snapshotClassesUnchanged)
+internal/data/vm/observation.go:5:2: "encoding/json" imported and not used
+internal/data/vm/snapshots.go:7:2: "strings" imported and not used
+--- FAIL: TestVerificationResultValidatedFor (0.00s)
+    image_test.go:253: write-open probe skipped: <nil>
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm	0.023s
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [build failed]
+--- FAIL: TestVMCommandPreflightLogsSafeStageAndKeepsPublicError (0.00s)
+    --- FAIL: TestVMCommandPreflightLogsSafeStageAndKeepsPublicError/start/backend (0.00s)
+        preflight_test.go:112: preflight changed admission: error=<nil> accepts=1
+    --- FAIL: TestVMCommandPreflightLogsSafeStageAndKeepsPublicError/restart/backend (0.00s)
+        preflight_test.go:112: preflight changed admission: error=<nil> accepts=1
+--- FAIL: TestSnapshotServiceReadsAreScopedAndPreviewIsSideEffectFree (0.00s)
+    snapshots_test.go:130: running target preview admitted <nil>
+--- FAIL: TestRestoreStopCheckUsesConsoleScopeObservation (0.00s)
+    snapshots_test.go:159: restore stop check must use the console-scope observation: console=0 full=0
+--- FAIL: TestRestoreAdmissionRechecksFreshNativeSnapshotBeforeAccept (0.00s)
+    snapshots_test.go:223: fresh native snapshot mismatch reached acceptance <nil>
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm	0.038s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify	0.006s
+FAIL

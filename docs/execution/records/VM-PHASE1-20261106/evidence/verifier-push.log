@@ -1,0 +1,20 @@
+The push refers to repository [10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify]
+63e7e49699e8: Waiting
+44136fa355b3: Waiting
+def63a514020: Waiting
+b6fd52f3ad87: Waiting
+63e7e49699e8: Waiting
+44136fa355b3: Waiting
+def63a514020: Waiting
+b6fd52f3ad87: Waiting
+def63a514020: Layer already exists
+63e7e49699e8: Layer already exists
+44136fa355b3: Waiting
+871eedcd73c9: Waiting
+bd866ac1a3a4: Waiting
+b6fd52f3ad87: Pushed
+44136fa355b3: Waiting
+871eedcd73c9: Layer already exists
+44136fa355b3: Mounted from ani-gpu-platform/ani-resource-service
+bd866ac1a3a4: Pushed
+vm-phase1-20261107-r1: digest: sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55 size: 856

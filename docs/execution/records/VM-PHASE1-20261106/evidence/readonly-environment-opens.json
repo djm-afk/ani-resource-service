@@ -1,0 +1,52 @@
+[
+  {
+    "entry": "10.10.1.66",
+    "context": "kubernetes-admin@ani-kcn-full",
+    "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+    "at": "2026-11-06T17:17:48.587057+00:00",
+    "mode": "Block",
+    "job_name": "phase1-readonly-block-20261107-r2",
+    "job_uid": "a78d69f7-2da2-41d7-a69e-4390b18524f1",
+    "source_image_id": "d6cbecd0-8248-4fd0-9586-10e8d1a43007",
+    "source_pvc": "vmi-src-d6cbecd082484fd0958610e8d1a43007",
+    "source_pvc_uid": "2cd51111-5981-4765-ae1c-f4bfd0b009ef",
+    "template_origin_job": "vmi-verify-d6cbecd082484fd0958610e8d1a43007",
+    "probe_image": "10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check@sha256:0737d30c76bdeaff24b6963ae34feacd204a44fdaea2db29cd928c55f77d0e16",
+    "result": {
+      "kernel_read_only_flag": 0,
+      "mode": "Block",
+      "no_data_writes": true,
+      "read_open": true,
+      "read_write_error": "open /dev/source: operation not permitted",
+      "read_write_open": false,
+      "write_only_error": "open /dev/source: operation not permitted",
+      "write_only_open": false,
+      "write_opens_denied": true
+    }
+  },
+  {
+    "entry": "10.10.1.66",
+    "context": "kubernetes-admin@ani-kcn-full",
+    "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+    "at": "2026-11-06T17:17:57.549098+00:00",
+    "mode": "Filesystem",
+    "job_name": "phase1-readonly-filesystem-20261107-r2",
+    "job_uid": "a7303d3e-a815-4bef-aa69-460639181662",
+    "source_image_id": "785372ad-19de-4124-b338-15b35f94eb7f",
+    "source_pvc": "vmi-src-785372ad19de4124b33815b35f94eb7f",
+    "source_pvc_uid": "fcec3071-e5ba-449b-96e4-fe0c9d552954",
+    "template_origin_job": "vmi-verify-785372ad19de4124b33815b35f94eb7f",
+    "probe_image": "10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check@sha256:0737d30c76bdeaff24b6963ae34feacd204a44fdaea2db29cd928c55f77d0e16",
+    "result": {
+      "filesystem_flags": 4129,
+      "mode": "Filesystem",
+      "no_data_writes": true,
+      "read_open": true,
+      "read_write_error": "open /source/disk.img: read-only file system",
+      "read_write_open": false,
+      "write_only_error": "open /source/disk.img: read-only file system",
+      "write_only_open": false,
+      "write_opens_denied": true
+    }
+  }
+]

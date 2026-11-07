@@ -1,0 +1,15 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=f3e1c38d76b1e8a78f6060478a469e261330adec1bef859d81623af8c60b9411
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-absent
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-Pending-WFFC
+--- PASS: TestStoppedCreateInventoryRefreshAfterIndependentStart (2.36s)
+    --- PASS: TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-absent (1.37s)
+    --- PASS: TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-Pending-WFFC (0.99s)
+=== RUN   TestObservationPreparationFencesRemapAndPreservesIntentFields
+--- PASS: TestObservationPreparationFencesRemapAndPreservesIntentFields (0.76s)
+=== RUN   TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete
+--- PASS: TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete (0.94s)
+PASS
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	5.160s
+removed task container=f3e1c38d76b1e8a78f6060478a469e261330adec1bef859d81623af8c60b9411

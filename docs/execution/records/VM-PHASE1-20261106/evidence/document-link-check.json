@@ -1,0 +1,244 @@
+{
+  "checked_markdown_files": [
+    "docs/START-HERE.md",
+    "docs/contracts/vm-v1.md",
+    "docs/execution/records/VM-PHASE1-20261106/PHASE1-REPORT.md",
+    "docs/execution/status.md",
+    "docs/runbooks/vm-image-cdi-handoff.md",
+    "docs/specs/vm-mvp.md"
+  ],
+  "local_link_targets_checked": 1244,
+  "anchors_checked": 58,
+  "failures": [
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/verify.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/sandbox-pg-result.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/gov-joint.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-live-resource-20261030/diagnosis.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-cluster-role-20261030/test.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-gov-ready-20261030/test.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-gov-pending-close-20261030/test.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-dispatch-20261030-final/gov-pg.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-space-resource-20261030-mtls/receipt.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-intent-20261030-final/result.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/admission-probes.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/pod-secret-admission-probe.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/pod-secret-policy-probe-final.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/combined-admission-probe-cross-namespace.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/managed-namespace-preflight.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/production-identity-scoped-probe.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/gov-pg.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-storage-policy-final-20261030/source.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-storage-main-pg-20261030/test.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-gov-history-close-20261030/storage-main-joint-tests.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-gov-history-close-20261030/merged-pg-test.log",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/cross-tenant/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/token-generation/http-events.jsonl",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/token-generation/cleanup.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/platform-id/http-events.jsonl",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/platform-id/cleanup.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-upstream-redeploy-20261030/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-phase2-production-final-20261030/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-token-20261030/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-files-20261030/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-coderun-live-20261029/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-image-id-release-20261029-SeEa0sJd/gov-descriptor-comparison.txt",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/live-storage-route-check.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/storage-api-comparison.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/valid-id-create.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/preflight.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-custom-image-20261029/acceptance.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-e2e-8d90066c5742/lifecycle-acceptance.json",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-e2e-8d90066c5742/lifecycle-request-response.md",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-new-tenant-20261029/",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-followup-20261029/",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../../../verification-artifacts/sandbox-shared-entry-20261029/",
+      "reason": "missing target"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "../specs/instance-mvp.md#cpu-增量合同",
+      "reason": "missing anchor"
+    },
+    {
+      "source": "docs/execution/status.md",
+      "target": "records/CONTAINER-RESTART-PVC-20261028/source22-main792-verify.log",
+      "reason": "missing target"
+    }
+  ],
+  "full_file_scan_status": "FAIL: pre-existing historical links",
+  "baseline_unchanged_failure_count": 45,
+  "new_or_changed_link_failures": [],
+  "phase1_changed_link_status": "PASS",
+  "scope_note": "Full modified-file scan retained; all failures are unchanged links already present at HEAD. No unrelated historical ledger edits."
+}

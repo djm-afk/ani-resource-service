@@ -1,0 +1,19 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=6b408f6658a3d4bad1f0dc48fb247b1b36d1e3c29338e7fd0740915c14e88fc9
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-absent
+    async_inventory_integration_test.go:197: operation failed: {TenantID:59e58377-8cda-465c-b1bb-18105c34e752 ID:8ffbf32f-348c-4331-b4bf-8c0352746822 VMID:712a92ce-9307-4d5b-82c9-7390bbd8b59b Action:start Key:independent-start RequestDigest:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd Intent:[123 125] IntentVersion:2 State:failed Reason:VM_DEPENDENCY_CHANGED Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:86274722-c341-435d-a6e6-1370033b771a LeaseUntil:2026-11-07 13:55:17.121457954 +0800 CST ObservedAt:2026-11-07 05:54:47.128343083 +0000 UTC}
+=== RUN   TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-Pending-WFFC
+    async_inventory_integration_test.go:197: operation failed: {TenantID:29866e80-bb72-4ac9-97d6-c92d63c416c1 ID:b0691e40-a6f7-4629-9da3-644609fa7aea VMID:642f56a6-fe02-4d95-ae34-f68e94350f77 Action:start Key:independent-start RequestDigest:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd Intent:[123 125] IntentVersion:2 State:failed Reason:VM_DEPENDENCY_CHANGED Step: OldVMIUID: Pending:<nil> Snapshot:<nil> Lease:c82e148a-b50b-4d57-b2b7-940c76c28f12 LeaseUntil:2026-11-07 13:55:17.849808006 +0800 CST ObservedAt:2026-11-07 05:54:47.85997668 +0000 UTC}
+--- FAIL: TestStoppedCreateInventoryRefreshAfterIndependentStart (1.72s)
+    --- FAIL: TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-absent (0.89s)
+    --- FAIL: TestStoppedCreateInventoryRefreshAfterIndependentStart/PVC-Pending-WFFC (0.83s)
+=== RUN   TestObservationPreparationFencesRemapAndPreservesIntentFields
+--- PASS: TestObservationPreparationFencesRemapAndPreservesIntentFields (0.75s)
+=== RUN   TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete
+    restore_output_cleanup_integration_test.go:150: cleanup used lower-level proof or namespace scan {{tenant-test create snapshot.storage.k8s.io/v1, Resource=volumesnapshots }  0x2648fc88cad0 {{ } []  }}
+--- FAIL: TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete (0.83s)
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	3.326s
+FAIL
+removed task container=6b408f6658a3d4bad1f0dc48fb247b1b36d1e3c29338e7fd0740915c14e88fc9

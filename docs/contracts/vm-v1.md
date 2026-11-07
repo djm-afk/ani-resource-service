@@ -254,3 +254,10 @@ VM canonical 仍为 v1，network 仍固定原五个字段，`nad_uid` 可为空�
 ### C05 手动主网卡选择增量
 
 普通自动模式保持不变。手动网卡的分配、独立留存和绑定身份规则统一见[VPC/Subnet 规格](../specs/vpc-subnet.md#手动-vnic-与实例选择)。VM 按 primary 槽位保存 desired/applied 和各自 revision；SetNetworkInterface 检查 expected_version 并沿现有 operation、幂等及生命周期互斥受理。运行中保存不改 Pod/模板，返回读模型展示待重启；平台 Restart 在旧 VMI/launcher 退出后应用模板再 Start，只有新 launcher 的接网及地址事实匹配才确认生效。guest reboot 或暂停/继续不应用目标。删除 VM 留存手动网卡，后续显式删除网卡才释放地址。
+
+
+## C10 一阶段职责边界兼容
+
+电源/观察、Snapshot/Restore、镜像来源与逻辑删除的正式业务规则统一见 [VM 规格 S08–S10](../specs/vm-mvp.md#s08-电源与-vnc) 及其镜像来源条款。现有 action/canonical、expectedVersion、幂等、lease/closing、Console 当前 VMI 和 Network 当前 consumer/Pod/revision 合同保持，不新增 API 版本或克隆入口。
+
+PreviewRestore 是运行态也可调用的只读方法；Stop 后版本变化使旧预览失效，执行 Restore 仍要求当前摘要和停止态。旧 Content/Class/Artifacts、PV/CSI 与 ReadOnlyProof 字段兼容读取，不作为业务成功前置。Snapshot 内 RestoreOutputsRecorded 仅标记既有 checkpoint 保存的具名结果交接；原始操作的 Plan/intent 不改写，不增加数据库表或额外工作流。

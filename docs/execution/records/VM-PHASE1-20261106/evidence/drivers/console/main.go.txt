@@ -1,0 +1,49 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/gorilla/websocket"
+	"io"
+	"net/http"
+	"os"
+	"time"
+)
+
+func main() {
+	var v map[string]string
+	b, e := os.ReadFile(".work/phase1/private/console-session.json")
+	if e != nil {
+		panic(e)
+	}
+	json.Unmarshal(b, &v)
+	d := websocket.Dialer{HandshakeTimeout: 10 * time.Second, Subprotocols: []string{"ani.vnc.v1"}}
+	headers := http.Header{}
+	headers.Set("Origin", "http://10.10.1.66:30080")
+	c, r, e := d.Dial(v["wsUrl"], headers)
+	status := 0
+	if r != nil {
+		status = r.StatusCode
+	}
+	if e != nil {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 2048))
+		os.WriteFile(".work/phase1/private/console-error.txt", body, 0600)
+		var errbody map[string]any
+		json.Unmarshal(body, &errbody)
+		out, _ := json.Marshal(map[string]any{"status": status, "connected": false, "reason": errbody["reason"], "code": errbody["code"]})
+		fmt.Println(string(out))
+		os.Exit(1)
+	}
+	defer c.Close()
+	c.SetReadDeadline(time.Now().Add(15 * time.Second))
+	kind, frame, e := c.ReadMessage()
+	if e != nil {
+		fmt.Println("{\"connected\":true,\"banner_received\":false}")
+		os.Exit(2)
+	}
+	if len(frame) > 64 {
+		frame = frame[:64]
+	}
+	out, _ := json.Marshal(map[string]any{"connected": true, "http_status": status, "message_type": kind, "banner": string(frame)})
+	fmt.Println(string(out))
+}

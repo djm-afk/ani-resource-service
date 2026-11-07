@@ -1,0 +1,87 @@
+python3 scripts/build-image.py --image "10.10.1.66:30003/ani-gpu-platform/ani-resource-service:vm-phase1-20261107-r4" --version "vm-phase1-20261107-r4" \
+  --platform "linux/amd64" --target "service" \
+  --builder-image "golang:1.26.10-bookworm" --runtime-image "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e" --goproxy "https://goproxy.cn,https://proxy.golang.org,direct"
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.81kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/golang:1.26.10-bookworm
+#2 DONE 0.1s
+
+#3 [internal] load metadata for 10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e
+#3 DONE 0.2s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 117B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 ...
+
+#6 [build  1/10] FROM docker.io/library/golang:1.26.10-bookworm@sha256:71a929e06118f3f502c775df18ae7f68d32180a56dfd0c1272701a44242cb803
+#6 resolve docker.io/library/golang:1.26.10-bookworm@sha256:71a929e06118f3f502c775df18ae7f68d32180a56dfd0c1272701a44242cb803 0.1s done
+#6 DONE 0.1s
+
+#7 [service 1/4] FROM 10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e
+#7 resolve 10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e 0.1s done
+#7 DONE 0.1s
+
+#5 [internal] load build context
+#5 transferring context: 5.17MB 0.3s done
+#5 DONE 0.3s
+
+#8 [build  2/10] WORKDIR /src
+#8 CACHED
+
+#9 [build  3/10] COPY go.mod go.sum ./
+#9 CACHED
+
+#10 [build  4/10] RUN --mount=type=cache,target=/go/pkg/mod go mod download
+#10 DONE 1.4s
+
+#11 [build  5/10] COPY api/ ./api/
+#11 DONE 0.2s
+
+#12 [build  6/10] COPY cmd/ ./cmd/
+#12 DONE 0.2s
+
+#13 [build  7/10] COPY internal/ ./internal/
+#13 DONE 0.2s
+
+#14 [build  8/10] COPY pkg/ ./pkg/
+#14 DONE 0.2s
+
+#15 [build  9/10] COPY migrations/ ./migrations/
+#15 DONE 0.2s
+
+#16 [build 10/10] RUN --mount=type=cache,target=/go/pkg/mod     --mount=type=cache,target=/root/.cache/go-build     mkdir -p /out/root/app/bin &&     GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath       -ldflags="-s -w -X main.Name=ani-resource-service -X main.Version=vm-phase1-20261107-r4"       -o /out/root/app/bin/server ./cmd/ani-resource-service &&     ln -s server /out/root/app/bin/ani-resource-service &&     ln -s app/bin/server /out/root/ani-resource-service
+#16 DONE 19.3s
+
+#17 [service 2/4] WORKDIR /app
+#17 CACHED
+
+#18 [service 3/4] COPY --from=build --chmod=0555 /out/root/ /
+#18 DONE 0.5s
+
+#19 [service 4/4] COPY --chmod=0444 THIRD_PARTY_NOTICES.go-kratos-layout.txt /app/notices/go-kratos-layout.txt
+#19 DONE 0.2s
+
+#20 exporting to image
+#20 exporting layers
+#20 exporting layers 3.2s done
+#20 exporting manifest sha256:b4c86069fdb6aca8d0c59d15716ef1390fcad898d9dba6b9a3aec4a62cb94875 0.1s done
+#20 exporting config sha256:df5d80cf6e0370301afbae7dd022f7350624f0e800f67575173754af1c8160bf 0.1s done
+#20 exporting attestation manifest sha256:bfc95a1ba04b7ffef3ea6dc58f13ff2b4ca0714e07ef72ff557b4aaba91e2dac 0.1s done
+#20 exporting manifest list sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78
+#20 exporting manifest list sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78 0.1s done
+#20 naming to 10.10.1.66:30003/ani-gpu-platform/ani-resource-service:vm-phase1-20261107-r4 0.0s done
+#20 unpacking to 10.10.1.66:30003/ani-gpu-platform/ani-resource-service:vm-phase1-20261107-r4
+#20 unpacking to 10.10.1.66:30003/ani-gpu-platform/ani-resource-service:vm-phase1-20261107-r4 0.6s done
+#20 DONE 4.2s
+
+#21 resolving provenance for metadata file
+#21 DONE 0.0s
+image receipt: /home/ubuntu/workspace/ani-resource-service/.work/images/image-zy75d9h3/result.json
+{"schema_version": 1, "service": "ani-resource-service", "source": "https://github.com/zhangzhe-ctrl/ani-resource-service", "source_revision": "1498c223d902f24b2786ac017514087a476da091", "source_dirty": true, "source_snapshot": "sha256:b3f13212578885a391c6e9a6e1253d23f6b0642e4328f1dc323b546c0448001c", "version": "vm-phase1-20261107-r4", "target": "service", "platform": "linux/amd64", "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service:vm-phase1-20261107-r4", "local_image_id": "sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78", "local_config_digest": null, "local_descriptor_digest": "sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78", "local_descriptor_media_type": "application/vnd.oci.image.index.v1+json", "registry_digest": null, "pushed": false, "builder_image": "golang:1.26.10-bookworm", "runtime_image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e", "buildkit_metadata": "/home/ubuntu/workspace/ani-resource-service/.work/images/image-zy75d9h3/buildkit.json", "source_manifest": "/home/ubuntu/workspace/ani-resource-service/.work/images/image-zy75d9h3/source-manifest.json"}

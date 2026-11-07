@@ -1,0 +1,21 @@
+# github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.test]
+internal/data/vm/observation_scope_test.go:98:14: o.proofs undefined (type *StateObservation has no field or method proofs)
+internal/data/vm/observation_scope_test.go:336:18: undefined: biz.ObservationRecovery
+internal/data/vm/observation_scope_test.go:340:84: undefined: biz.ObservationRecovery
+internal/data/vm/observation_native_test.go:64:47: too many arguments in call to newStateObservation
+	have (*fake.FakeDynamicClient, *stateNotifications, "time".Duration)
+	want (dynamic.Interface, "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm".ObservationNotifier)
+internal/data/vm/observation_native_test.go:190:13: o.proofs undefined (type *StateObservation has no field or method proofs)
+internal/data/vm/observation_native_test.go:192:4: o.proofs undefined (type *StateObservation has no field or method proofs)
+internal/data/vm/observation_native_test.go:200:4: o.audit undefined (type *StateObservation has no field or method audit)
+internal/data/vm/observation_native_test.go:273:4: o.audit undefined (type *StateObservation has no field or method audit)
+internal/data/vm/observation_native_test.go:281:4: o.audit undefined (type *StateObservation has no field or method audit)
+internal/data/vm/observation_native_test.go:291:4: o.audit undefined (type *StateObservation has no field or method audit)
+internal/data/vm/observation_scope_test.go:98:14: too many errors
+# github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify [github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify.test]
+cmd/vm-image-verify/main.go:161:35: undefined: errors
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm	0.012s [no tests to run]
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [build failed]
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm	0.013s [no tests to run]
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify [build failed]
+FAIL

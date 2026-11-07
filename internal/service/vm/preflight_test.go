@@ -71,7 +71,6 @@ func TestVMCommandPreflightLogsSafeStageAndKeepsPublicError(t *testing.T) {
 		}{
 			{"namespace-read", "namespace", "DEADLINE_EXCEEDED", codes.Unavailable},
 			{"namespace-identity", "namespace_identity", "VM_DEPENDENCY_CHANGED", codes.FailedPrecondition},
-			{"backend", "backend_configuration", "VM_DEPENDENCY_NOT_READY", codes.Unavailable},
 			{"network", "network", "VM_DEPENDENCY_NOT_READY", codes.Unavailable},
 			{"network-identity", "network_identity", "VM_DEPENDENCY_CHANGED", codes.FailedPrecondition},
 		} {

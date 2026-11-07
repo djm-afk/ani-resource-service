@@ -1,0 +1,14 @@
+{
+  "entry": "10.10.1.66",
+  "ssh": "kubercloud@10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "namespace": "ani-system",
+  "started_at": "2026-11-06T17:01:26.482576+00:00",
+  "finished_at": "2026-11-06T17:01:32.852300+00:00",
+  "previous_image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:40fca58c931fa69c7bb71c71e18c66611c944c94e3dcfedd688c55ca69a5f9c3",
+  "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:7fe62795e5cab56b8e24171a4dc741f32ba602c961fb46094dd80d7744aba840",
+  "verifier": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+  "rollout": "Waiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"ani-resource-service\" successfully rolled out",
+  "source_manifest": "image-build-03.manifest.json",
+  "source_manifest_sha256": "c4ec791c8f5ba67d10712a03c4f3afa2e9675e195bf2c22b69210c8a05a0c6cc"
+}

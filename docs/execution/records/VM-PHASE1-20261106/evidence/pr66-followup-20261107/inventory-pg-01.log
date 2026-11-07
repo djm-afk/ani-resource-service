@@ -1,0 +1,7 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=d63f0b1d94cd47723bfbda30aeaf5f6ce7f32498d507605dd6d81efeef60d23d
+# github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm.test]
+internal/data/vm/async_inventory_integration_test.go:6:2: "context" imported and not used
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm [build failed]
+FAIL
+removed task container=d63f0b1d94cd47723bfbda30aeaf5f6ce7f32498d507605dd6d81efeef60d23d

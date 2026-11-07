@@ -1,0 +1,23 @@
+{
+  "command": [
+    "make",
+    "verify"
+  ],
+  "environment": {
+    "GOWORK": "off",
+    "GOMAXPROCS": "4",
+    "GOFLAGS": "-p=4",
+    "GOMEMLIMIT": "4GiB"
+  },
+  "execution_host": "WIN-HUFRHKJT097",
+  "distribution": "Ubuntu",
+  "cwd": "/home/ubuntu/workspace/ani-resource-service",
+  "audit_base": "241bacd8cd001f4d0075707311c225a36876656b",
+  "started_at": "2026-11-07T06:02:20.049939+00:00",
+  "finished_at": "2026-11-07T06:04:40.270107+00:00",
+  "elapsed_seconds": 140.22,
+  "exit_code": 0,
+  "status": "PASS",
+  "source_manifest": "source-manifest.json",
+  "source_manifest_sha256": "98d3914bdb5d69f48af25335ea31612f98eeab701b37c3ca0e21fa1627e2e718"
+}

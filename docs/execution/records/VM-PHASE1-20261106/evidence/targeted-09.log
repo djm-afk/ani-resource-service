@@ -1,0 +1,4 @@
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm	0.017s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/vm	3.256s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm	0.039s
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/cmd/vm-image-verify	0.022s

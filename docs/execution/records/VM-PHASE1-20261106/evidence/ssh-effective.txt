@@ -1,0 +1,10 @@
+user kubercloud
+hostname 10.10.1.66
+port 22
+identityfile ~/.ssh/id_rsa
+identityfile ~/.ssh/id_ecdsa
+identityfile ~/.ssh/id_ecdsa_sk
+identityfile ~/.ssh/id_ed25519
+identityfile ~/.ssh/id_ed25519_sk
+identityfile ~/.ssh/id_xmss
+identityfile ~/.ssh/id_dsa

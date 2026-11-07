@@ -1,0 +1,41 @@
+{
+  "at": "2026-11-07T00:06:16.169809+00:00",
+  "scope": "only this task local login/curl/session files and exact SSH forward processes; original SSH keys and shared credentials untouched",
+  "logout": {
+    "http_status": 200,
+    "session_revoked": true
+  },
+  "removed_task_private_files": [
+    "console-error.txt",
+    "console-session.json",
+    "credentials.json",
+    "curl-disk.conf",
+    "curl-failed-uploader.conf",
+    "curl-invalid-iso.conf",
+    "curl-iso.conf",
+    "deployment-before-final-r4.json",
+    "deployment-before-reader.json",
+    "deployment-before-writer.json",
+    "docker/config.json",
+    "phase1-session.json",
+    "upload-response-disk.txt",
+    "upload-response-failed-uploader.txt",
+    "upload-response-invalid-iso.txt",
+    "upload-response-iso.txt",
+    "vm-secret-before-writer.json"
+  ],
+  "credential_file_remaining": false,
+  "task_forward_listeners_remaining": [],
+  "stopped_task_tunnels": [
+    {
+      "pid": 6434,
+      "forward": "127.0.0.1:17788:10.96.44.233:7788",
+      "signal": "SIGTERM"
+    },
+    {
+      "pid": 234385,
+      "forward": "127.0.0.1:30471:10.96.206.215:443",
+      "signal": "SIGTERM"
+    }
+  ]
+}

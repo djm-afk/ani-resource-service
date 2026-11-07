@@ -1,0 +1,176 @@
+{
+  "entry": "10.10.1.66",
+  "ssh": "kubercloud@10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "queried_at": "2026-11-06T16:35:42.036989+00:00",
+  "scope": "previously registered affected records only",
+  "restore_records": [
+    {
+      "registered": {
+        "UID": "70733ddb-dce5-4c91-b387-051116e3ec87",
+        "Kind": "VirtualMachineRestore",
+        "Name": "vm-restore-a4fd8624-50b7-42f4-b8de-d17c0c05eda9",
+        "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+      },
+      "operation_query": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT id,state,record->'Snapshot'->'Plan' IS NOT NULL AS has_plan,record->'Snapshot'->'NativeRestore' AS native_restore,record->'Snapshot'->'NativeRestoreCompleted' AS native_completed,record->'Snapshot'->'MappingCommitted' AS mapping_committed,record->'Snapshot'->'CleanupCompleted' AS cleanup_completed,record->'Snapshot'->'RestoredDisks' AS restored_disks,record->'Snapshot'->'RestoredMediaCopies' AS restored_media FROM vm.operations WHERE id='a4fd8624-50b7-42f4-b8de-d17c0c05eda9' AND vm_id='3be21c33-31be-4e7c-93b5-b8e91bd9b855' AND tenant_id='64c5c35a-f554-432c-b4bc-7b4f36f08420') x",
+      "operation": [
+        {
+          "id": "a4fd8624-50b7-42f4-b8de-d17c0c05eda9",
+          "state": "succeeded",
+          "has_plan": true,
+          "native_restore": {
+            "UID": "70733ddb-dce5-4c91-b387-051116e3ec87",
+            "Kind": "VirtualMachineRestore",
+            "Name": "vm-restore-a4fd8624-50b7-42f4-b8de-d17c0c05eda9",
+            "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+          },
+          "native_completed": true,
+          "mapping_committed": true,
+          "cleanup_completed": true,
+          "restored_disks": [
+            {
+              "DV": {
+                "UID": "",
+                "Kind": "",
+                "Name": "",
+                "Namespace": ""
+              },
+              "ID": "3777ccb7-b596-5ecf-9bd8-8e3cfc8158c8",
+              "PVC": {
+                "UID": "734bf717-1538-4f44-92e6-a754c4a6c922",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "restore-70733ddb-dce5-4c91-b387-051116e3ec87-disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "system",
+              "Role": "system",
+              "Reason": "",
+              "Serial": "3777ccb7-b596-5ecf-9bd8-8e3cfc8158c8",
+              "SizeGB": 30,
+              "Cleanup": [
+                {
+                  "UID": "de288545-400c-4056-881d-815227af0c86",
+                  "Kind": "PersistentVolume",
+                  "Name": "pvc-734bf717-1538-4f44-92e6-a754c4a6c922",
+                  "Namespace": ""
+                }
+              ],
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+              "Preparation": "Bound",
+              "RequestedBytes": 30000000000,
+              "ObservedCapacityBytes": 30064771072
+            },
+            {
+              "DV": {
+                "UID": "",
+                "Kind": "",
+                "Name": "",
+                "Namespace": ""
+              },
+              "ID": "8970a778-45d7-56a7-bf7d-ba6deabd6fb5",
+              "PVC": {
+                "UID": "496e1587-bdaa-4f60-92d7-2739540d3105",
+                "Kind": "PersistentVolumeClaim",
+                "Name": "restore-70733ddb-dce5-4c91-b387-051116e3ec87-disk-8970a77845d756a7bf7dba6deabd6fb5",
+                "Namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420"
+              },
+              "Name": "data-1",
+              "Role": "data",
+              "Reason": "",
+              "Serial": "8970a778-45d7-56a7-bf7d-ba6deabd6fb5",
+              "SizeGB": 10,
+              "Cleanup": [
+                {
+                  "UID": "b7f5e1d3-5b16-4a90-92e7-86efbd584546",
+                  "Kind": "PersistentVolume",
+                  "Name": "pvc-496e1587-bdaa-4f60-92d7-2739540d3105",
+                  "Namespace": ""
+                }
+              ],
+              "Attached": true,
+              "Tombstone": false,
+              "VolumeName": "disk-8970a77845d756a7bf7dba6deabd6fb5",
+              "Preparation": "Bound",
+              "RequestedBytes": 10000000000,
+              "ObservedCapacityBytes": 10737418240
+            }
+          ],
+          "restored_media": null
+        }
+      ],
+      "native": {
+        "kind": "VirtualMachineRestore",
+        "metadata": {
+          "name": "vm-restore-a4fd8624-50b7-42f4-b8de-d17c0c05eda9",
+          "namespace": "tenant-64c5c35a-f554-432c-b4bc-7b4f36f08420",
+          "uid": "70733ddb-dce5-4c91-b387-051116e3ec87",
+          "ownerReferences": [
+            {
+              "apiVersion": "kubevirt.io/v1",
+              "blockOwnerDeletion": true,
+              "controller": true,
+              "kind": "VirtualMachine",
+              "name": "vm-3be21c33-31be-4e7c-93b5-b8e91bd9b855",
+              "uid": "381da33f-ad0e-4daf-99ae-4cec69fff582"
+            }
+          ],
+          "deletionTimestamp": null
+        },
+        "status": {
+          "complete": true,
+          "conditions": [
+            {
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-10-29T15:22:22Z",
+              "reason": "Operation complete",
+              "status": "False",
+              "type": "Progressing"
+            },
+            {
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-10-29T15:22:22Z",
+              "reason": "Operation complete",
+              "status": "True",
+              "type": "Ready"
+            }
+          ],
+          "restoreTime": "2026-10-29T15:22:22Z",
+          "restores": [
+            {
+              "persistentVolumeClaim": "restore-70733ddb-dce5-4c91-b387-051116e3ec87-disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+              "volumeName": "disk-3777ccb7b5965ecf9bd88e3cfc8158c8",
+              "volumeSnapshotName": "vmsnapshot-cd6a3684-bca3-4aad-986e-35eddde794a4-volume-disk-3777ccb7b5965ecf9bd88e3cfc8158c8"
+            },
+            {
+              "persistentVolumeClaim": "restore-70733ddb-dce5-4c91-b387-051116e3ec87-disk-8970a77845d756a7bf7dba6deabd6fb5",
+              "volumeName": "disk-8970a77845d756a7bf7dba6deabd6fb5",
+              "volumeSnapshotName": "vmsnapshot-cd6a3684-bca3-4aad-986e-35eddde794a4-volume-disk-8970a77845d756a7bf7dba6deabd6fb5"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "legacy_vm_projection_groups": {
+    "sql": "SELECT coalesce(json_agg(x),'[]') FROM (SELECT current_configuration->>'Observed' AS observed,closing,count(*) FROM vm.virtual_machines WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(nullif(current_configuration->'Disks','null'),'[]')) d WHERE jsonb_array_length(coalesce(nullif(d->'Cleanup','null'),'[]'))>0) OR jsonb_array_length(coalesce(nullif(current_configuration->'RetiredDisks','null'),'[]'))>0 OR jsonb_array_length(coalesce(nullif(current_configuration->'Cleanup','null'),'[]'))>0 GROUP BY 1,2) x",
+    "rows": [
+      {
+        "observed": "Running",
+        "closing": false,
+        "count": 9
+      },
+      {
+        "observed": "Stopped",
+        "closing": false,
+        "count": 1
+      },
+      {
+        "observed": "Deleted",
+        "closing": true,
+        "count": 22
+      }
+    ]
+  }
+}

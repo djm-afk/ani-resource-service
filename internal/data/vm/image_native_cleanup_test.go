@@ -52,8 +52,8 @@ func TestDeleteImageObjectsRemovesTheDataVolumeBeforeItsChildren(t *testing.T) {
 	if verbs["delete/datavolumes"] != 1 {
 		t.Fatalf("DataVolume was not removed first: %v", verbs)
 	}
-	if len(out.Cleanup) == 0 || out.Cleanup[0].UID != "rebuilt-child-uid" {
-		t.Fatalf("child registration not refreshed to the cluster UID: %+v", out.Cleanup)
+	if len(out.Cleanup) == 0 || out.Cleanup[0].UID != "stale-child-uid" {
+		t.Fatalf("historical CDI UID was changed by the business worker: %+v", out.Cleanup)
 	}
 }
 

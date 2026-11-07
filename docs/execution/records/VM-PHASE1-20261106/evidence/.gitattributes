@@ -1,0 +1,3 @@
+# Immutable command captures: preserve exact bytes and do not text-merge them.
+*.log binary
+existing-records-initial-summary.txt binary

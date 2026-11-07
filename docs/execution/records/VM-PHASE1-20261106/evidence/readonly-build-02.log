@@ -1,0 +1,67 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 263B done
+#1 DONE 0.1s
+
+#2 [auth] ani-gpu-platform/ani-vm-image-verify:pull token for 10.10.1.66:30003
+#2 DONE 0.0s
+
+#3 [auth] ani-gpu-platform/ani-vm-image-verify:pull token for 10.10.1.66:30003
+#3 DONE 0.0s
+
+#4 [internal] load metadata for 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55
+#4 DONE 0.2s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.1s
+
+#6 [auth] ani-gpu-platform/ani-vm-image-verify:pull token for 10.10.1.66:30003
+#6 DONE 0.0s
+
+#7 [auth] ani-gpu-platform/ani-vm-image-verify:pull token for 10.10.1.66:30003
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 2.79MB 0.1s done
+#8 DONE 0.2s
+
+#9 [1/2] FROM 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55
+#9 resolve 10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55 0.1s done
+#9 CACHED
+
+#10 [2/2] COPY --chmod=0555 readonly-check /readonly-check
+#10 DONE 0.2s
+
+#11 exporting to image
+#11 exporting layers
+#11 exporting layers 0.5s done
+#11 exporting manifest sha256:a51747a23072763a35329952240658f4802f40956bfe27ec17eefb5b557d5045 0.1s done
+#11 exporting config sha256:467f4f65f5c9747aa06d338ad07264f1084d66ef6cda8ef4fd022807cdba571c 0.1s done
+#11 exporting attestation manifest sha256:aebc22753506c3aee285398ddc60d6ccd002ee40d21e990e7d6f46c9e2a0a62e 0.1s done
+#11 exporting manifest list sha256:0737d30c76bdeaff24b6963ae34feacd204a44fdaea2db29cd928c55f77d0e16
+#11 exporting manifest list sha256:0737d30c76bdeaff24b6963ae34feacd204a44fdaea2db29cd928c55f77d0e16 0.1s done
+#11 naming to 10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check:20261107-r2 done
+#11 unpacking to 10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check:20261107-r2 0.1s done
+#11 DONE 1.0s
+The push refers to repository [10.10.1.66:30003/ani-gpu-platform/vm-phase1-readonly-check]
+44136fa355b3: Waiting
+63e7e49699e8: Waiting
+def63a514020: Waiting
+e9cddc76d6c1: Waiting
+def63a514020: Waiting
+e9cddc76d6c1: Waiting
+44136fa355b3: Waiting
+63e7e49699e8: Waiting
+def63a514020: Layer already exists
+44136fa355b3: Already exists
+63e7e49699e8: Layer already exists
+871eedcd73c9: Waiting
+bd866ac1a3a4: Waiting
+a7647bf584af: Waiting
+e9cddc76d6c1: Pushed
+871eedcd73c9: Layer already exists
+bd866ac1a3a4: Layer already exists
+a7647bf584af: Pushed
+20261107-r2: digest: sha256:0737d30c76bdeaff24b6963ae34feacd204a44fdaea2db29cd928c55f77d0e16 size: 856

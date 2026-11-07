@@ -206,7 +206,7 @@ func (n *restoreBoundary) DeleteSnapshot(context.Context, VM, Snapshot) (bool, e
 func (n *restoreBoundary) EnsureRestore(_ context.Context, _ VM, s Snapshot, ref ObjectRef) (RestoreObservation, error) {
 	n.ensures++
 	ref.UID = "restore-uid"
-	return RestoreObservation{Native: ref, Complete: true, Disks: restoredDisks(s)}, nil
+	return RestoreObservation{Native: ref, Complete: true, OutputsKnown: true, Disks: restoredDisks(s)}, nil
 }
 func (n *restoreBoundary) ApplyRestoredConfiguration(context.Context, VM, Snapshot) (bool, error) {
 	n.configures++
@@ -331,5 +331,84 @@ func TestRestoreMappingRetiresMediaWithoutDiscardingNewerLogicalCopies(t *testin
 	after, err = applyRestoreMapping(after, s, SnapshotProgress{Plan: &plan, RestoredDisks: restoredDisks(s), RestoredMediaCopies: []MediaCopy{restored}})
 	if err != nil || len(after.RetiredMediaCopies) != 1 || len(after.RetiredDisks) != len(plan.Cleanup) {
 		t.Fatal("mapping replay duplicated retired refs", err)
+	}
+}
+
+func TestRestorePreviewIgnoresNestedStorageDiagnostics(t *testing.T) {
+	v, s := snapshotFixture(t)
+	original, err := PreviewSnapshotRestore(v, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Content = ObjectRef{Kind: "VirtualMachineSnapshotContent", Name: "changed", UID: "changed"}
+	s.Artifacts = []ObjectRef{{Kind: "VolumeSnapshotContent", Name: "new-diagnostic"}}
+	for i := range s.Required {
+		s.Required[i].Class = ObjectRef{Name: "new-class"}
+		s.Required[i].VolumeSnapshot = ObjectRef{Name: "new-vs"}
+	}
+	for i := range s.Inventory {
+		s.Inventory[i].Cleanup = []ObjectRef{{Kind: "PersistentVolume", Name: "new-pv"}}
+		s.Inventory[i].Reason = "new diagnostic"
+	}
+	for i := range v.Disks {
+		v.Disks[i].Cleanup = []ObjectRef{{Kind: "PersistentVolume", Name: "other-pv"}}
+		v.Disks[i].Preparation = "diagnostic"
+	}
+	same, err := PreviewSnapshotRestore(v, s)
+	if err != nil || same.Digest != original.Digest {
+		t.Fatal("diagnostics changed confirmation", same, err)
+	}
+	v.Disks[0].Cleanup = append(v.Disks[0].Cleanup, ObjectRef{Kind: "PersistentVolumeClaim", Namespace: v.Spec.Namespace, Name: "actual-extra-cleanup", UID: "extra-pvc"})
+	extra, err := PreviewSnapshotRestore(v, s)
+	if err != nil || extra.Digest == original.Digest {
+		t.Fatal("business cleanup omitted from confirmation", extra, err)
+	}
+	v.Disks[0].PVC.UID = "real-new-volume"
+	changed, err := PreviewSnapshotRestore(v, s)
+	if err != nil || changed.Digest == original.Digest {
+		t.Fatal("actual cleanup identity omitted", changed, err)
+	}
+}
+
+type savedRestoreRepository struct {
+	Repository
+	saved Operation
+}
+
+func (r *savedRestoreRepository) GetOperation(context.Context, string, string, string) (Operation, error) {
+	return r.saved, nil
+}
+
+type lostRestoreBoundary struct{ restoreBoundary }
+
+func (n *lostRestoreBoundary) ObserveRestore(context.Context, VM, Snapshot, ObjectRef) (RestoreObservation, error) {
+	return RestoreObservation{}, ErrUnknown
+}
+
+func TestRestoreCleanupReusesDurableLegacyOutputsWithoutRewritingPlan(t *testing.T) {
+	v, s := snapshotFixture(t)
+	plan, err := PreviewSnapshotRestore(v, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An accepted legacy digest is intentionally different from the new preview.
+	plan.Digest = "accepted-legacy-digest"
+	id := "40000000-0000-4000-8000-000000000001"
+	ref := ObjectRef{Kind: "VirtualMachineRestore", Namespace: v.Spec.Namespace, Name: "vm-restore-" + id, UID: "registered-restore"}
+	p := SnapshotProgress{Plan: &plan, NativeRestore: ref, NativeRestoreCompleted: true, RestoredDisks: restoredDisks(s)}
+	repo := &savedRestoreRepository{saved: Operation{ID: id, Snapshot: &p}}
+	native := &lostRestoreBoundary{}
+	worker := &Worker{repo: repo, native: native}
+	s.Restores = []ObjectRef{ref}
+	if err := worker.observeRestoreCleanup(context.Background(), &v, &s); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.RestoreOutputsRecorded) != 1 || len(v.RetiredDisks) != len(s.Inventory) || p.Plan.Digest != "accepted-legacy-digest" {
+		t.Fatal("legacy output/intent lost")
+	}
+	repo.saved.Snapshot.NativeRestoreCompleted = false
+	s.RestoreOutputsRecorded = nil
+	if err := worker.observeRestoreCleanup(context.Background(), &v, &s); !errors.Is(err, ErrUnknown) {
+		t.Fatal("unknown legacy output inferred success", err)
 	}
 }

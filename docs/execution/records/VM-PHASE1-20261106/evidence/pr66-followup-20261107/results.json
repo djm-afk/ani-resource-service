@@ -1,0 +1,153 @@
+{
+  "scope": "PR #66: registered Restore output disappearance and asynchronous disk preparation inventory only",
+  "recorded_at": "2026-11-07T06:05:52.352774+00:00",
+  "execution_host": "WIN-HUFRHKJT097",
+  "execution_environment": "Windows host, local WSL2 Ubuntu",
+  "cwd": "/home/ubuntu/workspace/ani-resource-service",
+  "branch": "codex/vm-phase1-remediation-20261106",
+  "audit_base": "241bacd8cd001f4d0075707311c225a36876656b",
+  "source_snapshot": "Final VM PostgreSQL package, make verify and race-focused checks use audit_base plus source-manifest.json. Earlier focused logs are retained intermediate attempts; their full source manifests were not captured.",
+  "source_manifest_sha256": "98d3914bdb5d69f48af25335ea31612f98eeab701b37c3ca0e21fa1627e2e718",
+  "checks": [
+    {
+      "name": "restore-unit",
+      "status": "PASS",
+      "exit_code": 0,
+      "command": [
+        "go",
+        "test",
+        "./internal/biz/vm",
+        "-run",
+        "TestRestoreOutputMerge|TestRestoreCleanup",
+        "-count=1"
+      ],
+      "log": "restore-unit.log",
+      "log_last_written_at": "2026-11-07T05:45:23.026284+00:00",
+      "top_level_pass": 0,
+      "top_level_skip": 0,
+      "top_level_fail": 0,
+      "source_snapshot": "INTERMEDIATE; exact complete manifest not captured. Final coverage is in vm-pg-full, make-verify and vm-pg-race-focused."
+    },
+    {
+      "name": "targeted-pg-03",
+      "status": "PASS",
+      "exit_code": 0,
+      "command": [
+        "./scripts/integration",
+        "-tags=instanceintegration",
+        "-timeout=5m",
+        "-run",
+        "TestStoppedCreateInventoryRefreshAfterIndependentStart|TestObservationPreparationFencesRemap|TestRestoreMissingRegisteredOutputs",
+        "-v",
+        "./internal/data/vm"
+      ],
+      "log": "targeted-pg-03.log",
+      "log_last_written_at": "2026-11-07T05:58:59.625747+00:00",
+      "top_level_pass": 3,
+      "top_level_skip": 0,
+      "top_level_fail": 0,
+      "source_snapshot": "INTERMEDIATE; exact complete manifest not captured. Final coverage is in vm-pg-full, make-verify and vm-pg-race-focused."
+    },
+    {
+      "name": "vm-pg-full",
+      "status": "PASS",
+      "exit_code": 0,
+      "command": [
+        "./scripts/integration",
+        "-tags=instanceintegration",
+        "-timeout=20m",
+        "-v",
+        "./internal/data/vm"
+      ],
+      "log": "vm-pg-full.log",
+      "log_last_written_at": "2026-11-07T06:01:37.889148+00:00",
+      "top_level_pass": 111,
+      "top_level_skip": 13,
+      "top_level_fail": 0,
+      "source_snapshot": "source-manifest.json"
+    },
+    {
+      "name": "baseline-restore-unit",
+      "status": "EXPECTED_FAIL",
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-p=4",
+        "./internal/biz/vm",
+        "-run",
+        "^TestRestoreOutputMerge",
+        "-count=1"
+      ],
+      "log": "baseline-restore-unit.log",
+      "log_last_written_at": "2026-11-07T05:59:53.582027+00:00",
+      "top_level_pass": 0,
+      "top_level_skip": 0,
+      "top_level_fail": 1,
+      "source_snapshot": "audit_base unchanged production files plus the three added regression test files, byte-identical to their entries in source-manifest.json"
+    },
+    {
+      "name": "baseline-targeted-pg",
+      "status": "EXPECTED_FAIL",
+      "exit_code": 1,
+      "command": [
+        "./scripts/integration",
+        "-tags=instanceintegration",
+        "-timeout=5m",
+        "-run",
+        "TestStoppedCreateInventoryRefreshAfterIndependentStart|TestObservationPreparationFencesRemap|TestRestoreMissingRegisteredOutputs",
+        "-v",
+        "./internal/data/vm"
+      ],
+      "log": "baseline-targeted-pg.log",
+      "log_last_written_at": "2026-11-07T06:00:12.322559+00:00",
+      "top_level_pass": 0,
+      "top_level_skip": 0,
+      "top_level_fail": 3,
+      "source_snapshot": "audit_base unchanged production files plus the three added regression test files, byte-identical to their entries in source-manifest.json"
+    }
+  ],
+  "timed_check_receipts": [
+    "make-verify.json",
+    "vm-pg-race-focused.json"
+  ],
+  "postgres_image": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+  "skips": {
+    "vm_image_database_tests": 12,
+    "reason": "VM_IMAGE_TEST_ADMIN_DSN not configured; image-only database tests are outside these two fixes",
+    "process_child_entry": 1,
+    "parent_process_exit_recovery": "PASS: child is invoked by the actual parent process-exit test"
+  },
+  "initial_failures": [
+    {
+      "log": "inventory-pg-01.log",
+      "cause": "new test fixture build: unused context import",
+      "resolution": "removed unused import before targeted rerun"
+    },
+    {
+      "log": "targeted-pg-02.log",
+      "cause": "new native Start fixture lacked console tablet/resourceVersion; deletion no-scan assertion included fixture setup actions",
+      "resolution": "modeled the created VM tablet/resourceVersion; cleared setup actions before asserting the actual deletion path"
+    }
+  ],
+  "baseline_reproduction": "same three regression files added to detached audit_base; absent output merge/delete fails ownership; baseline observer lacks inventory read/persistence",
+  "baseline_cwd": "/home/ubuntu/workspace/ani-resource-service-pr66-review-base",
+  "cluster_used": false,
+  "deployed": false,
+  "live_tests_run": false,
+  "historical_live": {
+    "source": "991eb61a8acf245662a9cea70074835121415439",
+    "record": "../../PHASE1-REPORT.md before the PR #66 follow-up section",
+    "reused_as_new_code_live_evidence": false
+  },
+  "ci": {
+    "status": "DEFERRED_BY_USER",
+    "latest_commit_ci": "NOT_CHECKED",
+    "fixes_performed": false,
+    "gate_changes": false
+  },
+  "phase_two": "NOT_STARTED",
+  "merged": false,
+  "cleanup": "Every integration invocation removed its own PostgreSQL container; no task PostgreSQL container remains. Pre-existing unrelated container retained.",
+  "code_commit": "4cc64e028957d716976d85e62404f64ddd401592"
+}

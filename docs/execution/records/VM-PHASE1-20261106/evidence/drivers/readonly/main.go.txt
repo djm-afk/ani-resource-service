@@ -1,0 +1,65 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"syscall"
+	"unsafe"
+)
+
+func main() {
+	mode := os.Args[1]
+	path := "/dev/source"
+	if mode == "Filesystem" {
+		path = "/source/disk.img"
+	}
+	out := map[string]any{"mode": mode, "read_open": false, "no_data_writes": true}
+	f, err := os.OpenFile(path, os.O_RDONLY, 0)
+	if err == nil {
+		b := make([]byte, 4)
+		_, err = f.ReadAt(b, 0)
+		if err == nil {
+			out["read_open"] = true
+		}
+		if mode == "Block" {
+			var flag int32
+			_, _, e := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), 0x125e, uintptr(unsafe.Pointer(&flag)))
+			if e == 0 {
+				out["kernel_read_only_flag"] = flag
+			} else {
+				out["ioctl_error"] = e.Error()
+			}
+		} else {
+			var fs syscall.Statfs_t
+			if e := syscall.Statfs(path, &fs); e == nil {
+				out["filesystem_flags"] = fs.Flags
+			} else {
+				out["statfs_error"] = e.Error()
+			}
+		}
+		f.Close()
+	} else {
+		out["read_error"] = err.Error()
+	}
+	denied := true
+	for _, item := range []struct {
+		name string
+		flag int
+	}{{"write_only", os.O_WRONLY}, {"read_write", os.O_RDWR}} {
+		h, e := os.OpenFile(path, item.flag, 0)
+		opened := e == nil
+		out[item.name+"_open"] = opened
+		if opened {
+			h.Close()
+			denied = false
+		} else {
+			out[item.name+"_error"] = e.Error()
+		}
+	}
+	out["write_opens_denied"] = denied
+	encoded, _ := json.Marshal(out)
+	os.Stdout.Write(append(encoded, byte(10)))
+	if out["read_open"] != true || !denied {
+		os.Exit(1)
+	}
+}

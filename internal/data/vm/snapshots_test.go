@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -37,15 +38,9 @@ func TestSnapshotUsesNativeSelectedDeleteClassWithoutChangingSharedPolicy(t *tes
 	}
 	_ = unstructured.SetNestedField(profile.Object, "delete-class", "status", "snapshotClass")
 	_, _ = client.Resource(snapshotProfileResource).Update(t.Context(), profile, metav1.UpdateOptions{})
-	storage, class, err := native.snapshotClass(t.Context(), "block-sc")
+	_, class, err := native.snapshotClass(t.Context(), "block-sc")
 	if err != nil || class.Name != "delete-class" || class.UID != string(deletable.GetUID()) {
 		t.Fatal(class, err)
-	}
-	s := biz.Snapshot{Required: []biz.SnapshotVolume{{Storage: storage, Class: class}}}
-	deletable.SetUID(types.UID(uuid.NewString()))
-	_, _ = client.Resource(volumeSnapshotClassResource).Update(t.Context(), deletable, metav1.UpdateOptions{})
-	if err = native.snapshotClassesUnchanged(t.Context(), s); !errors.Is(err, biz.ErrChanged) {
-		t.Fatal("same-name replacement class accepted", err)
 	}
 	for _, action := range client.Actions() {
 		if action.GetVerb() != "get" && action.GetVerb() != "list" && action.GetVerb() != "update" {
@@ -166,41 +161,27 @@ func stringsToAny(values []string) []any {
 
 func TestNativeSnapshotInventoryCompletenessUIDFencesAndControllerCleanup(t *testing.T) {
 	native, v, s, client := nativeSnapshotFixture(t)
-	if len(s.Inventory) != 3 || len(s.Artifacts) != 7 || len(s.Indications) != 1 || s.Indications[0] != "NoGuestAgent" {
+	if len(s.Inventory) != 3 || len(s.Indications) != 1 || s.Indications[0] != "NoGuestAgent" {
 		t.Fatal(s)
 	}
-	content, _ := client.Resource(snapshotContentResource).Namespace(v.Spec.Namespace).Get(t.Context(), s.Content.Name, metav1.GetOptions{})
-	oldUID := content.GetUID()
-	content.SetUID(types.UID(uuid.NewString()))
-	_, _ = client.Resource(snapshotContentResource).Namespace(v.Spec.Namespace).Update(t.Context(), content, metav1.UpdateOptions{})
-	if _, err := native.ObserveSnapshot(t.Context(), v, s); !errors.Is(err, biz.ErrOwnership) {
-		t.Fatal("replacement content adopted", err)
-	}
-	content.SetUID(oldUID)
-	_, _ = client.Resource(snapshotContentResource).Namespace(v.Spec.Namespace).Update(t.Context(), content, metav1.UpdateOptions{})
+	// Lower layers may be unavailable or carry historic artifacts. Readiness
+	// and deletion still depend only on the registered native Snapshot.
+	s.Artifacts = []biz.ObjectRef{{Kind: "VolumeSnapshotContent", Name: "historic", UID: "historic-uid"}}
 	before := len(client.Actions())
-	done, err := native.DeleteSnapshot(t.Context(), v, s)
-	if err != nil || done {
+	ready, err := native.ObserveSnapshot(t.Context(), v, s)
+	if err != nil || !ready.Complete {
+		t.Fatal(ready, err)
+	}
+	if done, err := native.DeleteSnapshot(t.Context(), v, s); err != nil || done {
+		t.Fatal(done, err)
+	}
+	if done, err := native.DeleteSnapshot(t.Context(), v, s); err != nil || !done {
 		t.Fatal(done, err)
 	}
 	for _, action := range client.Actions()[before:] {
-		if action.GetVerb() == "delete" && action.GetResource() != snapshotResource {
-			t.Fatal("platform directly deletes CSI child", action)
+		if action.GetResource() != nsResource && action.GetResource() != snapshotResource {
+			t.Fatal("snapshot read internal proof layer", action)
 		}
-	}
-	if done, err = native.DeleteSnapshot(t.Context(), v, s); err != nil || done {
-		t.Fatal("cleanup declared before CSI children disappeared", done, err)
-	}
-	for _, ref := range s.Artifacts {
-		resource, _ := snapshotResourceFor(ref.Kind)
-		if ref.Namespace != "" {
-			_ = client.Resource(resource).Namespace(ref.Namespace).Delete(t.Context(), ref.Name, metav1.DeleteOptions{})
-		} else {
-			_ = client.Resource(resource).Delete(t.Context(), ref.Name, metav1.DeleteOptions{})
-		}
-	}
-	if done, err = native.DeleteSnapshot(t.Context(), v, s); err != nil || !done {
-		t.Fatal("native child cleanup not observed", done, err)
 	}
 }
 
@@ -228,7 +209,7 @@ func TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitia
 	var restores []any
 	for _, disk := range s.Inventory {
 		name := "restored-" + disk.ID
-		pvc := snapshotObject("v1", "PersistentVolumeClaim", name, v.Spec.Namespace, map[string]any{"spec": map[string]any{"volumeMode": "Block", "storageClassName": v.Spec.StorageClass, "dataSource": map[string]any{"apiGroup": "snapshot.storage.k8s.io", "kind": "VolumeSnapshot", "name": "vs-" + disk.ID}}, "status": map[string]any{"phase": "Pending"}})
+		pvc := snapshotObject("v1", "PersistentVolumeClaim", name, v.Spec.Namespace, map[string]any{"spec": map[string]any{"volumeMode": "Block", "resources": map[string]any{"requests": map[string]any{"storage": fmt.Sprint(disk.RequestedBytes)}}, "storageClassName": v.Spec.StorageClass, "dataSource": map[string]any{"apiGroup": "snapshot.storage.k8s.io", "kind": "VolumeSnapshot", "name": "vs-" + disk.ID}}, "status": map[string]any{"phase": "Pending"}})
 		pvc.SetOwnerReferences(ownReference(v))
 		pvc.SetAnnotations(map[string]string{"restore.kubevirt.io/lastRestoreUID": object.GetName() + "-" + string(object.GetUID())})
 		if _, err = client.Resource(pvcResource).Namespace(v.Spec.Namespace).Create(t.Context(), pvc, metav1.CreateOptions{}); err != nil {
@@ -285,17 +266,14 @@ func TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitia
 		t.Fatal("original NoCloud reference changed")
 	}
 
-	// Required inclusion without its native backup is incomplete.
-	content, _ := client.Resource(snapshotContentResource).Namespace(v.Spec.Namespace).Get(t.Context(), s.Content.Name, metav1.GetOptions{})
-	backups, _, _ := unstructured.NestedSlice(content.Object, "spec", "volumeBackups")
-	_ = unstructured.SetNestedSlice(content.Object, backups[:len(backups)-1], "spec", "volumeBackups")
-	_, _ = client.Resource(snapshotContentResource).Namespace(v.Spec.Namespace).Update(t.Context(), content, metav1.UpdateOptions{})
+	// Native included/excluded is the business coverage boundary.
+	snapshot, _ := client.Resource(snapshotResource).Namespace(v.Spec.Namespace).Get(t.Context(), s.Native.Name, metav1.GetOptions{})
+	_ = unstructured.SetNestedStringSlice(snapshot.Object, []string{s.Required[0].Name}, "status", "snapshotVolumes", "excludedVolumes")
+	_, _ = client.Resource(snapshotResource).Namespace(v.Spec.Namespace).Update(t.Context(), snapshot, metav1.UpdateOptions{})
 	incomplete, err := native.ObserveSnapshot(t.Context(), v, s)
 	if err != nil || incomplete.Complete {
-		t.Fatal("missing required physical backup declared complete", incomplete, err)
+		t.Fatal("excluded required volume accepted", incomplete, err)
 	}
-	_ = unstructured.SetNestedSlice(content.Object, backups, "spec", "volumeBackups")
-	_, _ = client.Resource(snapshotContentResource).Namespace(v.Spec.Namespace).Update(t.Context(), content, metav1.UpdateOptions{})
 	// A closing worker only observes the existing Restore, including partial
 	// status and a lost completed checkpoint/response. It never recreates it.
 	v.Closing = true
@@ -303,7 +281,7 @@ func TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitia
 	if err != nil || recovered.Native.UID != first.Native.UID || len(recovered.Disks) != len(s.Inventory) {
 		t.Fatal("lost restore response not recovered", recovered, err)
 	}
-	_ = unstructured.SetNestedMap(object.Object, map[string]any{"complete": false}, "status")
+	_ = unstructured.SetNestedMap(object.Object, map[string]any{"complete": false, "restores": restores}, "status")
 	_, _ = client.Resource(restoreResource).Namespace(v.Spec.Namespace).Update(t.Context(), object, metav1.UpdateOptions{})
 	from := len(client.Actions())
 	partial, err := native.ObserveRestore(t.Context(), v, s, first.Native)
@@ -318,49 +296,41 @@ func TestNativeRestoreUsesSameVMPoliciesAndAcceptsPendingPVCWithoutPowerOrInitia
 	if err = client.Resource(restoreResource).Namespace(v.Spec.Namespace).Delete(t.Context(), first.Native.Name, metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	absent, err := native.ObserveRestore(t.Context(), v, s, ref)
-	if err != nil || !absent.Absent || absent.Native.UID != first.Native.UID || len(absent.Disks) != len(s.Inventory) {
-		t.Fatal("missing Restore lost proven physical inventory", absent, err)
+	if _, err := native.ObserveRestore(t.Context(), v, s, ref); !errors.Is(err, biz.ErrUnknown) {
+		t.Fatal("lost result carrier inferred empty output", err)
 	}
-	if err = client.Resource(vmResource).Namespace(v.Spec.Namespace).Delete(t.Context(), v.Native.Name, metav1.DeleteOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	goneRoot, err := native.ObserveRestore(t.Context(), v, s, first.Native)
-	if err != nil || !goneRoot.Absent || len(goneRoot.Disks) != len(s.Inventory) {
-		t.Fatal("root GC hid pending restore PVCs", goneRoot, err)
-	}
-	lostAll, err := native.ObserveRestore(t.Context(), v, s, ref)
-	if err != nil || lostAll.Native.UID != first.Native.UID || len(lostAll.Disks) != len(s.Inventory) {
-		t.Fatal("partial native annotations did not recover lost ACK after root GC", lostAll, err)
+	s.RestoreOutputsRecorded = []biz.ObjectRef{first.Native}
+	absent, err := native.ObserveRestore(t.Context(), v, s, first.Native)
+	if err != nil || !absent.Absent || !absent.OutputsKnown || len(absent.Disks) != 0 {
+		t.Fatal(absent, err)
 	}
 
 }
 
-func TestRetiredVolumeCapturesLatePVAndRejectsReplacementUID(t *testing.T) {
+func TestRetiredVolumeIgnoresPVAndRejectsBusinessPVCReplacement(t *testing.T) {
 	native, v, s, client := nativeSnapshotFixture(t)
 	d := s.Inventory[0]
-	d.Cleanup = nil
-	// A completed restore may remove the old PVC before its PV is reclaimed.
-	if err := client.Resource(pvcResource).Namespace(v.Spec.Namespace).Delete(t.Context(), d.PVC.Name, metav1.DeleteOptions{}); err != nil {
-		t.Fatal(err)
+	d.Cleanup = []biz.ObjectRef{{Kind: "PersistentVolume", Name: "historic", UID: "pv-old"}}
+	old, _ := client.Resource(pvcResource).Namespace(v.Spec.Namespace).Get(t.Context(), d.PVC.Name, metav1.GetOptions{})
+	replacement := old.DeepCopy()
+	replacement.SetUID(types.UID(uuid.NewString()))
+	_, _ = client.Resource(pvcResource).Namespace(v.Spec.Namespace).Update(t.Context(), replacement, metav1.UpdateOptions{})
+	if _, err := native.ObserveRetiredVolume(t.Context(), v, d); !errors.Is(err, biz.ErrOwnership) {
+		t.Fatal("replacement PVC adopted", err)
 	}
-	pv := snapshotObject("v1", "PersistentVolume", "late-pv", "", map[string]any{"spec": map[string]any{"persistentVolumeReclaimPolicy": "Delete", "claimRef": map[string]any{"uid": d.PVC.UID, "name": d.PVC.Name, "namespace": d.PVC.Namespace}}})
-	namespace, err := client.Resource(nsResource).Get(t.Context(), v.Spec.Namespace, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	client = fake.NewSimpleDynamicClient(runtime.NewScheme(), namespace, pv)
-	native = NewNativeWithClients(client, nil)
+	_ = client.Resource(pvcResource).Namespace(v.Spec.Namespace).Delete(t.Context(), d.PVC.Name, metav1.DeleteOptions{})
+	_ = client.Resource(dvResource).Namespace(v.Spec.Namespace).Delete(t.Context(), d.DV.Name, metav1.DeleteOptions{})
+	before := len(client.Actions())
 	observed, err := native.ObserveRetiredVolume(t.Context(), v, d)
-	if err != nil || len(observed.Cleanup) != 1 || observed.Cleanup[0].UID != string(pv.GetUID()) {
-		t.Fatal("late PV not registered by claim UID", observed, err)
+	if err != nil || len(observed.Cleanup) != 1 {
+		t.Fatal(observed, err)
 	}
-	if done, err := native.DeleteVolume(t.Context(), v, observed); err != nil || done {
-		t.Fatal("PVC absence bypassed remaining PV", done, err)
+	if done, err := native.DeleteVolume(t.Context(), v, observed); err != nil || !done {
+		t.Fatal(done, err)
 	}
-	pv.SetUID(types.UID(uuid.NewString()))
-	_, _ = client.Resource(pvResource).Update(t.Context(), pv, metav1.UpdateOptions{})
-	if _, err := native.ObserveRetiredVolume(t.Context(), v, observed); !errors.Is(err, biz.ErrOwnership) {
-		t.Fatal("same-name PV replacement adopted", err)
+	for _, action := range client.Actions()[before:] {
+		if action.GetResource() == pvResource {
+			t.Fatal("retired cleanup read PV", action)
+		}
 	}
 }

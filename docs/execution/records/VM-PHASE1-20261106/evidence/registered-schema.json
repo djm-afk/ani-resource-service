@@ -1,0 +1,12 @@
+{
+  "queried_at": "2026-11-06T16:02:04.732461+00:00",
+  "entry": "10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "queries": [
+    {
+      "exit_code": 0,
+      "stdout": "BEGIN\nvm.disks\nvm.guest_initializations\nvm.image_requests\nvm.image_source_references\nvm.images\nvm.observation_work\nvm.operations\nvm.schema_version\nvm.snapshots\nvm.virtual_machines\nCOMMIT\n",
+      "stderr": ""
+    }
+  ]
+}

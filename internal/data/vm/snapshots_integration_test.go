@@ -208,29 +208,16 @@ func snapshotPostgresRestore(t *testing.T, takeover bool) {
 		run()
 	}
 	pending, err := repo.GetOperation(ctx, tenant, id, deletion.ID)
-	if err != nil || pending.State == "succeeded" || boundary.oldPVChecks == 0 {
-		t.Fatal("DELETE bypassed the old PV after PVC absence", pending, err)
+	if err != nil || pending.State != "succeeded" || boundary.oldPVChecks == 0 {
+		t.Fatal("DELETE remained blocked on historical PV after business PVC absence", pending, err)
 	}
 	current, err = other.Get(ctx, tenant, id)
-	if err != nil || len(current.RetiredDisks) != 1 {
-		t.Fatal("unreclaimed old PV ref was discarded", err)
-	}
-	if err = client.Resource(pvResource).Delete(ctx, pv.GetName(), metav1.DeleteOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	for attempts := 0; attempts < 4; attempts++ {
-		run()
-		pending, err = repo.GetOperation(ctx, tenant, id, deletion.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if pending.State == "succeeded" {
-			break
-		}
+	if err != nil || len(current.RetiredDisks) != 0 {
+		t.Fatal("completed business retirement remained pending on PV", err)
 	}
 	current, err = other.Get(ctx, tenant, id)
 	if err != nil || pending.State != "succeeded" || len(current.RetiredDisks) != 0 || current.Disks[0].PVC.UID != newDisk.PVC.UID {
-		t.Fatal("DELETE did not finish only after old PV reclamation", pending, err)
+		t.Fatal("DELETE did not finish at the business object boundary", pending, err)
 	}
 }
 
@@ -283,7 +270,7 @@ func (n *snapshotDeleteBoundary) ObserveRestore(_ context.Context, _ biz.VM, _ b
 	if n.restoreUID != "" {
 		ref.UID = n.restoreUID
 	}
-	return biz.RestoreObservation{Native: ref, Complete: true, Disks: n.restored}, nil
+	return biz.RestoreObservation{Native: ref, Complete: true, OutputsKnown: true, Disks: n.restored}, nil
 }
 
 func TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint(t *testing.T) {
@@ -398,21 +385,14 @@ func TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for i := 0; i < 7; i++ {
-				run()
-			}
-			pending, err := repo.GetOperation(ctx, tenant, id, deletion.ID)
-			if err != nil || pending.State == "succeeded" || boundary.oldPVChecks == 0 {
-				t.Fatal("new PVC/PV omitted before mapping", pending, err)
-			}
+			run() // Output and cancel responsibility are checkpointed before producer deletion.
 			current, err := repo.Get(ctx, tenant, id)
-			if err != nil || len(current.RetiredDisks) != 1 || current.RetiredDisks[0].PVC != newDisk.PVC {
-				t.Fatal("new physical refs not recovered and durable", current, err)
+			if err != nil || len(current.RetiredDisks) != 1 || current.RetiredDisks[0].PVC != newDisk.PVC ||
+				len(current.Snapshots[0].RestoreOutputsRecorded) != 1 {
+				t.Fatal("named outputs were not durable before cleanup", current, err)
 			}
-			if err = client.Resource(pvResource).Delete(ctx, pv.GetName(), metav1.DeleteOptions{}); err != nil {
-				t.Fatal(err)
-			}
-			for i := 0; i < 4; i++ {
+			var pending biz.Operation
+			for i := 0; i < 8; i++ {
 				run()
 				pending, err = repo.GetOperation(ctx, tenant, id, deletion.ID)
 				if err != nil {
@@ -422,9 +402,15 @@ func TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint(t *testing.T) {
 					break
 				}
 			}
-			if pending.State != "succeeded" {
-				t.Fatal("new PV reclaimed but DELETE did not finish", pending)
+			if pending.State != "succeeded" || boundary.oldPVChecks == 0 {
+				t.Fatal("business cleanup stayed blocked on PV", pending)
 			}
+			// The historical PV still exists; platform completion does not assert
+			// physical reclamation or mutate the storage controller's object.
+			if _, err = client.Resource(pvResource).Get(ctx, pv.GetName(), metav1.GetOptions{}); err != nil {
+				t.Fatal(err)
+			}
+
 		})
 	}
 }

@@ -1,0 +1,15 @@
+{
+  "entry": "10.10.1.66",
+  "ssh": "kubercloud@10.10.1.66",
+  "context": "kubernetes-admin@ani-kcn-full",
+  "namespace": "ani-system",
+  "started_at": "2026-11-06T17:32:41.603743+00:00",
+  "finished_at": "2026-11-06T17:32:48.165815+00:00",
+  "previous_image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:7fe62795e5cab56b8e24171a4dc741f32ba602c961fb46094dd80d7744aba840",
+  "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78",
+  "verifier": "10.10.1.66:30003/ani-gpu-platform/ani-vm-image-verify@sha256:c98767e78dfd6babe2527b7eac4068a4592d0e93b80514bffd343293ae2aea55",
+  "rollout": "Waiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"ani-resource-service\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"ani-resource-service\" successfully rolled out\n",
+  "source_manifest": "image-build-04.manifest.json",
+  "source_manifest_sha256": "19cdb8e29a5a4757031aadfd478e1ee72c01260c4b9bb97fcde508c1d1dd863f",
+  "reason": "preserve runtime media projection after lifecycle storage decoupling"
+}

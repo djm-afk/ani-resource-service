@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -267,10 +268,8 @@ func (w *ImageWorker) verifying(ctx context.Context, i Image) error {
 	return w.save(ctx, observed)
 }
 
-// cleanup removes exactly the registered chain, then closes the tombstone. The
-// cluster probe is the proof: a worker that died between creating an object and
-// registering it must still show the namespace empty before DELETED is written,
-// otherwise the record vanishes while its volume keeps consuming capacity.
+// cleanup closes only after registered platform business objects exit their
+// native lifecycle. CDI internals and PV diagnostics stay outside that set.
 func (w *ImageWorker) cleanup(ctx context.Context, i Image) error {
 	if i.CleanupState == CleanupComplete {
 		return w.closeDeleted(ctx, i)
@@ -293,14 +292,34 @@ func (w *ImageWorker) cleanup(ctx context.Context, i Image) error {
 	if e != nil {
 		return e
 	}
-	// The drain chain only owns PersistentVolumeClaim entries; a DataVolume or Job found
-	// by the probe is removed by its own name+UID step, so registering it as a chain
-	// entry would be read as a foreign object and block the tombstone forever. Rows
-	// written before that rule carry such entries already, so they are dropped here:
-	// the probe that just ran covers every one of those kinds, and it is the probe,
-	// not the chain, that decides whether the namespace is empty.
-	i.Cleanup = appendImageRefs(drainableImageRefs(i.Cleanup), registrableImageRefs(remaining))
-	if len(remaining) == 0 && len(i.Cleanup) == 0 && i.Native.DVName == "" && i.Native.PVCName == "" &&
+	// Newly observed refs are platform business objects. Historical CDI/PV
+	// refs remain in Cleanup for handoff, outside the regular execution set.
+	i.Cleanup = appendImageRefs(i.Cleanup, remaining)
+	for _, ref := range remaining {
+		if ref.Namespace != i.Native.Namespace {
+			return ErrOwnership
+		}
+		switch ref.Kind {
+		case "DataVolume":
+			if i.Native.DVUID == "" {
+				i.Native.DVName, i.Native.DVUID = ref.Name, ref.UID
+			}
+		case "PersistentVolumeClaim":
+			if i.Native.PVCUID == "" {
+				i.Native.PVCName, i.Native.PVCUID = ref.Name, ref.UID
+			}
+		case "Job":
+			if i.Native.JobUID == "" {
+				i.Native.JobName, i.Native.JobUID = ref.Name, ref.UID
+			}
+		case "UploadTokenRequest":
+			if i.Native.TokenUID == "" {
+				i.Native.TokenName, i.Native.TokenUID = ref.Name, ref.UID
+			}
+		}
+	}
+
+	if len(remaining) == 0 && len(ImageCleanupObjects(i)) == 0 && i.Native.DVName == "" && i.Native.PVCName == "" &&
 		i.Native.JobName == "" && i.Native.TokenName == "" {
 		i.CleanupState = CleanupComplete
 		i.NextAttemptAt = time.Now().Add(w.poll)
@@ -331,7 +350,7 @@ func (w *ImageWorker) cleanup(ctx context.Context, i Image) error {
 		return e
 	}
 	if len(recheck) > 0 {
-		observed.Cleanup = appendImageRefs(observed.Cleanup, registrableImageRefs(recheck))
+		observed.Cleanup = appendImageRefs(observed.Cleanup, recheck)
 		observed.NextAttemptAt = time.Now().Add(w.poll)
 		return w.save(ctx, observed)
 	}
@@ -365,30 +384,25 @@ func (w *ImageWorker) probe(ctx context.Context, i Image) ([]ObjectRef, error) {
 	return nil, e
 }
 
-func registrableImageRefs(found []ObjectRef) []ObjectRef {
-	out := make([]ObjectRef, 0, len(found))
-	for _, ref := range found {
-		if ref.Kind == "PersistentVolumeClaim" {
-			out = append(out, ref)
+// ImageCleanupObjects is the pending business set from legacy Cleanup.
+// Only the platform's own source PVC belongs here; other historical PVCs/Pods
+// are CDI internals handed to component operations. They remain diagnostic.
+func ImageCleanupObjects(i Image) []ObjectRef {
+	refs := []ObjectRef{}
+	source := "vmi-src-" + strings.ReplaceAll(i.ID, "-", "")
+	for _, ref := range i.Cleanup {
+		if ref.Kind == "PersistentVolume" || ref.Kind == "Pod" {
+			continue
 		}
-	}
-	return out
-}
-
-// drainableImageRefs keeps the types the registered chain can act on. A record
-// written by an older worker may hold probe kinds there; those objects are still
-// covered by the current probe, and leaving them in would block the chain on a
-// kind it can never remove.
-func drainableImageRefs(existing []ObjectRef) []ObjectRef {
-	out := make([]ObjectRef, 0, len(existing))
-	for _, ref := range existing {
-		if ref.Kind == "PersistentVolumeClaim" || ref.Kind == "PersistentVolume" {
-			out = append(out, ref)
+		// Classify only existing legacy registrations, never enumerate these
+		// names or use them to adopt a different UID. Unknown business refs stay.
+		if ref.Kind == "PersistentVolumeClaim" && ((i.Native.PVCUID != "" && (ref.Name == "prime-"+i.Native.PVCUID || ref.Name == "prime-"+i.Native.PVCUID+"-scratch")) || ref.Name == source+"-scratch" || (i.Native.PVCName != "" && ref.Name == i.Native.PVCName+"-scratch")) {
+			continue
 		}
+		refs = append(refs, ref)
 	}
-	return out
+	return refs
 }
-
 func appendImageRefs(existing []ObjectRef, found []ObjectRef) []ObjectRef {
 	for _, ref := range found {
 		if ref.Name == "" {
@@ -416,7 +430,6 @@ func (w *ImageWorker) closeDeleted(ctx context.Context, i Image) error {
 	i.State = StateDeleted
 	i.Reason = ""
 	i.CleanupState = CleanupComplete
-	i.Cleanup = nil
 	return w.save(ctx, i)
 }
 

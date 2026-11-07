@@ -242,10 +242,14 @@ type Observation struct {
 	Running, Stopped, Deleted bool
 	// Terminal is an owned VMI whose runtime has exited. Manual VMs can
 	// retain this object; it is not the stronger Stopped cleanup proof.
+	// RelatedPodsPresent includes ambiguous launchers and helpers; nil Launcher
+	// never proves runtime exit.
+	RelatedPodsPresent  bool
 	Terminal            bool
 	ObservedAt          time.Time
 	State, Reason       string
 	Volumes             []Disk
+	MediaSlots          []MediaSlot // optional runtime projection; never a lifecycle gate
 	BackendStates       []BackendState
 	StateChangeRequests []string
 }

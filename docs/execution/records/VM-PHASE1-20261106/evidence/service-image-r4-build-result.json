@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "service": "ani-resource-service",
+  "source": "https://github.com/zhangzhe-ctrl/ani-resource-service",
+  "source_revision": "1498c223d902f24b2786ac017514087a476da091",
+  "source_dirty": true,
+  "source_snapshot": "sha256:b3f13212578885a391c6e9a6e1253d23f6b0642e4328f1dc323b546c0448001c",
+  "version": "vm-phase1-20261107-r4",
+  "target": "service",
+  "platform": "linux/amd64",
+  "image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service:vm-phase1-20261107-r4",
+  "local_image_id": "sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78",
+  "local_config_digest": null,
+  "local_descriptor_digest": "sha256:96cf48e8b82400ee533b6944da836062759a549e0968de2e8449cd8c02d6dc78",
+  "local_descriptor_media_type": "application/vnd.oci.image.index.v1+json",
+  "registry_digest": null,
+  "pushed": false,
+  "builder_image": "golang:1.26.10-bookworm",
+  "runtime_image": "10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:0d6126e13df66797811914c2cbb4e5f743d514a683704953783cd1506f1ae22e",
+  "buildkit_metadata": "/home/ubuntu/workspace/ani-resource-service/.work/images/image-zy75d9h3/buildkit.json",
+  "source_manifest": "/home/ubuntu/workspace/ani-resource-service/.work/images/image-zy75d9h3/source-manifest.json"
+}

@@ -164,6 +164,16 @@ func (w *Worker) create(ctx context.Context, o *Operation, v *VM) error {
 			return nil
 		}
 	}
+	// Create owns initial inventory registration independently of power.
+	// Replaying EnsureVolume on an already registered DV only observes that
+	// same identity; Pending/WFFC is valid and does not delay native Start.
+	for i, disk := range v.Disks {
+		observed, err := w.native.EnsureVolume(ctx, *v, disk)
+		if err != nil {
+			return err
+		}
+		v.Disks[i] = observed
+	}
 	if !v.Spec.StartAfterCreate {
 		o.State = "succeeded"
 		v.Observed = "Stopped"
@@ -171,6 +181,17 @@ func (w *Worker) create(ctx context.Context, o *Operation, v *VM) error {
 		return nil
 	}
 	return w.power(ctx, o, v)
+}
+
+// observeLifecycle reads only runtime facts; inventory is reconciled by its
+// owning create/disk/media/restore paths and independent preparation observation.
+func (w *Worker) observeLifecycle(ctx context.Context, v VM) (Observation, error) {
+	if n, ok := w.native.(interface {
+		ObserveLifecycle(context.Context, VM) (Observation, error)
+	}); ok {
+		return n.ObserveLifecycle(ctx, v)
+	}
+	return w.native.Observe(ctx, v)
 }
 func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	if v.SecurityGroupsInitialized && len(v.SecurityGroupIDs) > 0 {
@@ -182,19 +203,18 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 			return err
 		}
 	}
-	x, e := w.native.Observe(ctx, *v)
+	x, e := w.observeLifecycle(ctx, *v)
 	if e != nil {
 		return e
 	}
 	v.Observed = x.State
 	v.Reason = x.Reason
 	v.ObservedAt = time.Now().UTC()
-	v.BackendStates = x.BackendStates
-	if e = w.observeMedia(ctx, v); e != nil {
-		return e
-	}
 	if x.VM.UID != "" && v.Native.UID != x.VM.UID {
 		return ErrOwnership
+	}
+	if x.MediaSlots != nil {
+		v.MediaSlots = x.MediaSlots
 	}
 	if ReconcileNetworkSubmission(v, x) {
 		// Save this current management revision before confirming it with Network.
@@ -211,7 +231,7 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	}
 	if o.Action == "restart" && (PrimaryNetworkInterface(*v).PendingRestart() || o.Step == "network-stopping" || o.Step == "network-starting") {
 		if o.Step != "network-starting" {
-			if !x.Stopped || x.VMI != nil || x.Launcher != nil || len(x.StateChangeRequests) != 0 {
+			if !x.Stopped || x.VMI != nil || x.Launcher != nil || x.RelatedPodsPresent || len(x.StateChangeRequests) != 0 {
 				if o.Step != "network-stopping" {
 					o.Step = "network-stopping"
 					if e = w.checkpoint(ctx, o, *v, "network-stop", v.Native); e != nil {
@@ -230,7 +250,7 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 		}
 	}
 	if (o.Action == "start" || o.Step == "network-starting") && PrimaryNetworkInterface(*v).PendingRestart() {
-		if !x.Stopped || x.VMI != nil || x.Launcher != nil || len(x.StateChangeRequests) != 0 {
+		if !x.Stopped || x.VMI != nil || x.Launcher != nil || x.RelatedPodsPresent || len(x.StateChangeRequests) != 0 {
 			return ErrDependency
 		}
 		if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
@@ -303,7 +323,7 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	case "stop", "force-stop":
 		v.Desired = "Stopped"
 		ended := x.Terminal && x.VMI != nil && x.VMI.UID != "" && x.VM.UID == v.Native.UID && v.Native.UID != ""
-		if ((x.Stopped && x.VMI == nil) || ended) && x.Launcher == nil && len(x.StateChangeRequests) == 0 {
+		if ((x.Stopped && x.VMI == nil) || ended) && x.Launcher == nil && !x.RelatedPodsPresent && len(x.StateChangeRequests) == 0 {
 			o.State = "succeeded"
 			o.Pending = nil
 			return nil
@@ -362,20 +382,13 @@ func (w *Worker) remove(ctx context.Context, o *Operation, v *VM) error {
 	if done, e := w.removeSnapshots(ctx, o, v); e != nil || !done {
 		return e
 	}
-	if e := InitializeMedia(v); e != nil {
-		return e
-	}
-	if e := w.observeMedia(ctx, v); e != nil {
-		return e
-	}
-	x, e := w.native.Observe(ctx, *v)
+	x, e := w.observeLifecycle(ctx, *v)
 	if e != nil {
 		return e
 	}
 	if ReconcileNetworkSubmission(v, x) {
 		return nil
 	}
-	v.BackendStates = x.BackendStates
 	for i := range v.Disks {
 		for _, d := range x.Volumes {
 			if v.Disks[i].ID == d.ID {
@@ -394,6 +407,9 @@ func (w *Worker) remove(ctx context.Context, o *Operation, v *VM) error {
 			return e
 		}
 		return w.native.Delete(ctx, *v)
+	}
+	if e := InitializeMedia(v); e != nil {
+		return e
 	}
 	v.Addresses = nil
 	if v.Spec.GuestInitialization != nil {

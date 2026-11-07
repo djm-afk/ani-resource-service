@@ -2,10 +2,9 @@
 // image validation Job. It accepts no image, command, path or plugin from a
 // caller: the only inputs are the three flags the Job template hard-codes.
 //
-// It proves three things and reports them as one bounded JSON document through
-// the pod termination message: the source opens read-only and refuses a write
-// open, the full-length SHA-256 of the addressable content, and for an ISO the
-// filesystem signature reported by blkid.
+// It reports readable source content, its full-length SHA-256 and ISO signature
+// through the bounded pod termination message. Read-only enforcement is checked
+// once for the deployment/storage policy, outside the per-upload Job.
 package main
 
 import (
@@ -19,7 +18,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -45,7 +43,7 @@ type report struct {
 	Checksum      string `json:"checksum"`
 	Bytes         int64  `json:"bytes"`
 	FSType        string `json:"fs_type"`
-	ReadOnlyProof string `json:"read_only_proof"`
+	ReadOnlyProof string `json:"read_only_proof,omitempty"`
 	Reason        string `json:"reason"`
 	ObservedAt    string `json:"observed_at"`
 }
@@ -92,9 +90,7 @@ func run(imageID, kind, volumeMode string) report {
 	return runFilesystem(imageID, kind, volumeMode, out)
 }
 
-// runBlock proves the read-only contract on the device itself. The write probe
-// opens the exact same node with O_WRONLY and O_RDWR and must not succeed; the
-// host block layer's read-only bit alone is never treated as the proof.
+// runBlock opens the fixed source device with O_RDONLY.
 func runBlock(imageID, kind, volumeMode string, out report) report {
 	out.VolumeMode, out.Pass = "Block", false
 	info, err := os.Stat(blockSource)
@@ -108,12 +104,6 @@ func runBlock(imageID, kind, volumeMode string, out report) report {
 		out.Reason = "SOURCE_IDENTITY_CHANGED"
 		return out
 	}
-	reason, proof, err := probeReadOnly(blockSource)
-	if err != nil {
-		out.Reason, out.ReadOnlyProof = reason, proof
-		return out
-	}
-	out.ReadOnlyProof = proof
 	file, err := os.OpenFile(blockSource, os.O_RDONLY, 0)
 	if err != nil {
 		out.Reason = "SOURCE_VALIDATION_FAILED"
@@ -145,15 +135,6 @@ func runFilesystem(imageID, kind, volumeMode string, out report) report {
 		}
 		return out
 	}
-	// CDI finishes a filesystem import with os.Chmod(dataFile, 0660) and a read-only
-	// mount leaves those bits on disk, so the mode says nothing about writability.
-	// probeReadOnly below is the only proof used.
-	reason, proof, err := probeReadOnly(filesystemSource)
-	if err != nil {
-		out.Reason, out.ReadOnlyProof = reason, proof
-		return out
-	}
-	out.ReadOnlyProof = proof
 	file, err := os.OpenFile(filesystemSource, os.O_RDONLY, 0)
 	if err != nil {
 		out.Reason = "SOURCE_VALIDATION_FAILED"
@@ -195,36 +176,6 @@ func runFilesystem(imageID, kind, volumeMode string, out report) report {
 	}
 	out.Checksum, out.Bytes, out.FSType, out.Pass = digest, size, signature, true
 	return out
-}
-
-// probeReadOnly attempts the two write modes on the exact source path with no
-// O_CREATE, so the attempt can neither fabricate a file nor a device node. It
-// never writes a byte; the proof names the rejection actually observed.
-func probeReadOnly(path string) (string, string, error) {
-	proofs := make([]string, 0, 2)
-	for _, attempt := range []struct {
-		name string
-		mode int
-	}{{"O_WRONLY", os.O_WRONLY}, {"O_RDWR", os.O_RDWR}} {
-		file, err := os.OpenFile(path, attempt.mode, 0)
-		if err == nil {
-			file.Close()
-			return "SOURCE_IDENTITY_CHANGED", attempt.name + "=accepted", errors.New("source accepted a write open")
-		}
-		if !errors.Is(err, syscall.EACCES) && !errors.Is(err, syscall.EROFS) && !errors.Is(err, syscall.EPERM) {
-			return "SOURCE_VALIDATION_FAILED", attempt.name + "=" + errnoName(err), errors.New("write probe failed unexpectedly")
-		}
-		proofs = append(proofs, attempt.name+"="+errnoName(err))
-	}
-	return "", strings.Join(proofs, ","), nil
-}
-
-func errnoName(err error) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		return errno.Error()
-	}
-	return "unclassified"
 }
 
 func digestStream(reader io.Reader) (string, int64, error) {
