@@ -173,3 +173,27 @@ Storage 方法全部为租户委托、unary RPC，完整清单以 [`internal/ser
 ### 手动 VNIC 精确方法
 
 受信 Governance tenant listener 新增 `NetworkService/{CreateVNic,GetVNic,ListVNics,DeleteVNic,ListVNicBindingTargets}`，请求显式 `target_tenant_id` 与认证租户一致，caller/actor/request attribution 来自 mTLS 受信元数据。VMService 与 InstanceService 各新增 `GetNetworkInterfaces`、`SetNetworkInterface`，沿本域 tenant scope；保存命令不隐式执行 Restart。正式方法与字段见对应 Proto，禁止平台范围跨租户调用这些租户方法。
+
+
+<a id="clusterops-platform"></a>
+## Clusterops 平台集群运维
+
+仅 full/governance 在既有业务 mTLS gRPC 注册 PlatformClusterOpsService；admin 健康端口不承载业务。沿用单一受信 ani-governance 证书与平台委托：单值 x-ani-scope=platform、规范非零 governance:user:<uint32>、规范非零 x-ani-request-id UUID；x-ani-tenant-id 完全不出现（含空值也拒绝），可选 x-ani-operator 仅能等于 actor 推导值。API Key 平台 actor、tenant/mixed/重复 scope 和未知方法拒绝。
+
+| 完整 RPC | 语义 |
+|---|---|
+| `/clusterops.v1.PlatformClusterOpsService/ListClusters` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/GetClusterOverview` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/ListResourceTypes` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/ListResources` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/GetResource` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/CreateResource` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/UpdateResource` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/DeleteResource` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/ScaleWorkload` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/RestartWorkload` | unary；原生查询或单对象操作 |
+| `/clusterops.v1.PlatformClusterOpsService/StreamPodLogs` | 唯一新增平台 server-stream；不接受 client/bidi stream |
+
+十个 unary 整体 30s，调用方更短 deadline 优先；其他 Res unary 保留原 c.Timeout。日志有独立读取/发送/终止预算：正常 END（EOF/STREAM_LIMIT_REACHED）且终止帧发送成功可以 OK；发送受阻以 LOG_SEND_TIMEOUT 非 OK 结束，不补发帧。精确预算、字段、Secret 投影、错误和异步成功含义只见[clusterops 调用合同](../contracts/cluster-operations-v1.md)。
+
+需 Namespace 判断的写入依赖 Network/Sandbox 两份登记可读，租户 Namespace 内只读；详情见[唯一保护规则](cluster-operations.md#租户-namespace-写保护)。固定动作不承诺受管 Kubernetes 凭据和 admission 一定允许，Res 不修改服务账号权限来放行。request ID 只追踪；原生 UID/RV/AlreadyExists 不提供额外幂等账本。Gov 权限目录、路由、BFF/client 正式版本及 IAM/BOSS 界面是后续外部接入事项，本次只交付 Res 合同与实现。

@@ -71,6 +71,11 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	// Writes need the same provider access as full mode; the governance
 	// boundary is enforced by service registration and the allowlist, not by
 	// removing the worker.
+	clusterOps, err := openClusterOps(context.Background(), bc.Network, repository, compute)
+	if err != nil {
+		return err
+	}
+	defer clusterOps.Close()
 	provider, observation, err := openNetworkProvider(repository, bc.Network)
 	if err != nil {
 		return err
@@ -175,6 +180,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	clusterOps.Register(gs)
 	vnicHandler := networkService.NewNetworkService(networkUC, attachments)
 	wireVNicConsumers(repository, vnicHandler, vms, instances)
 	networkv1.RegisterNetworkServiceServer(gs, vnicHandler)

@@ -311,7 +311,8 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 		}
 		_, platformMethod := governancePlatformMethods[info.FullMethod]
 		_, computePlatformMethod := computePlatformMethods[info.FullMethod]
-		platformMethod = platformMethod || computePlatformMethod
+		_, clusterOpsMethod := clusterOpsPlatformMethods[info.FullMethod]
+		platformMethod = platformMethod || computePlatformMethod || clusterOpsMethod
 		if platformMethod != p.Platform {
 			return nil, status.Error(codes.PermissionDenied, "governance scope does not permit this method")
 		}
@@ -387,6 +388,9 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 				ctx = computeScope(ctx, p, info.FullMethod, computebiz.ContainerInstance)
 			}
 			return next(instancebiz.WithCaller(ctx, instancebiz.Caller{TenantID: p.TenantID, Actor: p.Actor}), req)
+		}
+		if clusterOpsMethod {
+			return next(withClusterOpsCaller(ctx, p), req)
 		}
 		if platformMethod {
 			ctx = biz.WithEgressCaller(ctx, biz.EgressCaller{PlatformAdministrator: true, Attribution: biz.Attribution{Actor: p.Actor, DirectCaller: p.Workload, CorrelationID: p.RequestID}})

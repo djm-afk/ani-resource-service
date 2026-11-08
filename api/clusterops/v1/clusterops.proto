@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+package clusterops.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/clusterops/v1;clusteropsv1";
+
+service PlatformClusterOpsService {
+  // Fixed v1 contract names and shared mutation/frame messages.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  rpc ListClusters(google.protobuf.Empty) returns (ListClustersResponse);
+  // Fixed v1 contract names and shared mutation/frame messages.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetClusterOverview(GetClusterOverviewRequest) returns (ClusterOverview);
+  rpc ListResourceTypes(ListResourceTypesRequest) returns (ListResourceTypesResponse);
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  // Fixed v1 contract names and shared mutation/frame messages.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc CreateResource(CreateResourceRequest) returns (MutationResponse);
+  // Fixed v1 contract names and shared mutation/frame messages.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc UpdateResource(UpdateResourceRequest) returns (MutationResponse);
+  rpc DeleteResource(DeleteResourceRequest) returns (DeleteResourceResponse);
+  rpc ScaleWorkload(ScaleWorkloadRequest) returns (ScaleWorkloadResponse);
+  // Fixed v1 contract names and shared mutation/frame messages.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc RestartWorkload(RestartWorkloadRequest) returns (MutationResponse);
+  // Fixed v1 contract names and shared mutation/frame messages.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc StreamPodLogs(StreamPodLogsRequest) returns (stream PodLogFrame);
+}
+
+message Cluster {
+  string cluster_id = 1;
+  string display_name = 2;
+}
+
+message ListClustersResponse {
+  repeated Cluster items = 1;
+}
+
+message GetClusterOverviewRequest {
+  string cluster_id = 1;
+}
+
+message ClusterOverview {
+  string cluster_id = 1;
+  string kubernetes_version = 2;
+  int64 nodes_total = 3;
+  int64 nodes_ready = 4;
+  int64 namespaces_total = 5;
+  int64 pods_total = 6;
+  map<string, int64> pod_phase_counts = 7;
+  map<string, string> capacity = 8;
+  map<string, string> allocatable = 9;
+  google.protobuf.Timestamp sampled_at = 10;
+}
+
+message ResourceTypeRef {
+  string group = 1;
+  string version = 2;
+  string resource = 3;
+}
+
+message ResourceDescriptor {
+  ResourceTypeRef type = 1;
+  string kind = 2;
+  bool namespaced = 3;
+  repeated string actions = 4;
+  bool custom_resource = 5;
+  string crd_name = 6;
+}
+
+message ListResourceTypesRequest {
+  string cluster_id = 1;
+}
+
+message ListResourceTypesResponse {
+  repeated ResourceDescriptor items = 1;
+}
+
+message ResourceRef {
+  string cluster_id = 1;
+  ResourceTypeRef type = 2;
+  string namespace = 3;
+  string name = 4;
+}
+
+message ResourceDocument {
+  ResourceRef ref = 1;
+  string uid = 2;
+  string resource_version = 3;
+  string object_json = 4;
+  bool read_only = 5;
+  string read_only_reason = 6;
+  bool secret_data_redacted = 7;
+  repeated string secret_keys = 8;
+}
+
+message ListResourcesRequest {
+  string cluster_id = 1;
+  ResourceTypeRef type = 2;
+  string namespace = 3;
+  bool all_namespaces = 4;
+  uint32 page_size = 5;
+  string continue_token = 6;
+  string name = 7;
+  string label_selector = 8;
+  string field_selector = 9;
+}
+
+message ListResourcesResponse {
+  repeated ResourceDocument items = 1;
+  string next_continue_token = 2;
+  string list_resource_version = 3;
+}
+
+message GetResourceRequest {
+  ResourceRef ref = 1;
+  bool include_secret_data = 2;
+}
+
+message GetResourceResponse {
+  ResourceDocument resource = 1;
+  string manifest_yaml = 2;
+}
+
+message CreateResourceRequest {
+  ResourceRef ref = 1;
+  string manifest_yaml = 2;
+  bool dry_run = 3;
+}
+
+message UpdateResourceRequest {
+  ResourceRef ref = 1;
+  string manifest_yaml = 2;
+  string expected_uid = 3;
+  string expected_resource_version = 4;
+  bool dry_run = 5;
+}
+
+message MutationResponse {
+  ResourceDocument resource = 1;
+  bool dry_run = 2;
+}
+
+message DeleteResourceRequest {
+  ResourceRef ref = 1;
+  string expected_uid = 2;
+}
+
+message DeleteResourceResponse {
+  bool deletion_requested = 1;
+  bool already_absent = 2;
+}
+
+message ScaleWorkloadRequest {
+  ResourceRef ref = 1;
+  string expected_uid = 2;
+  string expected_resource_version = 3;
+  optional int32 replicas = 4;
+  bool dry_run = 5;
+}
+
+message ScaleWorkloadResponse {
+  ResourceRef ref = 1;
+  string uid = 2;
+  string resource_version = 3;
+  int32 desired_replicas = 4;
+  int32 observed_replicas = 5;
+  bool dry_run = 6;
+}
+
+message RestartWorkloadRequest {
+  ResourceRef ref = 1;
+  string expected_uid = 2;
+  string expected_resource_version = 3;
+  bool dry_run = 4;
+}
+
+message StreamPodLogsRequest {
+  string cluster_id = 1;
+  string namespace = 2;
+  string pod_name = 3;
+  string container = 4;
+  string expected_pod_uid = 5;
+  bool follow = 6;
+  bool previous = 7;
+  bool timestamps = 8;
+  optional int64 tail_lines = 9;
+  optional int64 since_seconds = 10;
+  google.protobuf.Timestamp since_time = 11;
+  optional int64 limit_bytes = 12;
+}
+
+enum PodLogFrameType {
+  POD_LOG_FRAME_TYPE_UNSPECIFIED = 0;
+  POD_LOG_FRAME_TYPE_READY = 1;
+  POD_LOG_FRAME_TYPE_DATA = 2;
+  POD_LOG_FRAME_TYPE_END = 3;
+  POD_LOG_FRAME_TYPE_ERROR = 4;
+}
+
+message PodLogFrame {
+  PodLogFrameType type = 1;
+  bytes data = 2;
+  string pod_uid = 3;
+  string container = 4;
+  string reason = 5;
+  string message = 6;
+}

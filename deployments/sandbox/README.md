@@ -11,6 +11,25 @@ Sandbox 拉取 Secret；Kubernetes RBAC 无法按名称限制 create。Storage �
 但其租户角色不包含 Sandbox 的 Pod 和 Secret 操作，集群角色也没有 PV list。
 两套角色可以绑定到同一身份，Kubernetes 会合并权限。
 
+## 与平台集群运维共用身份
+
+`tenant-provisioning-admission.yaml` 的 Role/RoleBinding 策略对普通非租户 Namespace
+允许通用平台运维，仍由原生 RBAC 检查实际权限及 bind/escalate 限制。Namespace 含
+Network 管理标记、任意 tenant-id 或 Sandbox UID 标记时，继续要求完整的 canonical
+Namespace 身份、匹配的 UID 及原有固定 Sandbox Role/Binding 形状；缺失或错误标记
+不能解除这些约束。固定 Sandbox 对象名及 RoleBinding 对固定 Sandbox Role 的引用
+在普通 Namespace 中同样受限。
+
+这只是既有 Sandbox 准入约束的适用范围。clusterops 的租户边界仍以
+[双登记 Namespace 保护](../../docs/specs/cluster-operations.md#租户-namespace-写保护)
+为准，每次写入和 dry-run 都重查，来源故障保守拒写，不用标签推测业务归属。
+Namespace 身份、Pod、Secret、exec 策略及两条 Deny binding 保持原有约束。
+
+更新既有环境时只发布本次修改的两条 `ValidatingAdmissionPolicy`，
+先服务端 dry-run/type-check，再以实际 Resource 身份验证普通空间的成功路径与
+租户空间、错误 UID、扩大规则、跨身份/错误 roleRef 的拒绝路径；不整包覆盖无关策略。
+策略检查与应用代码检查分别记录在既有执行状态中。
+
 ## 开通
 
 以下手工命令适用于尚未安装租户自动开通候选策略的现有部署。自动开通上线后，

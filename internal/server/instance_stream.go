@@ -56,6 +56,17 @@ func GovernanceStreams(readOnly bool) grpc.StreamServerInterceptor {
 		if readOnly || stream == nil || info == nil || !info.IsServerStream || info.IsClientStream || next == nil {
 			return status.Error(codes.PermissionDenied, "internal stream is not permitted")
 		}
+		if info.FullMethod == ClusterOpsLogsMethod {
+			p, err := (GovernanceResolver{}).Resolve(stream.Context())
+			if err != nil {
+				return err
+			}
+			if !p.Platform {
+				return status.Error(codes.PermissionDenied, "clusterops logs require platform delegation")
+			}
+			ctx := withClusterOpsCaller(context.WithValue(stream.Context(), governancePrincipalKey{}, p), p)
+			return next(server, &clusterOpsServerStream{ServerStream: stream, ctx: ctx})
+		}
 		caller, ok := governanceStreamCallers[info.FullMethod]
 		if !ok {
 			return status.Error(codes.PermissionDenied, "internal stream is not permitted")

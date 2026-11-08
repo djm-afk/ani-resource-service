@@ -57,7 +57,8 @@ func requestLogging(logger *slog.Logger) middleware.Middleware {
 			if !ok || (!strings.HasPrefix(info.Operation(), "/image.v1.") &&
 				!strings.HasPrefix(info.Operation(), "/vm.v1.") &&
 				!strings.HasPrefix(info.Operation(), "/storage.v1.") &&
-				!strings.HasPrefix(info.Operation(), "/sandbox.v1.")) {
+				!strings.HasPrefix(info.Operation(), "/sandbox.v1.") &&
+				!strings.HasPrefix(info.Operation(), "/clusterops.v1.")) {
 				return standard(ctx, req)
 			}
 			return normal(func(ctx context.Context, _ any) (any, error) { return handler(ctx, req) })(ctx, redactedImageRequest{})

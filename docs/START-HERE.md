@@ -154,3 +154,8 @@ ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段�
 - 当前结果仍以[唯一执行状态](execution/status.md#image-mvp)为准。
 
 手动 VNIC：[实施计划](plans/kcn-vnic-management-20261103.md)、[KCN 固定源码](references/kcn-vnic-source-20261103.md)、[正式资源规则](specs/vpc-subnet.md#手动-vnic-与实例选择)、[当前结果](execution/status.md#kcn-vnic-management-20261103)。
+
+
+## 管理员集群运维一期
+
+[业务规范](specs/cluster-operations.md)定义固定资源动作与双登记 Namespace 保护；[v1 调用合同](contracts/cluster-operations-v1.md)定义 Proto、原生操作、Secret、日志和预算；[CO-01–CO-06/A01–A19 计划](plans/cluster-operations-phase1.md)安排验收；[治理平台委托](specs/governance-calls.md#clusterops-platform)登记精确方法。实际实现与验证只见[执行状态](execution/status.md#cluster-operations-phase1)。

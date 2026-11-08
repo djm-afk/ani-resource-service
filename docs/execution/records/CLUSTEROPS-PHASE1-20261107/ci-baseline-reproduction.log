@@ -1,0 +1,23 @@
+127.0.0.1:5432 - accepting connections
+PostgreSQL image=docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 container=99e51ffcf03ab842a2be69e7e5f8788069dc633acad5c65a8a356930d31b1adb
+=== RUN   TestLBBackendUsesCurrentConsumerRegardlessOfReadAge
+=== RUN   TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/renewed_after_claim
+=== RUN   TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/future_timestamp
+=== RUN   TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/expired_timestamp
+=== RUN   TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/read_unavailable_with_current_native_facts
+=== RUN   TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/fresh_again
+=== NAME  TestLBBackendUsesCurrentConsumerRegardlessOfReadAge
+    load_balancer_freshness_integration_test.go:84: ERROR: new row for relation "network_attachments" violates check constraint "network_attachments_check1" (SQLSTATE 23514)
+--- FAIL: TestLBBackendUsesCurrentConsumerRegardlessOfReadAge (1.76s)
+    --- PASS: TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/renewed_after_claim (0.01s)
+    --- PASS: TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/future_timestamp (0.01s)
+    --- PASS: TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/expired_timestamp (0.01s)
+    --- PASS: TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/read_unavailable_with_current_native_facts (0.01s)
+    --- PASS: TestLBBackendUsesCurrentConsumerRegardlessOfReadAge/fresh_again (0.01s)
+=== RUN   TestNamespaceUIDWindowFailureLeavesOriginalBarrier
+    namespace_uid_window_integration_test.go:302: this one-time tool requires exactly 25 compiled Network migrations
+--- FAIL: TestNamespaceUIDWindowFailureLeavesOriginalBarrier (0.77s)
+FAIL
+FAIL	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network	2.602s
+FAIL
+removed task container=99e51ffcf03ab842a2be69e7e5f8788069dc633acad5c65a8a356930d31b1adb

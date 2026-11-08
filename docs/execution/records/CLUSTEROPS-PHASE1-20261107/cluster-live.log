@@ -1,0 +1,7 @@
+=== RUN   TestClusterOpsLiveTemporaryResources
+    live_test.go:52: fixture Namespace: clusterops-d4110d5d2dd8
+    live_test.go:321: live pass: overview, native CRUD, RV/UID conflicts, Secret outlets, zero scale, restart, five RBAC types, CRD discovery/edit/protected delete, CR status/int64, Events
+    live_test.go:127: cleanup pass: clusterops-d4110d5d2dd8 widgets.clusterops-d4110d5d2dd8.ani-test.io
+--- PASS: TestClusterOpsLiveTemporaryResources (28.73s)
+PASS
+ok  	github.com/zhangzhe-ctrl/ani-resource-service/internal/data/clusterops	28.748s

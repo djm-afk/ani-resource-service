@@ -74,6 +74,15 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			repository.Close()
 		}
 	}()
+	clusterOps, err := openClusterOps(context.Background(), bc.Network, repository, compute)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if !configured {
+			clusterOps.Close()
+		}
+	}()
 	provider, observation, err := openNetworkProvider(repository, bc.Network)
 	if err != nil {
 		return nil, err
@@ -177,6 +186,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	clusterOps.Register(grpcServer)
 	storageComponents, err := openStorage(ctx, bc, instances)
 	if err != nil {
 		return nil, err
@@ -254,6 +264,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		kratos.AfterStart(func(context.Context) error { readiness.Set(true); return nil }),
 		kratos.BeforeStop(func(context.Context) error { readiness.Set(false); return nil }),
 		kratos.AfterStop(func(ctx context.Context) error {
+			clusterOps.Close()
 			sandboxes.Close()
 			vms.Close()
 			consumer.Close()

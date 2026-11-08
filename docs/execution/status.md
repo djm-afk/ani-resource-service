@@ -1,5 +1,95 @@
 # Network 执行状态
 
+<a id="cluster-operations-phase1"></a>
+## 管理员集群运维一期（CO-01–CO-06）
+
+状态：规定能力已实现，已接入 66 测试环境的 Gov/BOSS 实际链路，PR 待审；本仓必要检查通过，GitHub CI 的既有失败另见历史记录。2026-11-08 用户进一步授权修复 R67-01 和两条 Sandbox RBAC 准入规则；修复检查、应用部署、真实页面补验和临时资源清理均已完成。正式行为只见[业务规范](../specs/cluster-operations.md)、[v1 合同](../contracts/cluster-operations-v1.md)和[实施/验收计划](../plans/cluster-operations-phase1.md)。本节是唯一当前状态，以下日志为时点执行证据。
+
+### 初次实现与源码
+
+- 工作分支 `codex/clusterops-phase1-20261107`，本机 WSL Ubuntu worktree `/home/ubuntu/workspace/ani-resource-service-clusterops`。初始原工作区 `813885c` 的两处 VM 文档未提交改动保持原状；本任务使用独立 worktree。
+- 设计与最终开发基线均为 `ab189b99a5bcfc482a0208102ee3328c9a60ae27`。起始分支相对该基线仅有 18 个 VM 发布文档/证据差异，涉及的工程落点相同。Git SSH 拉取连接被关闭、HTTPS 拉取超时；通过已连接 GitHub Git Data GET 取回并核对原提交/树 SHA 后，将本功能分支建立在精确基线上，未把 VM 发布差异带入交付。
+- 产品源码快照：基线加[变更源码清单](records/CLUSTEROPS-PHASE1-20261107/source-manifest.txt)，该清单 SHA-256 `2edccd214751f32c6516a22e23ae138d002001bdc3ae2e8d4d6c69891649eeee`。Go 1.26.10、Buf 1.60.0、sqlc 1.31.1；复用 pinned 生成流程。依赖版本未升级，既有 YAML v3 改列为直接依赖，用于保留原始 token 的单文档语法树边界检查；重复键仍由 YAMLToJSONStrict 拒绝。
+- 新增十个 unary 与一个管理员 Pod 日志流；full/governance 显式注册，使用原业务 mTLS/platform 精确方法授权。原有 Owner 及其他模式未接入 Namespace guard，admin 无业务路由。
+- 固定资源和 live CRD 类型发现、原生 List/Get/单对象 CRUD、Deployment/StatefulSet scale、规定三类 restart、Events、五类 RBAC、CRD 编辑/删除预检、CR status 保留、Secret 投影、稳定错误与日志脱敏均已实现。资源修改成功仍只代表 API 受理/修改。
+- Network/Sandbox 登记的只读聚合、共用 2 秒子预算、缺配置/集群不匹配拒写、读取提示降级及查询故障后自然恢复已实现；无新增表、迁移、informer、控制器、审计/操作账本或外部仓库改动。
+
+### 2026-11-08 Gov/BOSS 接入补修（完成）
+
+- 用户明确授权本次 Res 修复和 66 两条共享准入策略修改。修复提交 [5d9682f](https://github.com/zhangzhe-ctrl/ani-resource-service/commit/5d9682f75e41f6dbf972a7084e2a144dbc504bac)，源码/构建/测试位于上述 WSL 隔离 worktree；部署通过 WSL SSH，先确认 node1 / kubernetes-admin@ani-kcn-full。Gov 固定正式 module `v1.6.1-0.20261108021506-5d9682f75e41`，GOWORK=off、无本地 replace；Gov/BOSS 的接入和部署细节分别见 [Gov PR #104](https://github.com/zhangzhe-ctrl/ani-governance/pull/104) 与 [BOSS PR #2](https://github.com/zhangzhe-ctrl/ani-boss-console/pull/2)。
+- R67-01：仅初始 CRD GET 的 RESOURCE_NOT_FOUND 返回 already_absent；后续任一页实例 LIST 失败（包括 404）直接失败且不执行 DELETE。初始 GET 已存在而原生 DELETE 返回不存在也保守报错；普通资源删除语义保持。回归覆盖初始缺失/读取失败、UID 变化、首/后页 404、转换失败、删除竞争和成功路径。
+- Role/RoleBinding 准入：普通非租户 Namespace 支持通用平台 RBAC；任何既有租户/UID 标记和固定 Sandbox 名称或 roleRef 仍要求原有完整身份与固定规则。双登记租户写保护仍由 clusterops 每次写入/dry-run 执行；未向 Gov/BOSS 增加归属推测。测试直接编译和执行发货 YAML 的 CEL，覆盖 60 个 CREATE/UPDATE 正反用例；CEL 仅为测试依赖。
+- 检查：`go test -count=1 ./deployments/sandbox ./internal/biz/clusterops` 为 pass。首次 `make verify` 因任务 TMPDIR 过长触发既有 Unix socket 用例路径长度限制而 fail；改用 TMPDIR=/tmp，GOWORK=off、GOFLAGS="-mod=readonly -p=2" 后完整 `make verify` 为 pass（生成一致性、边界、tidy、全量单测、vet、build、mod verify、diff check）。未放宽用例或检查。修复提交相对 cdd2796 的 pinned Gitleaks 增量扫描为 pass，0 findings。
+- 66 准入：备份原对象后，仅替换 ani-sandbox-tenant-role / ani-sandbox-tenant-binding 两条 ValidatingAdmissionPolicy；服务端 dry-run、generation=observedGeneration=2、typeChecking 无警告，原 Deny bindings 保留。普通空间 Role/Binding CREATE dry-run 放行；自建带完整租户标记的隔离 fixture 中，固定 Role/两类 Binding 放行，错误 UID、扩大规则、跨身份 subject、通用租户 Role、剥离 Namespace 身份、普通空间保留名称/roleRef 等均由对应策略拒绝，dry-run 前后 RV 不变。合成 fixture 只验证原生准入，未冒充已登记业务租户。
+- 66 应用：Res 从 clean 5d9682f 构建，源码快照 `sha256:22bef20b2b4b889a09c0f784ca873486600988ccb0ca1c482804389344565753`；部署镜像为 `10.10.1.66:30003/ani-gpu-platform/ani-resource-service@sha256:eff884edeb1165208ba0beefa6bc64cb6f7fe594cc38cf32c3ec2f26fb75d22d`。Gov g2、BOSS b1 与 Res 最终均 Ready 1/1。
+- 真实 BOSS → Gov → Res：普通 Role/RoleBinding 创建、修改、删除及原生 UID/RV/规则回查通过；CR 创建/修改/删除、大整数原文保持通过。自有未 Established CRD 本体存在，但 Res 实际身份 LIST 返回 404；BOSS 删除明确失败，CRD UID/RV 不变且无 deletionTimestamp。正常 CRD 经 BOSS 删除受理并最终消失；再次请求由初始 GET 确认不存在，返回 already_absent=true。没有在 Gov/BOSS 加补查或重删兜底。
+- 新版链路回归：普通 Role dry-run 成功且不落盘；真实已登记租户的 Role/Binding CREATE 和 Namespace 本体 UPDATE dry-run 均为 403 TENANT_NAMESPACE_READ_ONLY，读取保持可用。真实 Pod 日志经 API 与 BOSS 页面回读，中文、空行、重复行及正常结束保留；此前完整长流/取消、配置/Secret、分页、冲突、扩缩容/重启、事件和 Namespace 删除的实测继续有效。
+- 清理：本轮前缀 `co-gb-20261108-fix-0f6a92` 的普通 Namespace、Pod、RBAC、CR/CRD、精确临时 ClusterRole/Binding、合成租户 fixture 均已删除并回查无残留。正常 CRD 由 BOSS 删除；无法通过预检的反例 CRD 在验证后由 kubectl 清理，不冒充成功删除验收。Gov 同版目录只读 dry-run 任务亦已清理；无临时前端/PG/API 驱动进程。保留两条已授权策略修复和部署所需 get/list-only reader，未扩大长期原生写权限。
+- CI：修复提交的 [source/image](https://github.com/zhangzhe-ctrl/ani-resource-service/actions/runs/42437739752) 已通过；整仓 CI 仍有既有 Network/supply-chain 失败（全历史 Gitleaks 仍为 1017，govulncheck 为 0；Network core/lb 仍含旧 fixture 约束/迁移数问题）。本任务不改这些门禁或无关业务。Gov 固定依赖提交的 [checks/generation/integration](https://github.com/zhangzhe-ctrl/ani-governance/actions/runs/42437923666) 全部通过。PR 未合并，无生产发布。
+
+### 实际检查（初次实现快照）
+
+所有生成、构建、测试、Git 和 API 驱动均在用户确认的本机 WSL 执行；集群仅从 WSL 使用 `ssh kubercloud@10.10.1.66`，无远端构建或其他集群回退。命令使用 `GOMAXPROCS=2 GOFLAGS=-p=2`。
+
+| 实际命令 | 结果 | 证据/范围 |
+|---|---|---|
+| `make config` | pass，exit 0 | Buf lint/build/generate 及既有独立 API 生成；最终 verify 再核对生成物 |
+| `make verify`（初次非冻结快照） | fail，exit 2 | [初次日志](records/CLUSTEROPS-PHASE1-20261107/verify-initial.log)：编辑期间 YAML import 图发生变化，vet 无法解析；冻结后重新执行 |
+| `make verify`（冻结源码） | pass，exit 0 | [最终日志](records/CLUSTEROPS-PHASE1-20261107/verify.log)：生成一致性、边界、既有 fault gate、tidy diff、全量单测、vet/build、mod verify、diff check |
+| `./scripts/integration -run TestClusterOpsNamespaces -v ./cmd/ani-resource-service` | pass，exit 0 | [PostgreSQL](records/CLUSTEROPS-PHASE1-20261107/namespace-postgres.log)：两个独立数据库、NULL UID/all phase、来源不可读/恢复、缺 Compute/cluster 不匹配和匹配装配；容器已由既有脚本删除 |
+| `go test -race -count=1 -run 'TestLog|TestClusterOpsRealGRPCSlowClient' ./internal/biz/clusterops ./internal/server` | pass，exit 0 | [日志 race](records/CLUSTEROPS-PHASE1-20261107/log-race.log)：短预算规则与真实 HTTP/2 背压退出 |
+| `CLUSTEROPS_TEST_KUBECONFIG=<临时私有文件> go test -count=1 -v -run '^TestClusterOpsLiveTemporaryResources$' ./internal/data/clusterops` | pass，exit 0 | [66 原生往返](records/CLUSTEROPS-PHASE1-20261107/cluster-live.log)，约 29 秒；私有 kubeconfig/SSH tunnel 随驱动结束删除 |
+| 新文档本地链接/anchor、`git diff --cached --check` | pass | 新合同、规范、计划、治理登记、索引与本节的相对目标可解析 |
+
+### A01–A19 结果
+
+| 编号 | 结果 | 实际覆盖与边界 |
+|---|---|---|
+| A01 | pass | 精确十方法 platform Caller；tenant/mixed/API Key/重复 scope/未知方法拒绝，真实 mTLS listener 可达 |
+| A02 | pass（代码/受控 listener） | full/governance 显式接线与关闭；vpc-read 原预算和拒绝规则保留，未部署实际 full/governance 进程 |
+| A03–A04 | pass | 两个独立 PG 来源、Network-only/Sandbox-only/合并；NULL UID、closed 等行保护；配置 cluster 不匹配拒写 |
+| A05–A06 | pass | Create/Update/Delete/Scale/Restart/Namespace 本体/dry-run 同一 guard；租户读提示与日志允许，原 Owner 代码未改 guard |
+| A07 | pass | 共享 2 秒、父取消、故障读降级/拒写、表不可读后恢复；未对真实登记库做停机/破坏试验 |
+| A08 | pass | 非法寻址、YAML/JSON 嵌套重复键/多文档、有效 int64；真实 CR 数字往返无损 |
+| A09 | pass | 受控 HTTP limit/continue/name/node/phase、410、冲突 selector；原生 Events 实际调用，无 total |
+| A10 | pass | API server 旧 RV 冲突、旧 UID 删除同名替换对象被拒绝；无强制重试 |
+| A11 | pass | 真实无 /status 子资源的 CR 更新 spec 后 status 保留；创建/更新系统字段反例 |
+| A12 | pass | Secret 默认/列表/保存投影与显式编辑；CM 只调用原生保存；manifest/错误/HTTP Warning marker 受控出口检查，Owner Warning 保持 |
+| A13–A14 | pass | 原生 Deployment 零副本 scale、restart 注解；StatefulSet scale adapter 和 paused/OnDelete/partition 受控测试；未把 API 成功当 Ready |
+| A15 | pass | 真实 SA/Role/RoleBinding/ClusterRole/ClusterRoleBinding CRUD，roleRef 原生不可变失败且 UID 不变 |
+| A16 | pass | 真实 CRD 发现/编辑、受控登记内 CR 拒绝删除；分页/失败/取消不删除、storage served 选择、cluster scope 受控验证 |
+| A17 | pass | READY/DATA/END/ERROR、长行、取消/窗口/终止帧规则；真实 gRPC 客户端停止 Recv 保持连接，15s 后 handler/reader/槽归还、底层 Send 和 goroutine 退出；typed pods/log 用 HTTP/TLS fixture 验证，未拉取真实业务 Pod 日志 |
+| A18 | pass | pinned 生成与 make verify 分层门禁，未改 AGENTS/边界脚本，无新数据库或外部仓库改动 |
+| A19 | pass | 同一真实 gRPC server：clusterops >1s 成功、旧方法 1s 到期、客户端短 deadline 优先；其他模式及概览/CRD 共享父预算验证 |
+
+### 66 临时资源与清理（初次原生验证）
+
+只读核对主机 `node1`，context `kubernetes-admin@ani-kcn-full`，现有 API `https://lb.kubesphere.local:6443`，node1 内网 IP `10.10.1.66`。WSL 驱动通过本任务 SSH tunnel 使用现有 kubeconfig，保留 CA/TLS server name 验证，私有凭据未进入仓库或源码快照。
+
+最终 fixture Namespace `clusterops-d4110d5d2dd8`，CRD `widgets.clusterops-d4110d5d2dd8.ani-test.io`，同前缀 ClusterRole/ClusterRoleBinding；使用单份 Deployment/ConfigMap/Secret、五类 RBAC、独立 CR 和内存登记 fixture。初次 fixture `clusterops-56afda80be6d` 在 Deployment 控制器更新 RV 后按合同得到冲突；测试显式刷新版本后完成，初次 Namespace 也已清理。
+
+Namespace 消失已在用例内确认，之后回查两次 run 的 Namespace/CRD/ClusterRole/ClusterRoleBinding 均无匹配残留，见[清理回查](records/CLUSTEROPS-PHASE1-20261107/cleanup.log)。没有替换真实 Res，没有修改真实租户登记、KCN/Higress 配置或副本、admission 或既有服务账号授权。
+
+### 首次 PR 与既有 CI 阻塞（补修前快照）
+
+以下为补修前的时点记录；最新源码、部署和现场结果见本节开头。
+
+[PR #67](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/67) 已创建，未合并。实现提交为 `0837ee61ca4e486841932a18e424ac74ad92ede5`，发布源码树 `383a972ab7a5de2a8534f601fafacf6c18b69207` 与本地通过验证的树完全一致；后续仅补充本段文档和 CI 证据，产品源码不变。
+
+[本次首次 CI](https://github.com/zhangzhe-ctrl/ani-resource-service/actions/runs/42388935410) 的 source、image 已通过，整体未全绿：Network core/lb 失败，recovery 在回查时仍运行；supply-chain 因全历史 Gitleaks 1017 项失败，未进入后续 SBOM 门禁。govulncheck 报告 0 项可达符号/导入包漏洞，列出 3 项未调用的既有模块告警；没有为此升级依赖。
+
+[精确基线 CI](https://github.com/zhangzhe-ctrl/ani-resource-service/actions/runs/42346606010) 的 source/image 同样通过，Network 三个分片和 supply-chain 同样失败；基线 supply-chain 也是 1017 项。对此仅做本次必要核对：
+
+- 使用同一 pinned Gitleaks v8.30.1，仅扫描 `ab189b99a5bcfc482a0208102ee3328c9a60ae27..0837ee61ca4e486841932a18e424ac74ad92ede5`：pass，exit 0，1 commit、0 findings，见[增量扫描](records/CLUSTEROPS-PHASE1-20261107/ci-delta-secrets.log)。未修改扫描规则或忽略列表，未重复做全历史审计。
+- 在 WSL 的独立只读基线 worktree 上执行 `./scripts/integration -race -run '^(TestLBBackendUsesCurrentConsumerRegardlessOfReadAge|TestNamespaceUIDWindowFailureLeavesOriginalBarrier)$' -v ./internal/data/network`：fail，exit 1，复现 `network_attachments_check1` 旧 fixture 约束及“一次性工具要求恰好 25 migrations”，见[基线复现](records/CLUSTEROPS-PHASE1-20261107/ci-baseline-reproduction.log)。独立 PostgreSQL 容器已删除。
+- 本次未修改这些 Network 测试、迁移、Provider/worker 或 CI/扫描门禁。CI 仍有既有阻塞，不能把本次 Res 必要检查通过写成整仓 CI 已通过，也不扩展为全仓整改。
+
+### 未验证范围
+
+Gov→Res 委托、full 进程、真实 Pod 日志、BOSS 页面与权限目录已在 66 测试环境接通；本次修复版本的补验与清理均已完成，详见本节开头。`not_verified`：生产部署、所有资源类型的真实 API 穷举、十分钟长流；这些不属于本次验收要求。未使用真实租户资源做破坏性验收。
+
+
+
 ## VM-PHASE1-20261106
 
 2026-11-07 PR #66 局部补充：审核基准 `241bacd8cd001f4d0075707311c225a36876656b` 上两项问题仍存在，
