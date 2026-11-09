@@ -2,7 +2,7 @@
 
 > 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
 
-日期：2026-10-23。本文件定义目标行为；当前实施结果仅见[唯一状态](../execution/status.md#vm-mvp)。本文件定义业务规则；接口见[正式合同](../contracts/vm-v1.md)，实施顺序见[执行计划](../plans/vm-mvp.md)，验收见[验收矩阵](../verification/vm-mvp-acceptance.md)。本包内新增 API、表和方法均为拟实施设计，不能当作仓库已有能力。
+本文件定义 VM 目标行为；接口见[正式合同](../contracts/vm-v1.md)，实施顺序见[执行计划](../plans/vm-mvp.md)，验收见[验收矩阵](../verification/vm-mvp-acceptance.md)。具体实现、验证和部署范围只见[唯一状态](../execution/status.md)，包括 VM MVP 基线及一阶段职责整改；设计文本不代表未来能力已实现。
 
 ## S01 目标、范围与模块边界
 
@@ -27,7 +27,7 @@
 
 - Gov：当前主体/租户/动作授权、套餐功能资格、公开入口和既有创建/删除持久投递。容器与 VM 在共用路径中统一按正式 action 分派。
 - Resource vm：创建规格组合、业务记录与 operation、原生请求、观察投影、盘/介质/快照关系、Network consumer。
-- Resource compute：唯一规格目录与解析。Resource network：租户子网、Attachment、原生投影与地址/释放证明。跨域仅走 biz 窄端口，不直接写另一域 SQL。
+- Resource compute：唯一规格目录与解析。Resource network：租户子网、Attachment 管理关系、原生状态与当前地址输出。跨域仅走 biz 窄端口，不直接写另一域 SQL。
 - SG：沿既有短时票据、会话存储、WebSocket 与 VNC 流代理；新增可信 VM/VMI 身份绑定。
 - KubeVirt/CDI/CSI/KCN：执行其原生生命周期；平台不重复实现这些控制器。
 
@@ -37,22 +37,13 @@
 
 新 vm 领域可以有自己的 operation/work 行与恢复扫描，采用现有 Instance/Network 持久受理、租约、投递、回执模式；不得直接写 Instance 表，也不抽取新通用 outbox/工作流平台。一个 VM 同时只执行一个配置/电源/盘/快照/恢复变更，复用其业务 version 与原子受理检查；读与符合条件的 VNC 不受此一概阻断。Delete 可原子置 closing，停止新变更，接管既有操作的查证/清理；结果未知的原生创建先查明，再继续删除，不另发冲突变更。
 
-## S03 环境前置与本次授权
+## S03 部署支持条件与执行范围
 
-核对目标版本 KubeVirt 1.9.0、CDI 1.66.1；附件中的 Kubernetes 1.35.8、Multus 4.3.1-thick 和 KCN 现场记录仅为既有探测信息，须在实施时读取实际版本、镜像 digest、CRD served version 与节点能力，不自动升级。
+首次启用/创建核实目标 KubeVirt、CDI、Block/RWO 存储支持、所需 gate、受管 NAD/SA、介质与可信控制台路径；Snapshot/Restore 另核实对应原生能力。能力缺项如实报告，不改 Filesystem 兜底，不暗中启动 VM 或更改共享默认策略。
 
-任务包记录的 `device_ownership_from_security_context` 缺项、Block 导入错误与节点地址均为历史环境线索。实际执行环境及授权依据见[执行状态](../execution/status.md)，不继承旧环境结论或旧维护授权。先只读固定集群与节点身份，再核验当前 Block 路径；若无需变更则记录事实，确有缺项才登记 ENV-BLOCK 并按下述具体批准执行。该配置与 CDI 官方说明相关，不宣称它是唯一可能原因。[U01](../references/vm-mvp-sources.md)
+已受理对象依据自己的冻结配置、原 UID、owner 与原生公开结果执行，不因当前默认 StorageClass/SnapshotClass 或平台模板变化失效。仅在动作实际依赖时核验该依赖；Stop/Delete 不受无关 NAD、介质、PV/CSI 诊断阻断，具体电源观察见 S08。
 
-VM-00 只读取获准访问的环境、准备具体配置差异、备份/恢复方式和节点顺序。VM-00R 只在以下两个条件都成立后写入：
-
-1. 用户确认集群无人使用、给出维护窗口及受影响节点范围；
-2. 用户届时明确授权该具体 runtime 变更、相关服务重启与限定探针。
-
-查看负载、存在本任务包、历史探测授权都不能代替上述授权。agent 不得为“腾空集群”自行停止用户工作负载。
-
-按实际 runtime 选择配置源：containerd v1/v2 与 CRI-O 配置段不同；k3s/RKE2 管理的文件应改受支持的生成输入，不能只改会被覆盖的生成文件。批准后逐节点执行最小配置变更及验证，已运行的 CDI Pod 按批准范围重建；保留原配置及恢复记录。失败按批准的恢复方案处理，不改 root/privileged、宿主机设备权限、Filesystem 或共享 CDI 策略来伪造通过。
-
-代码与隔离测试不依赖 VM-00R；真实 Block 验收依赖当前目标 Block 能力已验证，只有确需 runtime 变更时才依赖获批 VM-00R。NAD、快照组件、feature gate、物料缺项独立记录，只阻断依赖能力。VM-00R 不自动授权 KCN/CSI/KubeVirt 升级、共享 gate 改动或 installer 重构。
+当前执行主机、连接入口、集群及变更权限由本次任务确认，遵循[工程规则](../../AGENTS.md)和[源码隔离约定](../remote-execution.md)。旧 VM MVP 的 Fedora、10–12、维护窗口及逐卡执行授权属于原任务，不成为后续任务的默认环境或权限。历史支持检查与运行结果仍保留原版本和日期。
 
 ## S04 规格、容量与创建冻结
 
@@ -126,30 +117,24 @@ WFFC/PendingPopulation 的观察与错误如实展示；不为提前 Ready 修�
 
 ## S07 Network 与动态地址
 
-接口与协议固定见合同 C05。网络路径为一个主网 `Multus default + bridge + KCN`。NIC 内部为集合，一期仅 nic_name=default。
+接口与协议见[合同 C05](../contracts/vm-v1.md#c05-network-v3-合同)。主网为单一 Multus default + bridge + KCN，内部 NIC 集合一期仅 default。VM owner 负责当前 VM/VMI/launcher 的 scope、UID/owner 和冻结网络选择；Network 消费当前管理快照，不另建 owner 链或 KCN 网卡闭包证明。
 
-新增 vm_managed/v3 consumer，严格验证 VM→VMI→launcher Pod 的 GVK、namespace/name/UID、owner、租户与冻结网络选择。旧 single_pod/v1 和 Notebook/v2 路径保留；不把旧校验泛化为任意 GVK。
-
-参与租户 namespace 的受管 NAD 和 workload SA 由 Resource Network 现有持久 worker 按真实租户、集群及 namespace 自动准备；每个租户网络 namespace 复用一个 KCN 单插件 NAD，多子网仍使用各自独立的 kcn_subnet_ref。准备意图先持久化，Kubernetes 创建回执的 Namespace/NAD/SA UID 与模板摘要随后固定；不接管同名异主对象，也不在已登记 UID 丢失后重建或认可新对象。失败只阻止 VM 使用该依赖，不改变普通 VPC/Subnet 可用性。已存在租户网络同样进入周期准备，无需逐租户改配置或重启服务。VM ResolveCreateSpec 保持只读，按真实网络绑定读取并核验持久 NAD 身份；兼容既有明确部署映射。NAD 不是 KCN Subnet，二者不可共用一个字段。
-
-NAD/来源依赖失效只阻止需要该依赖的新建、启动和当前地址授权，不能阻止按已登记原生 UID 执行 Stop/Delete。Network 依据冻结关系的实际退出证明完成释放，不要求 NAD 此时仍健康。
+租户受管 NAD/SA 沿 Network 现有持久准备机制办理，原 Namespace/NAD/SA UID、计划与配置摘要保留；不接管同名异主对象，不重建已丢失的原 UID。准备失败只影响真实依赖的动作，不改变无关网络资源状态。NAD 与 kcn_subnet_ref 分别登记。
 
 | 动作 | 固定网络行为 |
-|---|---|
-| 停止态创建 | Attachment reserved；无当前 IP 正常 |
-| Start | 原 Attachment、原子网和原 NAD 身份；核验新 VMI/launcher 后产生当前地址 |
-| Stop | consumer 仍 open，Attachment 回 reserved；撤销旧 launcher 地址资格，不 Release |
-| Restart | 旧 launcher 退休，新 launcher 重新核验；不换子网 |
-| Restore | 原 VM UID/Attachment/网络选择不变；不恢复旧 IP 或 launcher 身份 |
-| 最终删除/放弃创建 | closing 阻止新提交；查明未知创建并确认原 VM/VMI/launcher 退出后，将 consumer 置 closed 并以稳定 finalization_id 请求 Release；Network 独立证明其 VNic/VNicIP/Nic 等依赖退出后标记 released |
+| --- | --- |
+| 停止态创建 | 保留 Attachment 预留，无当前 IP 正常 |
+| Start | 使用原 Attachment/子网与受管 NAD 身份；owner 登记新的当前 VMI/launcher |
+| Stop/ForceStop | consumer 保留，Attachment 预留不释放；撤回旧运行地址 |
+| Restart | owner 更新当前端点，不换子网，不把旧端点当作新目标 |
+| Restore | 原 VM UID、Attachment 和网络选择不变，不恢复旧 IP/launcher |
+| 最终删除/放弃创建 | closing 封闭提交，原根 VM/VMI 消失且相关非终态 Pod 退出后 closed；Network 按同一 finalization 的管理事实释放 |
 
-CurrentPods 仅为当前 launcher，最多一个；CDI/hotplug helper 不作 VM 网络端点。地址由 Network 已核验结果通过正式 DTO 返回，VM 不跨域读 provider_relations。停止、观察过期、身份冲突时不显示旧地址为当前可用；显示 observed_at/reason，允许启停后 IP 改变。
+CurrentPods 仅包含正确当前 launcher，最多一个；CDI/hotplug helper 不作为地址端点，但其相关非终态运行责任仍须按 S08/S10 完成。歧义不能伪装成没有运行对象。地址通过正式 DTO 返回，字段与读错保留/撤回规则只见[网络状态消费 §4](cr-observation.md#4-attachment-与计算侧)，VM 不跨域读取网络私表，不按观测年龄作准入。
 
-控制台可使用不依赖所有盘或 CSI 健康的窄运行身份观察，但须保持相同 namespace/UID/owner、唯一 launcher、业务 version 与 closing 校验；普通生命周期仍使用完整存储观察。
+电源和根删除使用 S08 的窄生命周期事实；控制台不依赖无关存储诊断。所需 NAD 失效不能阻止按原 UID 停止或删除，Network 释放也不等待其恢复健康。
 
-租户网络验收使用真实 VPC/Subnet，覆盖跨节点通信、DNS、出站和按现有网络规则跨租户拒绝。旧共享默认子网探测不证明租户隔离。secondary KCN 已知问题、固定 IP、多网卡产品和 NetworkPolicy 对 guest 的自动覆盖均不在本期实现范围。[R03/U08]
-
-创建 VM 提供“平台默认 DNS”（省略时默认）和“自定义 DNS”。自定义接受 1–3 个有效 IPv4/IPv6 地址，规范化并保序去重；平台默认不附自定义地址，由可信部署配置提供。只读默认值接口用于创建页展示实际配置。首次解析将生效 DNS 随创建规格持久冻结，Start、重放与恢复不重新读取平台默认；原生 VM 使用 dnsPolicy=None 和冻结的 dnsConfig.nameservers。缺失默认配置明确拒绝默认模式的新建，自定义模式仍按输入校验；旧无 DNS 冻结字段的 VM 保持原合同。此选择不自动建立 VPC 出口或内部 DNS 路由，真实 Guest 必须分别验收实际 DNS 与外部访问。
+租户连通、DNS、出站与跨租户隔离分别记录真实验收，不能由 Ready 或普通 Pod 结果推导 guest 通过。创建 DNS 支持平台默认和 1–3 个规范化的自定义 IPv4/IPv6 地址，保序去重；解析时冻结生效配置，Start、重放与 Restore 不重新读取默认。VM 使用 dnsPolicy=None 与冻结 nameservers；缺省平台 DNS 未配置时拒绝依赖它的新建，自定义模式按输入校验。DNS 选择不自动创建 VPC 出口或证明路由可达。
 
 ## S08 电源与 VNC
 

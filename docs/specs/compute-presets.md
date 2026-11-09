@@ -34,7 +34,7 @@ InstanceService 原七个目录 RPC 直接删除，不保留转发、别名、�
 
 公共 GPU 结果字段编号依次为 profile_id=1、profile_version=2、spec_digest=3、devices_per_unit=4、cluster_id=5、pool_id=6、mode=7、model_key=8、memory_mib_per_device=9、core_limit_percent=10。设备数量按一个执行容器解释，不乘 replicas、worker 或 LWS 拓扑。
 
-摘要为小写 SHA-256 十六进制：先写入域前缀 `compute-selection-v1\n`（末尾是一个换行字节），再写固定字段顺序、无空白的 UTF-8 JSON。顶层字段按上述1..8顺序，GPU 字段按1..10顺序；CPU `gpu:null`。整数使用 JSON 十进制整数，字符串使用 Go encoding/json 的转义规则；不包含 digest 自身、usage、enabled、时间或审计字段。四种合法用途对同一份内容产生相同资源值与摘要。调用方使用正式 API 的摘要校验函数核对候选，再纳入自己的完整快照。
+摘要为小写 SHA-256 十六进制：先写入域前缀 `compute-selection-v1\n`（末尾是一个换行字节），再写固定字段顺序、无空白的 UTF-8 JSON。顶层字段按上述1..8顺序，GPU 字段按1..10顺序；CPU `gpu:null`。整数使用 JSON 十进制整数，字符串使用 Go encoding/json 的转义规则；不包含 digest 自身、usage、enabled、时间或审计字段。所有合法用途（含 SANDBOX）对同一份内容产生相同资源值与摘要；用途仍独立校验，Sandbox 由自身生命周期固定使用，不继承普通容器授权。调用方使用正式 API 的摘要校验函数核对候选，再纳入自己的完整快照。
 
 ## 身份、用途与时效
 
@@ -50,7 +50,7 @@ Res 校验可信服务/RPC/租户/actor/用途，以及规格存在、enabled、
 
 TRAINING/INFERENCE 已提供 Gov 统一目录查询和 Resource 用途支持，尚未接通创建消费者。训练/微调以后须组合 ModelDev 的 Release、程序、镜像、Runtime 和最终 Snapshot；`compute_preset_id` 必须区别于训练 preset_id，不能修改 owner 快照后沿用旧 hash。本次不增加训练创建算力消费，不修改 ModelDev 或 Gov 训练受理/worker。
 
-INFERENCE 解析不需要模型、引擎、Namespace 或拓扑；未来消费者负责单元到副本/总量的组合与对应业务准入。本次只增加统一算力目录的 INFERENCE 查询与资格，不增加推理管理、创建受理/执行链、Inference API 依赖或部署。VM 创建消费者按[VM正式合同](../contracts/vm-v1.md)组合一次只读compute结果并冻结；公共目录与解析保持通用GPU一致性、引用及cluster校验，不新增VM专属GPU禁令，前端按VM一期范围排除GPU规格。Sandbox 由[统一设计方案](../plans/sandbox-runtime-design-20261025.md)冻结 CPU 规格和工作盘，不把未知目标默认作容器。
+INFERENCE 解析不需要模型、引擎、Namespace 或拓扑；未来消费者负责单元到副本/总量的组合与对应业务准入。本次只增加统一算力目录的 INFERENCE 查询与资格，不增加推理管理、创建受理/执行链、Inference API 依赖或部署。VM 创建消费者按[VM正式合同](../contracts/vm-v1.md)组合一次只读compute结果并冻结；公共目录与解析保持通用GPU一致性、引用及cluster校验，不新增VM专属GPU禁令，前端按VM一期范围排除GPU规格。Sandbox 由[Sandbox 正式规格](sandbox.md)冻结 CPU 规格和工作盘，不把未知目标默认作容器。
 
 ## 数据与运行
 

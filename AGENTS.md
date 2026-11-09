@@ -9,6 +9,18 @@ state lives only in `docs/execution/status.md`. A design or plan is not evidence
 that its behavior has been implemented or verified; follow the user's actual
 task scope and authorization.
 
+For design, implementation, fixes, configuration, tests, and PR review in every
+existing and future Res domain, read [Res global management responsibilities and simplification principles](docs/specs/res-responsibility-and-simplification.md).
+These principles govern responsibility boundaries, including implementations
+awaiting migration. Domain contracts define their objects, authoritative facts,
+states, and completion conditions within those boundaries; conflicting older
+documents, tests, or implementations do not grant exemptions. Apply the rules
+by object ownership and action, without imposing VM/Network-specific fields,
+resource-type bans, or uniform execution frameworks on other domains. Align
+conflicts within the actual task scope. Historical plans, evidence, and
+future-phase designs do not authorize new implementation, deployment, or
+cross-repository changes.
+
 ## Boundaries
 
 - `cmd/ani-resource-service` is the explicit composition root.
@@ -23,21 +35,21 @@ task scope and authorization.
 Prefer framework capabilities over local replacements. Do not introduce a
 shared ANI runtime module, generalized YAML exception registry, or technology
 switches unrelated to a real slice. Generate protobuf output through the pinned
-workflow and run `make verify` before committing.
+workflow. Implementation changes require the applicable checks and `make verify`
+before committing; documentation-only changes require link and format checks.
 
 ## Execution location
 
-- Resource modularization R0—R5 uses `ssh fedora` exclusively for generation, builds, tests, PostgreSQL, images and API drivers. No local fallback for this task; see `docs/remote-execution.md`.
-
-- Prefer SSH host `ubuntu` for compilation, full test suites, image builds,
-  dependency-tool builds, and PostgreSQL integration tests. Keep local work to
-  editing, inspection, and lightweight checks when the remote is available.
-- The user permits local fallback when remote execution is unavailable. Record
-  the reason, actual execution host, source snapshot, commands, and results;
-  do not silently mix local and remote evidence.
-- Follow `docs/remote-execution.md` for isolated source transfer, tool versions,
-  and artifact handling. Never overwrite another remote working tree or copy
-  credentials as part of a source snapshot.
+- Read the personal environment inventory before environment access. Confirm the
+  execution host and connection entry from the current task; do not infer SSH
+  configuration, usernames, clusters, or fallback permission from old records.
+- Local source inspection, editing, and lightweight document checks do not need
+  a build or deployment environment. Do not run business tests for a document-only task.
+- For implementation verification, use the environment confirmed for that task
+  and record its actual host, source snapshot, commands, and results.
+- Follow `docs/remote-execution.md` for source isolation and artifact handling.
+  Its R0–R5, NET-05A, and SNAT host restrictions belong to those historical tasks.
+  Never overwrite another working tree or include credentials in a snapshot.
 
 ## Documentation
 

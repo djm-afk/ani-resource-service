@@ -1,5 +1,7 @@
 # 管理员二层网络诊断接口建议
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 2026-09-15，用户希望把 VLAN 排障过程变成对管理员配置二层网络有帮助的接口。本文件是基于当前源码和本次对照探测的建议，尚未成为已接受的产品合同，也未实现新 RPC。实际结果见[本次诊断](README.md)；原 LB Goal 状态仍以[执行状态](../../../status.md)为准。
 
 ## 入口与使用场景
@@ -13,7 +15,7 @@
 
 初期可在“配置 VLAN 网络/地址池”流程中提供“检查二层连接”，也可诊断已受 kc/OVS 管理的接口。接口是否可接管与它是否能够收发二层流量分别判断：ens35 已在 OVS 中，并不意味着管理员不能查看其连通性。
 
-当前已有 [`ListNodeInterfaces`](../../../../../api/network/v1/egress.proto)、[`NodeFactsCollector`](../../../../../internal/data/node_facts_collector.go) 和[节点事实读取](../../../../../internal/data/kc_node_facts.go)。它们提供接口身份、IP、master、OVS/kc 占用、默认路由和时效等事实，未实现主动 ARP、跨节点验证或 vSphere 配置读取。因此应复用已有事实基础，并新增显式诊断动作。
+当前已有 [`ListNodeInterfaces`](../../../../../api/network/v1/egress.proto)、`NodeFactsCollector`（历史定位：`../../../../../internal/data/node_facts_collector.go`） 和节点事实读取（历史定位：`../../../../../internal/data/kc_node_facts.go`）。它们提供接口身份、IP、master、OVS/kc 占用、默认路由和时效等事实，未实现主动 ARP、跨节点验证或 vSphere 配置读取。因此应复用已有事实基础，并新增显式诊断动作。
 
 ## 输入要区分两种 VLAN 含义
 

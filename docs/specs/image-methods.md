@@ -1,6 +1,6 @@
 # 文件与方法级实施清单
 
-以下 Image 文件/方法全部是新增目标。已存在的 Network/Governance 文件仅在“现有接入点”列明；未知前端/创建方路径由IMG-00绑定，不能自行伪造。保持当前 `package biz/data/service` 风格，composition root 对同名包使用 imagebiz/imagedata/imageservice 别名。
+下列文件/方法表保留 Image 初始设计的落点，不表示全部待实现或已经验收；当前工作负载接线见 §7，具体实现与验证仅见执行状态。Network/Governance 接入点按对应章节定位；未知前端/创建方路径不能自行伪造。保持当前 `package biz/data/service` 风格，composition root 对同名包使用 imagebiz/imagedata/imageservice 别名。
 
 ## 1. Resource 目录
 
@@ -34,7 +34,7 @@ migrations/image/{001_image.sql,embed.go}
 | credentials.go / Credentials | NewCredentials(repo,commands,provider,cipher,policy,clock)；GetPublisherCredential(ctx,tenant)(CredentialInfo,error)；IssuePublisherCredential(ctx,IssueCredential)(CredentialDelivery,error)；ResetPublisherCredential(ctx,ResetCredential)(CredentialDelivery,error)；DisablePublisherCredential(ctx,DisableCredential)(CredentialInfo,error) | 用户侧三种操作；幂等/版本/交付窗口 |
 | credentials.go / Credentials | ensurePullCredential(ctx,Space,Command)(CredentialInfo,error)；prepareCandidate(ctx,Command)；applyCandidate(ctx,Command)；activateCandidate(ctx,Command)；replayDelivery(ctx,Command)(CredentialDelivery,error) | 共用小范围Robot恢复逻辑，不抽取成全平台工作流 |
 | catalog.go / Catalog | NewCatalog(repo,commands,provider,cursor,clock)；RegisterImage(ctx,RegisterImage)(Registration,error)；GetImage(ctx,ReadImage)(Registration,error)；ListImages(ctx,ListImages)(RegistrationPage,error)；UpdateImage(ctx,UpdateImage)(Registration,error)；UnregisterImage(ctx,UnregisterImage)(Registration,error) | tenant权限+platform显式只读，Digest冻结，登记事务 |
-| runtime.go / Runtime | NewRuntime(catalogRepo,credentialRepo,provider,cipher,clock)；ResolveImageForWorkload(ctx,ResolveImage)(ResolvedImage,error)；GetTenantPullMaterial(ctx,tenant)(PullMaterial,error) | 只对受信创建方；无K8s import；不发admin；不复用公开错误旁路 |
+| runtime.go / Runtime、pullsecret.go | NewRuntime(catalog,spaces,credentials,registry,cipher,now)；ResolveImageForWorkload；EnsureTenantPullSecret | 业务范围校验及统一 Secret writer 交接；独立运行身份不获明文 pull material，具体字段以[API 合同](image-api.md)为准 |
 | platform.go / Platform | NewPlatform(...)；InitializePlatform(ctx,InitPlatform)(Space,error)；IssuePlatformPublisher(ctx,IssueCredential)(CredentialDelivery,error)；RegisterPlatformImage(ctx,RegisterImage)(Registration,error)；UpdatePlatformImage/UnregisterPlatformImage；InspectSpace；RecoverProjectBinding | 受控CLI复用核心验证；明确平台用例，不允许tenant caller调用 |
 
 `ensurePullCredential`是空间初始化内部步骤，不对外新增一个“先预占再确认”的业务API。类型名与构造参数可在IMG-01做必要小范围整合，但不能改变已定API/权限/数据库合同。
@@ -94,15 +94,16 @@ biz接口不引用net/http、pgx、Kubernetes、gRPC、Kratos。示例窄运行�
 
 复用已有ResourceTenantResolver，不在新文件重复定义。Governance保持Kratos v2，Resource保持v3。客户端只import Resource `api/image/v1` 生成契约，依赖实际已推送的精确SHA/pseudo-version；不引入Resource internal、不用本地replace，不将旧Network依赖重命名作为本轮附带工作。
 
-## 7. 普通容器创建方（待绑定）
+## 7. 工作负载创建方
 
-将下列方法落入IMG-00确认的**实际owner代码**，不能假称原来已经存在：
+创建方组合自己的已授权业务意图并冻结镜像；Registry 身份和 Robot 生命周期由 Image 负责。当前接线须按调用路径区分，不能把统一 writer 的目标范围写成全部已经迁移。
 
-| 建议新增方法 | 责任/测试 |
-|---|---|
-| ResolveRegisteredImage(ctx,tenant,imageID,scope)(ResolvedImage,error) | 调用窄接口，校验返回tenant/id/scope/ref；用目标集群平台校验 |
-| PrepareTenantImagePullSecret(ctx,tenant) error | 从真实租户环境解析namespace；内部取pull材料；拒绝同名异主Secret；持久化/校验generation |
-| ApplyRegisteredImage(template,selection) error | 仅设置获授权digest引用、Secret引用、Always；用户不能覆写为他租户路径 |
-| PersistResolvedImageIntent(ctx,intent) error | 创建业务自己的不可变执行意图，重试不重新跟随tag |
+| 调用路径 | 当前方法与 Secret writer |
+| --- | --- |
+| Instance 进程内路径 | Image 窄接口解析登记镜像；EnsureInstancePullSecret 调用 EnsureTenantPullSecret，由 Image 统一 writer 写共享 Secret，Instance 只取 Secret 引用和非敏感结果 |
+| 独立服务专用 mTLS 入口 | 仅允许 ResolveImageForWorkload 与 EnsureTenantPullSecret；Resolve 返回固定 digest，Ensure 交付 Secret 引用、代次及非敏感回执，不允许 GetTenantPullMaterial |
+| Sandbox 当前进程内路径 | 组合根注入 sandboxPullMaterial，受理 adapter 与 Provider 仍调用 GetTenantPullMaterial；Provider 自己创建或更新 `ani-sandbox-pull-<tenant>` Secret，尚未改为统一 writer |
 
-`PrepareTenantImagePullSecret`只在首次环境准备/发现缺失或代次不符时取材料，不在每个Pod创建新的Robot。测试driver的这些方法不等于正式owner已接入。
+统一 writer 校验标准 Namespace、原 UID、调用方范围及 Registry 归属；owner 保存镜像 ID/scope/digest 和自己的执行意图，重试不追随 Tag，并将合法镜像、实际返回的 Secret 引用写入自己的模板。Sandbox 的现有专属 Secret 命名与接线不能据此表改为共享 Secret。
+
+接线依据为[Instance adapter](../../internal/data/instance/image.go)、[Sandbox 装配](../../cmd/ani-resource-service/sandbox.go)、[受理检查](../../internal/data/sandbox/image.go)、[Provider Secret 写入](../../internal/data/sandbox/provider.go)和[mTLS 方法限制](../../internal/server/image_runtime.go)。Sandbox 属于进程内取材，不表示独立服务能通过 RPC 获取明文。统一 writer 尚未覆盖 Sandbox 的范围仍是未完成目标；本轮只纠正文档，不实施接口、权限、Secret 或工作负载迁移。调用字段见[Image API](image-api.md)，当前范围汇总见[工作负载使用](image-mvp.md#8-工作负载使用)，实际验证只见执行状态。

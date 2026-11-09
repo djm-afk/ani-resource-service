@@ -1,67 +1,43 @@
 # Resource 运行验证
 
-重任务按 [远程约定](remote-execution.md) 优先在 ubuntu 的独立快照执行。可复现入口：
+文档修改只核对 Markdown 链接、锚点及 Git 空白，不运行编译、业务单元或数据库测试。实现变更按实际风险选择以下入口，执行位置先按[当前环境规则](remote-execution.md)确认；不能将历史批次的 SSH 入口或授权套用于新任务。
 
-```bash
-make tools
-make verify
-make integration
-make race
-make tenant-mutations
-make supply-chain-tools
-make audit
-```
+## 源码与生成
 
-`make verify` 核对固定 Buf 1.60.0 / sqlc 1.31.1，执行 Proto/config/sqlc 再生成前后完整文件清单对比，检查分层依赖、格式、module tidy、单元与通用运行测试、vet、build、module checksum 和 Git 空白。Proto Go / gRPC 插件分别固定为 1.36.11 / 1.5.1，不手写生成物。
+    make tools
+    make verify
 
-`make integration` 使用固定 PostgreSQL 18.6 amd64 镜像，启动 loopback 随机端口的独占容器。每个测试创建独立数据库、owner/runtime 角色，迁移和 fixture 通过 owner 执行，业务通过 runtime 角色运行。容器和角色均由本次测试清理；凭据随机生成且不打印。镜像 digest、容器 ID 和清理结果进入命令输出。无需宿主 psql、sudo 或 kind。
+固定工具版本以 [Makefile](../Makefile) 为准：Buf 1.60.0、sqlc 1.31.1；Proto Go/gRPC 插件按生成配置固定。make verify 检查再生成一致性、分层、格式、module tidy、普通测试、vet、build、module checksum 与 Git 空白。不要手改生成物或为修旧测试恢复已废止接口。
 
-没有 `NETWORK_TEST_ADMIN_DSN` 时，普通 `go test` 会明确 skip 真实数据库/生产组合根/独立进程测试；它不能代替带真实数据库的入口。CI 用三路 `scripts/integration --ci-shard core|lb|recovery` 执行完整测试范围及竞态检查，再在 core 路执行一次租户谓词变异门禁。`make race` 保留为开发时的全包 race 入口，`make integration` 为不带 race 的入口，不在 CI 重复执行同一套集成测试。不要使用 `-short` 或删除检查绕过它们。
+## 数据库、并发与隔离
 
-`make race` 在同一真实 PostgreSQL 设施下执行全包 race 测试。恢复测试还构建带 race detector 的实际服务二进制，保留同一数据库与受控 Provider 事实，在 T1 之后、Provider 成功但 T4 之前、删除结果未知时终止进程并恢复；不会重建空库冒充重启。测试还覆盖不同服务进程共享持久租约，以及墓碑处理保留历史 operation。
+    make integration
+    make race
+    make tenant-mutations
+    make image-integration
+    make image-tenant-mutations
 
-VPC 保留两种创建崩溃，Subnet 保留 Provider 成功后的创建崩溃；每种资源的删除结果未知与墓碑再恢复完整演练一次。Subnet 特定 T1 的完整进程演练退役，其 CIDR 占用和旧 epoch 拒绝由数据库测试保留，通用 T1 进程恢复由 VPC 保留。普通数据库 fixture 只执行初次迁移；`TestNetworkMigrationReplayPreservesLedgerAndRestoresRuntimeGrants` 独立验证再次迁移不改变版本、checksum、应用时间，并恢复被撤销的 runtime 授权。进程用例另保留 CLI 迁移重放。
+数据库入口使用脚本创建的独占 PostgreSQL、独立 owner/runtime 角色和私有凭据；镜像、超时、分片及清理方式以 [integration](../scripts/integration)、[image-integration](../scripts/image-integration) 和 CI 配置为准。普通 go test 未配置对应 DSN 时会 skip 数据库用例，不能据此声称真实 PG 通过。各领域的 build tag 与定向入口按实际测试文件选择。
 
-Base 保留未知 EIP 创建期间删除、SNAT 删除响应丢失两种实际进程崩溃；普通 EIP 迟到创建的完整进程演练退役，更复杂的未知创建期间删除仍包含迟到写入与占用保持。LB 保留 Gateway 迟到创建、更新/删除响应丢失、未知创建期间删除四种。其余逐资源响应丢失使用真实 PostgreSQL、生产 Worker 和实际 KC adapter 的短测试：旧调用结束、关闭旧 runtime 后，同库创建新 Repository、Provider、observer 和 worker 恢复，检查持久 pending、身份、回执、占用和清理。LB 组件另验证旧 runtime 无法完成提交时的真实租约到期与双 worker 恢复。这些短测试保留业务故障断言，但不代替每种资源各自经历完整服务进程崩溃的证据。
+对 Network，验证原生结果映射、读错保留、通知/Finish 并发、未知 CREATE、原 UID 删除、管理引用及终态退休；不要求恢复 proof/Covers、TTL、生成物健康或物理清场。对其他领域，按自己的合法身份、业务引用、并发、输出交接和完成合同验证，不能机械套用 Network 的字段或执行器。
 
-连续 Watch 审计故障集中在 `public_private` exposure；其他生命周期测试仍覆盖三种 exposure。SNAT/LB 占用竞争保留真实并发的两种到达顺序，包含资源投影检查。所有曝光和 flavor 验证创建、规格、GeneratedReady 和删除；共享 route/policy 权重更新与回执回放集中在 `public_private/small`，组件故障测试另保留零权重恢复。非节流测试的受控 HTTP fixture 使用较高 QPS，不改变生产配置。零 Provider 写入的取消场景集中在 Base 短测试。租户、鉴权、UID/CAS、ownership 与跨租户负向门禁仍独立执行。
+进程恢复与 lease 测试保留原数据库、在途意图、身份、幂等和未知写，不能重建空库冒充恢复。历史 a57b676/schema13 回退和旧客户端组合只说明对应版本范围，不能作为当前迁移后的可运行回退候选。每次数据库变更须核对实际版本/checksum 和可支持的恢复路径。
 
-候选进程使用独占测试 CA、服务端证书和 Governance 客户端证书，调用经生产 mTLS 与可信 metadata 校验。历史客户端固定为 `66f787b` 的生成契约，仅通过临时编译 overlay 适配测试驱动的 TLS/context；原件与 protobuf 摘要保持不变。同库回滚使用支持第 13 次迁移的已发布固定基线 `a57b676`，不把缺少后续迁移的旧服务作为当前数据库的可运行回滚目标；迁移版本、checksum、应用时间、回执、cursor 和 Provider 身份仍须保持。后续数据库迁移需要重新核对并固定可运行的回滚版本。
+## 供应链与镜像
 
-`make tenant-mutations` 分别破坏 GetVPC、GetOperation、ListVPCs、GetSubnet、ListSubnets 和 GetAttachment 的 tenant 过滤，再用 sqlc 生成并执行真实数据库行为测试。只有相应跨租户断言实际失败才算识别成功；编译失败或其他测试错误不能充数。脚本始终恢复输入 SQL 和生成物，变异不留在最终代码。
+    make supply-chain-tools
+    make audit
+    make test-image
 
-Image 的真实数据库用例使用 `imageintegration` build tag，普通 `go test ./...` 和 Network 数据库入口均不包含它们。单独执行：
+供应链脚本检查实际源码、依赖、秘密、notice、许可证据与 SBOM；工具版本以 Makefile 为准。SBOM 要求相应干净源码输入，synthetic source commit 只属于该扫描，不作为业务提交或发布；不能为文档链接修正触发与任务无关的供应链重跑。镜像构建与部署分别取得授权和记录。
 
-```bash
-export TMPDIR=$(mktemp -d /tmp/ani-image-checks.XXXXXX)
-trap 'rmdir "$TMPDIR"' EXIT
-scripts/image-integration -race
-make image-tenant-mutations
-```
+## 结果记录
 
-`scripts/image-integration` 创建独占 PostgreSQL、owner/runtime 角色和私有 DSN 文件，覆盖 Image 持久化、生命周期、并发与凭据合同；`-race` 同时执行竞态检查。`make image-integration` 保留为不带 race 的开发入口。Image 租户变异门禁使用同一数据库准备入口，测试结束恢复变异并清理自有资源。
+STATIC、普通测试、真实 PostgreSQL、受控 Provider、真实集群、来宾及浏览器分别记录 pass/fail/not_verified。只写实际执行命令和对应源码；计划、fixture、构建或 Ready 都不替代真实业务验收。最新结果只在[执行状态](execution/status.md)维护。
 
-CI 对 PR 和 `main` push 执行独立的源码/单测、Network 数据库与隔离、Image 数据库与隔离、供应链 jobs。Network 三个 matrix jobs 各有独占 PostgreSQL；data/network 的 `^Test.*(Processes|ProcessRestart|SchemaCompatibleSameDatabaseRollback)` 用例在 recovery 路执行；`^Test(LB|LoadBalancer)` 排除 recovery 后在 lb 路执行；两组的 `-skip` 补集在 core 路执行。其他 Go 包只在 core 路全量执行；新增测试自动归入其中一路，Example/Fuzz 的默认回归在 core 路。分片不因另一片失败而提前取消；最终 `verify` 要求 Network matrix 和其他门禁均成功，失败、取消或跳过均不能通过。连续更新同一 PR 会取消过时执行，各 job 有明确时间预算；任务分支 push 不再重复触发整套流水线。
+以下保存旧工作包的复现入口和结果范围。原批次的关系索引、完整审计、Covers、TTL 或生成物验收要求已由[网络 v3](specs/cr-observation.md)替代；这些历史命令不自动成为本次必跑门禁或环境授权。
 
-主要测试入口：
-
-| 位置 | 证据范围 |
-|---|---|
-| [data 集成测试](../internal/data/network/postgres_integration_test.go) | 原子受理/回滚、租户边界、分页、角色隔离和无 RLS |
-| [worker 故障测试](../internal/data/network/faults_integration_test.go) | 同键并发、迟到 HTTP POST、租约和 epoch、纯查询/观测过期 |
-| [kc 契约测试](../internal/data/network/kc_integration_test.go) 与 [拒绝路径](../internal/data/network/provider_faults_integration_test.go) | 真实 dynamic client、VPC spec、UID/resourceVersion 删除条件、归属/占用/失联/拒绝 |
-| [RPC 测试](../internal/data/network/grpc_integration_test.go) | 生成契约、真实数据库、错误映射和租户隔离 |
-| [独立进程测试](../internal/data/network/process_integration_test.go) | 实际二进制和原有持久事实的故障恢复 |
-| [生产装配](../cmd/ani-resource-service/app_test.go) / [进程信号](../cmd/ani-resource-service/main_test.go) / [worker 生命周期](../internal/server/worker_test.go) | readiness、健康、异常退出与优雅停机 |
-| [通用运行回归](../tests/runtime/runtime_test.go) | 日志、trace、metrics、中间件、生成配置和 reflection |
-
-供应链流程保留原门禁：固定 govulncheck 1.7.0、Gitleaks 8.30.1、cyclonedx-gomod 1.12.0；需要 jq 和 rg。`make audit` 扫描依赖、当前 Git 全 refs，并检查 notice 与许可证据、生成 Linux/amd64 runtime SBOM。SBOM 要求源 checkout 已提交且干净（仅允许 SBOM 输出变化）；本轮使用经核对源码快照的远程临时验证提交，不提交原仓库。原仓库历史扫描与远程单快照扫描须分别记范围。CI 使用 full-history checkout。
-
-SBOM 生成使用除旧 SBOM 外的跟踪源码建立固定作者/时间的 synthetic source commit，删除扫描器自身构建 hash，输出不含随机 serial/timestamp。重新构建的扫描器在固定 module/version 门禁下可复现输出；扫描时点和工具二进制 hash 留在执行日志。源文档变化也会改变 synthetic source identity，因此最终文档完成后须同步生成 SBOM。
-
-最新 pass/fail/not_verified 只在 [执行状态](execution/status.md) 维护，NET-01 证据见 [实施记录](execution/records/NET-01-implementation.md)。真实 Kubernetes/kc/OVN 数据面、Console、VM、IAM 和生产发布各自保持独立验收边界。
-
-## NET-02–04 双仓库接口验证
+## 历史 NET-02–04 双仓库接口验证
 
 `scripts/remote-pair -- <argv>` 从固定 ANI 专用 worktree 与 Network 工作树建立各自源清单和归档，在 ubuntu 新建目录；不包含 ANI 主 checkout 改动或兄弟运行模块。`scripts/integration-pair` 创建专属 PG 容器，ANI 与 Network 使用不同数据库/owner/runtime。环境变量 `NET0204_TEST_ADMIN_DSN` 只由该入口设置，专项测试没有 live DSN fallback。
 
@@ -71,7 +47,7 @@ scripts/remote-pair -- bash -c '"$NETWORK_SOURCE/scripts/integration-pair" "$NET
 
 该入口构建独立 Network 服务、实际 Gateway 路由测试进程与 ANI 实例 owner 测试进程。HTTP fixture 只提供固定 kc/Kubernetes 契约和可控故障事实；使用真实 client、renderer、持久实例受理/封闭、gRPC consumer 查询与数据库恢复，不构成真实 kc 控制器、OVN 或 IAM 认证证明。具体故障场景、执行结果与源码身份见 [组合记录](execution/records/NET-02-04-implementation.md)。
 
-## NET-05A 持续观察与真实复验
+## 历史 NET-05A 持续观察与真实复验
 
 单仓重任务入口为 `scripts/net05a-remote -- scripts/net05a-gates`，从专用 dirty worktree 建立逐文件校验快照。`scripts/net05a-stage` 提供开发期间定向生成与真实 PG 测试；不能替代完整门禁。观察受控用例位于 [kc_observation_integration_test.go](../internal/data/network/kc_observation_integration_test.go)，通知/公平性位于 [observation_integration_test.go](../internal/data/network/observation_integration_test.go)。协议 fixture 使用真实 dynamic client 的 HTTP List/Watch，仅证明受控层。
 
@@ -83,4 +59,4 @@ scripts/remote-pair -- bash -c '"$NETWORK_SOURCE/scripts/integration-pair" "$NET
 
 本包重要修复后的精确新构建可用 `upgrade` 保留原失败意图并验证恢复，再用 `NET05A_WAVE=<unique-wave>` 的 `recheck-products` 经产品 API 清理并创建新普通容器波次。两阶段有已启动检查点，失败后先检查记录；不会自动重放。`NET05A_WAVE` 同时隔离后续故障用例的永久幂等键，测试暂停点必须使用同一源码构建。
 
-新 V-09 分别证明全部后台暂停时查询零副作用，以及只暂停状态应用、保留 Watch 时持久证据仍过期并拒绝准入。正常 Network 使用新镜像；明确标记的测试构建只暂停本包进程。真实 Watch、真实 PG、普通容器数据面、受控 403/429/410 和容量证据各自分列。ANI 固定源码不修改；既有八条 compatibility 与全历史 Atlas 失败不能由 schema fixture 改写。详细源身份、实际命令和结果见 [NET-05A 记录](execution/records/NET-05A-implementation.md)。
+原批次 V-09 曾检查后台暂停、查询副作用及旧证据过期拒绝；其中 proof/TTL 准入要求已由网络 v3 废止，不再作为当前验收条件。正常 Network 使用新镜像；明确标记的测试构建只暂停本包进程。真实 Watch、真实 PG、普通容器数据面、受控 403/429/410 和容量证据各自分列。ANI 固定源码不修改；既有八条 compatibility 与全历史 Atlas 失败不能由 schema fixture 改写。详细源身份、实际命令和结果见 [NET-05A 记录](execution/records/NET-05A-implementation.md)。

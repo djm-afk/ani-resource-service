@@ -110,15 +110,15 @@ Secret 存储由 `SecretCipher` 端口实现，adapter 使用标准库 AES-256-G
 
 ## 8. 工作负载使用
 
-创建方负责用户/租户授权和实际 namespace 所有权，Image 不读取 Network namespace SQL、不接管 Pod。
+创建方负责当前用户/租户授权和原业务意图，Image 不接管工作负载，也不读取 Network 私表。创建时解析已登记镜像并冻结获授权的 digest 引用，重试沿用原意图，不重新追随可变 Tag。
 
-- 环境启用/首次创建时：创建方通过受控内部端口获取租户只读材料；幂等创建 `kubernetes.io/dockerconfigjson` Secret `ani-registry-pull`。只写自己已验证的租户 namespace；已存在同名但 ownership label 不符的 Secret 拒绝覆盖。
-- 同一 namespace 后续复用 Secret；在创建前校验与当前有效凭证 generation 相符，必要时修复。不得使用其他租户/平台 admin 的节点全局登录兜底。
-- 每次创建调用 `ResolveImageForWorkload(tenant,scope,image_id,target_platform)`，得到 `registry/project/repo@sha256:...`。保存 resolved_image_ref/登记 ID/digest 到业务自己的创建意图；重试/扩容沿用既有意图，不重新解可变 Tag。
-- PodTemplate 显式配置 image、imagePullSecrets 与 Always；保留已有调度、配额、网络和安全策略，不能顺手改造成新训练编排。
-- 用户能直接创建 Pod 时，须核验已有 AlwaysPullImages 或等价准入约束；没有约束时报告隔离前置缺口，不擅自更改共享集群全局策略。
+Instance 已通过进程内 EnsureTenantPullSecret 接入 Image 统一 Secret writer；独立服务的专用 mTLS 入口也提供该方法。统一 writer 根据经验证的 tenant、cluster、namespace 及原 Namespace UID 创建或更新共享拉取 Secret，这些调用路径仅返回 Secret 引用、代次及非敏感回执，不交付明文 Registry 凭据。标准 Namespace 与调用方范围按[租户合同](../contracts/tenant-namespace.md)校验，同名异主 Secret 拒绝覆盖。
 
-同进程创建方直接注入 `RuntimeImages` 窄接口。独立服务需要固定证书身份的内部 gRPC surface：只允许 `ImageRuntimeService` 两个方法，无 HTTP/Swagger 暴露，不能给其 Governance 证书或伪造用户 actor。该创建方是受信控制面，可在其已授权的租户任务范围内断言 tenant；其自身需校验真实任务归属，不能把通用凭证接口透传用户。这个信任责任应在绑定记录明确。
+独立运行身份仅经专用 mTLS listener 调用 ResolveImageForWorkload 与 EnsureTenantPullSecret，GetTenantPullMaterial 不在该入口允许的方法中；字段与身份以[Image API](image-api.md)为唯一合同。此限制不能推导为所有进程内 owner 已使用统一 writer。
+
+Sandbox 当前由[组合根](../../cmd/ani-resource-service/sandbox.go)注入 sandboxPullMaterial，接口仍提供 GetTenantPullMaterial。[受理 adapter](../../internal/data/sandbox/image.go)使用材料检查凭据可用性，[Provider](../../internal/data/sandbox/provider.go)在进程内取得材料后，自行创建或更新 `ani-sandbox-pull-<tenant>` Secret。Sandbox 尚未迁到统一 writer；该进程内取材不表示独立服务已获明文 RPC 权限。统一 writer 的后续目标尚未覆盖此路径，本次文档修正不改变 Secret 命名、现有工作负载、接口、装配或权限，也不代表代码迁移完成。
+
+工作负载模板只采用获授权的 digest、Secret 引用和既定拉取策略，保留自己的调度、网络与配额。Secret 代次变化按既有同步机制办理，不在每个 Pod 创建新 Robot。用户可直接建 Pod 时，部署方核实 AlwaysPullImages 或等价隔离前提；缺项按原合同报告，不擅改共享准入策略。
 
 ## 9. 工程配置与运行边界
 

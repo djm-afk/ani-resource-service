@@ -34,25 +34,17 @@ action 被拒绝；已有绑定的规则修改同样检查该组合约束。
 
 EIP 使用 `spec.securityGroups`。CreateEIP 的 `security_group_ids` 与地址、初始配置及引用原子受理，初始配置 version 1；不传安全组时，首次 GET 绑定配置返回 version 1 的空配置；
 PUT 使用该配置版本，而非地址资源版本。未绑定 EIP 可以保存配置，但保持
-待应用状态；具备绑定目标、VPC、节点及网关后才能报告实际应用。
+configured 状态；实际 applied 仅按约定原生输出登记，不加 VPC/节点/网关健康合取。
 
 ## 应用与释放
 
-SG CR 的 Valid/Ready、observedGeneration 追平及目标应用成员共同构成
-Provider 应用证据；它们不替代真实流量测试。EIP 自身 appliedSecurityGroups
-仅证明引用存在，不作 ACL 下发证据。
+安全组自身使用原 CR Ready。目标应用结果直接读取精确 EIP/VNic 的 appliedSecurityGroups，使用 Res 租户/namespace/名称映射为产品 ID；不通过 SG 反向成员、完整历史 VNic、额外 Valid/代次或 ACL 检查拼出第二套应用证明。特定配置请求的原生回执仍按自己的合同处理，不使旧稳定状态因代次而失效。
 
-更换前先保留新旧组引用，核实新配置后再清理旧引用。consumer revision 来自
-持久 worker 资源版本；旧 Sync/Confirm、不同意图和退休后的重放不能改动新引用。
-停止态无当前 Pod 只能报告 configured，不能伪报 applied；历史 Attachment
-中仍存在的 VNic UID 也阻止释放旧引用。
+配置 PATCH 成功仅记 configured 并通知现有任务，不能把 desired IDs 复制成 applied IDs。无当前 VNic 时保留 configured，消费者变化后由现有任务读取实际输出。原生状态或 applied 不是流量测试的替代品。
 
-任何未释放引用（含未绑定 EIP、在途更换）都阻止删除安全组；Provider 仍有
-应用成员或 finalizer 时等待正常清理。删除以原对象 UID 的真实消失完成。
+更换和删除保留真实产品引用、原对象身份、配置版本、consumer revision 与迟到回执保护；仍被当前资源或在途变更引用时不能删除。旧事件不能覆盖新选择或复活 released/deleted 任务。删除仅正常结束自己的原 SG 声明，不等待反向成员闭包，不处理第三方 finalizer。
 
-PG 保存意图、不可变幂等回执、操作和身份；持久 Stepper 推进，GET/List 无副作用。
-旧操作被新版本明确替代时保留原身份并标记 OPERATION_SUPERSEDED，不能永久悬空。
-实际执行结果只记录在 [执行状态](../execution/status.md)。
+PG 保存意图、幂等、操作和身份，现有 Stepper 推进，Get/List 无副作用；已完成 operation 保持历史结果。实际实现、验证与部署只见[执行状态](../execution/status.md)。
 
 ## 部署权限
 

@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-09
 ---
 
 # 首片暂缓服务间身份验证，先完成网络业务与测试链
+
+> 历史决定。身份验证延期已由[Governance → Resource 调用合同](../specs/governance-calls.md)及受信 mTLS 入口承接；默认/full、governance、vpc-read 不提供明文回退。下文保留 2026-09 的原范围，不作为当前认证或权限豁免。
 
 本决定来自 2026-09-09 用户讨论，明确将 Network 的服务间身份验证推迟到 IAM 就绪后接入。当前只落实设计文档，尚未实现网络业务、测试接线或 IAM 集成；IAM 的候选身份协议不成为当前 VPC/Subnet 业务开发和测试环境链路的硬阻断。
 

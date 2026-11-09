@@ -36,7 +36,7 @@ PASS只适用于实际执行的层级；NOT_RUN/FAIL不能被另一层PASS覆盖
 | V07 | 根VM UID先登记，再独立DV owner；没有dataVolumeTemplates。共享源不被写入/加owner；来源同名换UID拒绝。WFFC停止态创建可结束、盘待消费者；首次Start不等待DV先Succeeded；目标仍Block。 | PG/BOUNDARY/LIVE | VM-01C/F、VM-02A |
 | V08 | 真实公开API完成Linux系统镜像创建→临时VNC页浏览器登录键鼠→租户网→写根盘marker→Stop/Start保留→产品删除。已验证NoCloud镜像用公开账户初始化输入完成实际控制台密码登录，公钥正确落入目标账户，默认未启SSH密码登录；源UID/hash不变、无派生镜像。修改来宾账户状态后Stop/Start/Restart保持NoCloud身份且不重置；同VM恢复保持快照内账户状态，不重新用初始凭据覆盖；AEAD受理/ACK原子性和重放另以PG验证，读API/operation/日志/证据不回显密码或密文，最终专属Secret按UID清理。原生探针只可作为该介质能力证据，不能替代产品链。202/Ready/101均不能单独判PASS。 | PG/LIVE/GUEST/BROWSER | VM-01B/C/F、VM-04B |
 | V09 | vm_managed/v3严格VM→VMI→launcher；旧v1/v2保持。错tenant/namespace/UID/owner/NAD摘要/Subnet拒绝；新合法但未登记launcher待观察；CDI/hotplug helper非当前端点。NAD依赖损坏仍可按冻结UID清理Stop/Delete。 | CODE/PG/BOUNDARY/LIVE | VM-01D/F、VM-03B |
-| V10 | 两真实租户、至少两节点guest DHCP/DNS/出站/跨节点唯一marker HTTP；跨租户按现有规则拒绝。Stop保留同Attachment并清旧地址资格，Start原子网新UID重新核验，IP可变；过期不显示仍有效；网络closed→Release→released无循环。 | LIVE/GUEST | VM-01F、VM-05A |
+| V10 | 两真实租户、至少两节点guest DHCP/DNS/出站/跨节点唯一marker HTTP；跨租户按现有规则拒绝。同一当前消费者没有新事件或读取失败时，不得仅按观察年龄或 TTL 撤回最后成功地址；成功读取的当前输出按字段合同更新，不因旧地址非空而永久保留。明确 stopped、closing、closed 或消费者更换时撤回旧输出；Stop 保留同一 Attachment 预留，Start 使用原子网并登记当前消费者，IP 可变；最终删除按消费者终结与 closed→Release→released 合同推进，无循环。地址是否存在不追加为受理、电源操作或释放门槛；本项仅约定 Network 地址，不改变 VM 对真实观察源断连的既有 Unknown 语义。 | LIVE/GUEST | VM-01F、VM-05A |
 | V11 | Start/Stop/显式ForceStop原生语义；普通Stop宽限期后允许原生终止；ForceStop缺失/false确认拒绝且不得发原生强制调用。无VMI/launcher运行且旧地址资格撤销后停止完成，盘/Attachment保留；失联未知不伪造物理释放。 | BOUNDARY/LIVE/GUEST | VM-01E/F |
 | V12 | Restart保存old_vmi_uid；丢回执/worker重启后观察同一次请求，不因旧UID暂存或stateChangeRequests已空盲重发。新UID属于原VM并达目标后完成；未知时保持原operation可查，无额外运行代次系统。 | PG/BOUNDARY/LIVE | VM-01E/F |
 | V13 | noVNC真实画面/键鼠。无vm:console权限拒绝，重试也先当前授权；SG允许重放状态内同键同binding同会话、异binding冲突；不新建VM业务operation或递增version。篡改binding任一身份/version拒绝；开流前后VMI变化关闭错误流，不转发。旧票据在停开后拒绝，旧连接随VMI结束且名额释放。未有IP/Agent/安装完成或create仍待观测时仍可开可信console。无需Resource等待SG回执。 | CODE/BOUNDARY/LIVE/BROWSER | VM-01E/F |
@@ -44,11 +44,11 @@ PASS只适用于实际执行的层级；NOT_RUN/FAIL不能被另一层PASS覆盖
 | V15 | 固定Windows ISO/驱动版本完成识Block盘、NetKVM、键鼠、Agent与停开保盘。若OS要求TPM/UEFI，原生持久backend为Filesystem，停开及后续恢复状态通过；不关闭系统要求。安装/停开结果可先通过，恢复子项等04B。 | LIVE/GUEST/BROWSER | VM-02B、VM-04B |
 | V16 | 至少两数据盘Block/RWO、稳定ID/serial；CreateDisk未挂载且WFFC可完成，后续冷Attach/Start不死锁。冷挂卸无VMI时只核持久配置；再挂原盘marker保留，单盘删除精确，跨VM引用拒绝。 | PG/BOUNDARY/LIVE/GUEST | VM-03A |
 | V17 | Linux/Windows各两数据盘在线原生热挂卸，SCSI/hotpluggable与有效gate。持久模板及VMI volumeStatus共同满足；guest离线确认明确，marker重挂/重启保留；旧HotplugVolumes不会抢占声明式路径。 | LIVE/GUEST | VM-03B |
-| V18 | 双系统在线/离线快照覆盖root+至少两块挂载持久data，保存逻辑disk inventory；无Agent/冻结不成功/必要卷排除如实展示，必要root/data及所需backend不完整或原生不可用时不能Restore，其余included/excluded如实展示。Snapshot删除原生content/CSI副本按策略清理。 | CODE/BOUNDARY/LIVE/GUEST | VM-04A |
+| V18 | 双系统在线/离线快照覆盖root+至少两块挂载持久data，保存逻辑disk inventory；无Agent/冻结不成功/必要卷排除如实展示，必要root/data及所需backend不完整或原生不可用时不能Restore，其余included/excluded如实展示。Snapshot 删除按自身原生对象和引用收尾；Content/CSI 结果可留作组件诊断，不作为 Res 终态门槛。 | CODE/BOUNDARY/LIVE/GUEST | VM-04A |
 | V19 | 同根VM UID且VMI不存在恢复；运行态拒绝。预览绑定version+摘要，变化必须重预览。五种盘集合逐一覆盖：快照内仍挂、已卸、已删；快照外挂载新增；快照外已卸。恢复/重挂/删除/保留准确，不靠当前活盘表猜。 | PG/BOUNDARY/LIVE/GUEST | VM-04B |
 | V20 | 原生Restore完成→新UID映射落库→旧root/data精确清理；任一checkpoint进程退出恢复仍是同一operation。cleanup失败保新映射及旧refs、不重复Restore/回写旧DV。WFFC PVC Pending可结束，无暗中Start；backend native清理不承诺失败回滚。 | PG/BOUNDARY/LIVE/GUEST | VM-04B |
 | V21 | Linux/Windows在线与离线快照各至少一次restore→显式Start→各盘marker回到快照值；随后运行态数据盘摘挂仍可用，hotpluggable/serial未丢，不重建旧盘。必要TPM状态纳入同一用例。 | LIVE/GUEST | VM-04B |
-| V22 | 导入中、停止态、热插拔后、恢复后/cleanup中五类删除：未知结果查明，根/运行对象、当前/卸载/被替换盘、介质、backend、快照/CSI及Network全部按策略清理。共享源/NAD/其他租户不变；无finalizer强删、无空charge退款前置。 | PG/BOUNDARY/LIVE | VM-01F、VM-02/03/04、VM-05A |
+| V22 | 导入中、停止态、热插拔后、恢复后/cleanup中五类删除：未知结果查明，根/运行对象、当前/卸载/被替换盘、介质、backend、Snapshot/Restore 及 Network 管理关系完成；不等 PV/CSI/Content 物理清场。共享源/NAD/其他租户不变；无finalizer强删、无空charge退款前置。 | PG/BOUNDARY/LIVE | VM-01F、VM-02/03/04、VM-05A |
 | V23 | 当前授权、跨租户VM/盘/快照/会话、同名换UID、伪造namespace/owner拒绝；恢复破坏确认不能覆盖版本冲突；通用权限/规格校验不削弱、不新增VM专属GPU禁止策略。业务前端的GPU筛选交其owner，本轮提供正式API合同。 | CODE/PG/BOUNDARY，关键路径LIVE | 随功能、VM-05A |
 | V24 | 受影响旧compute三用途、容器CPU/GPU受理及配额、Inference分派、Network v1/v2、SG Instance terminal回归。新增字段空值不改旧指纹，旧消费者无需迁移。不要求无关全量回归。 | CODE/PG/BOUNDARY，受影响路径LIVE | VM-01B/D/E、VM-05A |
 | V25 | 正式依赖ref可获取，无临时replace/go.work；增量迁移/兼容部署/worker启动/开放入口顺序有证据。发布前准备与实际发布分开；回退版本理解新VM合同/数据，未获授权不实施发布。 | CODE/发布记录（获授权后） | VM-05B |

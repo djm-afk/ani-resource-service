@@ -7,6 +7,8 @@ date: 2026-09-09
 
 服务命名与单进程部署边界后续演进见 [ADR-0006](0006-evolve-resource-service-preserving-network.md)；本记录的 Network 生命周期所有权继续有效，以下保留原决定语境。
 
+当前认证按[服务调用合同](../specs/governance-calls.md)执行，网络状态与删除按[状态消费规格](../specs/cr-observation.md)执行。下文首片的身份延期、fresh 环境和旧命令路径仅为历史语境，不覆盖后续明确合同。
+
 ANI 原有网络能力将业务记录、Provider 调用和实例接入知识分散在 Gateway 与共享运行代码中，难以独立迭代。首个拆分试点由 `ani-network-service` 独立拥有租户 VPC、Subnet 及其网络接入关系的生命周期，使用 `kc-networking` 实现底层网络。Gateway 保留产品入口，实例所属服务保留实例创建职责；业务状态、恢复和删除不再依赖 Core 兜底。
 
 本决定记录本轮已确认的架构方向。本轮落实范围为设计文档，不代表业务实现、数据库迁移、跨仓库修改、部署或切流已经开始。术语以 [领域词汇](../../CONTEXT.md) 为准，具体契约以 [VPC/Subnet 规格](../specs/vpc-subnet.md) 为准，当前执行状态只在 [执行状态](../execution/status.md) 维护。

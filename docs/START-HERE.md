@@ -1,5 +1,7 @@
 # ANI Resource 文档导航
 
+[Res 全域管理职责与简化原则](specs/res-responsibility-and-simplification.md)：适用于 Res 全部现有领域、存量实现和未来能力；领域合同在这些职责边界内规定具体对象、权威事实、状态和完成条件，旧文档或旧实现不能豁免越权逻辑。按用户更新的 2026-11-09 附件原位替换；Network/VM 是已完成试点，不代表全域推广完成，实际结果继续以执行状态和对应记录为准。
+
 [平台基础网络租户接入](specs/vpc-subnet.md#平台基础网络租户接入)：同一平台目录、真实租户消费者、首次受理开关和只读观察；VM 两轮准备见 [VM 合同](contracts/vm-v1.md#c05-平台基础网络与两轮准备)，容器重放见 [Instance 合同](specs/instance-configuration-network.md#平台基础网络接入)。编码交接见 [PR #62](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/62)，实际发布与真实验收见[执行状态](execution/status.md#platform-base-network-tenant-access-20261105)。
 
 [2026-11-04 网络状态消费简化](plans/network-management-simplification.md)：完全采信 KCN 原生状态，移除 Res 网络证明与审计逻辑；正式合同为[规格 v3](specs/cr-observation.md)，实现/验证/部署分别见[执行状态](execution/status.md#network-management-simplification-20261104)。
@@ -12,9 +14,9 @@
 
 [租户安全组](specs/security-groups.md)：容器/VM/EIP 接入、默认仅入方向拒绝、持久当前配置及真实应用判定；实际结果见[执行状态](execution/status.md#security-groups-20261030)。
 
-GPU 容器实例 v1.5：[规格](specs/instance-mvp.md)、[实施计划](plans/instance-mvp-v1.5.md)、[运行与恢复](runbooks/instance-mvp-fedora.md)、[当前执行状态](execution/status.md#gpu-container-instance-mvp-v15)。本轮按用户调整只负责后端，前端接入交由专人。
+GPU 容器实例 v1.5：[规格](specs/instance-mvp.md)、[实施计划](plans/instance-mvp-v1.5.md)、[运行与恢复](runbooks/instance-mvp-fedora.md)、[当前执行状态](execution/status.md#gpu-container-instance-mvp-v15)。前后端接线与实际验证范围按执行状态分别记录。
 
-容器最终删除与退额：[2026-10-27 整改方案](plans/container-instance-release-without-acc-20261027.md)移除 Resource 对 ACC 释放确认的依赖，以完整 owner 清理事实和持久 outbox 复用 Gov 现有退额接口；正式行为见[实例规格 §10](specs/instance-mvp.md#10-完整释放及-gov-原账退额)，实际实施与验证只见[执行状态](execution/status.md#container-instance-owner-refund-2026-10-27)。
+容器最终删除与退额：[2026-10-27 整改方案](plans/container-instance-release-without-acc-20261027.md)移除 Resource 对 ACC 释放确认的依赖，以 owner 自身管理责任完成事实和持久 outbox 复用 Gov 现有退额接口；正式行为见[实例规格 §10](specs/instance-mvp.md#10-完整释放及-gov-原账退额)，实际实施与验证只见[执行状态](execution/status.md#container-instance-owner-refund-2026-10-27)。
 
 容器实例配置与 VPC 接入：[增量设计](specs/instance-configuration-network.md)、[IC-01～IC-05 计划](plans/instance-configuration-network.md)；实施与真实验收只看[本任务状态](execution/status.md#instance-configuration-and-network-2026-10-19)。
 
@@ -23,21 +25,34 @@ GPU 容器实例 v1.5：[规格](specs/instance-mvp.md)、[实施计划](plans/i
 
 [算力目录与公共解析](specs/compute-presets.md)定义 compute 管理、列表、用途绑定的只读候选及与各消费者的组合边界；[原地迁移与恢复](runbooks/compute-presets-migration.md)定义规格表/账本与匹配 Gov 权限维护步骤。实例配置使用唯一格式，生命周期合同继续有效；开发环境清理后通过009切换，见[配置合同](specs/instance-configuration-network.md#7-当前配置合同与原账)。
 
-[ani-resource-service 改名与模块整理计划](plans/resource-service-modularization.md)：原R0–R5沿用现有仓库和Kratos分层整理Network，并验证旧客户端、旧数据、资源接管和回退；本次Compute增量以[算力目录合同](specs/compute-presets.md)为准，Storage仍待后续切片。
+[Resource 改名历史计划](plans/resource-service-modularization.md)：R0–R5 的原来源、兼容检查和执行范围；当前 Compute、Storage 等领域从下方正式合同进入，不将原批次的“后续切片”作为当前实现状态。
 
 容器重启与已有 PVC 挂卸：[生命周期](specs/instance-mvp.md#84-restart-与挂卸操作)、[五个 RPC 与动作权限](specs/instance-mvp.md#111-用户-api)、[当前配置/引用代际/Storage 删除保护](specs/instance-configuration-network.md#43-持久化和投影)、[008 切换与向前恢复](runbooks/instance-mvp-fedora.md)、[精确服务调用登记](specs/governance-calls.md)。实施输入仍为[已审 v2.0 方案](plans/container-instance-restart-pvc-20261028.md)，来源 SHA-256 `b6dfb17aef74f3d99cc969ecd2ef51b19c77b0a984f82fbe6afd28aa94d41f7a`；部署、A35/A36 边界和实际验收只见[唯一执行状态](execution/status.md#container-restart-pvc-20261028)。
 
-[标准租户 Namespace 与 ModelDev 动态镜像授权合同](contracts/tenant-namespace.md)：固定 canonical UUID/name/network 标签/原 UID，Network 0025 维护回填及 ModelDev 动态 Secret caller。替代可配置 Namespace prefix 与自动初始化语义；Inference 静态 caller 不变。
+[标准租户 Namespace 与镜像授权合同](contracts/tenant-namespace.md)：固定 canonical UUID/name/归属标签/原 UID，区分 Sandbox 开通与其他 owner 只读复用；ModelDev/Inference 标准租户授权和既有静态 caller 的实际边界以该合同为准。
 
 ## 阅读顺序
 
-1. [领域词汇](../CONTEXT.md)：网络资源、消费者、操作、资源状态与身份角色。
-2. [首片规格：VPC/Subnet](specs/vpc-subnet.md)：产品规则、REST/RPC、数据、状态、恢复、接入和验收。
-3. [架构决定](#架构决定)：已由用户确认的所有权、数据和身份接入取舍。
-4. [纵向实施计划](plans/vpc-subnet.md)：NET-01 至 NET-06（含新增 NET-05A）与 NET-AUTH 的依赖和退出证据；[NET-05A 专案](plans/cr-observation.md)安排持续观察改造。
-5. [执行状态](execution/status.md)：当前工作包、下一步、验证范围与记录索引。
+1. [领域词汇](../CONTEXT.md)与[全域职责原则](specs/res-responsibility-and-simplification.md)。
+2. 选择本次所涉领域的正式合同，并查阅当前[执行状态](execution/status.md)中的实现、验证和已知偏差。
+3. 查阅适用[架构决定](#架构决定)，将其历史范围与后续替代决定区分。
+4. 仅在任务需要时引用相关实施计划和历史证据；旧 Goal 不授权当前执行。
 
-公网出网增量：[租户 VPC SNAT 方案](specs/vpc-snat.md)定义 Overlay/Underlay、平台与租户接口及生命周期；[实施计划](plans/vpc-snat.md)安排依赖和后续 Underlay 验收；[操作手册](kc-public-egress-manual.md)提供产品 RPC 顺序及 kc CR/YAML 核对参考；[出网部署前置](../deployments/egress/README.md)说明额外 RBAC、节点身份与 KCN 组设备反馈。
+## 领域合同
+
+| 领域 | 正式入口 |
+| --- | --- |
+| Network | [VPC/Subnet](specs/vpc-subnet.md)、[状态消费与管理生命周期](specs/cr-observation.md)、[Public/SNAT](specs/vpc-snat.md)、[VPC/LB](specs/vpc-connectivity-lb.md)、[安全组](specs/security-groups.md)、[Underlay/交换机](specs/kcn-v09-underlay-flow.md) |
+| Compute | [目录与只读解析](specs/compute-presets.md) |
+| Image | [规格](specs/image-mvp.md)、[API/凭据交接](specs/image-api.md)、[方法](specs/image-methods.md) |
+| Storage | [直接 PVC 管理](specs/storage-volumes.md)、[S3 对象管理](specs/object-storage.md)、[部署与手工绑定](../deployments/storage/README.md) |
+| Instance | [生命周期/原账](specs/instance-mvp.md)、[当前配置/借用卷/网络](specs/instance-configuration-network.md) |
+| Sandbox | [管理与生命周期](specs/sandbox.md)、[实施顺序与未来能力](plans/sandbox-runtime-design-20261025.md) |
+| VM | [规格](specs/vm-mvp.md)、[字段和跨域合同](contracts/vm-v1.md)、[验收层次](verification/vm-mvp-acceptance.md) |
+| ClusterOps | [平台集群运维规范](specs/cluster-operations.md)、[v1 调用合同](contracts/cluster-operations-v1.md) |
+| 共通入口 | [标准 Namespace](contracts/tenant-namespace.md)、[受信服务调用](specs/governance-calls.md)、[运行装配](runtime.md) |
+
+公网出网增量：[租户 VPC SNAT 方案](specs/vpc-snat.md)定义 Overlay/Underlay、平台与租户接口及生命周期；[实施计划](plans/vpc-snat.md)安排依赖和后续 Underlay 验收；[操作手册](kc-public-egress-manual.md)提供产品 RPC 顺序及 kc CR/YAML 核对参考；[出网部署前置](../deployments/egress/README.md)说明额外 RBAC、冻结节点身份和本服务拥有的组标签配置。
 
 2026-09-14 新统一设计：[VPC 基础内网、公网出站与 LB 方案](specs/vpc-connectivity-lb.md)定义新规则及对旧流程的调整；[13 个可执行任务](plans/vpc-connectivity-lb.md)给出依赖、修改范围与验收条件；[方案交付与来源核对](execution/records/2026-09-14-vpc-lb-plan.md)记录固定代码和手工实测的证据边界。本文档交付不代表新流程已实现。
 
@@ -47,7 +62,7 @@ GPU 容器实例 v1.5：[规格](specs/instance-mvp.md)、[实施计划](plans/i
 
 [Sandbox 未知创建只读诊断](runbooks/sandbox-unknown-create-review.md)输出目标、凭据身份及 Provider 观察，保留未知屏障；报告本身不是持久审计或恢复证明。
 
-[Sandbox Runtime 完整设计方案](plans/sandbox-runtime-design-20261025.md)是 Sandbox 唯一设计入口，已把旧 ANI 行为和 live evidence、新版 Resource 的 compute 解析/冻结快照/租户边界/Provider 恢复模型，以及推理服务资源语义合并在一份文档中。一期核心链和二期数据面能力分别按方案门禁推进；实际实现、部署和验收仅见[当前执行状态](execution/status.md)。
+[Sandbox 正式规格](specs/sandbox.md)定义当前目标合同；[实施计划与历史来源](plans/sandbox-runtime-design-20261025.md)只保留阶段顺序、未来目标与设计输入。现有实现偏差、实际部署和验收只见[执行状态](execution/status.md)，不把规范更新当作代码已经整改。
 
 ## 架构决定
 
@@ -55,10 +70,11 @@ GPU 容器实例 v1.5：[规格](specs/instance-mvp.md)、[实施计划](plans/i
 |---|---|
 | [ADR-0001](adr/0001-own-network-lifecycle.md) | Network 自己拥有资源、operation、worker、状态、恢复和真实删除，Core 不兜底；实例 owner 仍拥有 Pod/VM。 |
 | [ADR-0002](adr/0002-use-tenant-owned-data-without-rls.md) | 独立 PostgreSQL + sqlc/pgx；租户资源显式 tenant 约束，无 RLS、共享写表或跨服务 FK。 |
-| [ADR-0003](adr/0003-defer-workload-authentication.md) | 本期暂缓服务间身份验证，IAM 就绪后单独接入；租户业务边界继续实现和测试。 |
-| [ADR-0004](adr/0004-observe-cr-with-durable-reconciliation.md) | 共享 CR 观察与 Network 持久执行，NET-05A 位于 NET-06 前；兄弟服务框架自主选择，配额延后到 Core 重构之后。 |
+| [ADR-0003](adr/0003-defer-workload-authentication.md) | 历史身份延期决定已被当前 mTLS/可信委托合同替代，不能作为认证旁路。 |
+| [ADR-0004](adr/0004-observe-cr-with-durable-reconciliation.md) | 最新 11-04 决定采用原生状态、精确通知和已有持久任务，旧审计/闭包/TTL 已替代；兄弟领域按实际契约选择机制。 |
 | [ADR-0005](adr/0005-separate-vpc-connectivity-and-exclusive-eip-bindings.md) | 用户确认 EIP 目标独占，VPC 内网/公网 SNAT 分用途限制，基础内网资源随 VPC 管理。 |
 | [ADR-0006](adr/0006-evolve-resource-service-preserving-network.md) | 原历史上演进 Resource 单进程，保留 Network 数据、契约、资源身份与回退边界。 |
+| [ADR-0007](adr/0007-image-domain-and-private-registry.md) | Image 领域自治、登记 Digest 与私有仓库；运行身份通过统一 Secret writer 交接。 |
 
 ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段和协议细节是工程设计，不冒充已经逐项人工批准或实际验收。
 当前用户明确决定优先。规格、ADR、代码或证据出现差异时，标明是待实现目标、过期材料还是需要变更的决定，并更新对应权威材料，不能静默挑选有利版本。
@@ -84,6 +100,10 @@ ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段�
 
 ## 运行与来源
 
+- [2026-11-09 文档清理修复](execution/records/res-doc-fix-20261109.md)：全域复扫清单的文档处理、历史引用维护和静态校验；D18/D19 代码整改仍未完成，当前进度见唯一执行状态。
+
+- [2026-11-09 全域原则复扫与待清理清单](execution/records/res-doc-review-20261109-global.md)：按最新版原则复核全部现有领域，列出保留、升级及新增项，并区分文档错误、存量职责整改和证据位置问题；初审记录仅保留原时点结果，后续处理进度仍只见执行状态。
+
 - [Governance VPC 只读接入](specs/governance-vpc-read.md)：用户/API Key 的受信 mTLS 查询入口；原始验证见 [2026-09-22 记录](execution/records/governance-aksk-vpc-20260922/README.md)。
 - [Governance → Resource 调用登记](specs/governance-calls.md)：现有 Network/Image 方法、唯一证书身份、租户范围、超时和幂等，以及各装配模式共用业务 mTLS 的边界。
 
@@ -97,7 +117,7 @@ ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段�
 - [NET-05 普通容器真实网络验收](execution/records/NET-05-implementation.md)：实际 main、数据面、故障、权限与清理证据。
 - [运行说明](runtime.md)
 - [运行验证](runtime-verification.md)：已有通用骨架门禁的范围。
-- [远程执行约定](remote-execution.md)：通用规则与本轮 Goal 的更严格边界；Resource 改名本轮重任务必须在 Fedora，不自动回退本地。
+- [执行与源码隔离约定](remote-execution.md)：当前环境先按本次指令和个人清单确认；历史 NET-05A/SNAT/R0–R5 参数只供追溯。
 - [生成溯源](scaffold/provenance.md) 与 [运行依赖 SBOM](scaffold/bom.cdx.json)
 - [2026-09-09 源码评估](execution/records/2026-09-09-source-assessment.md)：ANI、IAM、Notification、kc 的设计输入与快照。
 - [2026-09-09 文档交付检查](execution/records/2026-09-09-design-verification.md)
@@ -109,24 +129,24 @@ ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段�
 
 ## VM 一阶段职责整改
 
-本次仅实施 R01–R09；业务规则已收敛至 [VM 规格](specs/vm-mvp.md)，CDI 内部故障的限定入口见 [运维接替](runbooks/vm-image-cdi-handoff.md)。实际代码、测试、部署及未完成事项只见 [执行状态](execution/status.md#vm-phase1-20261106)。本次不进入虚拟机克隆二阶段。
+R01–R09 的已归档整改范围与对应行为见 [VM 规格](specs/vm-mvp.md)，CDI 内部故障的限定入口见 [运维接替](runbooks/vm-image-cdi-handoff.md)。实际代码、测试、部署及未完成事项只见 [执行状态](execution/status.md#vm-phase1-20261106)。该记录不表示整机克隆二阶段已实现，也不限制后续任务的实际授权范围。
 
 ## VM MVP
 
 - [虚拟机一期规格 v2](specs/vm-mvp.md)：Linux/Windows、ISO 与 qcow2/raw、Block/RWO 自有盘、多盘、VNC、原生热插拔、在线/离线快照恢复及租户主网的唯一业务规则。
 - [VM v1 正式合同](contracts/vm-v1.md)：API、action/usage/codec、compute、Network v3、可信 console binding 及 Gov 删除持久受理栅栏的唯一字段/接线规则。
 - [纵向实施计划 v2](plans/vm-mvp.md)：VM-00 至 VM-05B 共16卡；先贯通真实Linux主链，再补齐一期范围。
-- [整批执行 Goal](plans/vm-mvp-complete-goal-20261023.md)：本轮完整范围和授权边界；以当前用户指令补充。重任务仅ssh fedora、集群仅172.16.101.10～12、Git传输仅SSH；按依赖连续执行16卡，不逐卡询问。共享runtime/组件变更和正式发布仍须取得具体批准；旧环境Block缺项须在10～12重新核验。
+- [VM MVP 历史执行 Goal](plans/vm-mvp-complete-goal-20261023.md)：原 16 卡范围、来源与历史授权；其机器、集群、连续执行和维护窗口不自动适用于新任务。
 - [验收矩阵 V01–V25](verification/vm-mvp-acceptance.md)：CODE/PG/BOUNDARY/LIVE/GUEST/BROWSER及双系统必需格子，含Gov删除投递暂停期间的受理栅栏；本文件不维护执行结果。
 - [制包来源](references/vm-mvp-sources.md)、[设计复核历史](execution/records/VM-MVP/design-review-20261023.md)、[制包校验历史](execution/records/VM-MVP/package-validation-20261023.md)：固定输入与历史证据，不作当前环境或实施状态。
-- [首卡 Goal](plans/vm-mvp-goals/VM-00.md)、[维护窗口 Goal](plans/vm-mvp-goals/VM-00R.md)；其余16卡文件在同目录。单卡范围按完整Goal连续执行授权组合。
+- [首卡 Goal](plans/vm-mvp-goals/VM-00.md)、[维护窗口 Goal](plans/vm-mvp-goals/VM-00R.md)；其余16卡文件在同目录。它们是原批次的实施输入，当前任务不得从中自动取得连续执行或共享环境权限。
 - 空白模板：[环境输入](plans/vm-mvp-templates/environment-inputs.yaml)、[runtime变更准备单](plans/vm-mvp-templates/runtime-change-plan.md)、[任务报告](plans/vm-mvp-templates/task-report.md)。填写后的输入、变更单、报告统一放入docs/execution/records/VM-MVP/。
 - [VM候选部署交接](execution/records/VM-MVP/vm-candidate-deployment-handoff.md)：实际候选来源、依赖顺序、迁移/密钥和部署/回退边界；Resource/Gov/SG实现任务ref及三个Harbor镜像已发布并核对digest，实际引用和未验/未部署边界以交接回执为准，不复制验收矩阵。
 - 当前结果仅见[唯一执行状态](execution/status.md#vm-mvp)。
 
 ### 文档接入与唯一状态
 
-不可变输入包为ani-vm-mvp-v2-20261023.zip，SHA-256为ef781d20e31f02ecdd6e3e0f98dcd3bd77ee38a3b790b0a69b0ef86ecd49a10d。VM-00按下表将正式内容按差异接入，替换旧VM规格和计划中的相反规则，保留无关内容；不覆盖根README，不修改AGENTS或remote-execution。迁移后的Markdown链接及Goal文字路径均指向仓内目标；包README引用统一指本VM入口。
+不可变输入包为ani-vm-mvp-v2-20261023.zip，SHA-256为ef781d20e31f02ecdd6e3e0f98dcd3bd77ee38a3b790b0a69b0ef86ecd49a10d。下表保留当时 VM-00 的接入映射，仅作来源追溯；新任务不据此重新导入旧规范、覆盖后续修订或限制已获授权的文档维护。迁移后的Markdown链接及Goal文字路径均指向仓内目标；包README引用统一指本VM入口。
 
 | 包内文件 | Resource目标位置 |
 |---|---|
@@ -141,7 +161,7 @@ ADR 记录已确认的方向及理由；规格中本轮补齐的数值、字段�
 | templates/* | docs/plans/vm-mvp-templates/，保留3个原文件名，模板保持空白 |
 | README.md | 不覆盖仓库README；由本VM入口承接映射及接入规则 |
 
-唯一当前状态始终为docs/execution/status.md#vm-mvp；证据仅以docs/execution/records/VM-MVP/为本批索引。Gov、SG和前端记录链接到该索引，不再建立第二套总状态。两份历史复核仅保留制包时事实，不重写为实施通过声明；目标行为和计划也不作为产品验收证据。
+唯一当前状态始终为 docs/execution/status.md；VM-MVP/ 为原批次证据，VM 一阶段及后续工作使用同一状态文件中的各自日期/记录索引。Gov、SG和前端记录链接到该索引，不再建立第二套总状态。两份历史复核仅保留制包时事实，不重写为实施通过声明；目标行为和计划也不作为产品验收证据。
 
 ## Image MVP
 

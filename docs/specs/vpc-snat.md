@@ -2,8 +2,6 @@
 
 > 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
 
-2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
-
 > 2026-09-14 部分规则由[统一方案](vpc-connectivity-lb.md)接替：每 VPC 的 SNAT 按内网/公网分别限制，EIP 占用覆盖 SNAT/LB，VPC 新增基础内网生命周期。下文保留为 d8835a22 已有实现的来源；未冲突的 Public 申请/启停/解绑/释放和平台模式规则继续适用，不把新方案当作已实现。
 
 日期：2026-09-10；版本：1。本文定义 Network 的公网地址申请和 VPC SNAT 增量方案。用户已确认的模式、namespace 和权限要求在本文固化；接口名称、一期数量限制、持久模型和状态表达属于本次形成的工程设计，不代表已经实现或逐项验收。
@@ -98,21 +96,17 @@ SNAT 将租户工作负载私网源地址转换为 EIP，回包由有状态转�
 
 ### 4.1 Underlay 的手工网卡配置与二层网络
 
-管理员在线下准备目标节点上的同名接口、物理交换机和 VLAN 连通条件，再按[虚拟交换机与二层网络流程](kcn-v09-underlay-flow.md)手工填写接口名（例如 `bond0`、`eno2`）和 VLAN。Resource 不部署宿主网卡采集器，也不把物理库存、MAC、carrier、管理口或默认路由审批作为第二次前置校验；接口是否适合接管由管理员准备责任和 KCN 实际执行共同确定。
+管理员准备接口、物理交换机和 VLAN 连通条件，按[二层网络合同](kcn-v09-underlay-flow.md)提交所选虚拟交换机、device_name 与 VLAN。Res 保留自己的节点选择/原 UID、组标签归属、设备槽位、引用和版本保护，不部署网卡采集器或第二次物理审批。
 
-- Resource 在持久事务内固定完整目标 Node UID/allocated/优先级及组所有权，预留逻辑设备槽位，保护幂等、并发和其他交换机占用。
-- Worker 按 Node UID/resourceVersion 条件合并本产品组标签，再创建 `VlanNetwork`，填 `vClusterName`、`devName`、`vlanID`。不再修改 `managedDevices`、`kcn-config` 或旧 device-adoption annotation，也不要求先成功登记物理设备。
-- KCN daemon 负责查找接口、必要时置 UP、检查非链路本地 IP、配置 OVS 和发布组设备注解；`bond0` 等名称不因 Resource 的 `Kind==device` 规则被额外排除。Resource 不删 IP、不拆 bond、不改宿主路由或 OVS，也不代写接管成功注解。
-- Resource 观察同一 VLAN UID/不可变 spec、`Valid/Initialized`、完整非空成员范围与每节点组设备注解。`notReadyNodes` 是可能截断的可选字符串，空值不能独立证明成功；该 KCN profile 不发布 VLAN `Ready/Healthy`。反馈不等于物理链路或上游业务健康。
-- 部分节点接管失败保留进度和占用，阻止下游池开放。缺组或稳定配置错误的恢复沿用既有明确边界，本次不新增 KCN 重试、隐藏删除重建或拆桥实现。旧设备登记仅按历史记录处理，不成为新建主流程的操作步骤。
+Worker 按原 UID/resourceVersion 合并自己拥有的组标签并声明 VlanNetwork；KCN 负责接口、OVS 和内部接管。Res 消费该 VLAN 的 Initialized，不把完整节点设备注解、CNI/Node 健康或物理接口状态重新合成为 Ready，也不修改 managedDevices、共享路由或底层规则。
 
-VlanNetwork 接管反馈、池控制面就绪和真实出口流量分别观察。删除 VlanNetwork 不等同于物理接口已归还，不以组注解消失冒充 bridge/port 已拆；Resource 仅释放经过其生命周期确认的逻辑引用和占用。
+声明失败、部分管理写入和未知请求沿原记录恢复，不通过隐藏重建、改标签触发或重启组件兜底。VLAN 删除以自己的原声明和逻辑引用结束，不承诺物理接口已归还；实际出口诊断按管理员显式操作记录。
 
 ### 4.2 先创建 EIPGateway
 
-两种模式均先创建 Cluster EIPGateway，再创建 Public Subnet。固定 `scope: Public`、`egressType: Host`；默认省略 `hostConfig`，让 kc 从系统服务网段分配互联地址。`status.localIP` 是系统互联地址，不是 EIP、Public 池网关或节点上联 IP。
+Public 地址池显式引用已登记的 Cluster EIPGateway。两种模式保持 scope=Public、egressType=Host，不虚构 Overlay/Underlay type 字段；status.localIP 是原生系统互联输出，不是租户 EIP 或上联地址。
 
-等待网关 `Valid/Initialized/Ready=True`、`status.localIP` 非空、`status.boundResources.router` 已存在。已知新网关缓存缺陷在网关 Ready 后仍可能出现，因此这些条件是创建下游资源的必要条件，不能替代第 9 节的 Provider 修复及原始流程验收。
+Res 维护网关产品身份与声明，运行状态直接采用自身 Ready，不因 localIP/router 未报告或内部依赖诊断另造 Ready。提供方缺陷、首次支持条件和实际连通验收分别记录，不进入每次管理请求的附加证明。
 
 ### 4.3 创建 Public 地址池
 
@@ -131,36 +125,29 @@ VlanNetwork 接管反馈、池控制面就绪和真实出口流量分别观察�
 | `type / ipVersion / allowedNamespaces` | 后台固定 `Public / IPv4 / {from: All}` |
 | `enableDHCP / natOutgoing` | 池只分配 EIP，DHCP=false；不靠 `natOutgoing` 为普通租户 VPC 开公网 |
 
-Underlay 等待 Subnet `Valid/Initialized/Ready=True`，并要求 `underlayState.ready=true`、`notReadyNodes` 为空、`chassisNode` 非空、VlanNetwork 占用指向该 Public 池。Overlay 不应存在 `underlayState`。网卡、OVS、ARP、上游过滤与回程仍须独立核对。
+Underlay 的平台参数和逻辑引用在受理时冻结；池运行状态直接采用自身 Ready，不追加 underlayState、notReadyNodes、chassis 或 Node/CNI 健康合取。Overlay 不生成 Underlay 配置。物理接口、ARP、回程等由管理员显式诊断，不成为平台按本服务管理意图提交声明的重复验收。
 
-新建 VLAN 或 Underlay 池的物理准备要求全部冻结成员的 Node/CNI 就绪。已有绑定的持续观察及其 EIP/SNAT 操作保留完整冻结成员的 UID、组所有权和接口接管反馈，并检查池当前选中的出口 chassis 的 Node/CNI 就绪；未被选中的离线冗余成员不单独使已有池退化。缺失或替换冻结成员、丢失接管反馈、出口不属于该组或当前出口不就绪仍拒绝，不删除成员或代写 Provider 状态。
-
-一期不提供池的在线 CIDR、模式、网关、排除范围或 VlanNetwork 变更；这些设置按创建快照保留，变更使用新池并按明确迁移流程处理旧 EIP。不能通过修改原池将既有 EIP 隐式切到另一条出口。
+一期不提供原池 CIDR、模式、网关、排除范围或 VLAN 的在线改写；新配置使用新池并按明确业务迁移处理已有引用，不把既有 EIP 隐式迁移到新出口。
 
 ### 4.4 出口验收、开放分配和默认池
 
-池的“kc 已创建”“管理员允许新分配”“现场出口已经验证”分别记录。新池默认不开放租户分配；池、网关、所需二层网络及 Provider 组件就绪且观测有效时，管理员可直接开放。公有网络不要求预先登记出网证据，缺失、过期或不匹配的历史验证记录不阻止开放分配、新 EIP 申请或公网绑定。验证记录接口保留为可选诊断信息，开放分配本身不代表实际出网和回程已经验收。
+池默认不接受新分配；管理员按当前权限、产品配置、版本和幂等规则开放。分配开关、默认池与当前原生状态分别表达，运行准入不追加 Provider Ready、观测年龄、镜像/拓扑 fingerprint 或人工 verification。
 
-验收记录绑定具体镜像、出口配置及验证范围；相关配置或版本改变后重新核验，旧证据不能自动用于新配置。已有连接和地址不因此自动删除，新的分配/绑定准入与已存在资源的退化状态分别处理。
+默认池切换仅影响后续首次受理；既有 EIP 保留原池、地址与配置，未知分配沿同一意图恢复，不切池或换名。关闭分配只阻止新申请，不撤销已受理任务，不删除或解绑已有地址。产品不存在、scope 错误、管理关闭、引用/配置冲突按自身业务错误拒绝。
 
-一期每个部署集群显式配置一个租户默认 Public 池，作为新 EIP 分配来源；两种模式的池都可先初始化，但租户不选择或列举底层池。默认池切换只影响后续新申请，已有 EIP 保留原池/地址/模式。关闭池的新分配不撤销已有租户地址和流量；退役必须走依赖检查。
-
-“允许新分配”只控制新 EIP 申请。已有 EIP 的绑定/启用检查出口资源、Provider 组件及当前配置就绪，不要求手工出网证据，不因分配开关关闭而自行解绑或拒绝使用保留地址；真正退役仍需明确释放全部依赖。基础内网池的验证规则保持独立。
-
-没有默认池、默认池未开放、基础资源或 Provider 组件不就绪、观测过期时，新申请返回明确的出口未就绪错误。容量提示只是观测值，不能按“池大小减 EIP 条数”计算权威剩余量；耗尽以 kc IPAM 的实际结果判断。分配结果未知时不得切池或换名字重试，防止产生多份地址。
+RecordPublicPoolVerification/RecordIntranetPoolVerification 只保存管理员实际材料；不触发 provider 操作，不替换当前 operation，也不因材料过期使资源或动作失效。开放分配不宣称真实出口已经验收；物理连通、DNS 和回程按相应环境单独记录。
 
 ## 5. 租户申请与绑定流程
 
-1. **准备 VPC/Subnet。** 沿用现有 API；VPC 与私有 Subnet 同 tenant/namespace，Subnet `type: VPC`、`gateway` 为父 VPC。工作负载通过既有 Attachment 协议正确接入，Network 不新建 Pod/VM。
-2. **申请 EIP。** 租户提交名称/描述与幂等键；Network 解析目标租户、选择已开放默认池，将池 ID、配置版本、目标 cluster/namespace 和稳定 Provider 名持久化，再创建租户 EIP。`spec.subnet=kcn-system/<池名>`，`ipVersion=IPv4`，省略 `ipAddress`。一期不开放指定 IP 申请。
-3. **确认已分配。** 同 UID 的 EIP `Valid/Initialized=True`、`phase=Available`、实际 `spec.ipAddress` 合法、所属池/网关匹配，且无绑定。Network 保存实际地址；申请 EIP 不等于已经给 VPC 开启出口。
-4. **绑定 EIP 到 VPC。** 先校验同 tenant/cluster/namespace、VPC 可用且观测新鲜、EIP 已分配未占用、出口配置允许使用、VPC 无已有绑定。在本地事务预留 VPC 和 EIP 的唯一绑定位置，建立绑定资源/operation，再创建同 namespace 的 Snat。字段为 `spec.eip=<EIP CR名>`、`spec.vpc=<VPC CR名>`、`disable=false`，不传 `cidrs`。
-5. **观测应用结果。** 同时核对 Snat 与 EIP，不能只看一次 Bound。资源处于“配置已应用”后，实际工作负载流量另行验证；具体完成条件见第 7 节。
-6. **停用与重新启用。** 修改该 Snat 的 `disable`，保持同一绑定、EIP 地址及占用；对每一代期望记录并观测完成。停用不是解绑。旧连接是否保留不作承诺，验收使用新连接。
-7. **解绑。** 删除本绑定的 Snat，确认其已真实消失、同 EIP 的 `boundResource` 清空且 phase 回到 Available，才释放本地绑定占用。解绑保留 EIP；可以随后重新绑定其他 VPC。
-8. **释放 EIP。** 仅在不存在绑定、没有未知/未完成变更、Provider 也无 Nat/Snat/Service 占用时删除 EIP，确认同 UID 对象不存在后完成释放。已绑定 EIP 的 DELETE 返回占用冲突，不自动断网。
+1. VPC/Subnet 使用当前产品接口和同租户管理引用；工作负载由其 owner 创建，Network 不接管 Pod/VM。
+2. 新 EIP 在永久幂等重放之后选择开放的默认 Public 池，冻结 pool ID/版本、cluster/namespace、稳定原生名和请求意图。IPAM 由 KCN 负责，Res 不另分配 IP。
+3. EIP 状态直接采用自身 Ready，地址只登记原生已报告输出；没有地址不另外拼接一个失败或准入门槛。
+4. Public SNAT 受理核验 tenant/placement、VPC 与 EIP 管理状态、配置和唯一产品占用，不依赖 VPC/池/网关健康、观测时效或基础 Intranet。事务内保留 VPC 对应用途和 EIP 的唯一引用，随后声明原生 Snat。
+5. 启用/停用沿自己的声明和本次意图推进；原生 phase 与 applied 输出决定结果。停用保留绑定和 EIP 占用，不当作解绑。
+6. 解绑正常删除登记的原 Snat，原对象退出后释放自己的绑定关系；不向 EIP、Nat/Service 或底层网络补作清场证明。独立 EIP 本体保留，显式删除才结束其生命周期。
+7. EIP 删除先检查 Res 未释放的产品引用，再按原 UID 删除；原对象 NotFound 或同名替换结束原身份，不碰替换对象，不等待物理地址回收。
 
-创建、停用、启用与解绑不能互相并行越过未完成结果。解绑时现有 VPC/Subnet/Attachment 保留；删除 VPC 时除既有 Subnet 条件外，还要求没有未删除 SNAT 绑定。不使用 VPC ownerReference 级联删除独立 EIP。
+创建、更新与删除保留幂等、租约、版本、原 UID 和未知写恢复；VPC 删除仍须完成自己的产品子资源/引用责任。实际调用顺序与字段见[统一产品合同](vpc-connectivity-lb.md)，状态与删除唯一规则见[网络 v3](cr-observation.md)。
 
 ## 6. 产品 API 增量设计
 
@@ -214,52 +201,34 @@ Delete 使用不可重用的 EIP/绑定 ID，天然按目标幂等；进行中�
 
 ## 7. 观察、状态及完成条件
 
-沿用已有 ResourceState 和 OperationState，扩展适用的资源/动作种类；EIP 分配、绑定占用和启停是独立维度，不能塞进单个 Bound 字段。Get/List 为纯查询，资源状态会随 Provider 后续漂移退化，历史 operation 结果不改写。
+原生公开结果按[网络状态消费](cr-observation.md)逐类采用，不混用 Res 产品 version、通知 generation 与原生 observedGeneration：
 
-| 动作/对象 | 必须观察的 Provider 事实 | Network 应表达 |
-|---|---|---|
-| EIP 分配完成 | 同 UID；Valid/Initialized=True；spec.ipAddress 非空、合法且属于固定池；spec.subnet、status.gateway 匹配；phase=Available、boundResource 为空 | EIP available、binding_state=unbound；不是 VPC 出网成功 |
-| 启用绑定完成 | Snat Valid=True、phase=Bound、spec eip/vpc/disable 匹配；EIP Valid/Initialized=True、phase=Bound；boundResource.resourceType=Snat、resource/vpc 引用匹配、对象 namespace 相同、disabled=false、nodeName 非空；boundResource.observedGeneration 等于本次目标 Snat generation | 绑定配置 applied，applied_enabled=true；连通验证单独表达 |
-| 停用完成 | 同一 Snat 的 spec.disable=true、Valid=True、phase=Disabled；EIP 仍指向该绑定、disabled=true、observedGeneration 匹配；nodeName 可以为空，不能因此误判为解绑 | applied_enabled=false；EIP 仍占用，绑定 retained |
-| 解绑完成 | 按已记录 UID 核对 Snat 真正不存在；同 EIP 的 boundResource 清空且 Available；没有其他 Provider 绑定冲突 | 绑定 deleted、EIP unbound；解除本地预留 |
-| EIP 释放完成 | 同 UID 的 EIP 真正不存在，相关未知写入/墓碑处理已满足既有删除合同 | EIP deleted，保留历史映射与幂等 |
-| Provider 配置与本地身份冲突、已应用对象丢失 | 直接核验后保存身份/引用异常；不得自动接受他人同名对象 | degraded 或 blocked；不自动收养、重建或释放资源 |
-| 观察过期/权限错误/关系集合不完整 | 依据持续观察规格保留 stale 和未完成义务 | 不承诺 available 准入，不用缓存 NotFound 完成删除 |
+| 对象 | 当前权威结果 | 管理完成边界 |
+| --- | --- | --- |
+| VPC/Subnet/EIP/地址池/网关 | 自身 Ready 三态；地址等输出按实际读取登记 | 不添加父健康、空地址、router、镜像或内部关系合取 |
+| VlanNetwork | 自身 Initialized | 不等待节点、设备反馈或物理接管证明 |
+| Snat | 自身 phase 与 applied 输出 | 本次配置结果独立于底层网络连通 |
+| 自己声明的原对象删除 | 原 UID 不存在或同名已替换 | 结束原对象，不删除替换对象，不等自动子资源/地址物理清场 |
 
-`boundResource.vpc` 的实际格式为 `namespace/name`，`resource` 是当前 namespace 内的 Snat 名；namespace 从对象 metadata 校验。目标 generation 由 adapter 记录成功写入/直接核验获得，不能混用 Network version。kc 并非每个 CR 都给通用 observedGeneration，不能对不存在的状态字段做 Ready 判定。
+读错保留最后成功投影、原因、输出与 observed_at，任务记录 observation_error 并退避；无新事件或旧时间不自动使稳定结果失效。历史 operation 终态不改写，稳定任务停放，Deleted 退休。
 
-Snat/EIP Bound 不证明 OVN 下一跳有效、物理网关可达、DNS 可用或公网可达。本次缺陷正是反例。Provider 修复与模式验收属于部署前提；Network 正常执行仍通过 CR 观察，不为规避缺陷增加直写 OVN、controller 重启或节点 NAT 修补逻辑。
-
-新增 EIPGateway、Public Subnet、VlanNetwork、EIP、Snat 及必要的 Nat/Service 绑定冲突观察，遵循 [共享观察与持久执行](cr-observation.md)。索引按 cluster + namespace + name/UID、EIP→绑定、VPC→绑定、池→EIP、网关/二层网络→池构建；平台依赖变化按持久关系唤醒租户资源，不全租户逐对象查询。status-only、旧/新引用、同名异 UID、断线和迟到事实均须处理。既有系统 namespace 下观察范围不等于租户查询权限。
-
-实现定位：[出网用例与授权端口](../../internal/biz/network/egress.go)、[平台受理事务](../../internal/data/network/platform.go)、[租户受理事务](../../internal/data/network/egress.go)、[kc 出网 adapter](../../internal/data/network/kc_egress.go)以及[共用 worker](../../internal/biz/network/worker.go)。平台资源通过同一 worker 的持久租约分支处理，未增设平行生命周期 worker。网卡事实采集器只提供节点原始事实，不受理产品意图，部署契约见[说明](../../deployments/egress/README.md)。
-
-平台地址池返回的 `topology_fingerprint` 覆盖固定配置、配置版本、池/网关/VLAN/设备配置对象 UID 和实际观察到的 provider 镜像集合。验收记录同时匹配该 fingerprint 与运行镜像 digest；失效或镜像变化阻止新的准入，已有地址及占用不自动清理。VLAN/池的唯一占用槽仅在外部删除被确认后退休；旧资源记录及幂等快照保留。
+通知只映射已登记的本服务目标，执行者精确 GET；不监听或反向扫描 Nat/Service 等内部链路来证明绑定。具体端口与实现入口见[出网用例](../../internal/biz/network/egress.go)、[受理事务](../../internal/data/network/egress.go)、[原生 adapter](../../internal/data/network/kc_egress.go)及[既有 worker](../../internal/biz/network/worker.go)。显式安装/流量诊断另存原版本与结果，不授权常规补偿。
 
 ## 8. 持久模型、删除保护与恢复
 
-新增产品表见[增量 migration](../../migrations/0005_vpc_egress.sql)，逻辑关系在本文固定：平台二层网络、出口网关、Public 池及平台操作独立保存；租户 EIP、VPC SNAT 绑定及其 operation/history/idempotency 进入 Network 自有数据库。平台资源没有虚构 tenant，租户关系全部带显式 tenant 条件。
+平台池/网关/VLAN 使用真实平台范围，租户 EIP/SNAT 带显式 tenant；跨关系保持同一 cluster/placement 和产品引用约束。EIP 只对应一个当前产品目标，VPC 内网/公网用途分别约束；SNAT 与 LB 共用 EIP 产品占用，不各建私有账本。
 
-| 关系/约束 | 要求 |
-|---|---|
-| EIP → Public 池 | EIP 记录 tenant_id、cluster_id、pool_id 及首次选择版本；通过本领域关系约束同 cluster 的平台池，这是有意的租户→平台引用 |
-| 绑定 → VPC / EIP | 使用 `(tenant_id,vpc_id)`、`(tenant_id,eip_id)` 复合 FK，并验证 cluster/namespace 映射一致；不能只按裸 ID 建 FK |
-| 一 VPC / 一 EIP 一绑定 | 对所有尚未 deleted 的绑定分别建立租户内唯一约束；failed、disabled、deleting、结果未知均不提前释放 |
-| Provider 身份 | 保存 cluster/GVR/namespace/name/UID 和本次期望版本；平台及租户 Provider 名全局唯一，服务写入带归属标识和条件保护 |
-| IPAM | kc 为地址分配唯一权威；Network 保存分配结果与身份，不另建可竞争的 IP 分配器 |
-| 未完成操作 | 资源、占用、operation、幂等及受理快照在同一 Network 事务提交；worker 可在请求进程退出后恢复 |
+受理在本地事务保存资源、配置、operation、稳定原生名、永久幂等与待执行责任。外部调用在事务外，Finish 核对产品版本、租约和 epoch；已保存原 UID 不被同名新对象覆盖。结果未知时认回同一次意图，不改池、不换名、不清 pending 或伪造 unbound。
 
-新绑定与 VPC 删除共用同租户父 VPC 锁，EIP 绑定与 EIP 释放共用 EIP 锁。新增固定顺序为 **VPC → EIP → SNAT绑定/Operation**；不逆向加锁，不在本事务锁住 Subnet/Attachment。绑定父身份不可变，可先按租户读取 ID，再按此顺序加锁并重新核验；EIP 单独释放只需 EIP 锁并检查占用。既有 VPC→Subnet→Attachment 路径保持原顺序。
+父 VPC、EIP、SNAT 和平台池引用按既定锁顺序协调；管理删除不忽略未释放引用或在途步骤。引用归零后删除自己的声明，不读取第三方 Nat/Service 或完整分配集合再次证明。池/网关/VLAN 的逻辑依赖按本服务关系收尾，不自动收养手工对象，不清理共享 Namespace。
 
-Provider 调用在事务外，通过现有租约、版本 fencing、稳定名称和 UID 条件写入保证恢复。一次受理的 EIP 分配未知时保留原池和映射，不换池重复申请；地址已经分配但回写失败时观察同一对象继续记账。绑定外部请求未知时不能把 EIP 标为 unbound；禁用/启用之间发生故障也必须按本次目标 generation 收敛。
+真实 schema、约束与升级以[迁移源码](../../migrations)和当前查询为准；历史 0005 等版本保留原 checksum，后续 0032 已删除的证明列/关系表不再构成当前合同。必要业务身份、checkpoint 与历史回执保留，API 废弃字段号不重新占用。
 
-解除本地唯一占用前必须满足第 7 节真实解绑条件。检测到非 Network 创建的 Nat/Snat/Service 使用本 EIP 时停止释放并报告冲突，不删除外部对象。VPC 删除要求无尚未 deleted 的绑定；EIP 删除不级联解绑；平台池删除要求停止新分配并确认所有 EIP 与其他实际消费者已释放；网关和 VlanNetwork 删除要求相关池已清理。临时手测资源不自动收养为产品资源。
+## 9. 历史 kc 缺陷与验证边界
 
-关闭默认池新分配、切换默认池与分配受理之间须在平台池/配置版本事务上串行核验，已有租户持久意图保留原目的池。平台退役要等待已受理但尚未生成 CR 的分配义务，不仅检查 Kubernetes 当前列表。租户 EIP 与平台池的依赖锁/删除准入必须统一采用“先平台池/配置、再租户 EIP”的顺序；绑定操作不锁平台池，只核对已固定池的有效观测，不形成相反锁链。
+以下是 2026-09-10 固定源码与现场的历史结论，不推断当前部署版本仍存在或已经修复；新版本需按实际输入核验，不转成 Res 的运行时证明门槛。
 
-## 9. kc 缺陷与发布前提
-
-| 缺口 | 依据及处理要求 |
+| 历史缺口 | 当时依据及组件处理要求 |
 |---|---|
 | 新 EIPGateway 缓存遗漏 serviceIP | 固定源码 `EIPHandler.LoadGatewaySubnet` 只填 scope/subnets，`addEIPRoutesOnER` 将空 serviceIP 写为下一跳；已有现场双 worker 失败与单字段对照证据。kc 修复热加载及缓存有效性，空/未就绪网关不得成功下发路由；测试新网关、重启加载和 disable→enable。 |
 | EIP 初次绑定跨 namespace 裸名匹配 | `selectBoundObj` 对 Nat/Snat/Service 的 List 使用裸 EIP 名索引且未限定 namespace。Network 同 namespace 和全局唯一 Provider 名是必要防线，不能宣称修复了 kc 的查询隔离；kc 需收紧候选范围并做同名跨租户负例。 |
@@ -267,7 +236,7 @@ Provider 调用在事务外，通过现有租约、版本 fencing、稳定名称
 
 修复归属 kc-networking，不向本仓库添加 kc 实现任务。原始出口验收必须使用可追踪源码/镜像且不依赖手工下一跳修补；不能以“重启控制器后缓存碰巧完整”关闭新网关问题。Underlay 同样经过 ER→网关的公共路径，需携带同一修复验证；当前没有 Underlay 运行结论，也不能断言它不受该缺陷影响。
 
-本次测试的条件性成功仅证明私有 EIP + 临时节点 NAT 的 Overlay 路径。Overlay 正式部署还须验证真实可路由地址/上游 NAT、回程及 DNS；Underlay 后续须核定物理端口和交换机，完成 VLAN 0 与带 tag 场景，不能在当前只有管理网卡的 kind 环境直接接管 eth0 来模拟物理公网。
+当时测试的条件性成功仅证明私有 EIP + 临时节点 NAT 的 Overlay 路径。Overlay 正式部署还须验证真实可路由地址/上游 NAT、回程及 DNS；Underlay 后续须核定物理端口和交换机，完成 VLAN 0 与带 tag 场景，不能在当前只有管理网卡的 kind 环境直接接管 eth0 来模拟物理公网。
 
 ## 10. 验收合同
 
@@ -275,7 +244,7 @@ Provider 调用在事务外，通过现有租约、版本 fencing、稳定名称
 
 | ID | 必须证明的行为 |
 |---|---|
-| SNAT-V01 | 管理员手填已准备接口；无宿主库存仍可受理；逻辑占用、完整节点组与部分接管失败保护；不写 managedDevices 或他人配置；平台池/网关/VLAN 归属正确 |
+| SNAT-V01 | 管理员手填已准备接口；无宿主库存仍可受理；逻辑占用、冻结节点配置身份与部分写入失败保护；不写 managedDevices 或他人配置；平台池/网关/VLAN 归属正确 |
 | SNAT-V02 | 租户不能查询/修改 Public 池；All 只允许 Provider 跨 namespace 使用；管理员代办资源归属正确，普通租户伪造 tenant/ns 不越权；真实鉴权与受控注入结果分开 |
 | SNAT-V03 | EIP 自动分配与实际 spec.ipAddress、池耗尽、默认池关闭/切换、未知结果恢复、同键重放与无重复分配；跨 tenant/cluster FK 负例 |
 | SNAT-V04 | 并发两个 VPC 抢同 EIP、同 VPC 抢两个 EIP、绑定与删除竞态；disabled/failed/unknown 仍保留唯一占用；跨 namespace 同名 Nat/Snat/Service 不误绑 |
@@ -284,8 +253,8 @@ Provider 调用在事务外，通过现有租约、版本 fencing、稳定名称
 | SNAT-V07 | Overlay 正/负对照同时验证 VPC 内连通，避免以 Pod 未启动、镜像缺失、端点故障冒充隔离；外部节点控制与业务 Pod 探测分开 |
 | SNAT-V08 | DNS UDP/TCP、域名 HTTPS/TLS、跨节点 MTU/较大响应及回程；Cluster DNS 在 intranetNetworks 时独立处理内部可达性，Public SNAT 不自动开放内网目的 |
 | SNAT-V09 | Underlay 后续实测：VLAN 0 与至少一组 1–4094、真实物理口/OVS mapping、OVN/交换机两种网关、ARP、出口 chassis、外部源地址/回程和相同 lifecycle；错误 tag/下一跳的负例不能影响管理面 |
-| SNAT-V10 | API/DB/Provider 故障、未知请求、Watch/status-only/旧缓存、同名异 UID及多 worker 恢复；Get/List 纯读；平台依赖退化正确传播，不提前释放 EIP |
-| SNAT-V11 | 解绑不删 EIP、EIP释放真实完成、VPC/池/网关/VLAN删除占用保护；清除测试 CR/路由/NAT并保留原有资源 UID/工作负载；共享 ER 等 Provider 残留差异明确记录 |
+| SNAT-V10 | API/DB/Provider 故障、未知请求、Watch/status-only/旧缓存、同名异 UID及多 worker 恢复；Get/List 纯读；自身原生状态直接映射，读取错误保留，不拼接平台依赖 Ready，不提前释放自身未完成的 EIP 引用 |
+| SNAT-V11 | 解绑不删 EIP、原 EIP 声明删除完成、VPC/池/网关/VLAN删除占用保护；清除测试 CR/路由/NAT并保留原有资源 UID/工作负载；共享 ER 等 Provider 残留差异明确记录 |
 
 ## 11. 依据与文档职责
 
@@ -293,7 +262,7 @@ Provider 调用在事务外，通过现有租约、版本 fencing、稳定名称
 - [手动操作手册](../kc-public-egress-manual.md)：管理员与租户完整 YAML/命令，以及固定 kc commit 的逐项源码链接；本文不重复维护另一套可执行模板。
 - [2026-09-10 Overlay 实测](../execution/records/KC-OVERLAY-20260910T114200Z/README.md)：只读使用已完成证据，包含原始失败、对照、DNS 未完成和共享 ER 保留差异；本轮没有重跑。
 - [源码输入](../execution/records/KC-OVERLAY-20260910T114200Z/source-snapshot.json)：Network `e481e968d3cc2f17bc4c6a736c438428519b09a0`，kc `a2245883eb2b46a998f041feb3ad0ed3f6cf7c60`；运行镜像与 kc 编译提交的精确关联尚未验证。
-- 当前 [Network RPC](../../api/network/v1/network.proto)只有既有 VPC/Subnet/Attachment/Operation 能力；本文所列 EIP/Snat/平台接口仍是目标设计。
+- 当前 [Network RPC](../../api/network/v1/network.proto)定义 VPC/Subnet/Attachment/VNIC 等能力；[Egress RPC](../../api/network/v1/egress.proto)、[平台默认出口](../../api/network/v1/default_vpc_egress.proto)与[平台 EIP](../../api/network/v1/platform_eip.proto)已分文件定义。生成契约不等于实现或现场验证，实际进度只见[执行状态](../execution/status.md)。
 
 ## 平台默认 VPC 出口查询与地址清单
 

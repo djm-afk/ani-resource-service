@@ -1,5 +1,8 @@
 # kc 公网出网操作手册
 
+> 当前 Res 产品动作按[网络状态消费](specs/cr-observation.md)与[Public/SNAT 合同](specs/vpc-snat.md)执行，不要求 Ready/时效/下游证明合取。第 1 节起的 kubectl/YAML 是原生对象及显式安装/流量诊断示例，不是 Res worker 的运行门槛，也不提供本次环境或共享操作授权。旧 KCN 版本取证保留原来源。
+
+
 日期：2026-10-30（产品入口按手填网卡流程更新；底层 kc 命令保留原版本参考）。面向 Network 平台管理员及租户初始化操作者。第 0 节是产品接口操作顺序；后续 kc 命令是 Provider 字段与只读核对参考，不可用于绕过产品链路验收。
 
 本文以 kc 源码 `a2245883eb2b46a998f041feb3ad0ed3f6cf7c60` 为准；Network 输入为 `e481e968d3cc2f17bc4c6a736c438428519b09a0`。旧附件只作示意。本文是 [租户 VPC SNAT 方案](specs/vpc-snat.md)的操作附录；产品规则以方案为准，当前执行结果见[执行状态](execution/status.md)。
@@ -10,18 +13,14 @@ Network 的 [原 RPC](../api/network/v1/network.proto) 提供 VPC/Subnet/Attachm
 
 ## 0. Network 产品接口操作顺序
 
-所有操作在明确的集群、独占测试服务/数据库和可信授权入口上执行。部署所需的 [RBAC 与 KCN 节点反馈](../deployments/egress/README.md) 独立说明权限、节点 UID 固定和停止方式。普通 RPC 请求中的 `target_tenant_id` 不能授予身份；未提供时使用可信租户上下文，指定其他租户需要单独代操作许可。`PlatformNetworkService` 的管理员权限不自动包含租户代操作权限。当前 ANI Gateway/OpenAPI 接线不在本轮。
+1. 管理员登记所需平台产品配置，Underlay 手填已经准备的接口，Res 维护自己的节点配置、逻辑占用和原声明，不恢复网卡发现/独立设备登记前置。
+2. 创建网关和地址池，保存真实配置与引用；VLAN 消费 Initialized，其他对应对象消费自身 Ready，不合取节点/CNI、地址非空、镜像/拓扑或观测年龄。
+3. 按当前权限、expected_version 与幂等设置开放分配和默认池；verification 只存实际管理员材料，不影响已受理意图或既有地址。
+4. 租户通过正常产品接口申请 EIP、创建/启停/解绑 Public SNAT；Res 管理同租户引用与唯一产品占用，不依赖基础 Intranet。
+5. Snat 直接消费自身 phase 与 applied，EIP 直接登记自身状态和公开地址；实际 DNS、TLS、源地址和回程另行验收。
+6. 删除结束自己的原声明和管理引用，不等 KCN 自动子资源或物理地址清场；不修改共享 managedDevices、OVS 或第三方 finalizer。
 
-1. **准备网卡。** Underlay 管理员在线下准备各目标节点同名接口、交换机和 VLAN，创建虚拟交换机后手填 `device_name`、`cluster_id`、`virtual_switch_id` 和 `vlan_id`。平台不再提供网卡发现、独立设备登记或退出接口，不收集 MAC、carrier、管理路由或 OVS 库存。Overlay 跳过网卡与 VLAN 接管。
-2. **平台初始化。** 调用 `CreateVlanNetwork` 并等待 KCN 对应组在完整节点集合反馈该接口名，`vlan_id=0` 表示 untagged。再创建公网池；未指定公网网关时由平台创建和管理网关，也可按现有合同指定网关。请求使用产品交换机、VLAN 或网关 ID，不能提交底层 namespace 或 CR 名。Resource 保留身份、权限、持久化、幂等与逻辑占用，KCN 执行网卡接管，详见[方案 4.1](specs/vpc-snat.md#41-underlay-的网卡发现与二层网络)。
-3. **开放分配。** 池、网关及必要二层网络就绪且观测有效后，以最新 `expected_version` 和独立幂等键调用 `SetPublicPoolAllocationEnabled(enabled=true)`；需要供新租户 EIP 使用时设置 `SetDefaultPublicPool`。公有网络不要求先登记手工验收证据；开放分配与实际出网流量验收分别报告。
-4. **租户私网与地址。** 通过既有 `NetworkService` 创建 VPC/Subnet；调用 `TenantEgressService.CreateEIP` 只提供名称、描述和幂等键。保存返回的产品 ID 与 operation ID，以 `GetEIP` 等待已分配地址。租户接口不暴露池配置，分配重试始终使用首次持久选定的池。
-5. **绑定与启停。** `BindVPCSnat(vpc_id,eip_id,idempotency_key)` 返回不可变 binding ID。用 `GetVPCSnatBinding` 等待 `applied_enabled=true`；`SetVPCSnatEnabled` 带该 ID、目标 enabled、最新 version 和永久幂等键。受理时 applied 值为空；停用完成后为显式 false，绑定及 EIP 继续占用。父 EIP 的持续观察也须恢复就绪后再发起重新启用；过渡中可返回出口未就绪。
-6. **解绑与释放。** `DeleteVPCSnatBinding(binding_id)` 后等待资源 deleted，确认 EIP 回到 unbound；需要释放地址时再 `DeleteEIP(eip_id)`。关闭池分配不会删除已有 EIP。平台退役依次关闭分配、释放全部 EIP/其他消费者、删除池、删除网关或 VLAN。VLAN 删除不自动归还物理网卡；部分接管不覆盖共享 `managedDevices` 回滚。
-7. **操作查询。** 租户通过已有 `GetOperation` 查询本租户 EIP/SNAT 操作；平台通过 `GetPlatformOperation` 查询独立平台操作。永久幂等重放返回原受理快照；查看当前状态使用 Get。查询不访问 Kubernetes，也不启动外部变更。
-
-完整字段与错误以生成的 Proto 为准。`scripts/snat-remote -- scripts/integration -p 2 -run 'TestEgress|TestVirtualSwitch' ./internal/data` 可在 ubuntu 重放受控接口、实际 adapter、PG、Underlay 合同及服务崩溃恢复测试；不创建 live EIP/Snat，不执行物理接管。正式 Overlay 复测仍须满足[计划中的前置条件](plans/vpc-snat.md#3-overlay-复测入口)，并使用上述产品入口完成全过程。
-
+字段与原生映射以正式规格和生成 Proto 为准。下面原生示例的状态检查仅用于明确授权的管理员诊断；历史远程测试命令不再作为产品操作步骤，当前文档修改不运行编译或测试。
 
 ## 1. 资源、模式与依赖顺序
 
@@ -206,7 +205,7 @@ kc get subnets.networking.kubercloud.com public-underlay -n "$KC_SYSTEM_NS" -o j
 | `enableDHCP` | 本子网只作为 EIP 地址池时取 false；不是租户虚拟机所在的私有子网。 |
 | `natOutgoing` | 省略；它不是普通租户 VPC 的公网开关，也不能替代 Snat。 |
 
-除 Valid/Initialized/Ready 外，还需检查 `status.underlayState.ready=true`、`notReadyNodes` 为空、`chassisNode` 非空，且 VlanNetwork 的 `status.subnet` 指向 `kcn-system/public-underlay`。仅 Subnet Ready 不能代替物理网络就绪。[Underlay 下发][kc-underlay-apply]、[Underlay 状态同步][kc-underlay-state]。
+作为显式原生安装/流量诊断，可查看 underlayState、notReadyNodes、chassis 和 VLAN 指向解释现场行为；它们不组成 Res 的第二套 Ready。物理链路和上游连通仍按实际诊断记录。[Underlay 下发][kc-underlay-apply]、[Underlay 状态同步][kc-underlay-state]。
 
 ### 5.2 分支 B：Overlay / 非 VLAN Public 子网
 
@@ -266,9 +265,9 @@ kc get subnets.networking.kubercloud.com public-overlay -n "$KC_SYSTEM_NS" -o js
 
 ### 5.3 将地址池提供给租户申请
 
-两类 Public 子网均固定 `allowedNamespaces.from: All`，并统一保留在 `kcn-system`。这个字段允许 kc 跨 namespace 使用资源，不控制 Network 的管理员/租户接口可见性。
+产品申请使用 Res 已登记、用途正确且开放的默认 Public 池，冻结原池和原意图；租户不传任意原生 Subnet 名。管理台账、地址/CIDR、幂等、引用和并发继续校验，不把 Provider Ready、组件镜像、人工 verification 或观测年龄追加为准入。
 
-Network 应隐藏 Public Subnet 的列表、拓扑与 CR 引用；租户只发起“申请 EIP”。后台选择该集群显式配置、开放新分配且具有新鲜验收/就绪证据的默认 Public 池，再将 `kcn-system/<pool-name>` 写入 EIP。多池选择规则属于产品配置，不让租户提交任意 `spec.subnet`。容量耗尽、池未就绪或出口未配置时返回可识别的失败，不能把“创建了 CR”算作已分配。
+下面手工原生示例不代表池已经注册为 Res 产品，也不授权自动收养。原生容量耗尽、失败和未知分配结果如实记录，不改名或切池猜测完成。
 
 ## 6. 租户侧：准备 VPC 和私有 Subnet
 
@@ -587,7 +586,7 @@ kc wait --for=delete --timeout=180s \
   "eips.networking.kubercloud.com/$EIP_NAME" -n "$TENANT_NS"
 ```
 
-完整手动测试清理按依赖逆序进行：探测 Pod 及其 kc 网卡/IP → Snat → EIP → 本次测试私有 Subnet/VPC。平台 Public 子网、EIPGateway、VlanNetwork 和受管物理接口可能共享，不随租户清理删除；租户 namespace 也可能被其他资源共享。不强制移除 kc finalizer。若另行退役平台出口，先核对所有地址、引用及物理网卡用途，不能直接从 `managedDevices` 删除接口。
+手工样本只正常删除本次明确创建且身份匹配的原生声明。Pod 派生网卡/IP 由 KCN 回收，不把其退出作为平台删除终态门槛；共享池/网关/VLAN/Namespace 保留。单独退役物理出口须核对当次范围和共享用途，不改 managedDevices、接口或 finalizer 强行清场。
 
 | 症状 | 首先核对 |
 |---|---|
@@ -613,7 +612,7 @@ kc wait --for=delete --timeout=180s \
 
 | 操作者 | 操作 | Network 应校验和编排 |
 |---|---|---|
-| 平台管理员 | 获取网卡 | 各节点完整候选及不可选原因、信息时效；按第 3 节 kc 实际条件与产品占用检查过滤。 |
+| 平台管理员 | 获取网卡 | 手填已准备的接口；Res 校验自己的配置、身份和逻辑占用，不提供物理库存或时效审批。 |
 | 平台管理员 | 初始化二层网络 | 仅 VLAN 模式接管设备并创建 VlanNetwork；合并 managedDevices，校验节点一致性、VLAN 及占用。 |
 | 平台管理员 | 初始化网关/公网池 | 先网关后子网；Public 固定 kcn-system、All；区分 Underlay 配置和 Overlay 上游路由前置条件。 |
 | 租户或有代办权限的管理员 | 申请 EIP | 解析目标 tenant_id、后台选池、生成全局唯一 Provider 名称、同租户 namespace、持久化操作并观察分配结果。 |

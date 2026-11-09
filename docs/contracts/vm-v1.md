@@ -1,6 +1,6 @@
 # VM v1 正式合同
 
-日期：2026-10-23。新增设计，待实现。业务规则以[规格](../specs/vm-mvp.md)为准；本文件是名称、字段和跨模块接线的唯一来源。业务方法从现有约定做最小增量，不把本文件解释为要求一次实现所有功能。
+本文件定义 VM 的名称、字段和跨模块接线；业务规则以[规格](../specs/vm-mvp.md)为准，实际代码、验证与部署只见[执行状态](../execution/status.md)。未来能力不因写入合同而视为已实现。
 
 ## C01 包、服务与权限
 
@@ -163,24 +163,19 @@ biz 不导入 protobuf、Kubernetes、Kratos 或数据库驱动。最小端口�
 
 ## C05 Network v3 合同
 
-vm_managed 使用 consumer protocol_version=3；single_pod/空模式v1、controller_managed Notebook v2保持当前格式与行为，不全量迁移。现有InstanceID/instance_id字段号暂留，VM分支值为平台VM ID，必须走VMReader，不能误查Instance表。
+vm_managed 使用 consumer protocol_version=3；single_pod/v1、controller_managed Notebook/v2 保持各自格式。既有 instance_id 字段在 VM 分支承载平台 VM ID，必须走 VM consumer 路由，不查询 Instance 表。字段号以[network.proto](../../api/network/v1/network.proto)为准，不复用已占用或保留 tag。
 
-新 VMPrimaryPlan format_version=1，字段：namespace、nad_name、nad_uid、nad_config_digest、kcn_subnet_ref、受信labels。Attachment既有binding_revision继续固定KCN Subnet UID。NAD spec.config摘要采用与冻结配置一致的规范化JSON摘要；不是随意读取任意NAD后认可为受管。
+VMPrimaryPlan 包含 namespace、nad_name、nad_uid、nad_config_digest、kcn_subnet_ref 和受信 labels。NAD spec.config 使用冻结规范化摘要；NAD 与 KCN Subnet 是不同身份。VM 和模板应用对应 labels、主网 Subnet 注解、单一 default Multus/bridge 网络及冻结 OS 网卡型号，公开请求不能注入这些受管字段。
 
-原生模板投影固定为：VM与spec.template.metadata写入该计划的受信labels；spec.template.metadata.annotations的`networking.kubercloud.com/subnet`取kcn_subnet_ref；spec.template.spec.networks仅一项name=default、multus.default=true、multus.networkName=namespace+'/'+nad_name；对应domain.devices.interfaces使用name=default、bridge={}及冻结OS网卡型号。NAD引用与该KCN注解值分别来源于各自字段，不互换；VMI/launcher传播结果须在真实环境核验。不得由前端提供这些原生标签或注解。
+首次准备核验当前受管 NAD 与已接受计划；永久幂等重放先返回原 Attachment/冻结计划。平台基础网络的两轮准备和既有 NAD/SA 处理见下方增量。管理受理不以 Network Ready、地址非空、观测年龄或 KCN 子资源完成证明为条件。
 
-PrepareAttachmentRequest在既有1–11号字段后追加VMNetworkExpectation vm_expectation=12，字段为nad_name、nad_uid、nad_config_digest；仅vm_managed必填，来源为已冻结create_spec，不能由公开JSON直接提交。首次Prepare严格核对受管NAD与该期望一致再持久受理；同键重放先读原记录并按原冻结计划返回，执行/Start仍检查依赖漂移。旧模式该字段为空，旧canonical/指纹编码保持原样（不因新增零值字段改变摘要）。
+VM owner 维护原 VM、当前 VMI/launcher、作用域、当前 revision/generation 和关闭意图，自己核验适用 owner/UID。Network 直接消费该当前管理快照，沿现有 worker 处理 Prepare/Confirm/Release，不重新逐跳读取 VM/VMI/控制器或维护退休网络关系闭包。旧消费者证据字段不授权继续使用旧证明。
 
-在已审Network Attachment的现有25号字段之后追加 `VMPrimaryPlan vm_primary=26`、`repeated VMCurrentAddress vm_current_addresses=27`。旧pod_primary=15在VM模式为空，旧模式继续原样。实施基线若这些新tag已被占用，VM-00记录协议冲突再统一修订，不静默重用。
-VMCurrentAddress字段：nic_name、address、launcher_pod_uid、vmi_uid；父Attachment已有observed_at。只返回当前核验有效的地址，Stopped/过期/冲突返回空及具体reason。
+VMCurrentAddress 的 nic_name、address、launcher_pod_uid、vmi_uid 表达当前登记端点。读取错误按[网络状态消费合同](../specs/cr-observation.md)保留同一消费者的最后成功输出；明确 stopped/closing/closed 或消费者更换时撤回，不使用 TTL。地址是否存在不决定受理、电源或释放。
 
-新consumer沿用现有submission/generation/attachment/snapshot_revision/finalization结构：根VM UID登记后固定；VMI/launcher可更换并单调登记，current launcher最多一个，retired UID沿现有规则保留。原VMRestore根UID不变，不把旧snapshot中的Pod/IP回填。
+VM 删除及消费者终结先查明未知提交，确认原根 VM、VMI 已不存在且相关非终态 Pod 全部退出，再发布 closed 并以稳定 finalization_id 请求 Release。Network 按当前管理关系完成 released，不等待 KCN VNic/VNicIP/Nic 清场；closed 不等待 released。普通 Stop/ForceStop 保留 VM、盘和 Attachment 预留。整 VM 删除还须完成 S10 的盘、Snapshot/Restore、producer、输出和引用责任。
 
-新增 VMNetworkConsumer 路由；两个主装配都接入，VM adapter不可用时拒绝新VM。沿既有Network worker处理Prepare/Confirm/Release，不复制worker。不放宽Notebook owner链，不任意接受GVK。核对原生NAD、VMI binding、launcher主网注解和KCN VNic/VNicIP/Subnet归属；label不能替代owner/UID。
-
-关闭顺序固定为VM原生根/运行子对象退出→consumer closed→请求Network Release→Network自行证明网络依赖退出并released；整VM删除还等待S10的盘/快照清理。不得让consumer closed等待Network released，否则会构成相互等待。
-
-修改落点：biz/network/attachment.go、attachment_managed.go、attachment_worker.go；data/network/attachment*.go、kc_attachment*.go、kc_observed_provider.go；service/network/attachment.go；api/network/v1/network.proto；新增biz/vm/network.go、data/vm/network*.go和composition。具体代码参见[R03](../references/vm-mvp-sources.md)。
+跨域端口与当前实现入口见[VM 规格](../specs/vm-mvp.md)、[网络状态消费](../specs/cr-observation.md)及[固定来源](../references/vm-mvp-sources.md)；历史源码链接仅作取证，不要求恢复已删除 adapter。
 
 ## C06 VNC 窄协议与接线
 
@@ -231,11 +226,11 @@ Gov 当前动作授权后，若删除已持久受理，仅调用该只读查询�
 
 沿用 `GetVM`、当前租户归属及 `vm:read`，不新增动作或修改冻结的创建摘要。`frozen_spec` 继续仅供受信 Gov 投影：规格名称、CPU 拓扑、源媒体名称和硬件参数来自创建快照；公开初始化摘要仅有方式、用户名和 SSH 公钥 SHA-256 指纹，不返回密码、密码标志、凭据摘要或原始公钥。Gov 公共 `createdAt` 直接透传 owner 行的创建时间。
 
-`relations` 的 VPC/子网 ID 来自冻结网络，安全组 ID 来自 owner 当前绑定；名称按同一可信租户读取当前 Network 记录。引用各自带 `RESOLVED/NOT_FOUND/UNAVAILABLE/NOT_QUERIED` 状态，读取失败保留 ID、清除名称，不跨租户补查。平台地址的 `observed_at` 来自 Attachment 地址资格观测，缺少该时间保持空。
+`relations` 的 VPC/子网 ID 来自冻结网络，安全组 ID 来自 owner 当前绑定；名称按同一可信租户读取当前 Network 记录。引用各自带 `RESOLVED/NOT_FOUND/UNAVAILABLE/NOT_QUERIED` 状态，读取失败保留 ID、清除名称，不跨租户补查。平台地址的 observed_at 来自 Attachment 最后成功读取的持久输出，缺少时保持空，不用其年龄重新裁决地址或管理准入。
 
 `runtime` 由独立只读入口提供，列表不逐台查询 VMI 或 QGA。`GetVMRequest.include_runtime` 为三态开关：缺省或 true 时 `GetVM` 内联收集 `runtime`（与既有行为一致，旧调用方不受影响）；显式 false 时跳过全部来宾读取，`runtime.state` 返回 `NOT_QUERIED`。Native 验证 namespace UID、VM 归属/UID、VMI controller owner；对无 UID 返回的 `guestosinfo/filesystemlist` 在读取前后复核当前 VMI UID，两段来宾读取并行发起、按代理支持结果采用。总读取预算 5 秒；换代时丢弃来宾内容，返回 `CHANGED`。`runtime.state` 为 `AVAILABLE/NOT_RUNNING/AGENT_NOT_CONNECTED/UNAVAILABLE/CHANGED/NOT_QUERIED`（`NOT_QUERIED` 仅出现在显式 `include_runtime=false` 的响应里）；代理未连接不足以证明未安装。来宾依赖不可用不隐藏基础 VM 详情，也不伪造成功。`started_at` 是 VMI Running 阶段转换时间，不是 guest OS 启动时间。
 
-`runtime.interfaces` 独立展示 VMI 报告的 MAC、来宾网卡名、地址与来源，不替代 Network 的当前地址资格。文件系统来自 QGA；`filesystems_state` 区分 `AVAILABLE/UNSUPPORTED/UNAVAILABLE/NOT_QUERIED`。容量字段为 optional uint64，缺失与真实零值不同；按挂载点展示，不凭 vdX 名称推断 owner 云盘绑定。查询时间不代表 QGA 在该时刻重新采样，容量也不构成计量账本。所需只读 Kubernetes 权限见 [guest-info-rbac.yaml](../../deployments/vm/guest-info-rbac.yaml)，部署另行执行。
+`runtime.interfaces` 独立展示 VMI 报告的 MAC、来宾网卡名、地址与来源，不替代 Network 的当前消费者地址输出。文件系统来自 QGA；`filesystems_state` 区分 `AVAILABLE/UNSUPPORTED/UNAVAILABLE/NOT_QUERIED`。容量字段为 optional uint64，缺失与真实零值不同；按挂载点展示，不凭 vdX 名称推断 owner 云盘绑定。查询时间不代表 QGA 在该时刻重新采样，容量也不构成计量账本。所需只读 Kubernetes 权限见 [guest-info-rbac.yaml](../../deployments/vm/guest-info-rbac.yaml)，部署另行执行。
 
 快照 `name` 来自原创建名称，`created_at` 来自校验归属后的原生 VirtualMachineSnapshot metadata.creationTimestamp，并随 owner 观察持久保存。旧记录未保存该值时保持空，不以 observed_at 或当前时间回填。
 

@@ -1,5 +1,7 @@
 # VPC 基础连接：独立 Watch 对照（2026-09-17）
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 用户要求持续 Watch CR，并与 Network 的状态判定对照。本次采用 `diagnosing-bugs` 的先捕获、再定位流程。仅诊断，不改变产品状态规则、放宽时效检查或直接改数据库。
 
 ## 固定输入与范围
@@ -51,9 +53,9 @@
 第一段退化的直接原因已经定位：
 
 1. 14:14:50.624 UTC，SNAT worker 记录 `PROVIDER_UNAVAILABLE`；随后 EIP 也记录同类结果。CR 同期没有更新。
-2. 观察失败没有新的应用事实。[资源写入](../../../../../internal/data/resource_work.go)生成空 `AppliedEnabled`，[AdvanceSnat](../../../../../internal/data/queries/egress.sql)将 `applied_enabled` 写为 NULL，同时保留旧 `observed_at`。
+2. 观察失败没有新的应用事实。资源写入（历史定位：`../../../../../internal/data/resource_work.go`）生成空 `AppliedEnabled`，AdvanceSnat（历史定位：`../../../../../internal/data/queries/egress.sql`）将 `applied_enabled` 写为 NULL，同时保留旧 `observed_at`。
 3. 14:14:51 的数据库样本中，VPC Provider 观测年龄约 0.42 秒，EIP/SNAT 约 13.11 秒，均未超过 60 秒；EIP/SNAT 自身状态仍为 available，但 SNAT 的 `applied_enabled=NULL`。
-4. [基础连接聚合](../../../../../internal/data/base_connectivity.go)要求 SNAT 应用事实明确为 true，因此将原 ready 改为 degraded。后台退避约 30 秒后，成功观察恢复 true，父 VPC 随后恢复 ready。这里的 NULL 表示未知，不等于 Provider 中 SNAT 被禁用。
+4. 基础连接聚合（历史定位：`../../../../../internal/data/base_connectivity.go`）要求 SNAT 应用事实明确为 true，因此将原 ready 改为 degraded。后台退避约 30 秒后，成功观察恢复 true，父 VPC 随后恢复 ready。这里的 NULL 表示未知，不等于 Provider 中 SNAT 被禁用。
 
 这证明本次退化发生在 Network 的观察/状态投影链路；不能解释为“三个 CR 变为未就绪”，也不能由此声称业务流量曾中断。失败时清除应用事实本身是一种保守处理，不能仅凭 NULL 就断定应当保留旧值或忽略观察失败。
 
@@ -65,7 +67,7 @@
 | 实际读取 CR/依赖失败 | 独立 Watch/转换时 GET 均正常，三个目标 CR 未变；但独立客户端不能排除产品连接或其他依赖读失败。现有 worker 日志未保留原错误，不能完全排除。 |
 | 状态写入意外丢字段 | 空应用事实到 NULL 的转换与源码一致，未见存储随机丢失。已确认的是临时观察失败触发保守状态更新，而非已证实数据库错误。 |
 
-[Egress 采集](../../../../../internal/data/kc_egress.go)发现旧视图失效后只重新采集一次；关键路径再失效会返回 `ProviderTemporary`。[观察源](../../../../../internal/data/kc_observation.go)使用全局来源代次。下一步有辨识度的探针应只记录失败调用的 `invalid_view` / `proof_not_covering` / 读错误分支、前后 epoch 与调用期限，再验证修正；无须继续反复创建 LB 或排查本次未使用的 Public 网络。
+Egress 采集（历史定位：`../../../../../internal/data/kc_egress.go`）发现旧视图失效后只重新采集一次；关键路径再失效会返回 `ProviderTemporary`。观察源（历史定位：`../../../../../internal/data/kc_observation.go`）使用全局来源代次。下一步有辨识度的探针应只记录失败调用的 `invalid_view` / `proof_not_covering` / 读错误分支、前后 epoch 与调用期限，再验证修正；无须继续反复创建 LB 或排查本次未使用的 Public 网络。
 
 另一个日志限制：worker 回调接收原始 progress，基础连接聚合在持久化内部修改其副本，因此 VPC 日志可仍写 `resource_state=available`，而真实 PG/API 已为 degraded。本次以 PG、API 和直接 CR 三方证据为准。
 

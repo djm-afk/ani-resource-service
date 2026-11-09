@@ -1,0 +1,3404 @@
+{
+  "date": "2026-11-09",
+  "scope": "documentation_only",
+  "source_head": "813885cb8e6dfd11b4627d9a41ca8e3cd47c6afa",
+  "source_branch": "codex/vm-phase1-remediation-20261106",
+  "baseline": {
+    "markdown_files": 249,
+    "local_links_checked": 3437,
+    "findings_total": 179,
+    "summary": {
+      "outside_repository:missing_path": 81,
+      "repository:missing_path": 88,
+      "repository:missing_anchor": 10
+    }
+  },
+  "baseline_disposition_summary": {
+    "historical_locator_not_verified": 167,
+    "superseded_reference_replaced_or_removed": 12
+  },
+  "baseline_dispositions": [
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 31,
+      "target": "/home/chabking/workspace/ANI/repo/api/openapi/v1.yaml:8891",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 31,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 31,
+      "target": "/home/chabking/workspace/ANI/repo/api/openapi/v1.yaml:9018",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 31,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 31,
+      "target": "/home/chabking/workspace/ANI/repo/api/openapi/v1.yaml:2158",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 31,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 33,
+      "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/network_runtime.go:51",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 33,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 33,
+      "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/internal/router/network_resources.go:294",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 33,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 33,
+      "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/internal/router/network_resources.go:348",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 33,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 35,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:165",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 35,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 35,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:329",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 35,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 35,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:1071",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 35,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 37,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_status_reconciler.go:38",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 37,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 37,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/bootstrap/server.go:546",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 37,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 41,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:220",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 41,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 41,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:266",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 41,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 41,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:408",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 41,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 43,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:15",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 43,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 43,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:329",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 43,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 45,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:279",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 45,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 45,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:421",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 45,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 45,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/kubeovn_network_provider.go:146",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 45,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 49,
+      "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/main.go:142",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 49,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 49,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/instance_resource_resolver.go:316",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 49,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 51,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/dryrun_renderer.go:312",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 51,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 51,
+      "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/dryrun_renderer.go:938",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 51,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 59,
+      "target": "/home/chabking/workspace/ani-iam/CONTEXT.md:7",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 59,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 59,
+      "target": "/home/chabking/workspace/ani-iam/CONTEXT.md:39",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 59,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 61,
+      "target": "/home/chabking/workspace/ani-iam/docs/adr/0022-unify-software-actors-as-workload-principals.md:7",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 61,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 61,
+      "target": "/home/chabking/workspace/ani-iam/docs/plans/plan-workload-principal-refoundation.md:3",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 61,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 67,
+      "target": "/home/chabking/workspace/ani-notification-service/docs/adr/0005-keep-notification-native-and-integrate-iam-through-adapters.md:17",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 67,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 69,
+      "target": "/home/chabking/workspace/ani-notification-service/docs/adr/0005-keep-notification-native-and-integrate-iam-through-adapters.md:163",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 69,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 69,
+      "target": "/home/chabking/workspace/ani-notification-service/migrations/0001_notification.sql:8",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 69,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 71,
+      "target": "/home/chabking/workspace/ani-notification-service/README.md:21",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 71,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 75,
+      "target": "/home/chabking/workspace/kc-networking/api/networking/v1/vpc_types.go:99",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 75,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 75,
+      "target": "/home/chabking/workspace/kc-networking/api/networking/v1/subnet_types.go:75",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 75,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 75,
+      "target": "/home/chabking/workspace/kc-networking/api/networking/v1/common_types.go:3",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 75,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-09-source-assessment.md",
+      "line": 75,
+      "target": "/home/chabking/workspace/kc-networking/config/crd/bases/networking.kubercloud.com_vpcs.yaml:15",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 75,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 31,
+      "target": "../../../internal/data/resource_work.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 31,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 32,
+      "target": "../../../internal/data/kc.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 32,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 33,
+      "target": "../../../internal/data/worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 33,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 33,
+      "target": "../../../internal/data/queries/worker.sql",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 33,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 34,
+      "target": "../../../internal/data/kc_attachment.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 34,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 35,
+      "target": "../../../internal/biz/attachment_worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 35,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 36,
+      "target": "../../../internal/data/kc.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 36,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 55,
+      "target": "../../../internal/data/kc.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 55,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 102,
+      "target": "../../../internal/data/subnet.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 102,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+      "line": 102,
+      "target": "../../../internal/data/attachment.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 102,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 21,
+      "target": "../../../internal/data/postgres.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 21,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 22,
+      "target": "../../../internal/biz/worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 22,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 22,
+      "target": "../../../internal/data/egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 22,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 24,
+      "target": "../../../internal/data/queries/egress.sql",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 25,
+      "target": "../../../internal/data/kc_egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 25,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 26,
+      "target": "../../../internal/data/kc_egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 26,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+      "line": 27,
+      "target": "../../../internal/data/worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 27,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-01-implementation.md",
+      "line": 57,
+      "target": "../../../.work/net01-final/manifest.json",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 57,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 11,
+      "target": "../../../../internal/biz/subnet.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 11,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 11,
+      "target": "../../../../internal/data/queries/subnets.sql",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 11,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 11,
+      "target": "../../../../internal/data/queries/vpcs.sql",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 11,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 14,
+      "target": "../../../../internal/data/subnet_upgrade_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 14,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 15,
+      "target": "../../../../internal/data/resource_work.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 15,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 15,
+      "target": "../../../../internal/data/kc.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 15,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 17,
+      "target": "../../../../internal/biz/attachment.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 17,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-02-04/completion-audit.md",
+      "line": 18,
+      "target": "../../../../../.worktrees/ani-net-02-04/repo/development-records/net-02-04-network-integration.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 18,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-05-implementation.md",
+      "line": 55,
+      "target": "../../../../ani-net-05/repo/development-records/net-05-kind-network-validation.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": true,
+      "baseline_line": 55,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 16,
+      "target": "../../../../internal/data/base_schema_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 16,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 17,
+      "target": "../../../../internal/biz/platform_intranet.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 17,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 17,
+      "target": "../../../../internal/data/platform_capabilities.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 17,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 17,
+      "target": "../../../../internal/data/kc_intranet.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 17,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 18,
+      "target": "../../../../internal/data/base_connectivity.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 18,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 18,
+      "target": "../../../../internal/data/worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 18,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 18,
+      "target": "../../../../internal/data/base_connectivity_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 18,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 18,
+      "target": "../../../../internal/data/base_process_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 18,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 18,
+      "target": "../../../../internal/data/base_concurrency_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 18,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 19,
+      "target": "../../../../internal/data/egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 19,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 19,
+      "target": "../../../../internal/data/egress_public_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 19,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 19,
+      "target": "../../../../internal/service/egress_public_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 19,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 20,
+      "target": "../../../../cmd/ani-network-service/base_connectivity.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 20,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 20,
+      "target": "../../../../internal/data/base_backfill.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 20,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+      "line": 20,
+      "target": "../../../../internal/data/base_backfill_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 20,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+      "line": 7,
+      "target": "../../../../cmd/ani-network-service/base_connectivity.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 7,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+      "line": 9,
+      "target": "../../../../internal/data/base_backfill.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 9,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+      "line": 9,
+      "target": "../../../../internal/data/queries/base_backfill.sql",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 9,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+      "line": 69,
+      "target": "../../../../internal/data/base_backfill_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 69,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-branch-20260917/README.md",
+      "line": 30,
+      "target": "../../../../../internal/data/kc_egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 30,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-branch-20260917/README.md",
+      "line": 36,
+      "target": "../../../../../internal/data/egress_audit_retry_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 36,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+      "line": 54,
+      "target": "../../../../../internal/data/resource_work.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 54,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+      "line": 54,
+      "target": "../../../../../internal/data/queries/egress.sql",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 54,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+      "line": 56,
+      "target": "../../../../../internal/data/base_connectivity.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 56,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+      "line": 68,
+      "target": "../../../../../internal/data/kc_egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 68,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+      "line": 68,
+      "target": "../../../../../internal/data/kc_observation.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 68,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/interface-proposal.md",
+      "line": 16,
+      "target": "../../../../../internal/data/node_facts_collector.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 16,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/interface-proposal.md",
+      "line": 16,
+      "target": "../../../../../internal/data/kc_node_facts.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 16,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/untagged-followup.md",
+      "line": 40,
+      "target": "../../../../../internal/biz/egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 40,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/untagged-followup.md",
+      "line": 41,
+      "target": "../../../../../internal/data/kc_node_facts.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 41,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+      "line": 11,
+      "target": "../../../../../internal/data/kc_egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 11,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+      "line": 11,
+      "target": "../../../../../internal/data/kc_load_balancer.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 11,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+      "line": 22,
+      "target": "../../../../../internal/data/kc_load_balancer.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 22,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+      "line": 23,
+      "target": "../../../../../internal/biz/load_balancer_worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 23,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+      "line": 23,
+      "target": "../../../../../internal/data/resource_work.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 23,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-fix-20260918/README.md",
+      "line": 11,
+      "target": "../../../../../internal/data/kc_load_balancer.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 11,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-fix-20260918/README.md",
+      "line": 13,
+      "target": "../../../../specs/cr-observation.md#4-事实时效与真实校验",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 13,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/lb-fix-20260918/README.md",
+      "line": 24,
+      "target": "../../../../../internal/data/lb_audit_retry_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/NET-VPC-LB-02/public-review-20260917/README.md",
+      "line": 13,
+      "target": "../../../../../internal/data/kc_load_balancer.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 13,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/RESOURCE-MOD-20260922/control-plane-20260922/README.md",
+      "line": 83,
+      "target": "evidence/verify.log",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 83,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/RESOURCE-MOD-20260922/control-plane-20260922/README.md",
+      "line": 83,
+      "target": "evidence/working-tree-secrets.log",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 83,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 20,
+      "target": "../../../../internal/biz/egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 20,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 20,
+      "target": "../../../../internal/service/egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 20,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 20,
+      "target": "../../../../cmd/ani-network-service/app.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 20,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 21,
+      "target": "../../../../internal/data/platform.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 21,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 22,
+      "target": "../../../../internal/data/egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 22,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 23,
+      "target": "../../../../internal/data/kc_egress.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 23,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 24,
+      "target": "../../../../internal/biz/worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 24,
+      "target": "../../../../internal/biz/egress_worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 24,
+      "target": "../../../../internal/data/resource_work.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 24,
+      "target": "../../../../internal/data/platform_worker.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 24,
+      "target": "../../../../internal/data/kc_observation.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 24,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 25,
+      "target": "../../../../internal/data/kc_node_facts.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 25,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 25,
+      "target": "../../../../internal/data/node_facts_collector.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 25,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 38,
+      "target": "../../../../internal/data/egress_process_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 38,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 53,
+      "target": "../../../../internal/data/egress_device_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 53,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 53,
+      "target": "../../../../internal/biz/egress_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 53,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 53,
+      "target": "../../../../internal/data/egress_grpc_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 53,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 54,
+      "target": "../../../../internal/data/egress_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 54,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 54,
+      "target": "../../../../internal/data/kc_egress_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 54,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+      "line": 54,
+      "target": "../../../../internal/data/egress_kc_integration_test.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": true,
+      "baseline_line": 54,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 214,
+      "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/verify.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 214,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 214,
+      "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/sandbox-pg-result.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 214,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 214,
+      "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/gov-joint.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 214,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 215,
+      "target": "../../../verification-artifacts/sandbox-live-resource-20261030/diagnosis.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 215,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 217,
+      "target": "../../../verification-artifacts/sandbox-tenant-cluster-role-20261030/test.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 217,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 219,
+      "target": "../../../verification-artifacts/sandbox-gov-ready-20261030/test.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 219,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 220,
+      "target": "../../../verification-artifacts/sandbox-gov-pending-close-20261030/test.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 220,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 222,
+      "target": "../../../verification-artifacts/sandbox-tenant-dispatch-20261030-final/gov-pg.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 222,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 224,
+      "target": "../../../verification-artifacts/sandbox-tenant-space-resource-20261030-mtls/receipt.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 224,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 225,
+      "target": "../../../verification-artifacts/sandbox-tenant-intent-20261030-final/result.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 225,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 228,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/admission-probes.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 228,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 229,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/pod-secret-admission-probe.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 229,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 229,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/pod-secret-policy-probe-final.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 229,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 230,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/combined-admission-probe-cross-namespace.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 230,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 230,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/managed-namespace-preflight.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 230,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 231,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/production-identity-scoped-probe.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 231,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 232,
+      "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/gov-pg.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 232,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 234,
+      "target": "../../../verification-artifacts/sandbox-storage-policy-final-20261030/source.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 234,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 234,
+      "target": "../../../verification-artifacts/sandbox-storage-main-pg-20261030/test.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 234,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 234,
+      "target": "../../../verification-artifacts/sandbox-gov-history-close-20261030/storage-main-joint-tests.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 234,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 234,
+      "target": "../../../verification-artifacts/sandbox-gov-history-close-20261030/merged-pg-test.log",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 234,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 239,
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 239,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 247,
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/cross-tenant/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 247,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 249,
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/token-generation/http-events.jsonl",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 249,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 249,
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/token-generation/cleanup.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 249,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 251,
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/platform-id/http-events.jsonl",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 251,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 251,
+      "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/platform-id/cleanup.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 251,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 259,
+      "target": "../../../verification-artifacts/sandbox-upstream-redeploy-20261030/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 259,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 273,
+      "target": "../../../verification-artifacts/sandbox-phase2-production-final-20261030/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 273,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 281,
+      "target": "../../../verification-artifacts/sandbox-token-20261030/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 281,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 293,
+      "target": "../../../verification-artifacts/sandbox-files-20261030/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 293,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 303,
+      "target": "../../../verification-artifacts/sandbox-coderun-live-20261029/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 303,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 325,
+      "target": "../../../verification-artifacts/sandbox-image-id-release-20261029-SeEa0sJd/gov-descriptor-comparison.txt",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 325,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 329,
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/live-storage-route-check.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 329,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 335,
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/storage-api-comparison.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 335,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 337,
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/valid-id-create.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 337,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 337,
+      "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/preflight.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 337,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 343,
+      "target": "../../../verification-artifacts/sandbox-custom-image-20261029/acceptance.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 343,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 365,
+      "target": "../../../verification-artifacts/sandbox-e2e-8d90066c5742/lifecycle-acceptance.json",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 365,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 367,
+      "target": "../../../verification-artifacts/sandbox-e2e-8d90066c5742/lifecycle-request-response.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 367,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 417,
+      "target": "../../../verification-artifacts/sandbox-new-tenant-20261029/",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 417,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 425,
+      "target": "../../../verification-artifacts/sandbox-followup-20261029/",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 425,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 433,
+      "target": "../../../verification-artifacts/sandbox-shared-entry-20261029/",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 433,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 985,
+      "target": "../specs/instance-mvp.md#cpu-增量合同",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 985,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/execution/status.md",
+      "line": 1640,
+      "target": "records/CONTAINER-RESTART-PVC-20261028/source22-main792-verify.log",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 1640,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/plans/instance-mvp-v1.5.md",
+      "line": 9,
+      "target": "../specs/instance-mvp.md#cpu-增量合同",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 9,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/instance-configuration-network.md",
+      "line": 196,
+      "target": "../../internal/data/network/kc_attachment_managed.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 196,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/kcn-v09-underlay-flow.md",
+      "line": 30,
+      "target": "../../../ani-model-service/docs/deploy/kcn-cluster-public-eip-20261020/README.md",
+      "problem": "missing_path",
+      "scope": "outside_repository",
+      "historical_record": false,
+      "baseline_line": 30,
+      "action": "historical_locator_not_verified"
+    },
+    {
+      "file": "docs/specs/lb-deferred-activation.md",
+      "line": 28,
+      "target": "../../internal/data/network/kc_load_balancer_generated.go",
+      "problem": "missing_path",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 28,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-connectivity-lb.md",
+      "line": 7,
+      "target": "cr-observation.md#4-事实时效与真实校验",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 7,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-snat.md",
+      "line": 5,
+      "target": "cr-observation.md#4-事实时效与真实校验",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 5,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-subnet.md",
+      "line": 7,
+      "target": "cr-observation.md#4-事实时效与真实校验",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 7,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-subnet.md",
+      "line": 96,
+      "target": "cr-observation.md#4-事实时效与真实校验",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 96,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-subnet.md",
+      "line": 203,
+      "target": "cr-observation.md#4-事实时效与真实校验",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 203,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-subnet.md",
+      "line": 252,
+      "target": "cr-observation.md#5-查询版本与数据库成本",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 252,
+      "action": "superseded_reference_replaced_or_removed"
+    },
+    {
+      "file": "docs/specs/vpc-subnet.md",
+      "line": 444,
+      "target": "cr-observation.md#8-验收合同",
+      "problem": "missing_anchor",
+      "scope": "repository",
+      "historical_record": false,
+      "baseline_line": 444,
+      "action": "superseded_reference_replaced_or_removed"
+    }
+  ],
+  "annotation_pass": {
+    "before_annotation": {
+      "markdown_files": 253,
+      "local_links_checked": 3574,
+      "findings_total": 166,
+      "summary": {
+        "outside_repository:missing_path": 80,
+        "repository:missing_path": 85,
+        "repository:missing_anchor": 1
+      }
+    },
+    "actions": [
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 31,
+        "target": "/home/chabking/workspace/ANI/repo/api/openapi/v1.yaml:8891",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 31,
+        "target": "/home/chabking/workspace/ANI/repo/api/openapi/v1.yaml:9018",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 31,
+        "target": "/home/chabking/workspace/ANI/repo/api/openapi/v1.yaml:2158",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 33,
+        "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/network_runtime.go:51",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 33,
+        "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/internal/router/network_resources.go:294",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 33,
+        "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/internal/router/network_resources.go:348",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 35,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:165",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 43,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:329",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 35,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:1071",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 37,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_status_reconciler.go:38",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 37,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/bootstrap/server.go:546",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 41,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:220",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 41,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:266",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 41,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:408",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 43,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:15",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 43,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:329",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 45,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:279",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 45,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/network_service.go:421",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 45,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/kubeovn_network_provider.go:146",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 49,
+        "target": "/home/chabking/workspace/ANI/repo/services/ani-gateway/main.go:142",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 49,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/instance_resource_resolver.go:316",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 51,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/dryrun_renderer.go:312",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 51,
+        "target": "/home/chabking/workspace/ANI/repo/pkg/adapters/runtime/dryrun_renderer.go:938",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 59,
+        "target": "/home/chabking/workspace/ani-iam/CONTEXT.md:7",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 59,
+        "target": "/home/chabking/workspace/ani-iam/CONTEXT.md:39",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 61,
+        "target": "/home/chabking/workspace/ani-iam/docs/adr/0022-unify-software-actors-as-workload-principals.md:7",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 61,
+        "target": "/home/chabking/workspace/ani-iam/docs/plans/plan-workload-principal-refoundation.md:3",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 67,
+        "target": "/home/chabking/workspace/ani-notification-service/docs/adr/0005-keep-notification-native-and-integrate-iam-through-adapters.md:17",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 69,
+        "target": "/home/chabking/workspace/ani-notification-service/docs/adr/0005-keep-notification-native-and-integrate-iam-through-adapters.md:163",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 69,
+        "target": "/home/chabking/workspace/ani-notification-service/migrations/0001_notification.sql:8",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 71,
+        "target": "/home/chabking/workspace/ani-notification-service/README.md:21",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 75,
+        "target": "/home/chabking/workspace/kc-networking/api/networking/v1/vpc_types.go:99",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 75,
+        "target": "/home/chabking/workspace/kc-networking/api/networking/v1/subnet_types.go:75",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 75,
+        "target": "/home/chabking/workspace/kc-networking/api/networking/v1/common_types.go:3",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-09-source-assessment.md",
+        "line": 75,
+        "target": "/home/chabking/workspace/kc-networking/config/crd/bases/networking.kubercloud.com_vpcs.yaml:15",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 31,
+        "target": "../../../internal/data/resource_work.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 55,
+        "target": "../../../internal/data/kc.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 33,
+        "target": "../../../internal/data/worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 33,
+        "target": "../../../internal/data/queries/worker.sql",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 34,
+        "target": "../../../internal/data/kc_attachment.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 35,
+        "target": "../../../internal/biz/attachment_worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 55,
+        "target": "../../../internal/data/kc.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 55,
+        "target": "../../../internal/data/kc.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 102,
+        "target": "../../../internal/data/subnet.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-10-cr-observation-selection.md",
+        "line": 102,
+        "target": "../../../internal/data/attachment.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 21,
+        "target": "../../../internal/data/postgres.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 22,
+        "target": "../../../internal/biz/worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 22,
+        "target": "../../../internal/data/egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 24,
+        "target": "../../../internal/data/queries/egress.sql",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 26,
+        "target": "../../../internal/data/kc_egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 26,
+        "target": "../../../internal/data/kc_egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/2026-09-14-vpc-lb-plan.md",
+        "line": 27,
+        "target": "../../../internal/data/worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-01-implementation.md",
+        "line": 57,
+        "target": "../../../.work/net01-final/manifest.json",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 11,
+        "target": "../../../../internal/biz/subnet.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 11,
+        "target": "../../../../internal/data/queries/subnets.sql",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 11,
+        "target": "../../../../internal/data/queries/vpcs.sql",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 14,
+        "target": "../../../../internal/data/subnet_upgrade_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 15,
+        "target": "../../../../internal/data/resource_work.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 15,
+        "target": "../../../../internal/data/kc.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 17,
+        "target": "../../../../internal/biz/attachment.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-02-04/completion-audit.md",
+        "line": 18,
+        "target": "../../../../../.worktrees/ani-net-02-04/repo/development-records/net-02-04-network-integration.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-05-implementation.md",
+        "line": 55,
+        "target": "../../../../ani-net-05/repo/development-records/net-05-kind-network-validation.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 16,
+        "target": "../../../../internal/data/base_schema_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 17,
+        "target": "../../../../internal/biz/platform_intranet.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 17,
+        "target": "../../../../internal/data/platform_capabilities.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 17,
+        "target": "../../../../internal/data/kc_intranet.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 18,
+        "target": "../../../../internal/data/base_connectivity.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 18,
+        "target": "../../../../internal/data/worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 18,
+        "target": "../../../../internal/data/base_connectivity_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 18,
+        "target": "../../../../internal/data/base_process_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 18,
+        "target": "../../../../internal/data/base_concurrency_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 19,
+        "target": "../../../../internal/data/egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 19,
+        "target": "../../../../internal/data/egress_public_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 19,
+        "target": "../../../../internal/service/egress_public_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 20,
+        "target": "../../../../cmd/ani-network-service/base_connectivity.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 20,
+        "target": "../../../../internal/data/base_backfill.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/README.md",
+        "line": 20,
+        "target": "../../../../internal/data/base_backfill_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+        "line": 7,
+        "target": "../../../../cmd/ani-network-service/base_connectivity.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+        "line": 9,
+        "target": "../../../../internal/data/base_backfill.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+        "line": 9,
+        "target": "../../../../internal/data/queries/base_backfill.sql",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-BASE-01/backfill.md",
+        "line": 69,
+        "target": "../../../../internal/data/base_backfill_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-branch-20260917/README.md",
+        "line": 30,
+        "target": "../../../../../internal/data/kc_egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-branch-20260917/README.md",
+        "line": 36,
+        "target": "../../../../../internal/data/egress_audit_retry_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+        "line": 54,
+        "target": "../../../../../internal/data/resource_work.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+        "line": 54,
+        "target": "../../../../../internal/data/queries/egress.sql",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+        "line": 56,
+        "target": "../../../../../internal/data/base_connectivity.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+        "line": 68,
+        "target": "../../../../../internal/data/kc_egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/base-watch-20260917/README.md",
+        "line": 68,
+        "target": "../../../../../internal/data/kc_observation.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/interface-proposal.md",
+        "line": 16,
+        "target": "../../../../../internal/data/node_facts_collector.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/interface-proposal.md",
+        "line": 16,
+        "target": "../../../../../internal/data/kc_node_facts.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/untagged-followup.md",
+        "line": 40,
+        "target": "../../../../../internal/biz/egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/l2-diagnostic-20260915/untagged-followup.md",
+        "line": 41,
+        "target": "../../../../../internal/data/kc_node_facts.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+        "line": 11,
+        "target": "../../../../../internal/data/kc_egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+        "line": 22,
+        "target": "../../../../../internal/data/kc_load_balancer.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+        "line": 22,
+        "target": "../../../../../internal/data/kc_load_balancer.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+        "line": 23,
+        "target": "../../../../../internal/biz/load_balancer_worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-branch-20260917/README.md",
+        "line": 23,
+        "target": "../../../../../internal/data/resource_work.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-fix-20260918/README.md",
+        "line": 11,
+        "target": "../../../../../internal/data/kc_load_balancer.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-fix-20260918/README.md",
+        "line": 13,
+        "target": "../../../../specs/cr-observation.md#4-事实时效与真实校验",
+        "problem": "missing_anchor",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "superseded_anchor_with_current_spec"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/lb-fix-20260918/README.md",
+        "line": 24,
+        "target": "../../../../../internal/data/lb_audit_retry_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/NET-VPC-LB-02/public-review-20260917/README.md",
+        "line": 13,
+        "target": "../../../../../internal/data/kc_load_balancer.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/RESOURCE-MOD-20260922/control-plane-20260922/README.md",
+        "line": 83,
+        "target": "evidence/verify.log",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/RESOURCE-MOD-20260922/control-plane-20260922/README.md",
+        "line": 83,
+        "target": "evidence/working-tree-secrets.log",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 20,
+        "target": "../../../../internal/biz/egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 20,
+        "target": "../../../../internal/service/egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 20,
+        "target": "../../../../cmd/ani-network-service/app.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 21,
+        "target": "../../../../internal/data/platform.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 22,
+        "target": "../../../../internal/data/egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 23,
+        "target": "../../../../internal/data/kc_egress.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 24,
+        "target": "../../../../internal/biz/worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 24,
+        "target": "../../../../internal/biz/egress_worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 24,
+        "target": "../../../../internal/data/resource_work.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 24,
+        "target": "../../../../internal/data/platform_worker.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 24,
+        "target": "../../../../internal/data/kc_observation.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 25,
+        "target": "../../../../internal/data/kc_node_facts.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 25,
+        "target": "../../../../internal/data/node_facts_collector.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 38,
+        "target": "../../../../internal/data/egress_process_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 53,
+        "target": "../../../../internal/data/egress_device_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 53,
+        "target": "../../../../internal/biz/egress_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 53,
+        "target": "../../../../internal/data/egress_grpc_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 54,
+        "target": "../../../../internal/data/egress_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 54,
+        "target": "../../../../internal/data/kc_egress_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/records/VPC-SNAT-IMPLEMENTATION/README.md",
+        "line": 54,
+        "target": "../../../../internal/data/egress_kc_integration_test.go",
+        "problem": "missing_path",
+        "scope": "repository",
+        "historical_record": true,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 218,
+        "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/verify.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 218,
+        "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/sandbox-pg-result.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 218,
+        "target": "../../../verification-artifacts/sandbox-vm-main-candidate-20261030/gov-joint.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 219,
+        "target": "../../../verification-artifacts/sandbox-live-resource-20261030/diagnosis.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 221,
+        "target": "../../../verification-artifacts/sandbox-tenant-cluster-role-20261030/test.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 223,
+        "target": "../../../verification-artifacts/sandbox-gov-ready-20261030/test.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 224,
+        "target": "../../../verification-artifacts/sandbox-gov-pending-close-20261030/test.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 226,
+        "target": "../../../verification-artifacts/sandbox-tenant-dispatch-20261030-final/gov-pg.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 228,
+        "target": "../../../verification-artifacts/sandbox-tenant-space-resource-20261030-mtls/receipt.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 229,
+        "target": "../../../verification-artifacts/sandbox-tenant-intent-20261030-final/result.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 232,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/admission-probes.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 233,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/pod-secret-admission-probe.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 233,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/pod-secret-policy-probe-final.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 234,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/combined-admission-probe-cross-namespace.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 234,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/managed-namespace-preflight.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 235,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/production-identity-scoped-probe.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 236,
+        "target": "../../../verification-artifacts/sandbox-tenant-provisioning-20261030/gov-pg.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 238,
+        "target": "../../../verification-artifacts/sandbox-storage-policy-final-20261030/source.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 238,
+        "target": "../../../verification-artifacts/sandbox-storage-main-pg-20261030/test.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 238,
+        "target": "../../../verification-artifacts/sandbox-gov-history-close-20261030/storage-main-joint-tests.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 238,
+        "target": "../../../verification-artifacts/sandbox-gov-history-close-20261030/merged-pg-test.log",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 243,
+        "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 251,
+        "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/cross-tenant/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 253,
+        "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/token-generation/http-events.jsonl",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 253,
+        "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/token-generation/cleanup.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 255,
+        "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/platform-id/http-events.jsonl",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 255,
+        "target": "../../../verification-artifacts/sandbox-node-acceptance-20261030/platform-id/cleanup.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 263,
+        "target": "../../../verification-artifacts/sandbox-upstream-redeploy-20261030/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 277,
+        "target": "../../../verification-artifacts/sandbox-phase2-production-final-20261030/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 285,
+        "target": "../../../verification-artifacts/sandbox-token-20261030/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 297,
+        "target": "../../../verification-artifacts/sandbox-files-20261030/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 307,
+        "target": "../../../verification-artifacts/sandbox-coderun-live-20261029/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 329,
+        "target": "../../../verification-artifacts/sandbox-image-id-release-20261029-SeEa0sJd/gov-descriptor-comparison.txt",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 333,
+        "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/live-storage-route-check.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 339,
+        "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/storage-api-comparison.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 341,
+        "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/valid-id-create.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 341,
+        "target": "../../../verification-artifacts/sandbox-image-id-live-20261029/preflight.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 347,
+        "target": "../../../verification-artifacts/sandbox-custom-image-20261029/acceptance.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 369,
+        "target": "../../../verification-artifacts/sandbox-e2e-8d90066c5742/lifecycle-acceptance.json",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 371,
+        "target": "../../../verification-artifacts/sandbox-e2e-8d90066c5742/lifecycle-request-response.md",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 421,
+        "target": "../../../verification-artifacts/sandbox-new-tenant-20261029/",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 429,
+        "target": "../../../verification-artifacts/sandbox-followup-20261029/",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      },
+      {
+        "file": "docs/execution/status.md",
+        "line": 437,
+        "target": "../../../verification-artifacts/sandbox-shared-entry-20261029/",
+        "problem": "missing_path",
+        "scope": "outside_repository",
+        "historical_record": false,
+        "action": "unavailable_locator_preserved"
+      }
+    ]
+  },
+  "checks": {
+    "status": "pass",
+    "markdown_files": 254,
+    "local_links_checked": 3440,
+    "findings_total": 0,
+    "findings": [],
+    "changed_markdown_files_checked": 63,
+    "new_markdown_format_issues": [],
+    "git_diff_check": {
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "scope": {
+      "changed_paths": 66,
+      "non_document_changes": [],
+      "business_code_changed": false,
+      "business_tests": "not_run",
+      "builds": "not_run",
+      "postgresql": "not_run",
+      "deployment": "not_run"
+    },
+    "preservation": {
+      "principle_sha256": "c24043e20378a1ed214c7a012dd3e2d1e81cbe7b8239a028f6a5e6f6325bbc4a",
+      "principle_matches_updated_attachment_hash": true,
+      "latency_sha256": "8494716bd3314c15ed24b942bf25f927ac2b31f7b14c2a4d300497ad5f5c95f3",
+      "latency_file_unchanged": true,
+      "user_latency_status_section_unchanged": true
+    },
+    "original_audit_json": {
+      "res-doc-review-20261109-links.json": {
+        "sha256": "389aa122fa3745e6536b0ae2c32daca3c3daeb9a4d3cddc6ba6c3a15bfb9074a",
+        "recorded_findings": 179
+      },
+      "res-doc-review-20261109-global-links.json": {
+        "sha256": "454b3f443ba7a5859e373c5608dca1e2f7eda6143c5263bac48ac9eb126ffa14",
+        "recorded_findings": 179
+      }
+    },
+    "execution_host": "local WSL Ubuntu; invoked by Windows PowerShell",
+    "actual_commands": [
+      "wsl.exe -d Ubuntu --cd /home/ubuntu/workspace/ani-resource-service --exec python3 .work/res-doc-fix-20261109/check_docs.py",
+      "git --no-optional-locks diff --check",
+      "git diff --name-only --diff-filter=ACMRTUXB HEAD --",
+      "git ls-files --others --exclude-standard",
+      "Windows Get-FileHash -Algorithm SHA256 (latest user attachment)"
+    ],
+    "attachment_sha256_rechecked_on_windows": "c24043e20378a1ed214c7a012dd3e2d1e81cbe7b8239a028f6a5e6f6325bbc4a"
+  },
+  "pr_preparation": {
+    "status": "pass",
+    "base": "511b11194dfc1e49a6291a21fa19b0a2c43af3df",
+    "branch": "codex/res-docs-cleanup-20261109",
+    "markdown_files": 256,
+    "local_links_checked": 3463,
+    "findings": [],
+    "changed_paths": 65,
+    "changed_markdown_files": 62,
+    "format_issues": [],
+    "git_diff_check": {
+      "exit_code": 0,
+      "output": ""
+    },
+    "non_document_changes": [],
+    "principle_sha256": "c24043e20378a1ed214c7a012dd3e2d1e81cbe7b8239a028f6a5e6f6325bbc4a",
+    "main_clusterops_status_preserved": true,
+    "user_latency_record_excluded": true,
+    "business_tests": "not_run",
+    "builds": "not_run",
+    "postgresql": "not_run",
+    "deployment": "not_run",
+    "source_worktree_files_preserved": 66,
+    "source_worktree_head_unchanged": true,
+    "source_worktree_index_unchanged": true,
+    "issues": {
+      "D18": "https://github.com/zhangzhe-ctrl/ani-resource-service/issues/68",
+      "D19": "https://github.com/zhangzhe-ctrl/ani-resource-service/issues/69"
+    },
+    "actual_commands": [
+      "python3 .work/res-doc-pr-20261109/check_docs.py",
+      "git diff --check HEAD"
+    ],
+    "original_checks_scope": "original review worktree; immutable original counts retained under checks"
+  }
+}

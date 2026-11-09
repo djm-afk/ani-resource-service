@@ -1,5 +1,7 @@
 # NET-05 实施与真实环境验收
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](res-doc-fix-20261109.md)。
+
 本记录固定执行输入与用例，不替代 [当前执行状态](../status.md) 或 [规格](../../specs/vpc-subnet.md)。NET-05 已在用户调整后的范围内完成：实际产品主链、V-12 数据面、故障恢复、产品清理及临时环境撤销均通过。不得据此进入 NET-06。
 
 发布说明：用户在验收完成后授权仅发布 Network main，ANI 继续保留本地。下文未提交描述对应原验收封存时点。公开证据副本仅对重复的非凭据元数据字段名作 [明确投影](NET-05/publication-projection.json)，原始与发布 hash 均保留，实际值/状态/UID/断言不变；未修改凭据扫描规则。
@@ -52,7 +54,7 @@ V-14/V-15、Console/前端、外网可达性、性能/容量、物理多机 HA�
 
 ## 实际 main 修复及其范围
 
-[ANI 专项变更记录](../../../../ani-net-05/repo/development-records/net-05-kind-network-validation.md)列出精确回归。四项真实阻断均先复现再修复：明确 VPC/Subnet 的普通容器被旧默认 Attachment 拒绝；显式 APIHost 的 tokenFile 未加载导致 anonymous 403；实际 Deployment 省略空列表导致错误不一致；实际 typed LIST item 缺少 TypeMeta 导致 owner graph 无法确认。修复保持非空字段/错误类型/UID/租户校验，不改产品契约或认证模型。
+ANI 专项变更记录（仓外定位：`../../../../ani-net-05/repo/development-records/net-05-kind-network-validation.md`）列出精确回归。四项真实阻断均先复现再修复：明确 VPC/Subnet 的普通容器被旧默认 Attachment 拒绝；显式 APIHost 的 tokenFile 未加载导致 anonymous 403；实际 Deployment 省略空列表导致错误不一致；实际 typed LIST item 缺少 TypeMeta 导致 owner graph 无法确认。修复保持非空字段/错误类型/UID/租户校验，不改产品契约或认证模型。
 
 Network 只修复已经在 live 阻塞创建的到期工作饥饿，改动为 `internal/data/resource_work.go`、两份现有 query 及 pinned sqlc 输出。先锁父 VPC，按 VPC/Subnet 最早 next_run_at 选父，再领取对应资源；没有引入 watch/informer 或新状态/迁移。真实 PG 回归 `TestNET05OldestSubnetWorkIsNotStarvedByDueVPCObservation` 先红后绿；证据 [饥饿现场](NET-05/V-06-subnet-starvation-before.json)和 `regressions/fairness-{red,green}.log`。该修复在用户豁免持续观察专项之前完成，未提交 diff 中独立可见。
 

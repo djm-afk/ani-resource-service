@@ -1,5 +1,7 @@
 # 真实控制面续测：2026-09-22
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 用户授权继续测试并如实记录结果。本轮不要求 Public 流量成功后才开始可独立执行的控制面测试，
 但没有取消原计划的必需数据面和发布条件。唯一当前状态在 [status](../../../status.md)。
 
@@ -80,6 +82,6 @@ LB 清理首次 180 秒控制面等待未完成，记为该窗口 fail；后续�
 
 提交前 secret 扫描初次命中 22 项，逐项确认为公开产物 SHA、Go module checksum 或测试幂等键，见 [核对记录](evidence/secret-findings-review.json)。仅增加精确路径与完整值同时匹配的例外，默认 secret 规则保留；[18 个正反例](evidence/secret-fixtures.json)通过，改路径或改值仍被检测。运行源码和依赖没有新增修改。
 
-Fedora 提交前 `make verify` [退出 0](evidence/verify.exit)，[日志](evidence/verify.log)保留；工作树 secret 扫描[通过](evidence/working-tree-secrets.log)。普通测试的 PG skip 不被当作本轮新增 PG 门禁；真实 PG/CI 证据仍分别对应此前已通过的提交，本轮真实同库操作独立记录。
+Fedora 提交前 `make verify` [退出 0](evidence/verify.exit)，日志（历史定位：`evidence/verify.log`）保留；工作树 secret 扫描通过（历史定位：`evidence/working-tree-secrets.log`）。普通测试的 PG skip 不被当作本轮新增 PG 门禁；真实 PG/CI 证据仍分别对应此前已通过的提交，本轮真实同库操作独立记录。
 
 最终归档增量以显式 `.gitleaks.toml` 再扫描[退出 0](evidence/final-records-secrets-explicit.exit)。仅扫描子目录而未指定配置的一次调用未加载根规则，重复报告原 22 项公开元数据；该调用记录仍留在 Fedora review/evidence。Git 属性仅对 11 个原始命令输出允许其捕获的行尾空白/尾部空行，以保留导出哈希，其他文件不豁免空白检查。

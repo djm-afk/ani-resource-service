@@ -1,5 +1,7 @@
 # NET-01 实施记录
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](res-doc-fix-20261109.md)。
+
 ## 固定输入与授权
 
 Goal 于 2026-09-09 启动；授权只实施 VPC、真实 PostgreSQL、持久操作、kc VPC adapter 与受控环境验证，不包括 NET-02、kind、IAM、兄弟仓库写入或发布。
@@ -54,7 +56,7 @@ Goal 已明确授权的接口：VPC 用例及 gRPC、真实 PostgreSQL 持久适
 make verify && make integration && make race && make tenant-mutations && make audit
 ```
 
-整体退出码 **0**。该次 93 文件源码清单 SHA-256 为 `c25bcdcb60a1f7942c6d1f497bd88369a303d6858ebeb1514649b19d2a586d49`。最终运行源码、配置、迁移、生成物、测试和检查脚本已逐文件与该快照核对相同；此后仅整理交付文档/证据及重新生成对应 SBOM。最终包含这些交付材料的完整文件清单、权限、摘要与初始输入差异保存在 [最终源码清单](../../../.work/net01-final/manifest.json)，不将清单文件自身作为其输入。
+整体退出码 **0**。该次 93 文件源码清单 SHA-256 为 `c25bcdcb60a1f7942c6d1f497bd88369a303d6858ebeb1514649b19d2a586d49`。最终运行源码、配置、迁移、生成物、测试和检查脚本已逐文件与该快照核对相同；此后仅整理交付文档/证据及重新生成对应 SBOM。最终包含这些交付材料的完整文件清单、权限、摘要与初始输入差异保存在 最终源码清单（历史定位：`../../../.work/net01-final/manifest.json`），不将清单文件自身作为其输入。
 
 - [完整命令输出](NET-01/verification.txt)：生成无漂移、verify、真实 PG/进程、全包 race、三个 tenant 查询变异、audit 全部 pass。
 - [原仓库历史扫描](NET-01/local-history-secrets.txt)：本地轻量扫描原有 **2 commits**，无泄露；远程 audit 扫描包含全部未提交源文件的 **1 个临时快照提交**，无泄露，两者范围不混同。

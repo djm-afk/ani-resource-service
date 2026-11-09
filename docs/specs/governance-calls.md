@@ -112,7 +112,7 @@ Sandbox 条目定义 Resource RPC 合同和精确接收方 allowlist。Governanc
 
 接收方允许清单实现为 [governance.go](../../internal/server/governance.go)、[image_identity.go](../../internal/server/image_identity.go)、[compute_identity.go](../../internal/server/compute_identity.go) 与 [instance_identity.go](../../internal/server/instance_identity.go) 与 [sandbox_identity.go](../../internal/server/sandbox_identity.go)。Instance 普通 unary 调用上限 30s，后台投递继承其更短 deadline；StreamInstanceLogs 使用独立有限生命周期，不套此总期限。修改调用时同时修改登记、允许清单和真实链路测试，不使用 RPC 前缀或通配符授权。
 
-租户空间后台事实使用 `/sandbox.v1.SandboxService/OpenTenantSpace`、`/sandbox.v1.SandboxService/CloseTenantSpace` 和 `/sandbox.v1.SandboxService/GetTenantSpace`。仅受信 Gov 证书及固定 actor `governance:tenant-space` 可调用，metadata 的 tenant UUID 与报文必须精确相同；该后台 actor不能调用任何其他业务方法，普通用户和 Sandbox Token actor 也不能调用这三个方法。Gov 从已持久化的租户映射和稳定开通 operation ID 派发，不传公网身份或伪造用户。`open` 是持久受理而不是资源已就绪；`ready` 表示已核验当前命名空间和权限；`closing` 表示仍有未确认写入，`closed` 表示开通栅栏已关闭。关闭不证明共享 namespace 或其他业务资源已删除；Sandbox 未完成清理时拒绝关闭。运维、自动恢复和真实集群验证范围见[租户空间目标](../plans/sandbox-runtime-design-20261025.md#222-共享租户空间开通目标)和[执行状态](../execution/status.md)。
+租户空间后台事实使用 `/sandbox.v1.SandboxService/OpenTenantSpace`、`/sandbox.v1.SandboxService/CloseTenantSpace` 和 `/sandbox.v1.SandboxService/GetTenantSpace`。仅受信 Gov 证书及固定 actor `governance:tenant-space` 可调用，metadata 的 tenant UUID 与报文必须精确相同；该后台 actor不能调用任何其他业务方法，普通用户和 Sandbox Token actor 也不能调用这三个方法。Gov 从已持久化的租户映射和稳定开通 operation ID 派发，不传公网身份或伪造用户。`open` 是持久受理而不是资源已就绪；`ready` 表示已核验当前命名空间和权限；`closing` 表示仍有未确认写入，`closed` 表示开通栅栏已关闭。关闭不证明共享 namespace 或其他业务资源已删除；Sandbox 未完成清理时拒绝关闭。运维、自动恢复和真实集群验证范围见[租户空间目标](sandbox.md#222-共享租户空间开通目标)和[执行状态](../execution/status.md)。
 
 `/instance.terminal.v1.InstanceTerminalService/ValidateTerminalTarget` 不在 Gov 委托清单中。它由 Resource 同进程独立 mTLS listener 仅授权唯一 SG URI `spiffe://ani.internal/service/ani-session-gateway`，核对持久意图/版本、保存位置、Notebook/Pod UID、容器及当前 provider 观察。详见 [运行与恢复](../runbooks/instance-mvp-fedora.md)。
 
@@ -157,6 +157,8 @@ TRAINING供普通训练与微调共享，INFERENCE只声明公共提供方支持
 静态详情/列表独立读取数据库快照，集群故障只影响诊断读取；诊断不 Patch/Update、不签名、不调用占额/usage或清理。runtime/events 的安全字段、null与事件截断语义见 [实例合同](instance-mvp.md)。Kubernetes GET/LIST单元测试及HTTP pods/log适配测试与真实集群/公开SSE验收分开记录。
 
 ## 存储
+
+直接管理对象、状态与完成边界见[PVC 合同](storage-volumes.md)及[对象存储合同](object-storage.md)，部署权限不替代业务授权。
 
 Storage 方法全部为租户委托、unary RPC，完整清单以 [`internal/server/governance.go`](../../internal/server/governance.go) 的 `storageGovernanceMethods` 为准：
 

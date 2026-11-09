@@ -1,5 +1,7 @@
 # LB 观察退化的具体分支诊断（2026-09-17）
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 本轮按用户要求定位“CR 正常但 Network 的 LB 观察状态退化”的具体原因。输入为已推送提交 `83a4346d05069fb957f9ff6096c00dd586504e62`，包括上一轮 Egress 修正；本轮没有修改产品源码，没有部署或发布实验补丁。
 
 后续正式产品修正与 CI 问题结论见 [2026-09-18 修复记录](../lb-fix-20260918/README.md)；下文保留诊断时点事实。
@@ -8,7 +10,7 @@
 
 **LB 自身仍使用“缓存不合格后只完整刷新一次”的规则。刷新期间 Watch 续接使来源代次变化，LB 就在调用仍剩约 27 秒时返回临时失败。worker 将这次失败正常落库为 degraded / unknown / PROVIDER_UNAVAILABLE。**
 
-这是在当前源码、真实 PostgreSQL、实际 adapter/worker/查询链上重复复现并经单变量对照确认的具体失败路径，不依赖 Public 流量失败。上一轮改的是 [Egress 入口](../../../../../internal/data/kc_egress.go)，没有覆盖 [LB 独立入口](../../../../../internal/data/kc_load_balancer.go)。
+这是在当前源码、真实 PostgreSQL、实际 adapter/worker/查询链上重复复现并经单变量对照确认的具体失败路径，不依赖 Public 流量失败。上一轮改的是 Egress 入口（历史定位：`../../../../../internal/data/kc_egress.go`），没有覆盖 LB 独立入口（历史定位：`../../../../../internal/data/kc_load_balancer.go`）。
 
 本结论覆盖受控复现的 `PROVIDER_UNAVAILABLE` 路径，不把历史 `ProviderNotReady`、所有 stale 或“当时只有双入口退化”的每个样本都追认为同一原因。两种入口都能触发，历史入口差异是否仅由采集时序造成仍无逐次定点证据。
 
@@ -19,8 +21,8 @@
 1. 产品生命周期已完成，LB 为 configured；调用前变更一个后端 Pod 的诊断 annotation，使旧审计需要刷新。随后冻结 Provider 对象集合，故障窗口前后 SHA-256 完全一致。
 2. 新完整采集从来源代次 34 开始，两个真实 HTTP Pod Watch 在该采集期间续接，将代次推进为 36；没有修改 CR 状态、UID、版本、归属或就绪条件。
 3. 进入 `observeLoadBalancer` 的 `coverage_or_view` 分支：`refresh=true`，`Proof.Covers=true`，`DependenciesReady=true`；view/current sequence 都是 41，相关键没有变化。唯一失效项为来源 epoch 34/36。
-4. [LB 采集](../../../../../internal/data/kc_load_balancer.go)返回 `LB audit does not cover current dependency facts`。这个错误文本合并了“覆盖不足”和“视图失效”两种情况；本次实际是后者，并非通知覆盖不足。失败时还剩 **27.245 秒**。
-5. [worker](../../../../../internal/biz/load_balancer_worker.go)把临时 Provider 错误转换成 `PROVIDER_UNAVAILABLE`，资源从 available 变成 degraded；[持久化](../../../../../internal/data/resource_work.go)因没有成功观察而将 configuration_state 设为 unknown，并保留旧 observed_at。这是保守处理失败的正常结果，不是 worker 未运行或数据库随机丢字段。
+4. LB 采集（历史定位：`../../../../../internal/data/kc_load_balancer.go`）返回 `LB audit does not cover current dependency facts`。这个错误文本合并了“覆盖不足”和“视图失效”两种情况；本次实际是后者，并非通知覆盖不足。失败时还剩 **27.245 秒**。
+5. worker（历史定位：`../../../../../internal/biz/load_balancer_worker.go`）把临时 Provider 错误转换成 `PROVIDER_UNAVAILABLE`，资源从 available 变成 degraded；持久化（历史定位：`../../../../../internal/data/resource_work.go`）因没有成功观察而将 configuration_state 设为 unknown，并保留旧 observed_at。这是保守处理失败的正常结果，不是 worker 未运行或数据库随机丢字段。
 6. 实验副本仅在这一失效分支允许原 deadline 内继续完整采集，其他时限、配置、身份和新鲜度检查均不变。双入口观察约 **5.520 秒**完成，最终 configured、非 stale、无错误；仍余约 24.48 秒。CR 内容前后哈希保持。
 
 对应[汇总](controlled-summary.json)：

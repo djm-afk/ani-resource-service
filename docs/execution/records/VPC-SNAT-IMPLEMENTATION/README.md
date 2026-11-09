@@ -1,5 +1,7 @@
 # VPC SNAT 本仓实现与验证记录
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../res-doc-fix-20261109.md)。
+
 记录日期：2026-09-10；当前状态只在 [执行状态](../../status.md) 维护。本记录冻结本次实现与实际运行证据。
 
 Network 的平台出口、租户 EIP/SNAT、持久事务和持续 worker 已实现，最终远端 `make verify` 与真实 PostgreSQL 全量 race 测试均 `pass`。原生 Overlay 数据面为 `not_verified`：固定 kc 源码仍有已知缺陷，修复版本及源码到运行镜像的关联没有合格证据。按用户“你不用修复kc-networking的bug,标注就行了”的要求，仅标注，不修改或升级 kc；本记录不宣称完整 Goal 完成。
@@ -17,12 +19,12 @@ Network 的平台出口、租户 EIP/SNAT、持久事务和持续 worker 已实�
 
 | 层次 | 实现落点与已验证行为 |
 |---|---|
-| 领域与入口 | [领域用例](../../../../internal/biz/egress.go)、[gRPC 适配](../../../../internal/service/egress.go)、[组合根](../../../../cmd/ani-network-service/app.go)：平台管理、租户申请/绑定/启停/解绑/释放、查询与 operation；可信调用上下文及显式代操作授权。没有可信上下文时新增 RPC 拒绝访问。 |
-| 平台资源 | [平台事务](../../../../internal/data/platform.go)：节点事实与设备接管、VLAN 0–4094、Public/Host EIPGateway、Overlay/Underlay 池、分配开关、默认池、版本条件和删除依赖；验收记录绑定拓扑 fingerprint、Provider UID、实际镜像 digest 及有效期。 |
-| 租户持久化 | [租户事务](../../../../internal/data/egress.go)、[增量迁移 0005](../../../../migrations/0005_vpc_egress.sql)：显式 tenant、持久 namespace、同 tenant/cluster/namespace 复合 FK，永久幂等、固定选池和未删除 binding 唯一占用。先本地事务受理，再执行外部动作。既有迁移不改写。 |
-| Provider | [kc adapter](../../../../internal/data/kc_egress.go)：实际 CR 字段、稳定产品 ID 名称、UID/RV 保护、同 namespace 引用、kc 分配的 spec.ipAddress、地址/排除区间、boundResource/generation/disabled/nodeName 和 Nat/Service 冲突。Overlay 不写 underlayConfig，Underlay 明确 VLAN/物理网关。 |
-| 持久执行与观察 | [原 worker](../../../../internal/biz/worker.go)、[出网 work](../../../../internal/biz/egress_worker.go)、[资源执行](../../../../internal/data/resource_work.go)、[平台执行](../../../../internal/data/platform_worker.go)、[观察调度](../../../../internal/data/kc_observation.go)：沿用 Shared Informer→关系索引→PG 唤醒→领域 worker；新增资源、依赖扇出、周期审计、租约/fencing、公平处理、未知结果恢复及 tombstone。 |
-| 事实与运行接线 | [节点事实](../../../../internal/data/kc_node_facts.go)、[只读采集进程](../../../../internal/data/node_facts_collector.go)、[部署前置](../../../../deployments/egress/README.md)：真实接口命令来源，原始采集时间与完整读取证明分开；部分节点进度持久化，旧事实退化传播至 VLAN/池/EIP/SNAT。追加最小所需 RBAC、关闭流程及现有有界指标/结构化日志。 |
+| 领域与入口 | 领域用例（历史定位：`../../../../internal/biz/egress.go`）、gRPC 适配（历史定位：`../../../../internal/service/egress.go`）、组合根（历史定位：`../../../../cmd/ani-network-service/app.go`）：平台管理、租户申请/绑定/启停/解绑/释放、查询与 operation；可信调用上下文及显式代操作授权。没有可信上下文时新增 RPC 拒绝访问。 |
+| 平台资源 | 平台事务（历史定位：`../../../../internal/data/platform.go`）：节点事实与设备接管、VLAN 0–4094、Public/Host EIPGateway、Overlay/Underlay 池、分配开关、默认池、版本条件和删除依赖；验收记录绑定拓扑 fingerprint、Provider UID、实际镜像 digest 及有效期。 |
+| 租户持久化 | 租户事务（历史定位：`../../../../internal/data/egress.go`）、[增量迁移 0005](../../../../migrations/0005_vpc_egress.sql)：显式 tenant、持久 namespace、同 tenant/cluster/namespace 复合 FK，永久幂等、固定选池和未删除 binding 唯一占用。先本地事务受理，再执行外部动作。既有迁移不改写。 |
+| Provider | kc adapter（历史定位：`../../../../internal/data/kc_egress.go`）：实际 CR 字段、稳定产品 ID 名称、UID/RV 保护、同 namespace 引用、kc 分配的 spec.ipAddress、地址/排除区间、boundResource/generation/disabled/nodeName 和 Nat/Service 冲突。Overlay 不写 underlayConfig，Underlay 明确 VLAN/物理网关。 |
+| 持久执行与观察 | 原 worker（历史定位：`../../../../internal/biz/worker.go`）、出网 work（历史定位：`../../../../internal/biz/egress_worker.go`）、资源执行（历史定位：`../../../../internal/data/resource_work.go`）、平台执行（历史定位：`../../../../internal/data/platform_worker.go`）、观察调度（历史定位：`../../../../internal/data/kc_observation.go`）：沿用 Shared Informer→关系索引→PG 唤醒→领域 worker；新增资源、依赖扇出、周期审计、租约/fencing、公平处理、未知结果恢复及 tombstone。 |
+| 事实与运行接线 | 节点事实（历史定位：`../../../../internal/data/kc_node_facts.go`）、只读采集进程（历史定位：`../../../../internal/data/node_facts_collector.go`）、[部署前置](../../../../deployments/egress/README.md)：真实接口命令来源，原始采集时间与完整读取证明分开；部分节点进度持久化，旧事实退化传播至 VLAN/池/EIP/SNAT。追加最小所需 RBAC、关闭流程及现有有界指标/结构化日志。 |
 
 `desired_enabled` 与 nullable `applied_enabled` 分开；应用代次不足、旧事实或依赖失败不会制造已应用状态。控制面 available/Bound 不等于互联网可达。物理事实进程的编译、只读命令和 UID fencing 有自动测试，实际部署及 OVS socket 环境仍 `not_verified`。
 
@@ -35,7 +37,7 @@ Network 的平台出口、租户 EIP/SNAT、持久事务和持续 worker 已实�
 | 全量 PostgreSQL、race、既有 VPC/Subnet/Attachment 回归 | `pass` | `20260910T144842Z-acf48246`，`scripts/integration -p 2 -race ./...`；[输出](runs/20260910T144842Z-acf48246/command.txt)、[输入清单](runs/20260910T144842Z-acf48246/snapshot.json)、[退出码](runs/20260910T144842Z-acf48246/command.exit)。data 包 106.017s，exit 0。 |
 | 最终生成一致性/分层、tidy、单元测试、vet、build、module 校验 | `pass` | `20260910T145133Z-96a527b1`，`make verify`；[输出](runs/20260910T145133Z-96a527b1/command.txt)、[输入清单](runs/20260910T145133Z-96a527b1/snapshot.json)、[退出码](runs/20260910T145133Z-96a527b1/command.exit)。此命令自身不提供 PG 证明，PG 见上一行。 |
 | 新增真实 PG、受控 gRPC、实际 kc adapter 与设备部分进度 | `pass` | `20260910T144134Z-71f8a5eb` 的 [定向输出](runs/20260910T144134Z-71f8a5eb/command.txt)，后由全量 race 门禁覆盖。 |
-| 实际 Network 进程 kill/restart、已提交 POST/DELETE 丢回复、迟到 tombstone | `pass` | [进程测试源码](../../../../internal/data/egress_process_integration_test.go)，最终全量 PG/race 运行；编译并启动实际 main，通过受控 Kubernetes HTTP 依赖施加故障，恢复同一持久 DB。不是实际 kc 数据面。 |
+| 实际 Network 进程 kill/restart、已提交 POST/DELETE 丢回复、迟到 tombstone | `pass` | 进程测试源码（历史定位：`../../../../internal/data/egress_process_integration_test.go`），最终全量 PG/race 运行；编译并启动实际 main，通过受控 Kubernetes HTTP 依赖施加故障，恢复同一持久 DB。不是实际 kc 数据面。 |
 | 历史迁移升级与永久事实保留 | `pass` | 最终全量 PG/race 包含原 NET-01/NET-05A checksum 升级断言，仅从历史 JSON 投影排除新增 nullable eip_id/snat_id；未减弱原租约、历史、幂等及 checksum 断言。 |
 | 原生 Overlay、双 worker 内网/DNS/HTTPS、EIP 源转换和回程 | `not_verified` | Provider 外部前提不满足，本轮没有 live EIP/Snat 或手工 OVN 修补。 |
 | Underlay 合同及受控生命周期 | `pass` | VLAN 0、非零 VLAN 合同与非法组合、排除物理网关、部分节点接管、共享 ConfigMap CAS、资源占用与退役、陈旧事实退化；最终全量 PG/race 覆盖。 |
@@ -50,8 +52,8 @@ Network 的平台出口、租户 EIP/SNAT、持久事务和持续 worker 已实�
 
 | 验收合同 | 自动证据 | 限制 |
 |---|---|---|
-| SNAT-V01/V02 | [设备实际 adapter 测试](../../../../internal/data/egress_device_integration_test.go)、[领域校验](../../../../internal/biz/egress_test.go)、[gRPC 授权](../../../../internal/data/egress_grpc_integration_test.go)：不可选原因、节点 UID、部分失败、共享配置保护、普通租户/管理员代操作 | 受控事实与可信上下文注入；真实物理/IAM 不包含在 pass 中。 |
-| SNAT-V03/V04/V05 | [真实 PG 生命周期与并发](../../../../internal/data/egress_integration_test.go)、[实际 kc 字段](../../../../internal/data/kc_egress_test.go)、[共享观察生命周期](../../../../internal/data/egress_kc_integration_test.go)：固定池/关分配、持久重放、跨 tenant/namespace FK、并发争用、失败/未知/停用占用、旧 binding ID、完整启停解绑释放 | kc 依赖为受控 HTTP/动态 client；真实地址池耗尽与数据面不由该结果代替。 |
+| SNAT-V01/V02 | 设备实际 adapter 测试（历史定位：`../../../../internal/data/egress_device_integration_test.go`）、领域校验（历史定位：`../../../../internal/biz/egress_test.go`）、gRPC 授权（历史定位：`../../../../internal/data/egress_grpc_integration_test.go`）：不可选原因、节点 UID、部分失败、共享配置保护、普通租户/管理员代操作 | 受控事实与可信上下文注入；真实物理/IAM 不包含在 pass 中。 |
+| SNAT-V03/V04/V05 | 真实 PG 生命周期与并发（历史定位：`../../../../internal/data/egress_integration_test.go`）、实际 kc 字段（历史定位：`../../../../internal/data/kc_egress_test.go`）、共享观察生命周期（历史定位：`../../../../internal/data/egress_kc_integration_test.go`）：固定池/关分配、持久重放、跨 tenant/namespace FK、并发争用、失败/未知/停用占用、旧 binding ID、完整启停解绑释放 | kc 依赖为受控 HTTP/动态 client；真实地址池耗尽与数据面不由该结果代替。 |
 | SNAT-V10/V11 | 同一 worker 的失联/旧事实/状态代次、依赖退化、UID 替换、未知 create/update/delete、租约过期、实际进程重启、删除确认/tombstone；原观察公平调度、旧缓存、风暴/backoff 和 VPC/Subnet/Attachment 测试同时回归 | 本轮没有 live 清理工作流；仅清理受控测试实例，外部环境作只读复核。 |
 | SNAT-V06/V07/V08 | 无本轮实际数据面执行 | `not_verified`，需要合格 Provider 后另行恢复该阶段。历史手改路由对照不采作 pass。 |
 | SNAT-V09 | Underlay 自动合同与设备/平台受控生命周期通过 | 物理验收 `not_verified`，按计划延后。 |

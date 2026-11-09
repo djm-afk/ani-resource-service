@@ -321,7 +321,7 @@ Goal：[VM-03B.md](vm-mvp-goals/VM-03B.md)
 1. 只创建原生VirtualMachineSnapshot，冻结source VM UID与当前持久root/data逻辑盘清单；等待原生结果，核对included/excluded。
 2. 完整性、Agent连接/quiesce与原生indications分别展示，必要盘缺失不得标完整可恢复。
 3. Linux/Windows各覆盖在线/离线快照，系统盘+至少两块持久数据盘；无Agent路径明确不保证冻结，不暗中关机。
-4. 删除快照按既定Delete策略观测原生content/CSI资源回收，不逐盘编排CSI，不删其他快照数据。
+4. 删除快照完成本服务原生对象与引用的管理责任；Content/CSI 回收按组件策略处理，不作 operation 完成前置，不逐盘编排或删除其他快照数据。
 
 产出：快照API/UI、逻辑盘inventory与完整性合同、双系统快照结果。
 

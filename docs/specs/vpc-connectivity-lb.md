@@ -4,8 +4,6 @@
 
 > 2026-11-04 网络合同更新：本文件中的网络状态、Ready/时效准入、Attachment 释放、SG 应用及 LB 生成物验收条款以[网络状态消费规格 v3](cr-observation.md)为准；方法/字段变更见[实施方案](../plans/network-management-simplification.md)。实际验证只见执行状态。
 
-2026-11-03 观察与准入增量以[持续观察规格 v2](cr-observation.md#4-事实时效与真实校验)为准：旧投影仅提示待确认，动作仍校验当前原身份及配置；采集失败保留最后确认结果；清理完成后的调度退休遵循该规格第 3 节。下文旧的统一 TTL 准入及持续墓碑轮询描述由该增量替代。
-
 初始日期：2026-09-14；后端合同更新：2026-10-30。状态：实现范围与实际验收分别见执行状态；用户已确认的约束见 [ADR-0005](../adr/0005-separate-vpc-connectivity-and-exclusive-eip-bindings.md)。本文定义目标行为，实施任务见[执行计划](../plans/vpc-connectivity-lb.md)，当前进度只看[执行状态](../execution/status.md)。历史实施结果保留各自时点；本次固定三规格、多监听器和 VPC 预设只改后端，未修改前端或共享平台预置。
 
 ## 1. 固定输入和变化范围
@@ -35,7 +33,7 @@ Network 实施基础为 `d8835a22d905e358b7f60756d3113baa97d7c762`（既有 EIP/
 |---|---|---|
 | Intranet / Public Address Pool、出口网关、必要的二层网络 | 平台管理员 | 管理员独立初始化，租户只消费能力 |
 | VPC | 租户 | 创建同时编排基础内网连接；删除时清理系统子资源 |
-| 基础 Intranet EIP/SNAT | 系统，资源归属仍为对应租户 | 随 VPC 创建、观察、修复、释放；不提供租户独立解绑 |
+| 基础 Intranet EIP/SNAT | 系统，资源归属仍为对应租户 | 随 VPC 管理意图创建、观察和释放；不提供租户独立解绑 |
 | Public EIP | 租户 | 默认从平台 Public 池申请；未绑定时可保留或释放 |
 | Public VPC SNAT Binding | 租户 | 将独立 Public EIP 用于整个 VPC 出站；可启停/解绑 |
 | LoadBalancer | 租户 | 属于单一 VPC/Subnet；可有私网入口、公网入口或两者 |
@@ -47,82 +45,46 @@ Network 实施基础为 `d8835a22d905e358b7f60756d3113baa97d7c762`（既有 EIP/
 2. 一个 EIP 同时只有一个有效目标：`vpc_snat` 或 `load_balancer`，从受理预留开始即排他。目标修改必须先完成解绑；不得两份资源各自声明唯一却一起占用。
 3. Intranet EIP 是 system-managed，只能用于本 VPC 的基础 SNAT；Public EIP 可以用于 Public SNAT 或一个有公网入口的 LB。地址池类型、管理归属与用途必须匹配。
 4. 申请租户 EIP API 默认且只申请 Public；基础地址不混入租户公网 EIP 列表，猜测内部 ID 也不能 GET/启停/解绑/删除它。VPC 只读显示 `base_connectivity` 摘要，管理员诊断视图可查基础资源。
-5. 纯私网 LB 不占用 Public EIP；三种 LB 均独立校验 VPC/Subnet 自身 Provider 就绪，不依赖基础 Intranet EIP/SNAT，也不以受基础故障影响的 VPC 聚合 available 作为准入。创建公网 LB 不要求该 VPC 已有 Public SNAT。
+5. 纯私网 LB 不占用 Public EIP；三种 LB 均校验 VPC/Subnet 的产品归属、引用和管理状态，不依赖基础 Intranet EIP/SNAT，也不以受基础故障影响的 VPC 聚合 available 作为准入。创建公网 LB 不要求该 VPC 已有 Public SNAT。
 6. Public SNAT 关闭、解绑、换绑只作用于公网绑定，Intranet EIP/Snat 的身份、地址和期望保持不变。删除 LB 不解绑 VPC 的任一 SNAT。
 7. 跨租户绑定统一按不存在处理；所有关系验证 tenant、cluster、namespace、产品 ID、Provider 名称及 UID。Provider 命名用稳定产品 ID，不使用租户显示名。
-8. 资源状态、当前配置应用状态与数据面探测证据分开。`available` 表示本节后续定义的配置完成条件，不能独自证明所有流量健康；观测过期明确显示 unknown/stale。
+8. 资源状态、当前配置应用状态与数据面探测证据分开。`available` 表示本节后续定义的配置完成条件，不能独自证明所有流量健康；读取错误单独显示，旧观察时间不构成准入或状态失效。
 
 ## 3. 平台初始化流程
 
-管理员按环境准备所需二层网络、Public EIPGateway/Public Pool、Intranet Pool、`intranetNetworks` 和 LB 运行组件。Overlay 无 `underlayConfig`，不强制创建 VLAN；Underlay 需物理网卡、VLAN、上游网关和单独验收。保留既有网卡接管保护和 Public 池资源就绪检查；公有网络不再以手工出网证据作为准入条件，详见 [Public 分配规则](vpc-snat.md#44-出口验收开放分配和默认池)。
+管理员准备所需二层网络、Public EIPGateway/池、Intranet 池与 LB 组件。Res 维护其平台产品配置、原身份、分配/默认开关及引用；物理接口和外部路由按实际部署支持条件准备，不建立网卡库存、自动接管审批或运行期镜像/拓扑证明。
 
-安装器已经将物理口加入 `managedDevices` 并由 kc 接管时，应核验并登记该现成设备，再创建二层网络；不能将“已接管”本身判作环境阻塞。空闲接管与已有设备登记共用管理员接口，身份、并发与退役规则统一见[Public 方案 4.1](vpc-snat.md#41-underlay-的网卡发现与二层网络)。现场连通性和完整产品 API 数据面仍分别验证。
+GetIntranetPoolDefaults 只在显式管理员请求中读取默认 VPC 已公开身份，intranet_networks 是可选管理员记录。SetIntranetPoolAutoAllocationEnabled 按池版本/幂等原子设置默认源、开放分配及新 VPC 自动分配开关；关闭/切换只作用后续首次受理，不迁移既有原身份。人工 verification 只是材料存档。
 
-BOSS 通过 `GetIntranetPoolDefaults` 读取并带入实际默认 VPC 身份和 `intranetNetworks`，管理员不手工填写 Provider UID。`SetIntranetPoolAutoAllocationEnabled` 使用池版本与幂等键，原子设置默认 Intranet 池、开放池分配及新 VPC 自动分配开关；关闭只影响未来 VPC，切换默认源不迁移已有资源。人工 Intranet verification 是可选诊断记录，不是分配门禁；Provider UID、Ready、当前代次、路由覆盖、观测时效与地址冲突检查仍保留。Intranet 池只读 `new_vpcs_enabled` 表示它是否是当前启用的默认自动分配源。
-
-每个部署集群分别配置默认 Intranet 池和默认 Public 池，池的 scope 创建后不可变。默认池选择只影响后续新申请，已受理操作持久固定池 ID、配置版本和 Provider placement；重试不能改选新默认池。关闭新分配不删除或解绑已有地址。
-
-Intranet Pool 映射为平台 namespace 的 `Subnet(type: Intranet)`，显式识别默认 VPC 网关，不能创建 scope Public 的 EIPGateway 来假冒。平台负责内网目标网段（含实际 DNS/xDS/Service 目标所需范围）的配置和验证，租户请求不得修改集群路由范围。Public 池沿用现有 Overlay/Underlay 与网关配置。
-
-平台暴露三个独立能力摘要：`base_connectivity_ready`、`public_address_ready`、`load_balancer_ready`。前者失败影响新 VPC 基础连接，Public 失败不阻止纯私网场景；LB 组件未就绪不应阻止没有 LB 的 VPC 创建。既有能力的健康、证据时效、新分配开关分别记录，不合并成一个含糊的“网络正常”开关。
-
-LB 使用 GatewayNamespace、Backend API、所需 RBAC/TokenReview 和固定镜像来源。平台先准备公共 `lb-common` GatewayClass 及其引用的 `envoy-gateway-system/lb-common` EnvoyProxy；公共对象缺失或冲突时明确阻塞，由平台配置，不由单 LB worker 补装或覆盖。规格由平台目录映射，租户传 `flavor`，不能传任意 GatewayClass、镜像、patch、Kubernetes annotation。每个运行中的 LB 拥有专属 EnvoyProxy，按下表下发容量和 Service 类型，并继承公共配置；dynamic 不开放。
+Public 与 Intranet 保持独立 scope/默认池，EIP 固定接受时的目的池。LB 使用已配置公共 lb-common Class/Proxy 和自己专属的声明对象；安装缺项由部署方处理，worker 不补装或覆盖公共组件。运行管理不重复检查固定镜像、安装 fingerprint、节点健康或观测年龄；显式安装/流量诊断另行记录。
 
 ## 4. 租户 VPC 流程调整
 
 ### 4.1 首次受理与分步创建
 
-CreateVPC 的租户输入保持名称/CIDR/描述/幂等键，不让用户选择基础 EIP 或 SNAT。单次受理事务保存 VPC、create operation、稳定的基础 EIP/SNAT 子资源 ID、固定 Intranet 池版本、Provider placement、关系和待执行工作；外部 Kubernetes 调用在事务外进行。
+用户提交名称、CIDR、描述和幂等键，不选择内部基础 EIP/SNAT。受理保存 VPC 意图、operation、固定产品身份和适用自动分配配置；本地事务与 Kubernetes 声明分开。
 
-按以下顺序推进：
-
-```text
-受理并持久化意图
-  → 创建/确认 VPC CR 身份及 Provider Ready
-  → 从固定 Intranet 池分配基础 EIP
-  → 为该 VPC 创建 Intranet Snat
-  → 同时核对 Snat 与 EIP 的身份、代次和实际绑定
-  → VPC 基础连接就绪，create_vpc operation 成功
-```
-
-关键：内部基础 SNAT 只依赖 `VPC Provider Ready + 稳定 UID`，**不能调用要求 VPC 产品 available 的公开 Public BindSnat 流程**。VPC 聚合 available 又依赖基础 SNAT，如果不分层会永久互相等待。
-
-基础子资源使用内部持久步骤/子资源工作记录，只有 VPC 创建 operation 对外代表本次整体请求。每步具有稳定身份、pending mutation、lease/fence、重试和结果归因；不靠串行 RPC 请求栈保存进度，也不创建跨数据库事务。
+VPC 运行结果来自它自己的原生 Ready。自动基础出口按已受理配置管理自己固定的 EIP/SNAT 子产品步骤，不把 EIP 地址、SNAT 绑定、父 Ready、时效或物理路由合成为第二套 VPC Ready。内部步骤不调用要求 VPC 聚合状态的旧 Public 绑定路径，避免循环等待。
 
 ### 4.2 就绪与持续观察
 
-新 VPC 创建完成同时满足：VPC 同 UID/期望 spec、当前代次 Ready；基础 EIP 池/地址/UID 正确；Snat 与 EIP 双向绑定正确、期望代次应用、启用状态正确；观察新鲜；无未知外部变更。Provider `Snat.spec.vpc` 写短名；EIP `status.boundResource.vpc` 核对 `namespace/name`。
+VPC 当前状态、历史 create operation 和 base_connectivity 摘要分别表达。基础摘要使用自己原 EIP/SNAT 的公开结果，不覆盖 VPC 的 Ready 或改写已结束 operation。
 
-只读响应新增 `base_connectivity: {state, reason, observed_at, observation_stale}`，不暴露可由租户修改的内部 EIP/SNAT ID。已有 VPC 状态机继续使用 provisioning/available/degraded/deleting/deleted/failed；基础连接失败使新 VPC 保持 provisioning/明确 operation 原因，已完成 VPC 的依赖后来失效则 degraded。恢复只更新当前状态，不能重写历史成功 operation。
-
-受理时默认 Intranet 池不存在/不开放/状态过期，返回明确 `BASE_CONNECTIVITY_NOT_READY`；受理后池耗尽、绑定暂时失败保持原 ID 和操作，提供具体 reason。已分配地址但请求结果未知时不能改名/切池再次申请。
+首次受理校验实际自动分配开关、默认源、产品引用和配置；关闭只影响新请求，原键回执优先。读错保留最后成功状态/输出/时间，任务记录错误重试；结果未知时保留原池、名称和原意图，不换名、切池或伪造地址。
 
 ### 4.3 删除与创建失败终止
 
-删除准入先阻止用户所有的 Subnet/Attachment、Public SNAT、LB 等占用；基础 Intranet 子资源是本 VPC 的系统子资源，不能成为永远无法满足的“必须先由租户解绑”条件。
+VPC 删除仍受 Res 自己未释放的用户 Subnet/Attachment、Public 绑定和 LB 等产品引用保护。内部基础出口按自己的 SNAT→EIP 管理顺序正常删除，不要求租户解绑系统子产品，不等待 EIP boundResource/物理地址清场证明。
 
-进入删除后封闭新 Subnet/LB/Public 绑定受理，持久清理顺序：基础 Snat 删除并确认 → EIP boundResource 清空 → 释放基础 EIP并确认不存在 → 删除 VPC CR并确认不存在 → VPC deleted。任何步骤未知/失败保留占用和待执行工作。Public EIP 是独立租户资源，不因 VPC 删除级联释放。
-
-允许用户终止 failed/blocked/provisioning 的 VPC 创建，并复用此删除编排；终止意图与创建结果落库受同一资源锁和 fence 保护。迟到创建结果仍需识别并清理，不能释放 pending-create 身份后宣告无残留。
-
-清理必须区分步骤发送状态：有持久证据确认从未发送 Provider POST 的基础子资源，可直接取消该步骤并退休其意图，不要求先取得不存在的父/子 UID；已发送、待响应或发送状态不明的步骤保留身份并核验清理。测试须覆盖“VPC 尚未产生任何 CR 即终止”，不能机械调用要求父 UID 的删除 adapter 导致永久阻塞。
+原 VPC 声明消失可结束该原对象删除；子产品的完成事务继续推进各自责任，不因根对象消失丢弃身份或步骤。对确定未发送的步骤按本服务事务取消；未知创建沿原意图和确定名称恢复，不能清空责任或批量标完成。具体边界只见[状态消费合同](cr-observation.md)。
 
 ## 5. Public EIP 与 VPC 公网出站调整
 
-保留已有“申请 EIP → 分配 → 绑定 Public SNAT → 停用/启用 → 解绑 → 可选释放 EIP”的用户操作顺序。以下是必须修改的部分：
+租户接口只申请和操作 Public EIP/绑定，不暴露系统基础出口为可自由解绑资源。每 VPC 内网/公网用途分别限制一个当前 SNAT；EIP 从预留开始独占一个 vpc_snat 或 load_balancer 产品目标，SNAT 与 LB 共用占用事务。
 
-- 原租户 EIP 查询/申请保持 Public 语义；基础 Intranet 地址使用系统用例，不允许租户伪造 scope 或 managed_by。
-- 原按 VPC GetSnat/Bind/Toggle/Unbind API 明确只操作 **Public** SNAT，查询与唯一性都加用途，不返回任意一条未删除的 SNAT。
-- 绑定事务同时预留 `(tenant, vpc, public)` 位置和 EIP 的唯一目标位置，LB 与 SNAT 必须走同一套地址占用事务。
-- 绑定/再启用只要求 VPC 自身具有新鲜、同 UID、当前 Provider spec 代次已应用的 Provider Ready 证据，无未决 Provider 写，且 VPC 未删除/失败；不要求基础 Intranet EIP/SNAT 存在或就绪，也不读取受基础故障影响的 VPC 聚合 available 作为门禁。Public EIP、池、网关和必要二层网络继续独立检查。迁移 0024 将 VPC Provider 证据保存于原绑定，先于基础聚合落库；历史行初始 unknown，须经真实观察补齐，不从聚合状态回填 Ready。
-- 停用保留 Public EIP 和绑定占用；解绑确认 Snat 消失且 EIP 无绑定后才释放 claim；释放 EIP 要同时检查产品和 Provider 的 SNAT/LB/外来绑定。
-- EIP 响应增加 `binding_target: {kind, id, state, vpc_id}`，区分 `vpc_snat` 与 `load_balancer`。旧 `binding_id` 保持“SNAT ID”语义：SNAT 目标时返回其 ID，LB 目标时为空；旧 `binding_state` 从统一 claim 投影为 unbound/reserved/bound，LB 占用时绝不能返回 unbound。新客户端必须根据 binding_state/target 判断占用，不能根据空旧 ID 判断地址可用；完成相关客户端适配是开放 LB 绑定的门槛。字段移除另行版本升级。
+受理绑定/启用检查租户、placement、当前产品管理状态、配置、引用与唯一占用，不依赖基础 Intranet、VPC 聚合 available、Provider Ready、观测年龄或内部关系证明。停用保留 EIP 和绑定；解绑结束自己的原 Snat 后释放管理引用，EIP 本体保留。
 
-VPC Get/List 的 `public_egress` 从同一 SQL 查询快照中联结 public SNAT、Public EIP 和有效 claim，包含 `binding_id/eip_id/eip_address/binding_state/state/reason/reason_message/desired_enabled/applied_enabled/observed_at/observation_stale/version/last_operation_id`。无有效 public 关联才缺省；停用或观测过期仍保留占用，过期时不返回 `applied_enabled`。EIP 的 `binding_target.vpc_id` 同样经保持 tenant 的 SNAT/LB 关联取得，原 `id` 不改变身份含义。列表不得逐行 RPC 或 Kubernetes 查询补齐。
-
-CreateEIP 可提供 `security_group_ids`，校验同租户、同 placement、组可用及组合规则后，与 EIP、初始配置、引用和持久操作在同一事务受理；任何失败都不留下部分 EIP，也不会先创建地址再调用第二次绑定。空集合保留原指纹；非空选择按集合规范化并参与永久幂等。更换继续使用既有 SetEIPSecurityGroups 的独立配置版本。
-
-同 VPC 内网与公网路由按实际 `intranetNetworks` 和 Public 默认出口分别生效。验收必须测试 Public 启停/解绑前后内网路径和私网 LB 不变；公网访问声明仍需独立真实请求和源地址证据。
+EIP 查询、默认池与分配开关按[Public/SNAT 合同](vpc-snat.md)处理。原 EIP 地址/状态由该对象公开结果登记；不为修内部失败直接改 OVN、重启 controller 或追删生成物。
 
 ## 6. 新增租户 LB 生命周期
 
@@ -133,7 +95,7 @@ LB 归属于一个租户/VPC/Subnet，包含 1～64 个 HTTP/HTTPS/TCP/UDP/SSL L
 | 字段 | 规则 |
 |---|---|
 | name、description、idempotency_key | 沿用现有校验与持久重放规则 |
-| vpc_id、subnet_id | 同 tenant/cluster/namespace，Subnet 属于 VPC；激活时校验 VPC/Subnet 自身 Provider 新鲜、UID 和当前代次，不要求基础 Intranet EIP/SNAT |
+| vpc_id、subnet_id | 同 tenant/cluster/namespace，Subnet 属于 VPC；保留当前管理引用和身份，不追加 Provider Ready/时效或基础 Intranet EIP/SNAT 前置 |
 | exposure | `private` / `public` / `public_private`，创建后一期不可改 |
 | flavor | 固定 small/medium/large；空值兼容 small，未知值拒绝，不能直接传 Class 名 |
 | public_eip_id | public/public_private 必填，private 禁止；已分配且未占用的本租户 Public EIP |
@@ -149,11 +111,11 @@ LB 归属于一个租户/VPC/Subnet，包含 1～64 个 HTTP/HTTPS/TCP/UDP/SSL L
 | gzip_enabled | HTTP/HTTPS 开启 Gzip；false 清除 compressor |
 | https_redirect_status_code | HTTP 的 301/302，0 关闭；与 backends 互斥，HTTPS 目标优先 443，否则必须唯一，重定向包含目标端口 |
 
-Backend 地址的归属校验结合已持久化 Attachment 与 Provider VNicIP/UID 事实，不仅用 CIDR 判断业务归属。Network 不创建或删除业务 Pod/VM；实例 owner 返回的接入信息用于地址确认。后端删除/地址变化触发成员退化与配置更新，固定 IP 成员不会静默转发到复用同一 IP 的另一身份。需要未纳管静态后端时另行定义管理员准入，不默认为任意 IP 放行。
+Backend 地址的业务归属使用 Res 已持久化的当前消费者/Attachment 与地址映射，不仅按 CIDR 判断，也不反向读取 VNicIP/控制器链补证。Network 不创建或删除业务 Pod/VM；实例 owner 返回的接入信息用于地址确认。后端删除/地址变化触发成员退化与配置更新，固定 IP 成员不会静默转发到复用同一 IP 的另一身份。需要未纳管静态后端时另行定义管理员准入，不默认为任意 IP 放行。
 
-持续观察校验 Attachment 时，以读取该记录后的数据库时间判断新鲜度。LB 领取任务后、等待 Provider 审计期间完成的正常 Attachment 续报不能被误判为未来时间；实际未来、过期或缺失的观察仍拒绝。此时效判断不替代 Pod/VNic/VNicIP 的 UID、owner 链、Subnet/namespace 身份与审计 fence 校验。
+LB 的成员依据当前产品消费者身份、地址映射与业务引用处理；消费者读取错误不当作空集合，已退出或身份更换不得静默转发到复用同一 IP 的新资源。没有 TTL、provider audit 或反向 owner/网卡链。
 
-一期指定私网 VIP，由 kc IPAM 做最终冲突与预留。Network 先在本 VPC 范围保留地址意图，防止自身并发重复申请；不以自己的表替代 kc 对 Pod/VNicIP 等全部分配的权威。自动 VIP 分配不是本轮前置，可在确认 kc 契约后独立增加。
+私网 VIP 是 Res 本 VPC 的地址意图和唯一占用；实际分配由 KCN 负责。用户不能指定任意平台/节点/跨租户地址，也不由本地表重新竞争原生 IPAM。
 
 ### 6.2 Provider 映射
 
@@ -163,7 +125,7 @@ Backend 地址的归属校验结合已持久化 Attachment 与 Provider VNicIP/U
 | public | lb-common | disable | Public EIP CR短名 | LoadBalancer |
 | public_private | lb-common | 指定 VIP | Public EIP CR短名 | LoadBalancer |
 
-固定规格、安装能力检查与数据面观察共用同一份常量：
+固定规格的声明参数使用以下常量；运行时不复核生成数据面规格：
 
 | flavor | 副本 | 每副本 requests | 每副本 limits |
 | --- | ---: | --- | --- |
@@ -171,13 +133,13 @@ Backend 地址的归属校验结合已持久化 Attachment 与 Provider VNicIP/U
 | medium | 4 | 2 CPU / 2Gi | 4 CPU / 4Gi |
 | large | 6 | 4 CPU / 4Gi | 8 CPU / 8Gi |
 
-Gateway `spec.infrastructure.annotations` 的 `lb_vpc`/`subnet` 使用 namespace/name，`spec.gatewayClassName` 固定为 `lb-common`，`spec.infrastructure.parametersRef` 引用同 namespace 的专属 EnvoyProxy。专属 Proxy 显式填写 `mergeType: StrategicMerge`、副本、Envoy 容器 requests/limits 和 Service 类型；公共 Proxy 提供镜像、调度、`preserveRouteOrder: true`、`mergeGateways: false`、Deployment patch 及 telemetry/bootstrap，不设置容量或 Service 类型。继承后仍核验实际 Deployment/Pod/Service，而不是只看专属 Proxy 内容。
+Gateway `spec.infrastructure.annotations` 的 `lb_vpc`/`subnet` 使用 namespace/name，`spec.gatewayClassName` 固定为 `lb-common`，`spec.infrastructure.parametersRef` 引用同 namespace 的专属 EnvoyProxy。专属 Proxy 显式填写 `mergeType: StrategicMerge`、副本、Envoy 容器 requests/limits 和 Service 类型；公共 Proxy 提供镜像、调度、`preserveRouteOrder: true`、`mergeGateways: false`、Deployment patch 及 telemetry/bootstrap，不设置容量或 Service 类型。运行时完成以自己声明的原生配置结果为准；生成 Deployment/Pod/Service 的安装或故障诊断由显式运维处理。
 
 专属 EnvoyProxy、Gateway、各协议 Route、Backend、BackendTrafficPolicy 及所需 ClientTrafficPolicy/EnvoyPatchPolicy 放在固定租户 namespace；GatewayNamespace 模式由 Envoy Gateway 在同 namespace 生成 Service/Deployment/Pod。Network 只写自己拥有的专属 Proxy/Gateway/Route/Backend/Policy，不直接成为生成 Service/Deployment 的第二个 spec 写入者。专属 Proxy 使用现有 LB component、租约、pending mutation 和未知创建屏障；写权限限定租户 namespace，公共 Class/Proxy 只读。已存在的旧规格 Class 不自动切换，涉及旧运行实例时先核验身份并执行受控迁移。
 
 监听参数随配置版本持久化，旧行参数默认为空对象，旧回执与 fingerprint 不重写。健康端口缺失/0 时省略 `overrides.port`，非零独立端口显式写入；不再要求与后端端口相同或 timeout 小于 interval。
 
-| 协议/参数 | 生成对象及字段 |
+| 协议/参数 | 本服务声明对象及字段 |
 |---|---|
 | HTTP / HTTPS | Gateway HTTP / HTTPS（TLS Terminate）+ HTTPRoute |
 | TCP / UDP / SSL | Gateway TCP / UDP / TLS（TLS Terminate）+ TCPRoute / UDPRoute / TCPRoute |
@@ -187,64 +149,38 @@ Gateway `spec.infrastructure.annotations` 的 `lb_vpc`/`subnet` 使用 namespace
 | 最大连接数 | ClientTrafficPolicy 指向 Gateway 与 listener sectionName，`connection.connectionLimit.value` |
 | Gzip / HTTPS 重定向 | BackendTrafficPolicy compressor / HTTPRoute RequestRedirect，无 backendRefs |
 
-HTTPRoute rule 名固定 `default-rule`，HTTP BackendTrafficPolicy 的 sectionName 指向该 rule；Gateway parentRef 与 ClientTrafficPolicy 的 sectionName 指向 listener name。TCP/UDP policy 不填写不存在的 Route rule sectionName。每个 listener 继续拥有独立 Route/Policy 组件，协议切换与关闭参数只清理对应自有组件。生成 Service/Deployment 的归属仍通过 Gateway UID/owner 链核对，不直接写这些对象。
+HTTPRoute rule 名固定 `default-rule`，HTTP BackendTrafficPolicy 的 sectionName 指向该 rule；Gateway parentRef 与 ClientTrafficPolicy 的 sectionName 指向 listener name。TCP/UDP policy 不填写不存在的 Route rule sectionName。每个 listener 继续拥有独立 Route/Policy 组件，协议切换与关闭参数只清理对应自有组件。生成 Service/Deployment 由底层组件管理，Res 不沿 Gateway owner 链重新证明其归属或完成，不直接写这些对象。
 
 最大连接数是 Envoy 每 Pod 的限制，不是全局协调额度。ClientTrafficPolicy 只写所需 connectionLimit，保留平台已有可信代理/clientIPDetection 以及 HTTP2/WebSocket 默认行为。TLS 引用需要资源绑定 namespace 内对选定 Secret 的 `get` 权限，可通过带 resourceNames 的 Role/RoleBinding 授予，不扩大为全局 Secret list/watch。UDP 健康策略要求底层开启 `extensionApis.enableEnvoyPatchPolicy`；缺失时保留失败/未就绪证据，由底层处理，应用不更改安装配置。
 
 
-本次 Fedora 具名验证：`TestLBMultipleListenersMainFlow`、`TestLBListenerParametersMainFlow`，以及两仓 `TestNetworkJointHTTP/multiple_listeners` 均通过。测试使用真实 admission、PostgreSQL、Worker、RPC/HTTP/auth；Kubernetes/控制器边界为 fixture。未运行全量测试。真实集群/数据面验收仍为 `not_verified`，不以 fixture Accepted/Programmed 代替。
+历史实现记录中的 Fedora 具名验证：`TestLBMultipleListenersMainFlow`、`TestLBListenerParametersMainFlow`，以及两仓 `TestNetworkJointHTTP/multiple_listeners` 均通过。测试使用真实 admission、PostgreSQL、Worker、RPC/HTTP/auth；Kubernetes/控制器边界为 fixture。未运行全量测试。真实集群/数据面验收仍为 `not_verified`，不以 fixture Accepted/Programmed 代替。
 
 ### 6.3 创建事务和执行顺序
 
-同一事务锁定父 VPC/Subnet、必要的 EIP，确认均未删除/封闭，保存 LB 及其配置版本、稳定成员/Listener ID、operation、Provider bindings、EIP claim 和私网地址意图。LB 一旦受理即占用父资源，不能等 Gateway Ready 后才补占用。
+受理在同一管理事务保存 LB、完整监听配置、后端引用、地址意图、EIP claim、operation/幂等与确定声明名称。空后端的保存和运行投影按[延迟激活合同](lb-deferred-activation.md)分别办理，不凭 API 接受声明流量已健康。
 
-Backend Member 引用同VPC内其他Subnet时，也登记该Subnet的网络引用占用；删除该Subnet前先移除相关成员或LB并确认配置释放，不能只保护LB入口所在Subnet。成员关系不取得业务实例生命周期所有权，实例owner仍可删除业务实例，Network观察后标记成员不可用。
-
-worker 按稳定依赖推进 Backend → Gateway → 各协议 Route/Policy，观察控制器生成的数据面和 kc VIP/EIP 绑定。独立步骤重试不能重新申请另一个 Public EIP或另一个 VIP，不能留下未登记 CR。
-
-LB 配置完成需：专属 Proxy 及其它自有 CR 身份与期望一致，Gateway Accepted/Programmed，Route Accepted/ResolvedRefs，Policy Accepted且代次匹配；数据面存在并关联正确；Service 类型、端口、EndpointSlice、VIP分配或Public EIP绑定符合 exposure；EIP claim 目标和 Provider实际 Service一致；VPC/Subnet 原身份与当前配置的 Provider 证据，无未决写入。基础 Intranet EIP/SNAT 缺失、故障或引起 VPC 聚合 degraded 均不构成 LB 故障。公共配置关闭数据面探针，Running 不证明监听器真正加载，因此响应还需分别记录 `configuration_state`、`data_plane_state`、`observed_at`，无实际健康来源时 data_plane_state=unknown。
-
-产品创建 operation 成功表达“配置已完成”；Console 文案显示“已配置”，不得将无健康证据的情况显示成“流量健康”。部署/功能验收必须额外从正确来源实际访问各入口并断言业务响应。后续具备受控主动探测/Envoy运行观测源时可提高 data_plane_state 的证据等级，但不默认开放 Envoy admin 接口或把日志无报错作为证明。
+Worker 只声明自己拥有的专属 EnvoyProxy、Gateway、Backend、Route 和 Policy。原生 Gateway/listener/controller 的 Accepted/Programmed、Route/Policy 的对应条件及本次配置 observedGeneration 按对象合同消费；EnvoyProxy 没有 Ready 合同，声明提交即完成该步骤。生成 Service/Deployment/Pod/EndpointSlice、地址分配或健康探针不作为配置合取。
 
 ### 6.4 更新与删除
 
-本批允许更新名称/描述、增删监听器、修改监听端口和各监听器的后端/健康检查；沿用 expected_version + 幂等键、desired/applied 配置版本和同一 LB 的 lease。新更新使用 `{data:{...},update_mask:...}`；监听器集合遗漏时保持原值，提供时整体替换，空集合拒绝。保留的监听器 ID/name 稳定；协议及适用参数可以更新，VPC、Subnet、exposure、Public EIP、VIP、flavor 保持不可变。更新部分完成/响应未知不得抹掉旧 applied 状态，退化和失败原因可查询。
+desired_version/provider_target_version/applied_version 分别表达保存、确定下发目标和本次原生配置回执；不能混用，也不由后续观察改写历史 operation。成员和后端引用按当前意图及已声明组件保护，少量失败保留原配置、身份与恢复责任。
 
-监听器变更使用 Gateway UID/resourceVersion CAS，只允许 listener 集合和对应版本标记变化；Class、placement、VIP/EIP 等不可变条件继续核对。新增先准备后端，再更新 Gateway、Route/Policy 并确认观察。移除先撤转发和 Route/Policy，确认 Gateway/Service 对应端口已撤除后，才能释放不再被任何监听器引用的 Backend 和子网占用。不能删除整个 Gateway 来删除一个监听器。
-
-全部目标监听器、Route/Policy 和完整 Service/EndpointSlice 端口集合均确认后才推进 applied_version。Service 的 targetPort 可以不同于监听端口，按实际 Envoy Pod 端口解析并核对 EndpointSlice。单个后端身份失效仅撤除引用它的监听器转发；部分应用保持旧 applied_version。追加迁移 0009/0010 保留旧 listener/component ID、CR 名称/UID、旧 fingerprint 和受理回执，关系继续使用 tenant/placement 复合外键。
-
-删除受理后封闭新更新，先撤除 Route/Policy，再删除 Gateway并观察其生成 Service/Deployment/Pod/EndpointSlice 及地址绑定释放，随后清理专属 EnvoyProxy 和自有 Backend。公共 GatewayClass/EnvoyProxy 保留。仅在实际 Service消失、Public EIP解绑、VIP kc预留释放已确认后，释放 EIP claim、VIP意图和父资源占用并标记 deleted。Public EIP 保留供租户继续使用；基础 Intranet SNAT和业务后端都保留。
-
-删除期间重启 worker、Provider 迟到响应和 finalizer 卡住均进入持久恢复；不强删 finalizer、不清数据库伪造完成。仅自有 Backend由LB删除，业务实例通过既有 owner生命周期间接影响成员状态。
+删除按 Route/Policy → 原 Gateway → Backend/专属 EnvoyProxy 的声明顺序推进，逐个正常删除原 UID；未知请求继续认回原尝试。自己的组件退出和 pending/引用责任完成后释放 EIP/VIP/父产品占用，不等待生成对象、物理 VIP 或 EIP 解绑证明。公共 Class/Proxy、独立 EIP、本业务后端及 VPC 基础出口保留。
 
 ## 7. 持久化、并发与观察
 
 ### 7.1 目标数据变化
 
-这是目标模型，具体 SQL在任务实现时落地；历史 `0005` 不修改，使用新 migration。
+LB 保存配置、产品引用、三类版本、稳定 binding/component 名和原 UID、lease/epoch、操作与幂等。退休 binding 保留原声明身份与删除记录，不代表物理地址回收证明。data_plane_state 保留原字段号并返回 UNKNOWN，data_plane_observed_at 为空。
 
-| 结构 | 必须表达的规则 |
-|---|---|
-| 平台地址池 | 在现有 Public 池基础上演进为有 `scope=intranet/public` 的地址池，分别默认池；保持旧 ID、版本、Public字段及权限语义；按 scope 检查不同网关/模式字段 |
-| EIP | scope、managed_by=system/tenant、固定池/版本、可选 system_owner_vpc；scope与池匹配；system资源不可进入租户Public操作面 |
-| SNAT binding | purpose=intranet/public，唯一 `(tenant_id,vpc_id,purpose)`（未deleted）；EIP scope与purpose匹配，保留启停/占用 |
-| EIP claim | 全部 SNAT/LB 共用；未释放 `(tenant_id,eip_id)` 唯一，target_kind与snat_id/lb_id严格一一对应；已存在Public绑定迁移为claim |
-| VPC 基础连接 | 固定子资源ID、池版本、依赖步骤、desired/applied状态、version、reason、观察时效与终止意图 |
-| LB、Listener、Backend Member、配置版本 | tenant/vpc/subnet归属、稳定身份、期望配置和applied版本；版本化 Listener 集合及独立成员关系；不把任意YAML当权威产品记录 |
-| VIP意图与父占用 | `(tenant_id,cluster_id,vpc_id,address)` 未释放唯一；Subnet/VPC删除与受理使用共同锁/占用判断；kc依然负责最终地址分配 |
-
-所有租户关系继续显式 tenant_id、租户限定查询与保持 tenant/cluster/namespace 的复合 FK。EIP claim 不能仅保存无法建立外键的自由字符串 target；可用可空 typedFK 加 num_nonnulls=1、target_kind校验。平台配置不用伪造租户。
-
-固定锁顺序以现有 VPC→Subnet 为基础扩展：父 VPC → 相关 Subnet → 按 ID 排序的 EIP → 绑定/claim/LB → operation；无父VPC的EIP申请使用池自身事务，不在持有EIP锁时反向等待VPC。纯读查询和Informer回调不持锁执行Kubernetes操作。不同绑定目标竞争同一EIP由数据库唯一性兜底，错误映射为稳定的EIP_IN_USE。
+实际表和约束以[迁移源码](../../migrations)与当前 queries 为准，不恢复 generated_resources 表、absence/occupied proof 修订、安装 fingerprint 或其他已由 0032 删除的证明字段。历史回执、旧字段号和必要 checkpoint 按确定方案保留。
 
 ### 7.2 观察与恢复
 
-沿用共享Informer、关系索引、PostgreSQL持久唤醒与定期核验；LB 依赖 VPC/Subnet 自身 Provider、公共 LB 配置以及其选择的 Public EIP，基础 Intranet EIP/SNAT 不作为 LB 前置。专属 EnvoyProxy/Gateway/Route/Backend/Policy→LB，生成Service/Deployment/EndpointSlice→LB与EIP claim。仅增加GVR不构成生命周期闭环。
+普通 informer 将精确对象通知到已登记任务，执行者读取自己的声明；不订阅生成工作负载做完整性证明。Finish 保留 tenant/version/lease/epoch 和通知代次，稳定任务停放，读错保留并退避，管理终态退休。通知与启动恢复不反向发现新的产品对象。
 
-合法预期 LB Service占用应由新adapter核对并接受；其他Service/Nat/Snat仍是冲突。旧逻辑“看到任何Service引用EIP都冲突”必须替换。删除事件、UID替换、LIST/WATCH过期、重启relist和无CR的待创建意图均纳入恢复。
-
-无论SNAT还是LB，未知Provider创建/删除结果保留claim、地址意图、父占用和pending_action。不得超时释放后让另一目标抢占，不得由每个worker建立独立的“私有EIP占用表”。
+未知 CREATE/DELETE 继续原 binding/component 名、UID 与意图，不换名猜测完成，不提前释放产品占用。后端业务归属通过公开窄端口和持久管理数据确认，不跨域写计算表或接管 Pod。
 
 ## 8. 存量升级与契约接入
 
@@ -258,37 +194,37 @@ LB 配置完成需：专属 Proxy 及其它自有 CR 身份与期望一致，Gat
 
 数据库升级不自动批量写集群。先生成可审核的VPC补齐清单和固定默认Intranet池版本，再通过独立的系统 `ensure_vpc_base_connectivity` 持久操作逐个推进，幂等、限速、可暂停和恢复；不复用或重写历史create_vpc成功operation。
 
-旧VPC在补齐前返回基础连接 missing/unknown，旧同VPC工作负载保持；不因数据库加字段删除、重建或自动停用旧资源。补齐开关分别控制新建VPC路径和旧VPC的完成状态语义切换：新VPC从启用起使用聚合条件，旧VPC仍保留旧状态并显式显示base summary；新增 LB/Public 绑定独立校验 VPC 自身 Provider 证据，不依赖基础连接补齐。全部存量通过补齐及核验后，再启用统一聚合退化规则。这个有期限的升级阶段必须在执行状态中记账，不能形成长期双权威。
+旧 VPC 在补齐前返回基础连接 missing/unknown，既有工作负载保持；不因数据库加字段删除、重建或自动停用旧资源。补齐只完成本服务基础出口产品管理，不切换为聚合 Ready。VPC 直接采用自身原生 Ready，基础连接单独展示自己的 EIP/SNAT 状态；新增 LB/Public 绑定按归属、配置、引用与管理状态办理，不以补齐进度或父网络 Ready 为门槛。实际补齐范围和结果只在执行状态记账。
 
 删除/补齐/新绑定竞争通过同VPC封闭标记与锁串行；默认池切换不改已受理补齐意图。补齐失败保留已分配地址与步骤，用户可按既有删除流程终止。
 
 ### 8.3 ANI 接入与界面
 
-Network 定义并生成契约，ANI Gateway以可信租户上下文调用；不恢复Core的网络DB/worker/Provider写入。界面在VPC创建页不增加基础EIP输入，VPC详情显示基础连接摘要；公网EIP列表只显示tenant-managed Public地址及SNAT/LB绑定目标；绑定弹窗区分“VPC出站”和“LB入口”，过滤已有claim的EIP；LB表单按exposure显示VIP/EIP字段，提交后展示operation、配置状态和健康证据。
+Network 定义并生成契约，ANI Gateway以可信租户上下文调用；不恢复Core的网络DB/worker/Provider写入。界面在VPC创建页不增加基础EIP输入，VPC详情显示基础连接摘要；公网EIP列表只显示tenant-managed Public地址及SNAT/LB绑定目标；绑定弹窗区分“VPC出站”和“LB入口”，过滤已有claim的EIP；LB表单按exposure显示VIP/EIP字段，提交后展示 operation、配置状态和已读取的原生结果；端到端流量诊断另行记录。
 
 可信身份适配沿用既有服务边界，不能把未验证header当管理员权限。当前身份/配额/Core大规模重构各有独立任务，本方案只接入已有可用授权能力；未完成的部分在集成任务明确标记，不以临时dev身份冒充上线验收。
 
 ## 9. 验收要求
 
-| 编号 | 必须证明的行为 |
-|---|---|
-| U-V01 | 无默认Intranet池拒绝新建；有池时VPC→EIP→Snat完成且不会available循环等待 |
-| U-V02 | 三步各处崩溃/超时/迟到成功恢复，地址不重复分配、claim不提前释放；VPC尚未产生任何CR即终止可完成 |
-| U-V03 | 同VPC可同时有一个Intranet和一个Public SNAT；第二个同用途拒绝；猜system EIP ID不能操作 |
-| U-V04 | 同一EIP并发绑定SNAT/LB，仅一个受理；跨租户/同名异UID/错误namespace均拒绝 |
-| U-V05 | Public申请/启停/解绑/释放期间Intranet身份和内网流量不变；Public真实出站和源地址单独验证 |
-| U-V06 | private/public/public_private真实入口请求到两个后端；Public从VPC外请求，不能仅NodePort/port-forward |
-| U-V07 | LB生成资源正确归属，Service占用被合法识别；外来Service占用仍阻止绑定/释放 |
-| U-V08 | LB更新版本与部分失败可恢复；业务后端消失或IP身份变化不静默转发错误目标 |
-| U-V09 | 删除LB释放EIP绑定但保留EIP；删除VPC自动清理基础资源，用户资源依赖仍阻止删除 |
-| U-V10 | 旧Public记录和幂等重放不漂移；补齐不中断旧业务、不会收养手工CR、与删除竞争安全 |
-| U-V11 | Informer重启/断流/过期/UID替换触发正确退化与恢复，Get/List不承担修复 |
-| U-V12 | API/Console正确区分配置完成与流量健康；缺少证据显示unknown，三类型表单校验正确 |
+| 编号 | 应验证行为 |
+| --- | --- |
+| U-V01 | 平台/Public/Intranet 范围、真实配置、默认源与分配开关，不伪造 tenant |
+| U-V02 | 一个 EIP 的唯一产品目标及 VPC 内网/公网各自约束，并发不双占 |
+| U-V03 | VPC、基础摘要及历史 operation 分开；读错保留，不拼父子 Ready |
+| U-V04 | 不同默认源/开关变更仅影响后续首次受理，原键和既有身份不漂移 |
+| U-V05 | Public 启停/解绑保留正确业务占用和独立 EIP，不依赖基础出口健康 |
+| U-V06 | 三种 exposure 的真实入口流量单独实测，不以配置完成替代 |
+| U-V07 | 只观察自己声明的组件完成，不等待生成 Service/Pod/EndpointSlice |
+| U-V08 | 配置版本、部分失败、后端更换与迟到回执保护 |
+| U-V09 | 自有组件原 UID 退出后释放管理占用；不等物理地址清场 |
+| U-V10 | 旧回执、原身份和明确升级责任保留，不收养手工 CR |
+| U-V11 | 精确通知、读错退避与终态退休，GET/List 没有修复副作用 |
+| U-V12 | API/Console 区分配置、原生结果和流量健康，废弃数据面字段不伪造 |
 
-Network构建/真实PG/恢复/契约/观察门禁在ubuntu执行；环境和源码manifest固定，按包限制资源。真实数据面在合格kc/Envoy版本与明确拓扑下，经产品API创建资源后验证；故障只作用本run对象，保留既有手工现场，测试清理走产品生命周期。生产发布、迁移执行和真实上游配置不是编写方案的隐含授权。
+必要实现检查在当前任务确认的环境执行；STATIC、数据库、真实 API 和流量证据分开。历史 Ubuntu/Fedora/10–12 记录不授权新部署，本文也不承诺未实测的 HA 或上游网络能力。
 
 ## 列表总数
 
 负载均衡列表返回 `items,next_cursor,total`。`total` 统计当前租户、name/state/vpc/subnet/exposure 筛选下已受理的产品资源，不包含尚未受理的占位记录，不应用 cursor/limit；总数与本页数据来自同一只读数据库快照。跨页不承诺总数固定。
 
-安装核验通过 `scripts/lb-api installation --verify` 显式运行；运行期不反复执行 CRD/镜像/安装指纹/SubjectAccessReview。GatewayClass 当前 Accepted 与实际 API 错误仍保留。生成对象的规格、HA、副本身份和最终释放尚无等价下层合同，相关检查继续限定到 LB，不以 Gateway Programmed 代替真实流量验收。
+显式安装核验与真实流量验收分别记录，不成为后台运行期的镜像/生成物门槛；Gateway Programmed 也不构成流量健康承诺。

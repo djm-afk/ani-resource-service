@@ -1,5 +1,7 @@
 # CR 持续观察选型评估
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](res-doc-fix-20261109.md)。
+
 日期：2026-09-10。性质：源码与主源研究、架构建议；不是已接受 ADR、现行规格替代物或实施完成记录。用户要求按可扩展方案评估，暂不设规模上限；没有据此承诺无限容量。
 
 后续承接：用户要求形成正式方案并插在 NET-06 前，已建立 [ADR-0004](../../adr/0004-observe-cr-with-durable-reconciliation.md)、[持续观察目标规格](../../specs/cr-observation.md)与 [NET-05A 计划](../../plans/cr-observation.md)。以下保留选型时点的研究依据，正式目标以新材料为准；配额讨论仅作 Core 重构后的候选输入，不属于 NET-05A 实现或验收。本文来源指纹仍对应选型时文件，不能用于声称后续修改过的规格与旧指纹一致。
@@ -28,12 +30,12 @@
 | 源码事实 | 对选型的意义 |
 |---|---|
 | [WorkerServer](../../../internal/server/worker.go) 依次执行一个资源 Step 和一个 Attachment Step，每个 Step 最多处理一个对象 | 当前为串行执行；10 秒是完成后的再次调度间隔，不是端到端观察时延保证 |
-| [claimResource](../../../internal/data/resource_work.go) 先找 VPC，找不到到期 VPC 才找 Subnet | VPC 持续积压时，Subnet 存在饥饿风险；新增 Watch 不会自动修复 |
-| [KC Observe](../../../internal/data/kc.go) 正常每个 VPC/Subnet 发起 GET | 稳态成本随资源数增加；观察 deleted/failed 记录也有成本 |
-| [领取与回写](../../../internal/data/worker.go)、[SQL](../../../internal/data/queries/worker.sql) 稳态仍有两个事务、至少四条 UPDATE | acquire lease、推进 resource（含 version）、保存 binding、release lease；即使状态不变，也有数据库更新和 WAL 开销。history 已避免无意义追加，但不能等同于不写库 |
-| [Attachment 观察](../../../internal/data/kc_attachment.go) 对每个关联分别分页 LIST 全集群 Pod、VNic、VNicIP | 重复扫描比单个 VPC GET 更值得优先治理；released 墓碑仍参与调度 |
-| [Attachment worker](../../../internal/biz/attachment_worker.go) 每轮查询实例 owner | K8s Watch 无法感知 owner 数据库里的 closing/closed；该 RPC 与恢复定时器有独立必要性 |
-| [hasDependencies](../../../internal/data/kc.go) 检查子网、VNic/VNicIP/EIP 引用 | 只订阅 VPC/Subnet 不足以覆盖网络释放和孤儿关系 |
+| claimResource（历史定位：`../../../internal/data/resource_work.go`） 先找 VPC，找不到到期 VPC 才找 Subnet | VPC 持续积压时，Subnet 存在饥饿风险；新增 Watch 不会自动修复 |
+| KC Observe（历史定位：`../../../internal/data/kc.go`） 正常每个 VPC/Subnet 发起 GET | 稳态成本随资源数增加；观察 deleted/failed 记录也有成本 |
+| 领取与回写（历史定位：`../../../internal/data/worker.go`）、SQL（历史定位：`../../../internal/data/queries/worker.sql`） 稳态仍有两个事务、至少四条 UPDATE | acquire lease、推进 resource（含 version）、保存 binding、release lease；即使状态不变，也有数据库更新和 WAL 开销。history 已避免无意义追加，但不能等同于不写库 |
+| Attachment 观察（历史定位：`../../../internal/data/kc_attachment.go`） 对每个关联分别分页 LIST 全集群 Pod、VNic、VNicIP | 重复扫描比单个 VPC GET 更值得优先治理；released 墓碑仍参与调度 |
+| Attachment worker（历史定位：`../../../internal/biz/attachment_worker.go`） 每轮查询实例 owner | K8s Watch 无法感知 owner 数据库里的 closing/closed；该 RPC 与恢复定时器有独立必要性 |
+| hasDependencies（历史定位：`../../../internal/data/kc.go`） 检查子网、VNic/VNicIP/EIP 引用 | 只订阅 VPC/Subnet 不足以覆盖网络释放和孤儿关系 |
 
 容量估算仅用于比较，未实测：N 个正常 VPC/Subnet、检查周期 T，完成目标工作量约为 `N/T` GET/s、`2N/T` PG 事务/s、至少 `4N/T` 行 UPDATE/s。N=10,000、T=10s 时，分别约 1,000、2,000、4,000；不表示当前串行 worker 能达到这个吞吐，也未包含 Attachment、重试、依赖查询与额外 SQL。
 
@@ -52,7 +54,7 @@
 
 ## 技术实现选择与职责
 
-**选 client-go dynamic SharedInformerFactory。** [go.mod](../../../go.mod) 已包含 `client-go/apimachinery v0.36.0`，[kc adapter](../../../internal/data/kc.go) 已使用 dynamic client，标准库足够提供 GVR 观察、共享缓存、索引和重连同步。复用标准能力，不手写 Watch 恢复协议。[动态 informer 主源](https://github.com/kubernetes/client-go/blob/v0.36.0/dynamic/dynamicinformer/informer.go)
+**选 client-go dynamic SharedInformerFactory。** [go.mod](../../../go.mod) 已包含 `client-go/apimachinery v0.36.0`，kc adapter（历史定位：`../../../internal/data/kc.go`） 已使用 dynamic client，标准库足够提供 GVR 观察、共享缓存、索引和重连同步。复用标准能力，不手写 Watch 恢复协议。[动态 informer 主源](https://github.com/kubernetes/client-go/blob/v0.36.0/dynamic/dynamicinformer/informer.go)
 
 controller-runtime 可以承担观察缓存、资源关系映射及 Reconcile 调度，也可以接入 PG 保存产品意图的服务；它不要求放弃数据库事务。对当前 Network，已有 PG 调度、租约和 Kratos 生命周期，本次增设完整 Manager/Reconciler 的桥接收益不足，因此推荐直接采用 client-go。兄弟服务可依据现有框架、资源关系和恢复模型选择 controller-runtime；重启后如何找回尚无 CR 的 PG 意图等义务仍需显式实现。[Reconcile 主源](https://github.com/kubernetes-sigs/controller-runtime/blob/v0.24.0/pkg/reconcile/reconcile.go)
 
@@ -99,7 +101,7 @@ SharedInformer 最终一致，可能跳过对象的中间状态；不同对象�
 
 ### 3. freshness、缓存同步与连接健康分开表达
 
-现行 [观察时效规格](../../specs/vpc-subnet.md)要求默认 60 秒有效期；[Subnet 准入](../../../internal/data/subnet.go)与 [Attachment 准入](../../../internal/data/attachment.go)实际依赖父资源的有效观察时间。这是业务约束，不能为了减少请求悄悄取消。
+现行 [观察时效规格](../../specs/vpc-subnet.md)要求默认 60 秒有效期；Subnet 准入（历史定位：`../../../internal/data/subnet.go`）与 Attachment 准入（历史定位：`../../../internal/data/attachment.go`）实际依赖父资源的有效观察时间。这是业务约束，不能为了减少请求悄悄取消。
 
 - 长期没有事件可能表示资源一直稳定；不能仅因沉默就 degraded。
 - `HasSynced` 只说明初次同步，不能证明现在健康。

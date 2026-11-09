@@ -1,5 +1,7 @@
 # NET-VPC-BASE-01 实施与受控验收记录
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../res-doc-fix-20261109.md)。
+
 日期：2026-09-14。当前执行结论只维护在[执行状态](../../status.md)。本记录固定本批实现、实际命令与分层证据；业务规则以[规格](../../../specs/vpc-connectivity-lb.md)和 [ADR-0005](../../../adr/0005-separate-vpc-connectivity-and-exclusive-eip-bindings.md)为准。
 
 ## 固定候选与权限范围
@@ -13,11 +15,11 @@
 | 卡 | 实际交付 | 主要源码及验收依据 |
 |---|---|---|
 | U00 | 基础连接摘要、系统资源边界、binding_target 兼容投影、Intranet 管理接口、完整未来 LB 契约与 operation；固定生成和基线 breaking 检查 | [契约记录](contracts.md)、[network.proto](../../../../api/network/v1/network.proto)、[egress.proto](../../../../api/network/v1/egress.proto)、[load_balancer.proto](../../../../api/network/v1/load_balancer.proto)、[契约门禁](../../../../scripts/check-vpc-base-contracts) |
-| U01 | 仅追加 0006；scope/双默认池、系统归属、SNAT purpose、typed EIP claim、LB 最低身份/父关系及 VIP 意图、基础步骤、补齐与开关；可靠旧 Public 迁移及失败回滚 | [0006](../../../../migrations/0006_vpc_base_connectivity.sql)、[schema 真 PG 测试](../../../../internal/data/base_schema_integration_test.go) |
-| U02 | 管理员 Intranet 池 CRUD/验证/分配/默认；独立基础/Public/LB 能力；实际 kc Intranet adapter、默认 VPC UID、配置/ServiceCIDR/镜像合同、持续观察和 RBAC | [平台用例](../../../../internal/biz/platform_intranet.go)、[能力查询](../../../../internal/data/platform_capabilities.go)、[adapter](../../../../internal/data/kc_intranet.go)、[配置前提](../../../../deployments/egress/intranet.md)、[只读 Provider 来源](platform-provider-inputs.json) |
-| U03 | VPC 同事务固定池版本/子 ID/placement，VPC→EIP→SNAT→聚合；同一持久 worker 执行和恢复、持续退化/恢复、系统资源隐藏、终止/删除及未知写入 fencing | [基础生命周期](../../../../internal/data/base_connectivity.go)、[worker](../../../../internal/data/worker.go)、[实际 adapter 生命周期](../../../../internal/data/base_connectivity_integration_test.go)、[进程故障](../../../../internal/data/base_process_integration_test.go)、[双 worker](../../../../internal/data/base_concurrency_integration_test.go) |
-| U04 | Public purpose 筛选，公共 claim 原子受理，绑定/启用基础就绪门禁，停用/解绑可恢复；EIP claim 的新旧字段同源投影；猜系统 ID 拒绝 | [Public 数据用例](../../../../internal/data/egress.go)、[Public 隔离回归](../../../../internal/data/egress_public_integration_test.go)、[wire 兼容测试](../../../../internal/service/egress_public_test.go) |
-| U08 | paused 审核计划及固定 SHA、候选/冲突/排除、固定池版本、独立 ensure、双 dispatcher 限速、暂停/恢复、删除互斥和单独新建/legacy 聚合开关 | [CLI](../../../../cmd/ani-network-service/base_connectivity.go)、[持久实现](../../../../internal/data/base_backfill.go)、[操作及失败处置](backfill.md)、[PG/CLI 进程演练](../../../../internal/data/base_backfill_integration_test.go) |
+| U01 | 仅追加 0006；scope/双默认池、系统归属、SNAT purpose、typed EIP claim、LB 最低身份/父关系及 VIP 意图、基础步骤、补齐与开关；可靠旧 Public 迁移及失败回滚 | [0006](../../../../migrations/0006_vpc_base_connectivity.sql)、schema 真 PG 测试（历史定位：`../../../../internal/data/base_schema_integration_test.go`） |
+| U02 | 管理员 Intranet 池 CRUD/验证/分配/默认；独立基础/Public/LB 能力；实际 kc Intranet adapter、默认 VPC UID、配置/ServiceCIDR/镜像合同、持续观察和 RBAC | 平台用例（历史定位：`../../../../internal/biz/platform_intranet.go`）、能力查询（历史定位：`../../../../internal/data/platform_capabilities.go`）、adapter（历史定位：`../../../../internal/data/kc_intranet.go`）、[配置前提](../../../../deployments/egress/intranet.md)、[只读 Provider 来源](platform-provider-inputs.json) |
+| U03 | VPC 同事务固定池版本/子 ID/placement，VPC→EIP→SNAT→聚合；同一持久 worker 执行和恢复、持续退化/恢复、系统资源隐藏、终止/删除及未知写入 fencing | 基础生命周期（历史定位：`../../../../internal/data/base_connectivity.go`）、worker（历史定位：`../../../../internal/data/worker.go`）、实际 adapter 生命周期（历史定位：`../../../../internal/data/base_connectivity_integration_test.go`）、进程故障（历史定位：`../../../../internal/data/base_process_integration_test.go`）、双 worker（历史定位：`../../../../internal/data/base_concurrency_integration_test.go`） |
+| U04 | Public purpose 筛选，公共 claim 原子受理，绑定/启用基础就绪门禁，停用/解绑可恢复；EIP claim 的新旧字段同源投影；猜系统 ID 拒绝 | Public 数据用例（历史定位：`../../../../internal/data/egress.go`）、Public 隔离回归（历史定位：`../../../../internal/data/egress_public_integration_test.go`）、wire 兼容测试（历史定位：`../../../../internal/service/egress_public_test.go`） |
+| U08 | paused 审核计划及固定 SHA、候选/冲突/排除、固定池版本、独立 ensure、双 dispatcher 限速、暂停/恢复、删除互斥和单独新建/legacy 聚合开关 | CLI（历史定位：`../../../../cmd/ani-network-service/base_connectivity.go`）、持久实现（历史定位：`../../../../internal/data/base_backfill.go`）、[操作及失败处置](backfill.md)、PG/CLI 进程演练（历史定位：`../../../../internal/data/base_backfill_integration_test.go`） |
 
 运行实现继续使用既有 biz/data/service/server 分层、composition root、持久 worker 和 observation 框架。平台 scope 是内部现有平台资源的扩展；没有第二套执行框架。`go.mod` 仅将既有 `sigs.k8s.io/yaml v1.6.0` 从 indirect 移为 direct，供 Intranet 配置严格解析使用；没有依赖版本升级。`go.sum`、固定工具版本及历史迁移 0001—0005 保持基线。
 

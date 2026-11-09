@@ -1,78 +1,62 @@
-# Network 运行契约
+# Resource 运行契约
 
-本文接替初始化时的通用运行骨架说明，描述 Network 与 NET-05A 持续观察的实际装配。业务规则以 [VPC/Subnet 规格](specs/vpc-subnet.md) 为准，实际检查结果以 [执行状态](execution/status.md) 为准。
+本文说明单进程装配、配置与运行边界；业务行为按[全域原则](specs/res-responsibility-and-simplification.md)及各领域规格，实际实现、验证和部署只见[执行状态](execution/status.md)。
 
-## 启动和迁移
+## 装配与迁移
 
-`cmd/ani-resource-service` 是唯一组合根。正常启动装配受限 PostgreSQL、实际 kc adapter、共享观察器、Network 用例、持久 worker、gRPC 和 admin HTTP；不存在 fake、内存数据库或旧 ANI 后端的运行配置开关。
+cmd/ani-resource-service 是唯一组合根。Network、Compute、Image、Storage、Instance、Sandbox、VM 和平台集群运维 ClusterOps 按各自启用条件装配，保留各自的持久化与执行机制，不引入统一资源状态机。默认/full、governance、vpc-read 使用同一业务 gRPC 安全构造，受信身份、方法清单与委托见[调用合同](specs/governance-calls.md)。vpc-read 只装配规定的只读入口，不运行网络创建 worker。
 
-先为专用的空 Network 数据库准备不同的 migration owner 和 runtime login role。owner 拥有数据库与 schema；runtime 不拥有表，不具有 superuser、BYPASSRLS、CREATEDB、CREATEROLE、持久或临时 DDL 权限，也不能 SET ROLE 为 owner/管理角色。迁移会撤销 PUBLIC 的数据库 CREATE/TEMP 和 public schema CREATE，给 runtime 授予具体表权限；不会创建 IAM Tenant 表、启用 RLS 或访问其他服务的数据库。
+Network 使用独立 migration owner 与受限 runtime role；runtime 不拥有表，不具有 superuser、BYPASSRLS、CREATEDB、CREATEROLE 或 DDL 权限，不可切换为 owner。迁移使用明确的 owner 入口，正常启动仅检查目标 schema/checksum/角色，不隐式迁移。各领域的迁移入口与版本分别由源码定义；历史 schema4 或 schema13 不能当作当前启动/回退依据。
 
-构建后显式迁移：
+构建后在获准的环境显式迁移和启动，连接串和角色由凭据管理方式注入：
 
-```bash
-# 以下变量由本次环境的凭据管理方式注入，不把连接串写进源码或日志。
-# ANI_NETWORK_MIGRATION_DSN：migration owner 的连接串
-# ANI_NETWORK_RUNTIME_ROLE：事先创建的受限 login role 名
-./bin/ani-resource-service -migrate
-```
+    ./bin/ani-resource-service -migrate
+    ./bin/ani-resource-service -conf ./configs
 
-迁移入口拒绝包含其他 public 业务表的数据库及未经版本管理的 Network 表，核对已应用 migration checksum，支持相同 migration 的重放。正常启动只检查权限、schema 版本和 checksum，不读取 owner 变量或隐式执行迁移。
+## 配置与身份
 
-正常启动需要以下环境输入：
+类型化配置的字段定义为[conf.proto](../internal/conf/v1/conf.proto)，示例见[config.yaml](../configs/config.yaml)，校验规则见[validate.go](../internal/conf/v1/validate.go)。Kratos 使用既有 ANI 环境变量映射；时长采用 Protobuf JSON 秒格式。私有 DSN、证书、签名及加密材料只记录其受管文件位置。
 
-| 变量 | 含义 |
-|---|---|
-| `ANI_NETWORK_DATABASE_DSN` | runtime 角色的 PostgreSQL 连接串，必填 |
-| `ANI_NETWORK_CURSOR_SIGNING_KEY` | 32–128 字节 secret 的标准 Base64，必填；同一服务的副本共享，重启保持稳定 |
-| `ANI_NETWORK_KUBECONFIG` | 管理员提供的 kc 集群 kubeconfig 路径；空值使用 Kubernetes in-cluster 凭据 |
-| `ANI_NETWORK_CLUSTER_ID` | 固定的内部集群标识，默认 `primary`；须与已保存映射一致 |
-| `ANI_NETWORK_INSTANCE_CONSUMER_ENDPOINT` | ANI 实例 owner 的 InstanceNetworkConsumer gRPC 地址；未配置/不可用时保留 Attachment 占用，不猜测封闭 |
-| 原 Namespace prefix 配置 | 已移除；非空旧字段或环境变量启动失败，名称固定为 `tenant-<canonical resource UUID>` |
+| Network 输入 | 责任 |
+| --- | --- |
+| ANI_NETWORK_DATABASE_DSN | runtime PostgreSQL 连接 |
+| ANI_NETWORK_CURSOR_SIGNING_KEY | 稳定共享的游标签名材料 |
+| ANI_NETWORK_KUBECONFIG | 显式 kubeconfig 路径；空值使用 in-cluster 凭据 |
+| ANI_NETWORK_CLUSTER_ID | 本服务配置的稳定集群范围，与已登记映射一致 |
+| ANI_NETWORK_INSTANCE_CONSUMER_ENDPOINT | 已配置的消费者查询入口；读取错误保留管理占用 |
+| ANI_NETWORK_CLIENT_CA/TLS_CERT/TLS_KEY | 业务 mTLS 必需材料，缺少或身份不符时拒绝启动/调用 |
+| 旧 namespace prefix | 已移除；旧非空配置拒绝启动，标准名称由[租户 Namespace 合同](contracts/tenant-namespace.md)定义 |
 
-```bash
-./bin/ani-resource-service -conf ./configs
-```
+Sandbox 的租户空间开通在原生名称不存在时持久受理创建并核验原 UID；其他 owner 复用该标准 Namespace，不创建、补标签或收养。执行与清理使用已登记的原名称/UID，不能因同名替换取得权限。Namespace、Secret、Pod 与各领域数据身份分别管理。
 
-Namespace 统一合同与维护窗口回填流程见[正式合同](contracts/tenant-namespace.md)。标准 Namespace 必须预先存在；Resource 各 owner 只精确 GET 并核对 network 两项归属标签与原 UID，不创建、补标签或收养。产品 ID 与 Provider 位置、对象名、UID 的映射在受理时持久化；正常删除继续保留 provider UID/resourceVersion 护栏，不移除 kc finalizer。kc 权限仅需 Namespace GET，以及原 VPC/Subnet/Pod/VNic/VNicIP/EIP 所需的精确操作和观察权限。
+Image 的 Registry、Secret writer 与可信运行身份见[Image API](specs/image-api.md)；Compute 受管配置见[算力合同](specs/compute-presets.md)；Storage、Instance、Sandbox 和 VM 的额外装配输入从[文档索引](START-HERE.md)进入对应合同，不从 Network 环境变量推导。
 
-## 类型化配置
+## Network 观察、调度与声明
 
-配置由 [conf.proto](../internal/conf/v1/conf.proto) 生成，示例在 [config.yaml](../configs/config.yaml)。Kratos 按 `ANI` 前缀加载环境变量。Duration 使用 Protobuf JSON 秒格式，例如 `0.1s`、`20s`，不能写 `100ms` 或 `1m`。
+当前行为唯一见[网络状态消费规格](specs/cr-observation.md)：
 
-监听器默认 `127.0.0.1:19090`（gRPC）和 `127.0.0.1:19091`（admin），允许用已有 `ANI_SERVER_*` 变量设置 loopback 或 unspecified IP；两个端口必须不同且非零。服务间调用验证按 [ADR-0003](adr/0003-defer-workload-authentication.md) 延期，当前 tenant 输入不代表认证；环境应限制直接访问范围。
+- 普通 client-go informer 只提供精确 namespace/name 通知；现有任务行保存通知代次与 lease/epoch，执行者 GET 自己处理的原生目标。
+- Ready、phase、Initialized 或对应原生配置回执按对象合同使用，不组合父网络健康、节点在线、镜像或生成工作负载再裁决状态。
+- 读取失败保留最后成功的状态、原因、地址、applied 和 observed_at；记录读取错误并按既有策略退避。observed_at 不作 TTL 准入，observation_stale 表达读错或尚无成功观察。
+- 稳定任务停放；未完成操作与读错重试仍有持久排程。通知在 Finish 校验后消费，Claim 后新通知不丢失；已结束 Deleted/Released 任务退休，旧事件不复活。
+- Attachment 采用消费者当前管理事实，地址展示独立；owner 完成自己的关闭责任后 closed，Network 释放管理关系，不重新证明 KCN 子资源清场。
+- 对自己声明的对象保留 UID/resourceVersion 写入前提。删除只结束原身份，不删除同名替换对象；未知 CREATE 沿同一次意图与名称恢复。
 
-worker 默认：lease 20s、单次 Provider 调用 5s、观察 10s、观测有效期 60s、重试 1–60s、空闲轮询 0.1s。可通过 `ANI_WORKER_LEASE`、`REQUEST_TIMEOUT`、`OBSERVE_EVERY`、`STALE_AFTER`、`RETRY_MIN`、`RETRY_MAX`、`POLL_INTERVAL`（均加 `ANI_WORKER_` 前缀）设置。验证要求 lease 至少为单次调用的三倍、有效期大于观察间隔、退避上下界有序；每次 Step 的总期限也受 lease 限制。具体上下界由 [配置验证](../internal/conf/v1/validate.go) 实现。
+保留 request QPS/burst、workers_per_kind、worker 并发、lease/request timeout、重试与未完成工作排程。旧 audit_interval/audit_jitter/audit_timeout/flush_interval/queue_capacity、Worker.stale_after 及 LB installation_fingerprint/镜像期望字段已 deprecated，可解析但运行时忽略；不再提供这些字段作为有效配置示例。显式安装诊断不成为运行准入。
 
-观察器默认共享六类资源来源：VPC、Subnet、Pod、VNic、VNicIP、EIP；使用独立完整分页审计，不用 informer 同步标记续鲜。配置环境变量统一加 `ANI_OBSERVATION_` 前缀：`AUDIT_INTERVAL=30s`、`AUDIT_JITTER=2s`、`AUDIT_TIMEOUT=10s`、`FLUSH_INTERVAL=0.1s`、`QUEUE_CAPACITY=4096`、`WORKERS_PER_KIND=2`、`REQUEST_QPS=5`、`REQUEST_BURST=10`。最后两项限制短请求；Watch 连接配置不继承短请求 timeout。容量实验对旧/新版本都显式使用每副本 QPS=40、burst=80，不能将该容量结论套用到默认预算。
+## 生命周期、健康与遥测
 
-10 秒 worker deadline 继续承担持久恢复和 owner 查询；稳定事实来自共享审计，普通已知资源缺少可用证明时直接 GET。事件提示进入有界合并队列，再按已登记 binding/关系唤醒 PostgreSQL。内存溢出、持久化失败和来源重连使旧证明失效，启动清点及持久 deadline 补偿丢失提示。事实顺序、代次与释放约束的权威定义见 [观察规格](specs/cr-observation.md)，实现说明见 [NET-05A 记录](execution/records/NET-05A-implementation.md)。
+应用启动实际监听器、已启用领域的执行器与数据库健康检查；请求方退出不取消已持久受理的业务责任。停止时取消外部调用，等待组件退出，未完成任务按原持久状态恢复。故障、租约和观察方式按领域合同处理，不强制所有模块拥有 worker。
 
-关键删除/释放加入已有完整采集时，可能需要等它结束后再采集一次，才能覆盖本次调用的时间下限；等待过程保持这个下限，不在每次竞争后重新 Claim 抬高它。每次采集独立保存结果和错误，调用取消及审计超时仍生效，旧采集不能因稍晚返回而变新。时效预算须计入连续两次完整采集。
+| 接口 | 含义 |
+| --- | --- |
+| GET /healthz | admin 进程可响应 |
+| GET /readyz | 当前装配的应用、执行器和数据库检查通过 |
+| 标准 gRPC health | 沿用服务自身健康含义；业务调用允许清单另行约束 |
+| GET /metrics | 提供本地指标，不等于 scrape、告警或流量已验收 |
 
-schema 4 仅新增通知代次、退避下限、证据及索引。升级须停止旧执行者并用 owner 显式迁移；正常启动不迁移。固定 NET-05 二进制仅接受旧 schema，升级后无法直接回退启动；不要降级 schema、清空意图或绕过版本检查。
+Provider 读错不等同于服务无法持久受理；资源状态、operation 结果、观察错误及服务健康分别表达。遥测记录请求、错误、通知重试、排程与数据库运行情况，不产生 provider proof、审计续鲜或物理回收证书。日志保持脱敏和 trace 关联；租户/资源 ID 不作为无界 metrics label。
 
-## 进程生命周期与健康
+## 检查与发布
 
-Kratos 同时启动 gRPC、admin、共享观察与 worker。请求方退出不终止持久任务；worker 的内存状态仅用于运行，不是待执行队列。Subnet 沿用 VPC 的持久 T1–T4 worker；Attachment 使用自己的 next_check/lease/epoch 和历史，由同一 WorkerServer 的独立执行通道调度。资源通道保留 VPC/Subnet 最早到期领取，Attachment 按父 Subnet 和到期顺序领取；两通道各有 1–4 个 worker，默认各 2 个，慢 owner RPC 不占满资源通道。Attachment worker 对四种状态持续核验，实例 owner 查询不可用和外部结果未知都保留可恢复占用。停止时取消外部调用、等待 worker 和监听器退出，未完成记录留在数据库，之后由新的租约持有者恢复。
-
-| 接口 | 实际含义 |
-|---|---|
-| `GET /healthz` | admin 进程可以响应 |
-| `GET /readyz` | 应用已启动、worker 正在运行、数据库/schema/角色检查通过且探测记录未过期 |
-| 标准 gRPC health Check/Watch | 与 readiness 相同；服务名支持空串和 `network.v1.NetworkService` |
-| `GET /metrics` | 本地 Prometheus registry；不代表实际 scrape、告警或远端 tracing 导出已配置 |
-
-数据库每秒独立检查，单次探测最多 0.5s，超过 3s 的健康缓存失效。Provider 暂时失联不会单独关闭可持久受理和查询的服务；资源/operation reason 和 `ani_network_provider_reachable` 呈现观测结果。worker 异常返回或 panic 会使 readiness 失败并导致应用退出，不会继续假报健康。GET/LIST/GetOperation 只读数据库，`observation_stale` 在查询时纯计算。
-
-日志保留 Kratos JSON、service 身份、source 和 trace/span；worker 日志增加资源、operation、epoch、状态和稳定 reason。tenant/resource ID 只用于日志，不作为 metrics label。新增 `ani_network_worker_attempts` 按封闭结果分类，Provider gauge 表示最近一次观测；尚未观测时没有成功证据。指标不能代替数据库历史。`ani_network_observation_*` 另行报告来源同步/错误/重连边界、内存提示和持久队列年龄、完整审计时长/失败/证据年龄、各封闭 verb/GVR 请求及字节、已应用证据年龄与 PG 事务/UPDATE/WAL。Watch 与 audit 索引字节是 JSON payload 估计，不是进程 RSS。观察连接或审计健康不能替代 worker 应用进度、数据库健康或产品可用性；这些指标不作为 API readiness 的替身。
-
-保留原中间件顺序：recovery → metadata → tracing → logging → metrics → validation。gRPC reflection 关闭。一个进程只装配一个 Kratos app，应用拥有全局 OTel provider 的初始化和关闭。
-
-## 验证边界
-
-运行入口和命令见 [运行验证](runtime-verification.md)。受控 HTTP/API server 验证实际适配器请求，真实 PostgreSQL 验证持久事务，独立进程验证恢复；它们都不能证明真实 kc、OVN、kind、Pod/VM 或 IAM 已验收。
-
-## Governance VPC 只读入口
-
-所有服务运行模式的内部业务 gRPC 均要求 [Governance → Resource 调用登记](specs/governance-calls.md) 中的 mTLS 配置；默认/full 不再提供明文入口。`ANI_NETWORK_MODE=vpc-read` 使用真实 PostgreSQL 查询与相同安全构造器，装配边界、环境变量及只允许 GetVPC 的合同见 [只读接入规格](specs/governance-vpc-read.md)。它不运行 KC、worker 或云网络创建。结构仍由 `-migrate` 使用独立 owner 显式执行；运行角色只能读取本片数据，不因服务启动迁移或播种。
+文档修改只检查链接和格式。涉及实现时按实际改动运行[运行验证](runtime-verification.md)中的必要检查，在当前任务确认的环境记录源码、命令与结果；不从历史远程入口取得执行授权。生成镜像、推送、部署及业务验收分别记录，不能以 Ready 或构建成功替代真实业务通过。

@@ -8,8 +8,9 @@ The process requires the
 additional reads/writes in [network-rbac.yaml](network-rbac.yaml). Adapt its
 ServiceAccount subject to the actual deployment; this template is not applied by
 any test or build script. No actor or tenant metadata header grants egress access.
-A trusted ingress must explicitly supply `biz.EgressCaller`; until that integration
-is installed, egress RPCs deny access. Controlled test injection is not IAM proof.
+A trusted ingress must supply `biz.EgressCaller` through the current mTLS and
+trusted-delegation wiring in the [call contract](../../docs/specs/governance-calls.md).
+Missing or invalid callers are denied; controlled test injection is not live authentication evidence.
 
 ## Manually prepared interfaces
 
@@ -23,8 +24,10 @@ the VlanNetwork. KCN owns interface configuration and takeover annotations.
 
 Resource no longer deploys a host facts collector or requires a physical inventory
 approval, and it does not write `kcn-config` or legacy device-adoption markers.
-The shared ConfigMap and Node reads remain necessary for KCN observations and
-platform address pool admission; Node patch remains necessary for owned group labels.
+Node access is scoped to the selected, frozen Node identities and owned group labels.
+Runtime admission does not scan the shared ConfigMap, device feedback or full topology
+to reconstruct KCN readiness; the [native-state contract](../../docs/specs/cr-observation.md)
+defines current reads. This document change does not alter deployed RBAC.
 Application ownership checks still protect other groups and device reservations.
 
 KCN feedback represents the configuration steps that KCN publishes. It does not
@@ -51,11 +54,13 @@ network:
 Without the guard the service is not registered. Invalid configured identity
 fails startup; a changed live identity fails admission and reconciliation. This
 service does not adopt native EIP/Snat objects, modify default VPC/Subnet identity
-or `natOutgoing`, or create tenant ownership for the system VPC. Its public pool
-must pass the existing qualification and exact topology checks; it has its own
-durable address reservation and inverse cleanup lifecycle.
+or `natOutgoing`, or create tenant ownership for the system VPC. Its public pool is checked for the configured scope, allocation policy, placement
+and current product references. Verification material is a separate administrator
+record, not a freshness or topology admission certificate. The service retains its
+own durable address reservation, original EIP/Snat identities and management cleanup;
+it does not wait for downstream physical address reclamation.
 
 ## Intranet pools
 
 [Intranet pool prerequisites](intranet.md) covers the default VPC identity,
-existing destination routing ranges, independent evidence and allocation gates.
+explicitly configured destination ranges, optional diagnostic records and product allocation policy.

@@ -118,7 +118,7 @@ VPC/Subnet 继续复用现有租户列表，前端按 VPC 筛选 Subnet；CPU/GP
 
 ### 4.1 两类卷分开管理
 
-系统工作盘继续由实例创建、保存 PVC/PV 身份和最终回收。用户已有卷以 borrowed 引用挂载：停止保留引用，删除实例只解除引用，不删除其 PVC/PV，不给用户卷添加指向 Notebook 的可回收 ownerReference。用户卷丢失不触发自动补造，也不阻挡已终止实例解除该引用。
+系统工作盘由实例创建并保存原 PVC 身份；最终删除完成自己的 PVC 管理责任。历史 PV 标识只用于兼容与诊断，不构成等待 PV/CSI 回收的条件。用户已有卷以 borrowed 引用挂载：停止保留引用，删除实例只解除引用，不删除其 PVC/PV，不给用户卷添加指向 Notebook 的可回收 ownerReference。用户卷丢失不触发自动补造，也不阻挡已终止实例解除该引用。
 
 当前冻结挂载项包含 `cluster_id、namespace、pvc_name、pvc_uid、mount_path、read_only、ownership=borrowed`，引用另有内部 `reference_generation`；UID/代际不是公开可写字段。重放及 Start 使用当前配置已冻结的身份，不重选同名卷；原 CREATE 中的挂载仍只表示首次受理内容。
 
@@ -169,69 +169,27 @@ Notebook v1.10 的用户标签/注解写入 Notebook 顶层 metadata，由 contr
 
 手动主网卡应用时，v1.10 不更新已有 StatefulSet 的模板 metadata；实例 owner 仅在原 Notebook UID、受控 StatefulSet UID/RV、安全停止、零副本及无受控 Pod 再次确认后删除旧 StatefulSet，保留 Notebook/PVC/VNIC/绑定，沿原 operation 等待 controller 从根注解重建并确认目标模板后再启动，不直接修改 StatefulSet/Pod。
 
-## 6. Res Network 支持 Notebook 的 Pod 替换
+## 6. Notebook 消费者与网络管理关系
 
 ### 6.1 明确关联模式
 
-Attachment 是 Res 的网络消费记录，区别于 kcn 的 VPC/TransitRouter `VpcAttachment` CRD。现有 `single_pod` 模式继续保留固定 Pod UID 和原释放语义；新增内部可信 `workload_mode=controller_managed`、Consumer 协议 v2，显式登记给实例 owner。公开用户仅选 VPC/Subnet，不能提交模式、owner 身份或 UID 来绕过校验。
+显式选择 VPC/Subnet 时使用 controller_managed 消费者；消费者属于真实租户，原网络产品引用、slot、submission 和 generation 随受理持久保存。Pod 正常更换不创建新的网络意图，也不承诺 IP 不变。未选择网络时沿用原无 Attachment 路径。
 
-逻辑 Attachment 固定关联 tenant/instance/submission/generation/cluster/namespace 和原 VPC/Subnet，正常 Pod 重建不创建新的逻辑网络意图，也不自动换网。网络选择不承诺跨重启保留 Pod IP。
+### 6.2 当前管理快照
 
-### 6.2 提交快照和独立核验
+Instance owner 负责 Notebook、受控 StatefulSet 和当前 Pod 的正确身份，维护当前 scope、generation/revision、state、desired run state、finalization、closed_at、current pods 和 manual VNics。Network 直接消费当前快照与自己的产品关系，不逐跳 GET/LIST 复核控制器链，不要求历史 Pod/VNic/VNicIP 闭包或 fresh proof。
 
-GetSubmission v2 保留 `open/closing/closed、finalization_id`，增加以下可信事实：
+快照和通知仍受原版本、lease、closing 与 revision/finalization 保护；读取错误保留管理占用，不能把未知消费者当作 closed。低代和迟到回执不能覆盖新意图或复活已结束关系。字段与排程的唯一行为见[网络状态消费 §2–4](cr-observation.md)。
 
-| 字段 | 含义 |
-|---|---|
-| `snapshot_revision` | 实例提交快照的单调版本，和实例 version、lease epoch、观察 generation 分别解释 |
-| `desired_run_state` | running/stopped/deleted；停止不是永久 closed |
-| `root_controller` | Notebook 的 GVK、namespace、name、UID；首次记录后同 Submission 不静默换根 |
-| `controllers` | 已登记的 StatefulSet 身份和父引用 |
-| `current_pods` | 当前候选 Pod 的完整引用及 owner 链；单实例最多一个提供有效地址的 Pod |
-| `retired_pods` | 曾登记的旧 Pod 身份，仅用于清理核验，不能提供地址资格 |
-| `closed_at` | 不再可能创建工作负载、未知创建已查明且控制器已消失后的最终封闭时点 |
+### 6.3 创建、启停、重建和删除
 
-Instance 持久登记自己创建和观察到的身份；Network 自己通过 Kubernetes GET/LIST 逐跳复核 Pod→StatefulSet→Notebook 的 Group/Kind/name/namespace/UID、规范化版本、controller ownerReference、租户和关联标签、网络投影。Consumer 的 UID 是待核验声明，不是直接授权。
+Prepare 预留并保存原计划；owner 完成当前绑定登记后 Confirm。Stop 保留 Notebook、盘和 Attachment 预留，撤回当前地址；Start/Restart 按当前运行目标发布新端点，不用地址非空、网络 Ready 或观测年龄作为动作门槛。
 
-Notebook ownerReference 仅接受已核实的 `kubeflow.org/v1` 和 `kubeflow.org/v1beta1`，统一规范为 `kubeflow.org/v1`。这只处理同一对象的已知 served 版本别名；仍要求唯一 `controller=true` 引用，并独立 GET StatefulSet 和 Notebook，核对 namespace/name/UID 及完整父链。未知版本、错误 Group/Kind/UID 或非 controller 引用不能借规范化通过，见 [managed Provider](../../internal/data/network/kc_attachment_managed.go)。
+最终删除或放弃创建先由 Instance 封闭未知提交、确认自己的根/运行对象退出，再发布 closed 并以稳定 finalization 请求 Release。Network 按管理关系释放，不等待 KCN 自动网卡和 IP 清场；consumer closed 不等待 Network released。借用盘引用和整实例退额继续按[完整释放合同](instance-mvp.md#10-完整释放及-gov-原账退额)完成。
 
-Network 比 Instance 快照先看到新 Pod 时，保存待核验候选并等待新快照，不仅因 UID 变化就永久 ProtocolBlocked；候选和历史资源均进入清理观察，但只有核验通过的当前 Pod 可以提供地址和 LB 后端资格。错误租户、矛盾 owner 链、根 UID 偷换或不符合单实例策略的并发 live Pod 仍是协议冲突。不能单纯移除现有所有 UID 检查。
+### 6.4 装配与地址
 
-Network 持久保存最高已接受 snapshot_revision、固定根 UID、相应快照摘要和 finalization_id。低版本响应只忽略并重试，不回退当前 Pod、生命周期或地址资格；同版本异内容判协议冲突。Confirm 携带 submission/generation、Pod UID 和 expected_snapshot_revision，按前置版本条件更新，重复同值幂等；旧代迟到 Confirm 不能覆盖新代，closing/closed 不能被旧 open 快照恢复。进程重启后继续使用已保存的栅栏。
-
-已有 `ProtocolBlocked` 的可信重证恢复仅适用于 `controller_managed`、Attachment 为 reserved/attached、提交为 open/running 且无 finalization 的情形，并须同时满足：
-
-- 当前 Consumer 匹配持久化的最高已接受快照；revision、内容摘要和固定根 UID 均不变，保存的快照内容也须匹配该摘要，不能用新 revision 本身解除阻塞。
-- 唯一当前 Pod 的 name/UID 匹配独立观察；Network 已持久保存该 revision 和 Pod UID 的 Confirm 回执。Instance 展示整体 running 仍要求自己的持久 Confirm 回执匹配。
-- 重新采集的完整 owner 链和当前 VNic/VNicIP 地址事实核验成功，无待核验候选，fresh proof 覆盖本次观察要求；冲突前的地址缓存不能单独用于恢复。
-
-[managed worker](../../internal/biz/network/attachment_managed.go) 仅据上述证明请求恢复；[持久化事务](../../internal/data/network/attachment_worker.go) 在原 version、lease owner/epoch 和未过期 lease 条件下再次核对冻结快照、Confirm 回执及 proof，才清除阻塞。低版本、同版异内容、根 UID 更换、未知关系或 closing/closed 后迟到的 open 不具备该恢复资格；不能手工清标志或修改冻结快照代替重证。
-
-### 6.3 创建 启停 重建和删除
-
-| 场景 | Instance 动作 | Network 收敛规则 |
-|---|---|---|
-| 创建 | 本地事务保存网络选择、稳定 request_key/submission/generation；Prepare 后保存 attachment、binding revision 和投影，再创建 Notebook，登记真实 owner 链并 Confirm | Prepare 复用现有同租户、VPC/Subnet 关系及 placement 校验；独立核验后 attached |
-| Stop | 持久停止意图，条件停止 Notebook；保留逻辑网络选择，报告 stopped 和实际 Pod 集合 | 无 Pod 是正常暂停；撤销旧地址资格，继续观察旧 VNic/IP 清理，保留 Attachment 占用 |
-| Start | 使用冻结规格、CurrentMounts 和网络投影，登记新 Pod；不重占 GPU 原账 | 验证同一根 owner 链后更新当前 Pod，旧关系进入历史清理 |
-| Pod 自动重建 | Notebook/StatefulSet 自行造新 Pod，Instance 更新提交快照 | 未确认候选先等待；通过 owner 链后接替，不依赖每代提前改模板 |
-| 删除或放弃创建 | 先保存 closing 和禁止继续发送；删除已知 Notebook，查明未知 CREATE；确认控制器退出后最终 closed，再持久请求 Release | 独立确认当前、历史和待核验候选 Pod/VNic/VNicIP 等关系全部消失后 released |
-
-同一动作使用稳定幂等身份。Prepare/Confirm/Release 丢回执或进程重启后由持久步骤重试，不依赖内存调用链。发出但结果未知的 Notebook CREATE 不能因为一次 404 就 closed 或释放网络；未知关系也不能被重置为“无资源”。
-
-Stop 完成使用[完整安全停止证明](instance-mvp.md#82-普通停止与启动)，旧网络清理独立显示。组合挂卸时 Network 消费阶段 `RuntimeDesired`，不能误用最终 `Desired=running` 保留旧地址资格。最终删除与 GPU 退额时机遵循[实例规格 §8.3](instance-mvp.md#83-最终删除)和[完整释放规则](instance-mvp.md#10-完整释放及-gov-原账退额)；失败保留原操作与原因，Gov 通知独立重试。
-
-### 6.4 数据与运行装配
-
-Instance 侧新增 submission/网络绑定记录，保存网络选择、步骤、attachment、投影、controller/Pod 身份、snapshot_revision 和 finalization。Network 侧新增模式、根工作负载引用、当前/历史 Pod 绑定，并使 managed 模式的 Provider 关系以 kind/namespace/name/UID 识别多代对象，不能继续把同名新 UID 一概判冲突。
-
-新关系均带 tenant_id，本域关系使用租户复合 FK；Instance 与 Network 各自事务，不跨域数据库 FK、联表或全局事务。现有 lease/epoch、观察新鲜度、关系索引、持久通知及释放证明继续复用。
-
-composition root 在 `governance`、`full` 实际实例路径装配：Instance Network Adapter→Network Attachments、Network Consumer→Instance 只读提交查询、Attachment worker 和 Provider。既有外部 Consumer 按登记的 owner/协议路由，不因新本地 owner 消费者而丢失。内部调用不通过 loopback gRPC，也不因此放开 Gov 的 Attachment 写 RPC allowlist；已有业务 mTLS、租户身份与方法授权保持有效。
-
-没有显式选择 VPC/Subnet 时不建立 Attachment，也不等待 Network 的 attached/released；保留原计算、工作盘和原账流程。显式选择时，Instance 通过窄端口读取 Network 的业务结果，用于整体就绪及删除完成判断。Network 自己负责 Kubernetes 观察和网络释放证明，Instance 不跨域查询网络表。
-
-Attachment 的独立地址证明只消费 Pod、VNic、VNicIP 和 EIP 事实；同属一个 Notebook 的 Service 更新不能使该证明永久失效。相关对象的旧/新 UID、删除事件以及全局 source continuity/overflow 仍使旧证明失效，Network/LB 原有观察范围不变。
+复用现有 Instance 持久工作与 Network worker，保留跨库可恢复的通知投递，不另建 proof 通道或关系审计库。当前地址来自 Network 四列持久输出，同一消费者读错保留，停止/关闭/更换时撤回；具体映射只引用[网络地址合同](cr-observation.md#4-attachment-与计算侧)。owner 的原对象、模板应用和挂载保护仍由其自己的合同定义。
 
 ## 7. 当前配置合同与原账
 
@@ -286,12 +244,12 @@ CPU frozen decoder 只校验当前合同的规范编码及原 business_payload �
 |---|---|
 | A1 | 正式 Gov 创建 CPU 实例，两个已有 PVC 挂到指定路径，其中只读卷写入被拒绝；终端实际读写验证，不只检查 YAML |
 | A2 | 自定义工作目录、标签、注解、env 在实际 Pod/容器生效；系统 UID guard、GPU/网络控制字段保留，恶意覆盖被拒绝 |
-| A3 | 两轮 Stop/Start 后原 PVC UID 和文件保留；删除后系统工作盘/PV 按原规则回收，用户 PVC/PV 与数据保留 |
+| A3 | 两轮 Stop/Start 后原 PVC UID 和文件保留；删除后原系统 PVC 退出，底层 PV/CSI 由组件处理，用户 PVC/PV 与数据保留 |
 | A4 | 卷跨租户/专属盘、同名替换、路径冲突被拒绝；合法 Pending 不被错误排除；实际挂载冲突可归因 |
 | B1 | 指定 VPC/Subnet 创建，真实子网取址及同 VPC 对照服务通信通过；错误租户/placement 被拒绝 |
 | B2 | Stop/Start 和删除 Pod 触发自动重建均能重新联网；新旧 UID 交接无永久误冲突，旧地址不再被作为有效后端 |
 | B3 | Prepare/Confirm/Release 丢回执、Instance/Network 重启、Consumer 快照落后、未知 CREATE 均可恢复或明确等待；覆盖快照/Confirm 乱序、closing 后迟到 open、旧 Pod Confirm 迟到，不能回退状态或提前释放 |
-| B4 | 最终删除等待当前/历史 Pod、VNic/VNicIP/Nic 等依赖清理及 Network released；完整清理后才提交原 GPU 退额，恢复与重试只作用于原事件 |
+| B4 | 最终删除确认自己的计算对象和原 PVC 退出、Network 管理关系 released 及借用引用完成；不等待 KCN 自动子资源或 PV/CSI 清场，完成后才投递原 GPU 释放事件 |
 | C1 | 旧实例和终结记录已清理；0/1/缺省配置版本明确拒绝；当前 CPU/GPU 创建、重放、恢复、Start/Delete、原账与重复退额保持，配置差异触发幂等冲突 |
 | C2 | GPU 模式验证用户配置不改变冻结执行、额度占退及系统注解；真实硬件运行与仅字段传播分别报告 |
 | C3 | 实际 governance/full 装配可推进网络，旧 single_pod Consumer 定向回归；真实前端页面验收独立记录 |

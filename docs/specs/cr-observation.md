@@ -90,7 +90,7 @@ LB 保存 desired_version/provider_target_version/applied_version、后端引用
 
 ## 8. 升级与验证
 
-0032 为协调升级：停止旧 schema 的写入者，搬运已保存的当前地址输出，删除旧证明/关系列和 generated 表，收敛约束，清旧 lease 并增加执行 epoch；保留产品状态、历史 operation、原 UID、用户意图和幂等回执。生成源码、构建、必要数据库回归按 [远程执行约定](../remote-execution.md)在 Fedora 运行。
+0032 为协调升级：停止旧 schema 的写入者，搬运已保存的当前地址输出，删除旧证明/关系列和 generated 表，收敛约束，清旧 lease 并增加执行 epoch；保留产品状态、历史 operation、原 UID、用户意图和幂等回执。生成源码、构建和必要数据库回归遵循当前任务确认的环境与[远程执行约定](../remote-execution.md)；原工作包的 Fedora 限制保留为该任务历史条件。
 
 验证重点是原生 Ready 的直接映射、读错保留、终态历史不可变、通知与 Finish 并发、未知 CREATE、原 UID 删除、管理生命周期与地址分离、安全组真实 applied 字段，以及旧 schema 升级后的账本/回执保留。详细用例及实际结果分别见实施方案和执行状态。
 

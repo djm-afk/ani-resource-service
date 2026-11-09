@@ -1,5 +1,7 @@
 # VM 一期完整执行 Goal
 
+> 历史工作包：下文环境、连续执行、共享设施和拆建许可仅属于原任务，不自动授权后续工作。当前行为以[领域规格](../specs/vm-mvp.md)和[全域原则](../specs/res-responsibility-and-simplification.md)为准；被替代的证明条款不作为新任务要求。
+
 本文件为本轮执行 Goal；后续用户明确指令优先，当前进度仅见[唯一状态](../execution/status.md#vm-mvp)。
 
 2026-10-23 用户后续明确范围：ANI 业务前端对接由专人承担，不属于本任务交付；必要时只提供最薄临时 VNC 测试页。此要求覆盖本文及任务包中要求接入实际业务前端的步骤。CODE、PG、BOUNDARY、LIVE、GUEST 与 BROWSER 验收继续完整执行，BROWSER 通过临时页验证真实画面、登录和键鼠，不能免除真实客体或浏览器结果。

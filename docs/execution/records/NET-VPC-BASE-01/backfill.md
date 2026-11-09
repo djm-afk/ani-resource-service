@@ -1,12 +1,14 @@
 # NET-U08 存量基础连接管理工具
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../res-doc-fix-20261109.md)。
+
 日期：2026-09-14。本记录描述本批实现入口和隔离验证方法；当前验收结果只汇总到[执行状态](../../status.md)，产品规则见[存量补齐规格](../../../specs/vpc-connectivity-lb.md#82-既有-vpc-补齐)。工具未在真实存量环境执行。
 
 ## 实现与权限边界
 
-[命令入口](../../../../cmd/ani-network-service/base_connectivity.go)是同一 `ani-network-service` 二进制的显式 `-base-connectivity` 模式，与正常服务、migration、node-facts 三个入口互斥。它只使用受限运行数据库角色，读取 `ANI_NETWORK_DATABASE_DSN`、`ANI_NETWORK_CLUSTER_ID` 和可选的 `ANI_NETWORK_NAMESPACE_PREFIX`（默认 `tenant-`），不读取 owner DSN，不打印 DSN，不创建 Kubernetes 客户端，不需要 kubeconfig。
+命令入口（历史定位：`../../../../cmd/ani-network-service/base_connectivity.go`）是同一 `ani-network-service` 二进制的显式 `-base-connectivity` 模式，与正常服务、migration、node-facts 三个入口互斥。它只使用受限运行数据库角色，读取 `ANI_NETWORK_DATABASE_DSN`、`ANI_NETWORK_CLUSTER_ID` 和可选的 `ANI_NETWORK_NAMESPACE_PREFIX`（默认 `tenant-`），不读取 owner DSN，不打印 DSN，不创建 Kubernetes 客户端，不需要 kubeconfig。
 
-[持久用例](../../../../internal/data/base_backfill.go)与 [sqlc 查询](../../../../internal/data/queries/base_backfill.sql)负责审核计划和受理。Provider 执行、观察、重试和清理仍由正常服务的既有持久 worker 负责。运行数据库凭据就是此离线管理入口的能力边界，应仅给获准运行维护命令的操作者；该 CLI 不能作为租户 HTTP/RPC 暴露，也不把命令行参数当成 IAM 管理身份。
+持久用例（历史定位：`../../../../internal/data/base_backfill.go`）与 sqlc 查询（历史定位：`../../../../internal/data/queries/base_backfill.sql`）负责审核计划和受理。Provider 执行、观察、重试和清理仍由正常服务的既有持久 worker 负责。运行数据库凭据就是此离线管理入口的能力边界，应仅给获准运行维护命令的操作者；该 CLI 不能作为租户 HTTP/RPC 暴露，也不把命令行参数当成 IAM 管理身份。
 
 执行以下示例前，由本次操作的授权环境提供变量和受限 DSN；示例不包含任何真实地址或凭据。实际上线/正式补齐不是本 Goal 的授权范围。
 
@@ -66,7 +68,7 @@ legacy 聚合激活前，可用 `-base-connectivity=disable-new` 关闭新建路
 
 ## 验证证据边界
 
-[真实 PostgreSQL 回归](../../../../internal/data/base_backfill_integration_test.go)新增以下检查，均由主任务在 ubuntu 的隔离 run 执行；最终隔离演练结果为 `pass`，精确命令、源码 manifest、退出码和逐项测试见[最终门禁](gates.json)。
+真实 PostgreSQL 回归（历史定位：`../../../../internal/data/base_backfill_integration_test.go`）新增以下检查，均由主任务在 ubuntu 的隔离 run 执行；最终隔离演练结果为 `pass`，精确命令、源码 manifest、退出码和逐项测试见[最终门禁](gates.json)。
 
 | 测试 | 验证层 |
 |---|---|

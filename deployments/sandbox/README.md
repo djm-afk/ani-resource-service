@@ -1,5 +1,8 @@
 # Sandbox Kubernetes 权限
 
+正式行为见[Sandbox 规格](../../docs/specs/sandbox.md)。当前文档已按全域边界收回消费领域的 PV/CSI 完成要求；现有实现的 PV 等待/状态耦合仍是[执行状态](../../docs/execution/status.md)登记的待整改项，本次没有修改代码或 RBAC。实际部署不能只按新文档删权限，须随匹配实现一起收敛；这不豁免旧越权依赖，也不授权扩大它。
+
+
 Sandbox 运行在 Resource 进程中，共用该进程的 Kubernetes 客户端；此清单不创建新的
 Deployment 或 ServiceAccount。`rbac.yaml` 使用现有的 `ani-system/ani-resource-service`
 身份。若实际部署使用不同 ServiceAccount 或显式 kubeconfig，须以该客户端的实际身份

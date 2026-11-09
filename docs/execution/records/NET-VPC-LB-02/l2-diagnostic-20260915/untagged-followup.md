@@ -1,5 +1,7 @@
 # ani-01 untagged 配置与 IP 实测
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 2026-09-15 01:02–01:05 UTC。用户明确要求使用 untagged 配置 ani-01 ens35 并继续测试，取代此前来宾侧 tagged 102 的要求；逻辑上游仍为 VLAN 102、172.16.102.0/24、网关 172.16.102.1。
 
 后续修正说明：本文保留诊断时点。`managedDevices` 是 kc 接管及创建二层网络的正常前提，不能将“已接管”本身判为环境阻塞；下文所述缺口属于当时 Network 的设备登记实现。用户随后授权修正，现由[设备登记修正记录](../device-registration-20260915/README.md)承接，方案以[Public 规格 4.1](../../../../specs/vpc-snat.md#41-underlay-的网卡发现与二层网络)为准。
@@ -37,8 +39,8 @@ ens35 已从属于 OVS，`br-ens35` 是对应的内部接口。两个 OVS Port �
 
 现有源码存在以下限制，属于源码核查结论，未伪称已经调用一次实际失败的 RPC：
 
-- [FilterNodeInterfaces](../../../../../internal/biz/egress.go)将 OVS master、OVSManaged、KCManaged 分别标为占用/已管理，不能用于新的空闲设备接管。
-- [observeDevice / ensureDevice](../../../../../internal/data/kc_node_facts.go)拒绝已有 managedDevices 成员但缺少本资源 binding marker 的情况。
+- FilterNodeInterfaces（历史定位：`../../../../../internal/biz/egress.go`）将 OVS master、OVSManaged、KCManaged 分别标为占用/已管理，不能用于新的空闲设备接管。
+- observeDevice / ensureDevice（历史定位：`../../../../../internal/data/kc_node_facts.go`）拒绝已有 managedDevices 成员但缺少本资源 binding marker 的情况。
 - CreateVlanNetwork 需要可用的产品 NetworkDevice 记录；直接写一个 `vlanID: 0` 的历史手工 CR 不能替代产品前置流程。
 
 因此，网关链路已经可用，完整 Public API 测试仍缺少“使用安装器预先管理的物理设备”的正式入口，以及实际节点事实采集部署。删除现有桥再接管、手写 adoption marker、伪造节点事实或直接插入产品数据库，都不能作为本次验收步骤。

@@ -1,5 +1,7 @@
 # Storage 部署权限与租户开通清单
 
+本目录只说明部署权限与配置。直接 PVC 行为见[Storage 合同](../../docs/specs/storage-volumes.md)，桶/key 行为见[对象存储合同](../../docs/specs/object-storage.md)。
+
 本目录交付 Storage 模块访问 Kubernetes 所需的 RBAC，以及命名空间级绑定的手工开通流程。
 它只覆盖 Res 对 Kubernetes 的部署权限，**不涉及** Gov 对用户的 action 权限与套餐模块。
 
@@ -72,8 +74,7 @@ kubectl get rolebinding ani-storage-tenant -n <租户命名空间> \
 
 ## 后续归属
 
-租户管理的"开通租户空间"功能将统一承担命名空间创建、归属标签与租户级权限（含本
-RoleBinding），届时取消手工步骤。本期不实现该功能，也不给 Res 授予 `rolebindings` 权限。
+Sandbox 租户开通已有共享 Namespace 与其所需的限定权限，但不能据此认定 Storage RoleBinding 已自动配置。当前 Storage 专用绑定仍按本手册逐项核实；只有配套的实际开通实现、授权与验证完成后才可取消手工步骤，不能由文档整理新增 rolebindings 权限。
 
 ## 对象存储配置
 

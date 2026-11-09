@@ -6,7 +6,7 @@
 
 ## 2026-10-15 CPU 后端增量
 
-用户追加分别创建 CPU/GPU，类型和规格固定、不互转。先将 CPU 接入现有授权、幂等及持久 dispatch，再复用 Res Notebook/PVC/启停/删除与 SG 终端；CPU 不构造 GPU plan/charges、不依赖 Acc。沿用 [CPU 合同](../specs/instance-mvp.md#cpu-增量合同)，不另建实例或账本框架。
+用户追加分别创建 CPU/GPU，类型和规格固定、不互转。先将 CPU 接入现有授权、幂等及持久 dispatch，再复用 Res Notebook/PVC/启停/删除与 SG 终端；CPU 不构造 GPU plan/charges、不依赖 Acc。沿用 [CPU 合同](../specs/instance-mvp.md#2026-10-16-联合合同)，不另建实例或账本框架。
 
 退出条件：真实 Gov API → CPU Notebook → SG 写文件 → 两轮启停保盘 → 删除计算与专属卷，提供前端可用接口、镜像/preset 与启动恢复方法；保留旧 GPU 定向回归，GPU 实机缺设备时单独标记。前端代码由专人接手。
 

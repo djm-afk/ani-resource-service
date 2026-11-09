@@ -1,5 +1,7 @@
 # 2026-09-17 同事排查结论复核
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 本轮仅通过 ani-test-1 SSH 只读获取当前集群对象、对照安装的 CRD 和源码；未创建、修改或删除集群资源，未发送数据面流量。
 
 | 结论 | 复核结果 |
@@ -10,7 +12,7 @@
 
 原始快照：[Public Subnet](public-subnet.json)、[当前 LB 与相关对象](manual-lb.json)、[安装的健康检查 schema](policy-crd.json)。每份保存命令、时间与退出码。
 
-历史产品 API 场景不能与当前手工场景混同：[历史 Provider 快照](../device-registration-20260915/public-private-configured-provider.json)存在四个 Backend，端点为 10.233.1.2:8080 和 10.233.1.3:8080；[适配器源码](../../../../../internal/data/kc_load_balancer.go)生成 Backend endpoint 及 Route 引用，健康检查使用默认 endpoint 端口。因此本轮证据不支持“Network 创建 LB 一直未创建 Backend”的判断。
+历史产品 API 场景不能与当前手工场景混同：[历史 Provider 快照](../device-registration-20260915/public-private-configured-provider.json)存在四个 Backend，端点为 10.233.1.2:8080 和 10.233.1.3:8080；适配器源码（历史定位：`../../../../../internal/data/kc_load_balancer.go`）生成 Backend endpoint 及 Route 引用，健康检查使用默认 endpoint 端口。因此本轮证据不支持“Network 创建 LB 一直未创建 Backend”的判断。
 
 手册原本将 Backend 的生成、创建拆为独立步骤；现补充缺失检查和停止条件，撤去平台创建及删除指令，保留当前池及其 EIPGateway/VlanNetwork。详见[更新手册](../../../../runbooks/public-forwarding-manual-20260917/README.md)。未改 Go 代码或重新运行完整门禁。
 

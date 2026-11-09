@@ -1,4 +1,10 @@
-# Image MVP 决策输入（待按下一可用 ADR 编号落库）
+---
+status: accepted
+---
+
+# Image 领域自治与私有镜像仓库
+
+本记录以 ADR-0007 归档原设计取舍；具体运行与凭据交接以[Image 规格](../specs/image-mvp.md)及[API 合同](../specs/image-api.md)为准，实施事实只见执行状态。
 
 ## 用户明确约束
 

@@ -1,5 +1,7 @@
 # LB 审计恢复及 CI 修正（2026-09-18）
 
+2026-11-09 引用维护：本记录保留原时点的实施与验收结论。标为“历史定位”或“仓外定位”的原路径在当前 checkout 无法解析，仅保留追溯信息，证据可用性为 not_verified；不表示归档已恢复或旧规则仍适用。处理范围见[文档修复记录](../../res-doc-fix-20261109.md)。
+
 用户在[具体失败分支诊断](../lb-branch-20260917/README.md)后要求正式修复，并确认两组 CI 失败是否需要改代码。本轮以 `83a4346d05069fb957f9ff6096c00dd586504e62` 为产品输入，沿用此前直接提交、推送原分支的授权。本地仅编辑、检查与 Git；编译、测试、生成检查均在 Fedora 隔离目录执行。
 
 ## 修改与原因
@@ -8,9 +10,9 @@
 
 连续 Watch 续接使完整审计的来源代次失效，旧 LB adapter 只允许一次刷新，仍有约 27 秒请求预算时便返回 `ProviderTemporary`。worker 将实际观察失败落库为 degraded/unknown，并非 scheduler 没有运行，也不证明业务流量中断。
 
-[ObserveLoadBalancer](../../../../../internal/data/kc_load_balancer.go)现在用迭代循环处理关系核验前、核验后的两处审计失效。在原调用截止时间内重新解析依赖、推进数据库采集边界、读取完整审计。只有内部审计失效信号触发重采集；读取错误与身份冲突保持原处理。取消/超时返回空证明；无截止时间的调用只允许一次刷新回退。没有延长 worker 超时、修改持久状态规则或依赖旧证据维持 configured。
+ObserveLoadBalancer（历史定位：`../../../../../internal/data/kc_load_balancer.go`）现在用迭代循环处理关系核验前、核验后的两处审计失效。在原调用截止时间内重新解析依赖、推进数据库采集边界、读取完整审计。只有内部审计失效信号触发重采集；读取错误与身份冲突保持原处理。取消/超时返回空证明；无截止时间的调用只允许一次刷新回退。没有延长 worker 超时、修改持久状态规则或依赖旧证据维持 configured。
 
-[权威观察规格](../../../../specs/cr-observation.md#4-事实时效与真实校验)同步替换了 LB 单次刷新规则。身份、通知代次、时效、生成对象归属与释放证明保持。
+权威观察规格（旧锚点 `../../../../specs/cr-observation.md#4-事实时效与真实校验` 已被替代；现行规则见[网络状态消费规格](../../../../specs/cr-observation.md)）同步替换了 LB 单次刷新规则。身份、通知代次、时效、生成对象归属与释放证明保持。
 
 ### 两组 CI 失败
 
@@ -21,7 +23,7 @@
 
 ## 验证
 
-最终结果见 [门禁与清理](gates.json)。正式回归 [lb_audit_retry_integration_test.go](../../../../../internal/data/lb_audit_retry_integration_test.go)在真实 PG、实际 adapter、worker 和查询链上完成；controlled Kubernetes/controller 只提供 Provider 侧事实。
+最终结果见 [门禁与清理](gates.json)。正式回归 lb_audit_retry_integration_test.go（历史定位：`../../../../../internal/data/lb_audit_retry_integration_test.go`）在真实 PG、实际 adapter、worker 和查询链上完成；controlled Kubernetes/controller 只提供 Provider 侧事实。
 
 - 原代码：private 与 public_private 都在同一 worker 调用内返回 unknown/PROVIDER_UNAVAILABLE；分别仍余 27.275/27.350 秒。故障窗口前后 Provider 对象摘要相同，实测两次 HTTP Watch 续接。
 - 修正后：private / public_private 分别在 5.519 / 5.454 秒内通过，同一 worker 调用后 configured/fresh，Provider 对象摘要不变；持续失效到 deadline、无 deadline 的有限回退、403 不重试、取消无证明全部通过。
