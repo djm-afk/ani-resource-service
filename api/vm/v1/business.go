@@ -249,7 +249,7 @@ func validateMedia(m *MediaReference) error {
 	if m.InitializationCapability != "" && m.InitializationCapability != "NONE" && m.InitializationCapability != CloudInitNoCloud {
 		return ErrInvalidRequest
 	}
-	if m.InitializationVerified && (m.InitializationCapability != CloudInitNoCloud || m.Kind != "DISK_IMAGE" || m.OsFamily != "linux") {
+	if m.InitializationCapability == CloudInitNoCloud && (m.Kind != "DISK_IMAGE" || m.OsFamily != "linux") {
 		return ErrInvalidRequest
 	}
 	return nil
@@ -282,7 +282,7 @@ func ValidateCreateSpec(s *CreateSpec) error {
 	if (s.Intent.SourceKind == "DISK_IMAGE" && s.BootDevice != "SYSTEM_DISK") || (s.Intent.SourceKind == "INSTALL_ISO" && s.BootDevice != "INSTALL_MEDIA") {
 		return ErrInvalidRequest
 	}
-	if s.Intent.GuestInitialization != nil && (s.Media.OsFamily != "linux" || s.Media.Kind != "DISK_IMAGE" || s.Media.InitializationCapability != CloudInitNoCloud || !s.Media.InitializationVerified) {
+	if s.Intent.GuestInitialization != nil && (s.Media.OsFamily != "linux" || s.Media.Kind != "DISK_IMAGE" || s.Media.InitializationCapability != CloudInitNoCloud) {
 		return ErrInvalidRequest
 	}
 	if s.DriverMedia != nil {
@@ -318,7 +318,7 @@ var canonicalFields = map[protoreflect.FullName][]string{
 var canonicalOptionalFields = map[protoreflect.FullName][]string{
 	"vm.v1.CreateVMData":   {"guest_initialization", "dns", "security_group_ids"},
 	"vm.v1.CreateSpec":     {"dns", "security_group_ids"},
-	"vm.v1.MediaReference": {"initialization_capability", "initialization_verified"},
+	"vm.v1.MediaReference": {"initialization_capability"},
 }
 
 func closedProjection(m protoreflect.Message) (any, error) {
@@ -414,6 +414,7 @@ func CanonicalCreateSpec(s *CreateSpec) ([]byte, error) {
 	normalized.Intent.Dns, _ = NormalizeDNSSelection(s.Intent.Dns)
 	return canonical(normalized)
 }
+
 func DecodeCreateSpec(b []byte) (*CreateSpec, error) {
 	s := new(CreateSpec)
 	if e := protojson.Unmarshal(b, s); e != nil {

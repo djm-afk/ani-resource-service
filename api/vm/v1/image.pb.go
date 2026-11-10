@@ -22,8 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ImageOS is the platform profile frozen for one image. A tenant-uploaded image
-// never claims an initialization capability, so cloud-init stays unavailable.
+// ImageOS is the platform profile frozen for one image.
 type ImageOS struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OsFamily      string                 `protobuf:"bytes,1,opt,name=os_family,proto3" json:"os_family,omitempty"`
@@ -143,8 +142,10 @@ type VMImage struct {
 	CreatedBy      string   `protobuf:"bytes,18,opt,name=created_by,proto3" json:"created_by,omitempty"`
 	CreatedAt      string   `protobuf:"bytes,19,opt,name=created_at,proto3" json:"created_at,omitempty"`
 	UpdatedAt      string   `protobuf:"bytes,20,opt,name=updated_at,proto3" json:"updated_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// NONE or CLOUD_INIT_NOCLOUD. Empty input is normalized to NONE.
+	InitializationCapability string `protobuf:"bytes,21,opt,name=initialization_capability,proto3" json:"initialization_capability,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *VMImage) Reset() {
@@ -313,6 +314,13 @@ func (x *VMImage) GetCreatedAt() string {
 func (x *VMImage) GetUpdatedAt() string {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *VMImage) GetInitializationCapability() string {
+	if x != nil {
+		return x.InitializationCapability
 	}
 	return ""
 }
@@ -517,8 +525,11 @@ type CreateImageRequest struct {
 	Format           string   `protobuf:"bytes,6,opt,name=format,proto3" json:"format,omitempty"`
 	SourceCapacityGb int64    `protobuf:"varint,7,opt,name=source_capacity_gb,json=sourceCapacityGb,proto3" json:"source_capacity_gb,omitempty"`
 	Os               *ImageOS `protobuf:"bytes,8,opt,name=os,proto3" json:"os,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Optional tenant declaration, frozen at create time and never mutable.
+	// CLOUD_INIT_NOCLOUD is accepted only for a linux DISK_IMAGE; empty means NONE.
+	InitializationCapability string `protobuf:"bytes,9,opt,name=initialization_capability,proto3" json:"initialization_capability,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *CreateImageRequest) Reset() {
@@ -605,6 +616,13 @@ func (x *CreateImageRequest) GetOs() *ImageOS {
 		return x.Os
 	}
 	return nil
+}
+
+func (x *CreateImageRequest) GetInitializationCapability() string {
+	if x != nil {
+		return x.InitializationCapability
+	}
+	return ""
 }
 
 type CreateUploadSessionRequest struct {
@@ -943,7 +961,7 @@ const file_vm_v1_image_proto_rawDesc = "" +
 	"\bfirmware\x18\x04 \x01(\tR\bfirmware\x12\x1a\n" +
 	"\broot_bus\x18\x05 \x01(\tR\broot_bus\x12\x1a\n" +
 	"\bdata_bus\x18\x06 \x01(\tR\bdata_bus\x12\x1c\n" +
-	"\tnic_model\x18\a \x01(\tR\tnic_model\"\xc9\x05\n" +
+	"\tnic_model\x18\a \x01(\tR\tnic_model\"\x87\x06\n" +
 	"\aVMImage\x12\x1a\n" +
 	"\bimage_id\x18\x01 \x01(\tR\bimage_id\x12\x1c\n" +
 	"\tmedia_key\x18\x02 \x01(\tR\tmedia_key\x12\x12\n" +
@@ -971,7 +989,8 @@ const file_vm_v1_image_proto_rawDesc = "" +
 	"created_at\x12\x1e\n" +
 	"\n" +
 	"updated_at\x18\x14 \x01(\tR\n" +
-	"updated_at\"\xa5\x01\n" +
+	"updated_at\x12<\n" +
+	"\x19initialization_capability\x18\x15 \x01(\tR\x19initialization_capability\"\xa5\x01\n" +
 	"\x11ListImagesRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\rR\x04page\x12\x1b\n" +
@@ -984,7 +1003,7 @@ const file_vm_v1_image_proto_rawDesc = "" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\"I\n" +
 	"\x0fGetImageRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
-	"\bimage_id\x18\x02 \x01(\tR\aimageId\"\x8a\x02\n" +
+	"\bimage_id\x18\x02 \x01(\tR\aimageId\"\xc8\x02\n" +
 	"\x12CreateImageRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12\x12\n" +
@@ -993,7 +1012,8 @@ const file_vm_v1_image_proto_rawDesc = "" +
 	"\x04kind\x18\x05 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06format\x18\x06 \x01(\tR\x06format\x12,\n" +
 	"\x12source_capacity_gb\x18\a \x01(\x03R\x10sourceCapacityGb\x12\x1e\n" +
-	"\x02os\x18\b \x01(\v2\x0e.vm.v1.ImageOSR\x02os\"}\n" +
+	"\x02os\x18\b \x01(\v2\x0e.vm.v1.ImageOSR\x02os\x12<\n" +
+	"\x19initialization_capability\x18\t \x01(\tR\x19initialization_capability\"}\n" +
 	"\x1aCreateUploadSessionRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12'\n" +

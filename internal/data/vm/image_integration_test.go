@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -124,8 +125,9 @@ func TestVMImageMigrateIsRepeatableAndGrantsRuntimeAccess(t *testing.T) {
 		versions = append(versions, v)
 	}
 	rows.Close()
-	if len(versions) != 4 || versions[3] != 4 {
-		t.Fatalf("schema_version = %v, want 1..4", versions)
+	wantVersions := []int64{1, 2, 3, 4, 6, 7, 8}
+	if !slices.Equal(versions, wantVersions) {
+		t.Fatalf("schema_version = %v, want %v", versions, wantVersions)
 	}
 	for _, table := range []string{"images", "image_requests", "image_source_references"} {
 		var granted int

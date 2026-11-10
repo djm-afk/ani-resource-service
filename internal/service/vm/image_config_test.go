@@ -84,10 +84,26 @@ func TestNewUploadedImageRecordShapesTheRowTheDomainExpects(t *testing.T) {
 		{TenantId: tenant, Kind: "DISK_IMAGE", Format: "qcow2", Name: strings.Repeat("n", 81), SourceCapacityGb: 8},
 		{TenantId: tenant, Kind: "DISK_IMAGE", Format: "qcow2", Name: "x", SourceCapacityGb: 0},
 		{TenantId: tenant, Kind: "INSTALL_ISO", Format: "qcow2", Name: "x", SourceCapacityGb: 8},
-		{TenantId: "not-a-uuid", Kind: "DISK_IMAGE", Format: "qcow2", Name: "x", SourceCapacityGb: 8}} {
+		{TenantId: "not-a-uuid", Kind: "DISK_IMAGE", Format: "qcow2", Name: "x", SourceCapacityGb: 8},
+		{TenantId: tenant, Kind: "DISK_IMAGE", Format: "qcow2", Name: "x", SourceCapacityGb: 8, InitializationCapability: "SOMETHING"},
+		// NoCloud on an ISO is refused by Validated(); a NoCloud claim on a Windows
+		// profile is refused by the CreateImage handler itself, which owns the profile.
+		{TenantId: tenant, Kind: "INSTALL_ISO", Format: "iso", Name: "x", SourceCapacityGb: 8, InitializationCapability: "CLOUD_INIT_NOCLOUD", Os: &pb.ImageOS{OsFamily: "linux", OsVersion: "24.04", Firmware: "bios", RootBus: "virtio", DataBus: "scsi", NicModel: "virtio"}}} {
 		if _, e := newUploadedImageRecord(bad, id, profile, "admin", deadline); !errors.Is(e, biz.ErrImageInvalid) {
 			t.Errorf("invalid record accepted: %+v -> %v", bad, e)
 		}
+	}
+	declared := &pb.CreateImageRequest{TenantId: tenant, Kind: "DISK_IMAGE", Format: "qcow2", Name: "cloud-ready",
+		SourceCapacityGb: 8, InitializationCapability: " CLOUD_INIT_NOCLOUD ", Os: &pb.ImageOS{OsFamily: "linux", OsVersion: "24.04", Firmware: "bios", RootBus: "virtio", DataBus: "scsi", NicModel: "virtio"}}
+	withCap, e := newUploadedImageRecord(declared, id, profile, "admin", deadline)
+	if e != nil {
+		t.Fatalf("declared capability rejected: %v", e)
+	}
+	if withCap.InitializationCapability != biz.ImageInitNoCloud {
+		t.Errorf("declared capability not frozen: %q", withCap.InitializationCapability)
+	}
+	if defaultCap, e := newUploadedImageRecord(request, id, profile, "admin", deadline); e != nil || defaultCap.InitializationCapability != biz.ImageInitNone {
+		t.Errorf("absent capability not normalized to NONE: %v %q", e, defaultCap.InitializationCapability)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 // management, catalog and worker paths.
 const imageColumns = `tenant_id,id,media_key,kind,format,name,description,state,reason,cleanup_state,` +
 	`source_capacity_gb,source_requested_bytes,observed_source_capacity_bytes,source_checksum_bytes,source_sha256,` +
+	`initialization_capability,` +
 	`os,native,cleanup,version,lease_token,lease_until,next_attempt_at,upload_deadline,attempt_count,created_by,created_at,updated_at`
 
 func imageFrom(row pgx.Row) (biz.Image, error) {
@@ -29,6 +30,7 @@ func imageFrom(row pgx.Row) (biz.Image, error) {
 	var createdBy *string
 	e := row.Scan(&i.TenantID, &i.ID, &i.MediaKey, &i.Kind, &i.Format, &i.Name, &i.Description, &i.State, &i.Reason, &i.CleanupState,
 		&i.SourceCapacityGB, &i.SourceRequestedBytes, &i.ObservedSourceCapacityBytes, &i.SourceChecksumBytes, &i.SourceSHA256,
+		&i.InitializationCapability,
 		&osRaw, &nativeRaw, &cleanupRaw, &i.Version, &lease, &leaseUntil, &i.NextAttemptAt, &deadline, &i.AttemptCount, &createdBy, &i.CreatedAt, &i.UpdatedAt)
 	if e != nil {
 		return i, e
@@ -75,6 +77,7 @@ func imageArgs(i biz.Image) []any {
 	createdBy := i.CreatedBy
 	return []any{i.TenantID, i.ID, i.MediaKey, i.Kind, i.Format, i.Name, i.Description, i.State, i.Reason, i.CleanupState,
 		i.SourceCapacityGB, i.SourceRequestedBytes, i.ObservedSourceCapacityBytes, i.SourceChecksumBytes, i.SourceSHA256,
+		i.InitializationCapability,
 		encode(i.OS), encode(i.Native), encode(emptyRefs(i.Cleanup)), i.Version, lease(), leaseUntil, i.NextAttemptAt, deadline, createdBy}
 }
 
@@ -285,6 +288,7 @@ func (p *Postgres) CreateImage(ctx context.Context, desired biz.Image, c biz.Ima
 
 const insertImageColumns = `tenant_id,id,media_key,kind,format,name,description,state,reason,cleanup_state,` +
 	`source_capacity_gb,source_requested_bytes,observed_source_capacity_bytes,source_checksum_bytes,source_sha256,` +
+	`initialization_capability,` +
 	`os,native,cleanup,version,lease_token,lease_until,next_attempt_at,upload_deadline,created_by`
 
 func imagePlaceholder(n int) string {

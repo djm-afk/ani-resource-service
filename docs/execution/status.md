@@ -1,5 +1,10 @@
 # Network 执行状态
 
+<a id="vm-image-init-pr71-followup-20261109"></a>
+## PR #71 镜像初始化声明剩余修复（2026-11-09）
+
+基线 `28ef4013` 之后的两项剩余修复已交付[草稿 PR #73](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/73)：新增显式迁移 008，仅转换旧镜像创建请求摘要并保留原幂等绑定；删除产品验收脚本的旧 verified 断言。原 001–007 与 VM 摘要不变，未增加运行时兼容。修复分支已同步 main，原 #71 因 fork 写权限被拒绝而未改写。`7e126f38` 的 GitHub source / make verify 已通过；VM 镜像 PostgreSQL 迁移用例与部署仍未验证，完整 CI 也未通过。本次没有执行迁移 008 或部署，不能沿用原 r4/007 的验收结果。修复、权限限制、CI 实际结果及切换步骤见[本次记录](records/vm-image-init-pr71-followup-20261109.md)。
+
 ## 2026-11-09：PR #70 审核文档修订
 
 基于 PR 当前 head 221c1f1a32d2246184b15aaf32a871ea917a9a45（base 511b111），核对并修正 F01–F06：Instance 删除/退额验收、Network 终态退休、LB 旧字段与局部清空、VM 地址撤回、Storage UID 冲突返回，以及 Image/Sandbox 实际 Secret writer 接线。具体源码、修订范围和静态检查见[原修复记录的本次补充](records/res-doc-fix-20261109.md#pr70-review-f01-f06-20261109)。本轮仅检查 11 份修改 Markdown、1170 个相对链接，格式/路径/锚点及 git diff --check 通过，未扫描全仓。这里只完成文档修订，不能将旧清理总结视为全域实现已完成；原始审阅和历史结果仍保留原时点含义。

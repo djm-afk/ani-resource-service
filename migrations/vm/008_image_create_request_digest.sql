@@ -1,0 +1,10 @@
+-- 008: one-time CreateImage replay digest transition to capability declarations.
+-- Applied by Migrate through migrateImageCreateRequestDigests in Go so the
+-- existing ImageRequestDigest implementation supplies the canonical JSON bytes.
+-- Only CREATE snapshots that predate InitializationCapability are candidates.
+-- The original snapshot must reproduce the old request digest before it is
+-- changed to the digest of the same fields plus InitializationCapability=NONE.
+-- The image identity, idempotency key, snapshot, timestamps and all other
+-- requests remain unchanged. Do not derive original intent from mutable images.
+-- This marker and image_create_digest_migration.go jointly form the checksum.
+-- No SQL or Go runtime compatibility path is installed by this migration.

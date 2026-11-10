@@ -50,6 +50,14 @@ const (
 	StateDeleted   = "DELETED"
 )
 
+// Initialization capabilities a tenant may declare for an uploaded image. The
+// declaration is frozen at create time; an empty stored value (legacy rows and
+// the column default) reads as InitNone everywhere it is projected.
+const (
+	ImageInitNone    = "NONE"
+	ImageInitNoCloud = "CLOUD_INIT_NOCLOUD"
+)
+
 const (
 	CleanupNone     = "NONE"
 	CleanupPending  = "PENDING"
@@ -76,6 +84,7 @@ var imageKinds = map[string]string{"DISK_IMAGE": "qcow2", "INSTALL_ISO": "iso"}
 type Image struct {
 	TenantID, ID, MediaKey, Kind, Format, Name, Description string
 	State, Reason, CleanupState                             string
+	InitializationCapability                                string
 	SourceCapacityGB, SourceRequestedBytes                  int64
 	ObservedSourceCapacityBytes, SourceChecksumBytes        int64
 	SourceSHA256                                            string
@@ -89,6 +98,15 @@ type Image struct {
 	AttemptCount                                            int
 	CreatedBy                                               string
 	CreatedAt, UpdatedAt                                    time.Time
+}
+
+// ImageInitializationCapabilityFor is the single projection of the declared
+// capability: an absent declaration reads as NONE, never as an unknown state.
+func ImageInitializationCapabilityFor(declared string) string {
+	if declared == ImageInitNoCloud {
+		return ImageInitNoCloud
+	}
+	return ImageInitNone
 }
 
 type ImageOS struct {
@@ -147,6 +165,17 @@ func (i Image) Validated() (Image, error) {
 	default:
 		return Image{}, ErrImageInvalid
 	}
+	// The declared capability is tenant-attested, not verified by the platform.
+	// NoCloud stays bound to a linux disk image: an ISO or a Windows image has
+	// no guest agent contract this initialization path can rely on.
+	switch i.InitializationCapability {
+	case "", ImageInitNone, ImageInitNoCloud:
+	default:
+		return Image{}, ErrImageInvalid
+	}
+	if i.InitializationCapability == ImageInitNoCloud && (i.Kind != "DISK_IMAGE" || i.OS.OSFamily != "linux") {
+		return Image{}, ErrImageInvalid
+	}
 	if i.Version < 1 {
 		return Image{}, ErrImageInvalid
 	}
@@ -160,8 +189,9 @@ func (i Image) Validated() (Image, error) {
 }
 
 // Source projects a READY image into the existing read-only media contract.
-// Uploaded images never claim an initialization capability, so cloud-init and
-// verified stay absent and the frozen VM contract keeps its own defaults.
+// The initialization capability travels with the image record itself (the
+// tenant's frozen create-time declaration); this projection carries the source
+// identity only, so the fingerprint stays independent of the declaration.
 func (i Image) Source() Source {
 	return Source{Key: i.MediaKey, Kind: i.Kind, ClusterID: i.Native.ClusterID, Namespace: i.Native.Namespace,
 		PVCName: i.Native.PVCName, PVCUID: i.Native.PVCUID, Checksum: i.SourceSHA256,

@@ -105,7 +105,7 @@ DNSSelection 的 mode 为 PLATFORM_DEFAULT 或 CUSTOM；省略、空 mode 或显
 
 Gov 生成可信 `GuestInitialization={method=CLOUD_INIT_NOCLOUD,username,ssh_public_key,password_set,credential_intent_digest}`，写入 `CreateVMData.guest_initialization`；`password_set` 和 `credential_intent_digest` 由 Gov 生成，后者为绑定完整凭据意图的 Gov HMAC，不接受浏览器伪造。明文密码不在 create_spec 内；仅经 mTLS 的 `AcceptCreate.guest_credentials` 单独传递。Gov outbox 使用 AEAD 保护凭据；Resource 在受理 ACK 的同一事务内写入独立 AEAD 私密表。普通 spec、查询、operation、日志及公开证据均不返回密码或密文。
 
-`MediaReference.initialization_capability` 与 `initialization_verified` 为受管目录的只读能力。仅 capability=CLOUD_INIT_NOCLOUD、verified=true，且已验证 source UID/hash 的 Linux DISK_IMAGE 可接受初始化；其余介质明确拒绝。创建冻结这组能力及规范化初始化意图，合法同意图重放不二次受理或重置账户。原生专属 Secret 绑定真实 VM 所有权，最终按精确 UID 清理。固定 firmware UUID=业务 VM ID，保持 Stop/Start/Restart 和同一 VM 恢复的 NoCloud instance-id；客体实测须证明停开不重置自定义账户，恢复后保留快照内账户状态，不重新用初始凭据覆盖。
+`MediaReference.initialization_capability` 是初始化能力的**冻结声明**（2026-11-09 起，`initialization_verified` 字段已删除）：租户上传镜像由租户在创建时自证，平台目录条目由运维登记声明；平台不对声明本身做客体验证。仅 capability=CLOUD_INIT_NOCLOUD 的 Linux DISK_IMAGE 可接受初始化；其余介质明确拒绝。声明在创建受理时与 media 指纹一起冻结，参与幂等比较；合法同意图重放不二次受理或重置账户。原生专属 Secret 绑定真实 VM 所有权，最终按精确 UID 清理。固定 firmware UUID=业务 VM ID，保持 Stop/Start/Restart 和同一 VM 恢复的 NoCloud instance-id；客体实测须证明停开不重置自定义账户，恢复后保留快照内账户状态，不重新用初始凭据覆盖。
 
 ### C03.2 可信创建与操作消息
 

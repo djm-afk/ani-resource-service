@@ -156,8 +156,9 @@ func wireImage(i biz.Image) *pb.VMImage {
 		SourceCapacityGb: i.SourceCapacityGB, SourceRequestedBytes: i.SourceRequestedBytes,
 		ObservedSourceCapacityBytes: i.ObservedSourceCapacityBytes, SourceChecksumBytes: i.SourceChecksumBytes,
 		SourceSha256: i.SourceSHA256, Version: i.Version, CreatedBy: i.CreatedBy,
-		UploadDeadline: imageTimestamp(i.UploadDeadline),
-		CreatedAt:      i.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: i.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		InitializationCapability: biz.ImageInitializationCapabilityFor(i.InitializationCapability),
+		UploadDeadline:           imageTimestamp(i.UploadDeadline),
+		CreatedAt:                i.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: i.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		Os: &pb.ImageOS{OsFamily: i.OS.OSFamily, OsVersion: i.OS.OSVersion, Architecture: i.OS.Architecture,
 			Firmware: i.OS.Firmware, RootBus: i.OS.RootBus, DataBus: i.OS.DataBus, NicModel: i.OS.NICModel}}
 }
@@ -246,12 +247,24 @@ func (s *ImageService) CreateImage(ctx context.Context, r *pb.CreateImageRequest
 	if e != nil {
 		return nil, s.rejected(ctx, "create_os_profile", e)
 	}
+	// The declaration is frozen at create time and bound into the replay digest,
+	// so a retried request cannot silently switch the initialization answer.
+	capability := strings.TrimSpace(r.InitializationCapability)
+	if capability == "" {
+		capability = biz.ImageInitNone
+	}
+	if capability != biz.ImageInitNone && capability != biz.ImageInitNoCloud {
+		return nil, s.rejected(ctx, "create_initialization_value", biz.ErrImageInvalid)
+	}
+	if capability == biz.ImageInitNoCloud && (r.Kind != "DISK_IMAGE" || profile.OSFamily != "linux") {
+		return nil, s.rejected(ctx, "create_initialization_scope", biz.ErrImageInvalid)
+	}
 	id := uuid.NewString()
 	fields := struct {
-		Name, Description, Kind, Format string
-		Size                            int64
-		OS                              biz.ImageOS
-	}{strings.TrimSpace(r.Name), r.Description, r.Kind, r.Format, r.SourceCapacityGb, profile}
+		Name, Description, Kind, Format, InitializationCapability string
+		Size                                                      int64
+		OS                                                        biz.ImageOS
+	}{strings.TrimSpace(r.Name), r.Description, r.Kind, r.Format, capability, r.SourceCapacityGb, profile}
 	command, e := imageCommandOf(biz.ImageCreateAction, r.TenantId, id, r.IdempotencyKey, fields, 0, nil)
 	if e != nil {
 		return nil, s.rejected(ctx, "create_command", e)
@@ -274,9 +287,14 @@ func (s *ImageService) CreateImage(ctx context.Context, r *pb.CreateImageRequest
 // with VM_IMAGE_INVALID_ARGUMENT while the data-layer tests, which seed a complete
 // record, stayed green.
 func newUploadedImageRecord(r *pb.CreateImageRequest, id string, profile biz.ImageOS, actor string, deadline time.Time) (biz.Image, error) {
+	capability := strings.TrimSpace(r.InitializationCapability)
+	if capability == "" {
+		capability = biz.ImageInitNone
+	}
 	return biz.Image{TenantID: r.TenantId, ID: id, MediaKey: biz.ImageMediaKey(id), Name: strings.TrimSpace(r.Name),
 		Description: r.Description, Kind: r.Kind, Format: r.Format, State: biz.StatePreparing, CleanupState: biz.CleanupNone,
-		Version: 1, SourceCapacityGB: r.SourceCapacityGb, OS: profile, CreatedBy: actor, UploadDeadline: &deadline}.Validated()
+		InitializationCapability: capability,
+		Version:                  1, SourceCapacityGB: r.SourceCapacityGb, OS: profile, CreatedBy: actor, UploadDeadline: &deadline}.Validated()
 }
 
 // CreateUploadSession issues a short-lived ticket for one still-uploadable

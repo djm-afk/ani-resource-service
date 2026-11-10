@@ -619,31 +619,31 @@ func (x *GuestCredentials) GetPassword() string {
 }
 
 type MediaReference struct {
-	state                    protoimpl.MessageState `protogen:"open.v1"`
-	MediaKey                 string                 `protobuf:"bytes,1,opt,name=media_key,json=mediaKey,proto3" json:"media_key,omitempty"`
-	Name                     string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Kind                     string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	ClusterId                string                 `protobuf:"bytes,4,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
-	Namespace                string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	PvcName                  string                 `protobuf:"bytes,6,opt,name=pvc_name,json=pvcName,proto3" json:"pvc_name,omitempty"`
-	PvcUid                   string                 `protobuf:"bytes,7,opt,name=pvc_uid,json=pvcUid,proto3" json:"pvc_uid,omitempty"`
-	Checksum                 string                 `protobuf:"bytes,8,opt,name=checksum,proto3" json:"checksum,omitempty"`
-	VolumeMode               string                 `protobuf:"bytes,9,opt,name=volume_mode,json=volumeMode,proto3" json:"volume_mode,omitempty"`
-	ContentType              string                 `protobuf:"bytes,10,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
-	VirtualCapacityBytes     int64                  `protobuf:"varint,11,opt,name=virtual_capacity_bytes,json=virtualCapacityBytes,proto3" json:"virtual_capacity_bytes,omitempty"`
-	RequestedBytes           int64                  `protobuf:"varint,12,opt,name=requested_bytes,json=requestedBytes,proto3" json:"requested_bytes,omitempty"`
-	OsFamily                 string                 `protobuf:"bytes,13,opt,name=os_family,json=osFamily,proto3" json:"os_family,omitempty"`
-	OsVersion                string                 `protobuf:"bytes,14,opt,name=os_version,json=osVersion,proto3" json:"os_version,omitempty"`
-	Architecture             string                 `protobuf:"bytes,15,opt,name=architecture,proto3" json:"architecture,omitempty"`
-	Firmware                 string                 `protobuf:"bytes,16,opt,name=firmware,proto3" json:"firmware,omitempty"`
-	RootBus                  string                 `protobuf:"bytes,17,opt,name=root_bus,json=rootBus,proto3" json:"root_bus,omitempty"`
-	DataBus                  string                 `protobuf:"bytes,18,opt,name=data_bus,json=dataBus,proto3" json:"data_bus,omitempty"`
-	NicModel                 string                 `protobuf:"bytes,19,opt,name=nic_model,json=nicModel,proto3" json:"nic_model,omitempty"`
-	PersistentTpm            bool                   `protobuf:"varint,20,opt,name=persistent_tpm,json=persistentTpm,proto3" json:"persistent_tpm,omitempty"`
-	PersistentUefi           bool                   `protobuf:"varint,21,opt,name=persistent_uefi,json=persistentUefi,proto3" json:"persistent_uefi,omitempty"`
-	DriverMediaKey           string                 `protobuf:"bytes,22,opt,name=driver_media_key,json=driverMediaKey,proto3" json:"driver_media_key,omitempty"`
-	InitializationCapability string                 `protobuf:"bytes,23,opt,name=initialization_capability,json=initializationCapability,proto3" json:"initialization_capability,omitempty"`
-	InitializationVerified   bool                   `protobuf:"varint,24,opt,name=initialization_verified,json=initializationVerified,proto3" json:"initialization_verified,omitempty"`
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	MediaKey             string                 `protobuf:"bytes,1,opt,name=media_key,json=mediaKey,proto3" json:"media_key,omitempty"`
+	Name                 string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Kind                 string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	ClusterId            string                 `protobuf:"bytes,4,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	Namespace            string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	PvcName              string                 `protobuf:"bytes,6,opt,name=pvc_name,json=pvcName,proto3" json:"pvc_name,omitempty"`
+	PvcUid               string                 `protobuf:"bytes,7,opt,name=pvc_uid,json=pvcUid,proto3" json:"pvc_uid,omitempty"`
+	Checksum             string                 `protobuf:"bytes,8,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	VolumeMode           string                 `protobuf:"bytes,9,opt,name=volume_mode,json=volumeMode,proto3" json:"volume_mode,omitempty"`
+	ContentType          string                 `protobuf:"bytes,10,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	VirtualCapacityBytes int64                  `protobuf:"varint,11,opt,name=virtual_capacity_bytes,json=virtualCapacityBytes,proto3" json:"virtual_capacity_bytes,omitempty"`
+	RequestedBytes       int64                  `protobuf:"varint,12,opt,name=requested_bytes,json=requestedBytes,proto3" json:"requested_bytes,omitempty"`
+	OsFamily             string                 `protobuf:"bytes,13,opt,name=os_family,json=osFamily,proto3" json:"os_family,omitempty"`
+	OsVersion            string                 `protobuf:"bytes,14,opt,name=os_version,json=osVersion,proto3" json:"os_version,omitempty"`
+	Architecture         string                 `protobuf:"bytes,15,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	Firmware             string                 `protobuf:"bytes,16,opt,name=firmware,proto3" json:"firmware,omitempty"`
+	RootBus              string                 `protobuf:"bytes,17,opt,name=root_bus,json=rootBus,proto3" json:"root_bus,omitempty"`
+	DataBus              string                 `protobuf:"bytes,18,opt,name=data_bus,json=dataBus,proto3" json:"data_bus,omitempty"`
+	NicModel             string                 `protobuf:"bytes,19,opt,name=nic_model,json=nicModel,proto3" json:"nic_model,omitempty"`
+	PersistentTpm        bool                   `protobuf:"varint,20,opt,name=persistent_tpm,json=persistentTpm,proto3" json:"persistent_tpm,omitempty"`
+	PersistentUefi       bool                   `protobuf:"varint,21,opt,name=persistent_uefi,json=persistentUefi,proto3" json:"persistent_uefi,omitempty"`
+	DriverMediaKey       string                 `protobuf:"bytes,22,opt,name=driver_media_key,json=driverMediaKey,proto3" json:"driver_media_key,omitempty"`
+	// NONE or CLOUD_INIT_NOCLOUD: whether guest initialization can be injected.
+	InitializationCapability string `protobuf:"bytes,23,opt,name=initialization_capability,json=initializationCapability,proto3" json:"initialization_capability,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -837,13 +837,6 @@ func (x *MediaReference) GetInitializationCapability() string {
 		return x.InitializationCapability
 	}
 	return ""
-}
-
-func (x *MediaReference) GetInitializationVerified() bool {
-	if x != nil {
-		return x.InitializationVerified
-	}
-	return false
 }
 
 type StoragePolicy struct {
@@ -4668,7 +4661,7 @@ const file_vm_v1_vm_proto_rawDesc = "" +
 	"\fpassword_set\x18\x04 \x01(\bR\vpasswordSet\x128\n" +
 	"\x18credential_intent_digest\x18\x05 \x01(\tR\x16credentialIntentDigest\".\n" +
 	"\x10GuestCredentials\x12\x1a\n" +
-	"\bpassword\x18\x01 \x01(\tR\bpassword\"\xc4\x06\n" +
+	"\bpassword\x18\x01 \x01(\tR\bpassword\"\x8b\x06\n" +
 	"\x0eMediaReference\x12\x1b\n" +
 	"\tmedia_key\x18\x01 \x01(\tR\bmediaKey\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -4696,8 +4689,7 @@ const file_vm_v1_vm_proto_rawDesc = "" +
 	"\x0epersistent_tpm\x18\x14 \x01(\bR\rpersistentTpm\x12'\n" +
 	"\x0fpersistent_uefi\x18\x15 \x01(\bR\x0epersistentUefi\x12(\n" +
 	"\x10driver_media_key\x18\x16 \x01(\tR\x0edriverMediaKey\x12;\n" +
-	"\x19initialization_capability\x18\x17 \x01(\tR\x18initializationCapability\x127\n" +
-	"\x17initialization_verified\x18\x18 \x01(\bR\x16initializationVerified\"\x88\x02\n" +
+	"\x19initialization_capability\x18\x17 \x01(\tR\x18initializationCapability\"\x88\x02\n" +
 	"\rStoragePolicy\x12#\n" +
 	"\rstorage_class\x18\x01 \x01(\tR\fstorageClass\x12*\n" +
 	"\x11storage_class_uid\x18\x02 \x01(\tR\x0fstorageClassUid\x12\x1f\n" +

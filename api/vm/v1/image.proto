@@ -17,8 +17,7 @@ service VMImageService {
   rpc DeleteImage(DeleteImageRequest) returns (VMImage);
 }
 
-// ImageOS is the platform profile frozen for one image. A tenant-uploaded image
-// never claims an initialization capability, so cloud-init stays unavailable.
+// ImageOS is the platform profile frozen for one image.
 message ImageOS {
   string os_family = 1 [json_name = "os_family"];
   string os_version = 2 [json_name = "os_version"];
@@ -55,6 +54,8 @@ message VMImage {
   string created_by = 18 [json_name = "created_by"];
   string created_at = 19 [json_name = "created_at"];
   string updated_at = 20 [json_name = "updated_at"];
+  // NONE or CLOUD_INIT_NOCLOUD. Empty input is normalized to NONE.
+  string initialization_capability = 21 [json_name = "initialization_capability"];
 }
 
 message ListImagesRequest {
@@ -86,6 +87,9 @@ message CreateImageRequest {
   string format = 6;
   int64 source_capacity_gb = 7;
   ImageOS os = 8;
+  // Optional tenant declaration, frozen at create time and never mutable.
+  // CLOUD_INIT_NOCLOUD is accepted only for a linux DISK_IMAGE; empty means NONE.
+  string initialization_capability = 9 [json_name = "initialization_capability"];
 }
 
 message CreateUploadSessionRequest {

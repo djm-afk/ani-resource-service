@@ -184,6 +184,61 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	if e != nil {
 		return e
 	}
+	// Version 5 belongs to the clone-source migration on the clone lane; this
+	// branch carries no 005 so the shared database keeps that checksum intact.
+	body, e = migrations.Files.ReadFile("006_image_initialization.sql")
+	if e != nil {
+		return e
+	}
+	h = sha256.Sum256(body)
+	checksum = hex.EncodeToString(h[:])
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=6").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if _, e = tx.Exec(ctx, string(body)); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(6,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM image initialization migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
+	body, e = migrations.Files.ReadFile("007_spec_strip_retired_verified.sql")
+	if e != nil {
+		return e
+	}
+	h = sha256.Sum256(body)
+	checksum = hex.EncodeToString(h[:])
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=7").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if _, e = tx.Exec(ctx, string(body)); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(7,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM retired verified cleanup migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
+	body, e = migrations.Files.ReadFile("008_image_create_request_digest.sql")
+	if e != nil {
+		return e
+	}
+	checksum = imageCreateDigestMigrationChecksum(body)
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=8").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if e = migrateImageCreateRequestDigests(ctx, tx); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(8,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM image create request digest migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
 	if _, e = tx.Exec(ctx, "GRANT SELECT ON vm.schema_version TO "+pgx.Identifier{role}.Sanitize()); e != nil {
 		return e
 	}

@@ -81,7 +81,8 @@ message MediaReference {
   string os_family = 13; string os_version = 14; string architecture = 15;
   string firmware = 16; string root_bus = 17; string data_bus = 18; string nic_model = 19;
   bool persistent_tpm = 20; bool persistent_uefi = 21; string driver_media_key = 22;
-  string initialization_capability = 23; bool initialization_verified = 24;
+  // NONE or CLOUD_INIT_NOCLOUD: whether guest initialization can be injected.
+  string initialization_capability = 23;
 }
 message StoragePolicy {
   string storage_class = 1; string storage_class_uid = 2;

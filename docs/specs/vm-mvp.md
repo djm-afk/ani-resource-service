@@ -88,7 +88,7 @@ Windows 固定至少一个明确版本及 VirtIO 驱动，驱动光驱 SATA/只�
 
 ### S05.1 Linux 镜像的可选账户初始化
 
-仅对目录中明确标记、且已由真实客体验证原生 NoCloud 的 Linux `DISK_IMAGE` 提供可选账户初始化。能力证据绑定同一 source PVC UID、内容校验值和实际 OS 版本；不能按 OS 名称推断支持，也不能把仅创建 Secret、VMI Running 或另一镜像的结果标为 verified。Windows、ISO 安装路径及未验证介质不接受此输入。
+仅对目录中 `initialization_capability=CLOUD_INIT_NOCLOUD` 的 Linux `DISK_IMAGE` 提供可选账户初始化。该能力是**创建受理时冻结的声明**：租户上传镜像由租户自证，平台目录条目由运维登记声明；平台不对声明本身做客体验证，声明与 media 指纹（source PVC UID、内容校验值和 OS 版本）在受理时一起冻结。不能按 OS 名称推断支持，也不能把仅创建 Secret、VMI Running 或另一镜像的结果作为声明依据。Windows、ISO 安装路径及未声明介质不接受此输入。
 
 公开输入限用户名、控制台登录密码和用户提供的 SSH 公钥。按合同校验格式与限额；不接受私钥、任意 user-data/YAML、来宾脚本或命令。通过每台 VM 专属原生 NoCloud Secret/volume 初始化独立克隆盘；不修改共享源镜像，不制作派生镜像，也不把这项能力扩展为自动安装。
 

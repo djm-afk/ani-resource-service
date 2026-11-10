@@ -56,6 +56,28 @@ func TestFrozenSpecCanonicalRoundTripAndUserDigest(t *testing.T) {
 	}
 }
 
+// TestDecodeCreateSpecRejectsRetiredVerifiedKey locks the strict contract after
+// migration 007 cleaned the stored bytes: releases before 2026-11-09 froze
+// "initialization_verified":true into canonical specs. The runtime has no
+// compatibility path — a record still carrying the retired key is corrupt data
+// and must fail the parse, never silently load.
+func TestDecodeCreateSpecRejectsRetiredVerifiedKey(t *testing.T) {
+	s := fixedSpec(t)
+	s.Media.InitializationCapability = CloudInitNoCloud
+	s.Intent.GuestInitialization = &GuestInitialization{Method: CloudInitNoCloud, Username: "vmuser", PasswordSet: true, CredentialIntentDigest: Digest([]byte("opaque-test-hmac"))}
+	b, e := CanonicalCreateSpec(s)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if bytes.Contains(b, []byte("initialization_verified")) {
+		t.Fatal("canonical projection must not emit the retired key")
+	}
+	legacy := bytes.Replace(b, []byte(`"media_key":`), []byte(`"initialization_verified":true,"media_key":`), 1)
+	if _, e = DecodeCreateSpec(legacy); e == nil {
+		t.Fatal("retired key accepted: the strict decoder must stay the only gate")
+	}
+}
+
 func TestInitialNADUIDRemainsAnExplicitEmptyV1Field(t *testing.T) {
 	s := fixedSpec(t)
 	original, err := CanonicalCreateSpec(s)
@@ -140,7 +162,6 @@ func TestGuestInitializationCapabilityAndWriteOnlyPassword(t *testing.T) {
 		t.Fatal("absent optional fields changed legacy canonical payload")
 	}
 	s.Media.InitializationCapability = CloudInitNoCloud
-	s.Media.InitializationVerified = true
 	s.Intent.GuestInitialization = &GuestInitialization{Method: CloudInitNoCloud, Username: "vmuser", PasswordSet: true, CredentialIntentDigest: Digest([]byte("opaque-test-hmac"))}
 	if e = ValidateGuestCredentials(s, &GuestCredentials{Password: "console-test-123"}); e != nil {
 		t.Fatal(e)
@@ -156,16 +177,13 @@ func TestGuestInitializationCapabilityAndWriteOnlyPassword(t *testing.T) {
 	if e != nil || !proto.Equal(s, decoded) {
 		t.Fatalf("initialization did not round trip: %v", e)
 	}
-	for _, name := range []string{"unverified", "no-capability", "windows", "iso", "root-user", "bad-user", "private-key", "key-options", "no-credentials", "missing-password", "short-password"} {
+	for _, name := range []string{"no-capability", "windows", "iso", "root-user", "bad-user", "private-key", "key-options", "no-credentials", "missing-password", "short-password"} {
 		t.Run(name, func(t *testing.T) {
 			x := proto.Clone(s).(*CreateSpec)
 			credentials := &GuestCredentials{Password: "console-test-123"}
 			switch name {
-			case "unverified":
-				x.Media.InitializationVerified = false
 			case "no-capability":
 				x.Media.InitializationCapability = "NONE"
-				x.Media.InitializationVerified = false
 			case "windows":
 				x.Media.OsFamily = "windows"
 			case "iso":
