@@ -23,7 +23,7 @@ import (
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/instance"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/rpcobs"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"k8s.io/client-go/dynamic"
@@ -229,7 +229,7 @@ func instanceClientConnection(address, caFile, certFile, keyFile, serverName str
 	// Trace propagation and one completion record at the real RPC boundary;
 	// TLS, exact-peer identity and retry suppression are unchanged.
 	opts := append([]grpc.DialOption{grpc.WithDisableServiceConfig(), grpc.WithDisableRetry(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))},
-		telemetry.ClientDialOptions("ani-governance", logger)...)
+		rpcobs.ClientDialOptions("ani-governance", logger)...)
 	return grpc.NewClient(address, opts...)
 }
 

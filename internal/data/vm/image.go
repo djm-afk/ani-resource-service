@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 // imageColumns is the single read list so a projection cannot drift between the
@@ -18,11 +19,11 @@ import (
 const imageColumns = `tenant_id,id,media_key,kind,format,name,description,state,reason,cleanup_state,` +
 	`source_capacity_gb,source_requested_bytes,observed_source_capacity_bytes,source_checksum_bytes,source_sha256,` +
 	`initialization_capability,` +
-	`os,native,cleanup,version,lease_token,lease_until,next_attempt_at,upload_deadline,attempt_count,created_by,created_at,updated_at`
+	`os,native,cleanup,version,lease_token,lease_until,next_attempt_at,upload_deadline,attempt_count,created_by,created_at,updated_at,telemetry_context`
 
 func imageFrom(row pgx.Row) (biz.Image, error) {
 	var i biz.Image
-	var osRaw, nativeRaw, cleanupRaw []byte
+	var osRaw, nativeRaw, cleanupRaw, telemetryRaw []byte
 	// lease_token is a uuid column: scanning it into a *time.Time only fails once a
 	// lease exists, which is exactly the state a background claim leaves behind.
 	var lease *uuid.UUID
@@ -31,7 +32,7 @@ func imageFrom(row pgx.Row) (biz.Image, error) {
 	e := row.Scan(&i.TenantID, &i.ID, &i.MediaKey, &i.Kind, &i.Format, &i.Name, &i.Description, &i.State, &i.Reason, &i.CleanupState,
 		&i.SourceCapacityGB, &i.SourceRequestedBytes, &i.ObservedSourceCapacityBytes, &i.SourceChecksumBytes, &i.SourceSHA256,
 		&i.InitializationCapability,
-		&osRaw, &nativeRaw, &cleanupRaw, &i.Version, &lease, &leaseUntil, &i.NextAttemptAt, &deadline, &i.AttemptCount, &createdBy, &i.CreatedAt, &i.UpdatedAt)
+		&osRaw, &nativeRaw, &cleanupRaw, &i.Version, &lease, &leaseUntil, &i.NextAttemptAt, &deadline, &i.AttemptCount, &createdBy, &i.CreatedAt, &i.UpdatedAt, &telemetryRaw)
 	if e != nil {
 		return i, e
 	}
@@ -43,6 +44,13 @@ func imageFrom(row pgx.Row) (biz.Image, error) {
 	}
 	if e = json.Unmarshal(cleanupRaw, &i.Cleanup); e != nil {
 		return biz.Image{}, biz.ErrImageIdentity
+	}
+	// Logging metadata is decoded on its own: a malformed trace value must not
+	// fail the business scan. The error rides along to the worker.
+	if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+		i.TelemetryContextError = te
+	} else {
+		i.TelemetryContext = tc
 	}
 	if lease != nil {
 		i.Lease = lease.String()
@@ -78,7 +86,21 @@ func imageArgs(i biz.Image) []any {
 	return []any{i.TenantID, i.ID, i.MediaKey, i.Kind, i.Format, i.Name, i.Description, i.State, i.Reason, i.CleanupState,
 		i.SourceCapacityGB, i.SourceRequestedBytes, i.ObservedSourceCapacityBytes, i.SourceChecksumBytes, i.SourceSHA256,
 		i.InitializationCapability,
-		encode(i.OS), encode(i.Native), encode(emptyRefs(i.Cleanup)), i.Version, lease(), leaseUntil, i.NextAttemptAt, deadline, createdBy}
+		encode(i.OS), encode(i.Native), encode(emptyRefs(i.Cleanup)), i.Version, lease(), leaseUntil, i.NextAttemptAt, deadline, createdBy,
+		encodeTelemetry(i.TelemetryContext)}
+}
+
+// encodeTelemetry renders the logging metadata as JSONB, or nil when it carries
+// no captured trace. A nil column reads back as "missing", never an empty trace.
+func encodeTelemetry(tc telemetry.TelemetryContext) any {
+	if !tc.Valid() {
+		return nil
+	}
+	b, e := json.Marshal(tc)
+	if e != nil {
+		return nil
+	}
+	return b
 }
 
 func emptyRefs(in []biz.ObjectRef) []biz.ObjectRef {
@@ -261,7 +283,13 @@ func (p *Postgres) CreateImage(ctx context.Context, desired biz.Image, c biz.Ima
 		return biz.Image{}, e
 	}
 	if replay, x := readImageReplay(ctx, tx, c); !errors.Is(x, biz.ErrNotFound) {
+		// A replay keeps the original record's captured telemetry; it must not
+		// overwrite the source trace with this request's.
 		return replay, x
+	}
+	// Fresh creation only: capture this request's trace for the background lane.
+	if !desired.TelemetryContext.Valid() {
+		desired.TelemetryContext = telemetry.Capture(ctx)
 	}
 	now := time.Now().UTC()
 	desired.MediaKey = biz.ImageMediaKey(desired.ID)
@@ -289,7 +317,7 @@ func (p *Postgres) CreateImage(ctx context.Context, desired biz.Image, c biz.Ima
 const insertImageColumns = `tenant_id,id,media_key,kind,format,name,description,state,reason,cleanup_state,` +
 	`source_capacity_gb,source_requested_bytes,observed_source_capacity_bytes,source_checksum_bytes,source_sha256,` +
 	`initialization_capability,` +
-	`os,native,cleanup,version,lease_token,lease_until,next_attempt_at,upload_deadline,created_by`
+	`os,native,cleanup,version,lease_token,lease_until,next_attempt_at,upload_deadline,created_by,telemetry_context`
 
 func imagePlaceholder(n int) string {
 	out := make([]string, n)
@@ -479,6 +507,11 @@ func (p *Postgres) SaveImage(ctx context.Context, i biz.Image) error {
 	current, e := p.findImageLocked(ctx, tx, i.TenantID, i.ID, true)
 	if e != nil {
 		return notFound(e)
+	}
+	// The worker only advances business state; the captured trace is preserved
+	// from the stored record rather than rewritten by this pass.
+	if !i.TelemetryContext.Valid() {
+		i.TelemetryContext = current.TelemetryContext
 	}
 	if current.Version != i.Version || !biz.ImageTransition(current.State, i.State) {
 		return biz.ErrImageVersion

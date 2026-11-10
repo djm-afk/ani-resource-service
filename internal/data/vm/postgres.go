@@ -276,6 +276,24 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	if e != nil {
 		return e
 	}
+	body, e = migrations.Files.ReadFile("009_logging_telemetry.sql")
+	if e != nil {
+		return e
+	}
+	h = sha256.Sum256(body)
+	checksum = hex.EncodeToString(h[:])
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=9").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if _, e = tx.Exec(ctx, string(body)); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(9,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM logging telemetry migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
 	if _, e = tx.Exec(ctx, "GRANT SELECT ON vm.schema_version TO "+pgx.Identifier{role}.Sanitize()); e != nil {
 		return e
 	}

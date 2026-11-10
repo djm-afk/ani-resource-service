@@ -21,6 +21,7 @@ import (
 
 	conf "github.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // Name and Version can be overridden with -ldflags at build time.
@@ -62,7 +63,7 @@ func main() {
 	slog.SetDefault(logger)
 	if levelErr != nil {
 		attrs := append([]any{"event", "process.start_failed", "step", "logger", "log_format", "json"},
-			telemetry.ErrorFields(levelErr)...)
+			logfields.ErrorFields(levelErr)...)
 		logger.Error("invalid log configuration", attrs...)
 		os.Exit(1)
 	}
@@ -129,7 +130,7 @@ func main() {
 	if err := execute(); err != nil {
 		// The terminal error keeps its real cause; the event name distinguishes a
 		// failure after readiness from one during startup.
-		attrs := append([]any{"event", "process.failed"}, telemetry.ErrorFields(err)...)
+		attrs := append([]any{"event", "process.failed"}, logfields.ErrorFields(err)...)
 		logger.Error("service terminated", attrs...)
 		os.Exit(1)
 	}

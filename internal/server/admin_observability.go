@@ -11,7 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // adminHeaderTraceID is the response header carrying the admin request trace.
@@ -74,7 +74,7 @@ func adminObservabilityFilter(logger *slog.Logger) func(http.Handler) http.Handl
 					"duration_ms", float64(time.Since(start).Microseconds()) / 1000.0,
 				}
 				if code >= 500 && capture.err != nil {
-					attrs = append(attrs, telemetry.ErrorFields(capture.err)...)
+					attrs = append(attrs, logfields.ErrorFields(capture.err)...)
 				}
 				logAdmin(logger, ctx, adminLevel(path, code), "admin request completed", attrs...)
 			}()

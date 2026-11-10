@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // rpcServerStatsHandler wraps the standard OTel server handler: it delegates
@@ -69,7 +69,7 @@ func (h *rpcServerStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats)
 		"duration_ms", float64(duration.Microseconds()) / 1000.0,
 	}
 	if end.Error != nil {
-		attrs = append(attrs, telemetry.ErrorFields(end.Error)...)
+		attrs = append(attrs, logfields.ErrorFields(end.Error)...)
 	}
 	h.logAt(ctx, level, "inbound rpc completed", attrs...)
 }

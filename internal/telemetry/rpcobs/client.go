@@ -1,4 +1,4 @@
-package telemetry
+package rpcobs
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // ClientStatsHandler wraps a standard OTel client stats handler: it delegates
@@ -74,7 +76,7 @@ func (h *clientStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 		"duration_ms", float64(duration.Microseconds()) / 1000.0,
 	}
 	if end.Error != nil {
-		attrs = append(attrs, ErrorFields(end.Error)...)
+		attrs = append(attrs, logfields.ErrorFields(end.Error)...)
 	}
 	logAt(h.logger, ctx, level, "outbound rpc completed", attrs...)
 	if IsDependencyFault(code) && end.Error != nil {
@@ -84,7 +86,7 @@ func (h *clientStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			"action", rpcAction(method),
 			"rpc.method", method,
 			"rpc.code", code.String(),
-		}, ErrorFields(end.Error)...)
+		}, logfields.ErrorFields(end.Error)...)
 		h.logger.ErrorContext(ctx, "outbound dependency failed", failAttrs...)
 	}
 }
