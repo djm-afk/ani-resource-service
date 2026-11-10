@@ -17,6 +17,8 @@ import (
 	acc "github.com/zhangzhe-ctrl/ani-accelerator-service/api/gen/go/accelerator/v1"
 	gp "github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
 	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
+	computedata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/compute"
+	instancedata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -223,9 +225,19 @@ func apply(ctx context.Context, tx pgx.Tx, input manifest) error {
 func run() error {
 	dsnFile := flag.String("dsn-file", "", "private owner DSN file")
 	path := flag.String("manifest", "", "private manifest file")
-	mode := flag.String("mode", "inspect", "inspect or apply")
+	mode := flag.String("mode", "inspect", "prepare, inspect, apply or finalize")
 	backup := flag.String("backup-file", "", "existing private pre-cutover backup for apply")
+	role := flag.String("runtime-role", "", "existing restricted runtime role for prepare/finalize")
 	flag.Parse()
+	if *mode != "prepare" && *mode != "inspect" && *mode != "apply" && *mode != "finalize" {
+		return fmt.Errorf("mode must be prepare, inspect, apply or finalize")
+	}
+	if *mode != "inspect" {
+		info, err := os.Stat(*backup)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Mode().Perm()&0077 != 0 {
+			return fmt.Errorf("writes require the existing private pre-cutover backup")
+		}
+	}
 	dsn, err := privateFile(*dsnFile)
 	if err != nil {
 		return err
@@ -233,6 +245,15 @@ func run() error {
 	defer clear(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if *mode == "prepare" || *mode == "finalize" {
+		if *role == "" {
+			return fmt.Errorf("schema phase requires the existing restricted runtime role")
+		}
+		if *mode == "prepare" {
+			return instancedata.Migrate(ctx, string(bytes.TrimSpace(dsn)), *role)
+		}
+		return computedata.Migrate(ctx, string(bytes.TrimSpace(dsn)), *role)
+	}
 	conn, err := pgx.Connect(ctx, string(bytes.TrimSpace(dsn)))
 	if err != nil {
 		return fmt.Errorf("cutover database connection failed")

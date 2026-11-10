@@ -158,13 +158,15 @@ A36 外部 PVC 删除旁路保护由用户暂缓，记为 `DEFERRED_USER_SCOPE`�
 一次性工具在本任务开发环境编译为 `gpu-contract-v11` 后传到已确认部署目标执行，不在部署主机构建。参数仅接受私有 DSN 文件和私有清单：
 
 ```sh
+./gpu-contract-v11 -mode prepare -dsn-file <owner-dsn-file> -runtime-role <existing-runtime-role> -backup-file <pre-cutover-backup>
 ./gpu-contract-v11 -mode inspect -dsn-file <owner-dsn-file> -manifest <new-private-manifest.json>
 # 根据 ACC 受管目录填写每条 preset 的 new_gpu_reference 与 new_profile（对应新 ACC GpuProfile 的 protobuf JSON）；不可转换条目显式 remove_unconvertible=true。
 ./gpu-contract-v11 -mode apply -dsn-file <owner-dsn-file> -manifest <reviewed-private-manifest.json> -backup-file <pre-cutover-backup>
+./gpu-contract-v11 -mode finalize -dsn-file <owner-dsn-file> -runtime-role <existing-runtime-role> -backup-file <pre-cutover-backup>
 ```
 
 工具使用公共 ProfileSpecDigest 复核 new_profile，并逐项核对其业务字段及设备上限与新引用一致。清单包含原 GPU 行、原 operation/ACK 和 release outbox，用0600文件保存，不提交仓库或输出到日志。apply 会在一次维护事务中核对对象集合及原行未漂移，拒绝未闭合 owner/退款/引用或仍租用的工作；只给闭合旧行设置 archived_at 并移除其 work 行，不删除父行或任何原 ACK/outbox。全部必要外键继续引用原身份。没有对象时保留空数组清单，不制造数据。
 
-预设转换完成后显式追加 compute 002，安装匹配新版本并移除旧签名/release配置；新 GPU 无旧 JSON 解码。compute readiness 要求已知的001、002 checksum。可确定升级的 preset ID 与启停状态不变。回退恢复本次备份和对应整组旧二进制；不调用旧 metadata-only restore 把 v1.1 库在线变回旧语义。
+prepare 仅复用 Instance.Migrate 追加010；主程序原有 -instance-migrate 会连带执行 compute，不能用于本次分段切换。预设转换完成后 finalize 复用 Compute.Migrate 显式追加 compute 002，安装匹配新版本并移除旧签名/release配置；新 GPU 无旧 JSON 解码。compute readiness 要求已知的001、002 checksum。可确定升级的 preset ID 与启停状态不变。回退恢复本次备份和对应整组旧二进制；不调用旧 metadata-only restore 把 v1.1 库在线变回旧语义。
 
 迁移与真实账务闭合、部署和设备验收分别记录；工具通过不表示硬件计算或66业务链已经验证。
