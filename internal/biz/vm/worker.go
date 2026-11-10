@@ -3,10 +3,13 @@ package vm
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type Worker struct {
@@ -14,28 +17,40 @@ type Worker struct {
 	native         NativePort
 	network        NetworkPort
 	securityGroups SecurityGroupPort
+	logger         *slog.Logger
 }
 
-func NewWorker(r Repository, n NativePort, network NetworkPort) (*Worker, error) {
+func NewWorker(r Repository, n NativePort, network NetworkPort, logger *slog.Logger) (*Worker, error) {
 	if r == nil || n == nil || network == nil {
 		return nil, ErrInvalid
 	}
-	return &Worker{repo: r, native: n, network: network}, nil
+	return &Worker{repo: r, native: n, network: network, logger: logger}, nil
 }
 func (w *Worker) RunOnce(ctx context.Context) error {
 	o, v, e := w.repo.Claim(ctx, uuid.NewString(), 30*time.Second)
 	if e != nil {
 		return e
 	}
+	// Restore the accepted request's trace into a fresh worker context after the
+	// claim. The original HTTP deadline/cancel/credentials are not inherited; a
+	// missing or malformed context is logged and the business work continues.
+	ctx = w.applyRestoredTelemetry(ctx, o, v)
 	e = w.advance(ctx, &o, &v)
 	if e != nil {
-		o.Reason = e.Error()
+		// Record the real failure at the point it becomes durable state. A Save
+		// that then succeeds returns nil below, so this is the only evidence.
+		w.logStepFailed(ctx, o, v, stepForAction(o.Action), e)
+		reason := e.Error()
+		o.Reason = reason
 		if errors.Is(e, ErrUnknown) {
 			o.State = "unknown"
+			w.logOperationFailed(ctx, o, v, reason, e)
 		} else if errors.Is(e, ErrOwnership) || errors.Is(e, ErrInvalid) || errors.Is(e, ErrChanged) || errors.Is(e, ErrStartFailed) || errors.Is(e, ErrCloneSourceUnavailable) {
 			o.State = "failed"
+			w.logOperationFailed(ctx, o, v, reason, e)
 		} else {
 			o.State = "running"
+			w.logRetryScheduled(ctx, o, v, reason, o.LeaseUntil)
 		}
 	} else {
 		o.Reason = ""
@@ -45,14 +60,80 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		if errors.Is(x, ErrVersion) || errors.Is(x, ErrLease) {
 			// A newer intent or lease already owns this work. Its durable
 			// state wins; losing the fence does not stop other VM workers.
+			w.logConflict(ctx, o, v, "VM_LEASE_LOST")
 			return nil
 		}
+		// The state write itself failed; keep it distinct from the business error.
+		w.logPersistFailed(ctx, o, v, x)
 		return x
 	}
 	// Native reconciliation failures are now durable operation outcomes.
 	// Returning them to the service supervisor would terminate the shared
 	// service whenever a dependency is still preparing or a result is unknown.
 	return nil
+}
+
+// applyRestoredTelemetry restores o's saved trace onto ctx and records a single
+// telemetry.context_* event when metadata is missing or malformed. The caller
+// continues the original business path either way.
+func (w *Worker) applyRestoredTelemetry(ctx context.Context, o Operation, v VM) context.Context {
+	if o.TelemetryContextError != nil {
+		// Establish a fresh run span first so the event is still correlated.
+		runCtx := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
+			OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
+		})
+		w.logTelemetryEvent(runCtx, o, v, "telemetry.context_invalid", o.TelemetryContextError)
+		return runCtx
+	}
+	if !o.TelemetryContext.Valid() {
+		runCtx := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
+			OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
+		})
+		w.logTelemetryEvent(runCtx, o, v, "telemetry.context_missing", nil)
+		return runCtx
+	}
+	restored, e := telemetry.Restore(ctx, o.TelemetryContext)
+	if e != nil {
+		runCtx := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
+			OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
+		})
+		w.logTelemetryEvent(runCtx, o, v, "telemetry.context_invalid", e)
+		return runCtx
+	}
+	return telemetry.WithBusiness(restored, telemetry.BusinessContext{
+		OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
+	})
+}
+
+func (w *Worker) logTelemetryEvent(ctx context.Context, o Operation, v VM, event string, err error) {
+	if w.logger == nil {
+		return
+	}
+	attrs := []any{"event", event}
+	attrs = append(attrs, operationIdentity(o, v)...)
+	if event == "telemetry.context_missing" {
+		attrs = append(attrs, "reason", "TELEMETRY_CONTEXT_MISSING")
+	} else {
+		attrs = append(attrs, "reason", "TELEMETRY_CONTEXT_INVALID")
+		if err != nil {
+			attrs = append(attrs, errorAttrs(err)...)
+		}
+	}
+	w.logger.ErrorContext(ctx, "VM operation telemetry context unavailable", attrs...)
+}
+
+// stepForAction names the failing stage without inventing a new state machine.
+func stepForAction(action string) string {
+	switch action {
+	case "create":
+		return "ensure_vm"
+	case "delete":
+		return "delete_vm"
+	case "":
+		return "advance"
+	default:
+		return action
+	}
 }
 func (w *Worker) Step(ctx context.Context) (bool, error) {
 	e := w.RunOnce(ctx)

@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var (
@@ -216,6 +218,11 @@ type Operation struct {
 	Lease                                          string
 	LeaseUntil                                     time.Time
 	ObservedAt                                     time.Time
+	// TelemetryContext is independent logging metadata persisted in the
+	// operation record. It never enters the request digest or intent.
+	TelemetryContext telemetry.TelemetryContext `json:"telemetry_context,omitempty"`
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error `json:"-"`
 }
 type Mutation struct {
 	Action       string

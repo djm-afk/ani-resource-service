@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // ImageRepository and ImageNativePort are already declared in image.go; this
@@ -46,13 +49,91 @@ func (w *ImageWorker) Step(ctx context.Context) (bool, error) {
 	if !claimed {
 		return false, nil
 	}
-	e = w.advance(ctx, i)
+	// Restore the accepted request's trace into this run; the image has no
+	// operation, so resource_id is the run identity.
+	runCtx := w.imageRunContext(ctx, i)
+	e = w.advance(runCtx, i)
 	if e == nil || errors.Is(e, ErrImageVersion) || errors.Is(e, ErrLease) {
 		return true, nil
 	}
+	// Record the real dependency/validation failure at the point it becomes a
+	// parked reason, before park() collapses it into a fixed string.
+	w.logImageFailed(runCtx, i, "advance", e)
 	// A dependency failure keeps the lease holder's classification but must not
 	// stop the lane; back off this record and report the reason code only.
-	return true, w.park(ctx, i, imageFailureReason(e))
+	return true, w.park(runCtx, i, imageFailureReason(e))
+}
+
+// imageRunContext restores the image's persisted trace and binds its identity.
+func (w *ImageWorker) imageRunContext(ctx context.Context, i Image) context.Context {
+	base := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
+		ResourceType: "image", ResourceID: i.ID, TenantID: i.TenantID,
+	})
+	if i.TelemetryContextError != nil {
+		w.logImageTelemetry(base, i, "telemetry.context_invalid", i.TelemetryContextError)
+		return base
+	}
+	if !i.TelemetryContext.Valid() {
+		w.logImageTelemetry(base, i, "telemetry.context_missing", nil)
+		return base
+	}
+	restored, e := telemetry.Restore(ctx, i.TelemetryContext)
+	if e != nil {
+		w.logImageTelemetry(base, i, "telemetry.context_invalid", e)
+		return base
+	}
+	return telemetry.WithBusiness(restored, telemetry.BusinessContext{
+		ResourceType: "image", ResourceID: i.ID, TenantID: i.TenantID,
+	})
+}
+
+// logImageFailed records the real error with the known image coordinates.
+func (w *ImageWorker) logImageFailed(ctx context.Context, i Image, step string, err error) {
+	if w.logger == nil || err == nil {
+		return
+	}
+	attrs := []any{"event", "step.failed", "step", step, "result", "failed",
+		"resource_type", "image", "resource_id", i.ID}
+	if i.TenantID != "" {
+		attrs = append(attrs, "tenant_id", i.TenantID)
+	}
+	attrs = append(attrs, logfields.ErrorFields(err)...)
+	attrs = append(attrs, imageTarget(i).KV()...)
+	w.logger.ErrorContext(ctx, "VM image step failed", attrs...)
+}
+
+func (w *ImageWorker) logImageTelemetry(ctx context.Context, i Image, event string, err error) {
+	if w.logger == nil {
+		return
+	}
+	attrs := []any{"event", event, "resource_type", "image", "resource_id", i.ID}
+	if i.TenantID != "" {
+		attrs = append(attrs, "tenant_id", i.TenantID)
+	}
+	if event == "telemetry.context_invalid" {
+		attrs = append(attrs, "reason", "TELEMETRY_CONTEXT_INVALID")
+		if err != nil {
+			attrs = append(attrs, logfields.ErrorFields(err)...)
+		}
+	} else {
+		attrs = append(attrs, "reason", "TELEMETRY_CONTEXT_MISSING")
+	}
+	w.logger.ErrorContext(ctx, "VM image telemetry context unavailable", attrs...)
+}
+
+// imageTarget renders the known DataVolume/PVC/Job coordinates. Unknown fields
+// are omitted; no lookup is performed.
+func imageTarget(i Image) telemetry.Target {
+	t := telemetry.Target{ClusterID: i.Native.ClusterID, Namespace: i.Native.Namespace}
+	switch {
+	case i.Native.DVName != "":
+		t.Kind, t.Name, t.UID = "DataVolume", i.Native.DVName, i.Native.DVUID
+	case i.Native.PVCName != "":
+		t.Kind, t.Name, t.UID = "PersistentVolumeClaim", i.Native.PVCName, i.Native.PVCUID
+	case i.Native.JobName != "":
+		t.Kind, t.Name, t.UID = "Job", i.Native.JobName, i.Native.JobUID
+	}
+	return t
 }
 
 // save persists a step that made progress and clears the failure streak.
@@ -69,8 +150,16 @@ func (w *ImageWorker) park(ctx context.Context, i Image, reason string) error {
 	i.AttemptCount++
 	i.NextAttemptAt = time.Now().Add(imageBackoff(i))
 	err := w.repo.SaveImage(ctx, i)
-	w.logger.Warn("VM image background step parked", "image_id", i.ID, "state", i.State, "reason", reason,
-		"attempt_count", i.AttemptCount, "next_attempt_at", i.NextAttemptAt.UTC().Format(time.RFC3339))
+	w.logger.WarnContext(ctx, "VM image background step parked", "event", "worker.retry_scheduled",
+		"worker", "vm_image", "resource_type", "image", "resource_id", i.ID, "state", i.State,
+		"reason", reason, "attempt_count", i.AttemptCount,
+		"next_retry", i.NextAttemptAt.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		attrs := []any{"event", "state.persist_failed", "action", "park", "step", "persist_image",
+			"resource_type", "image", "resource_id", i.ID}
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+		w.logger.ErrorContext(ctx, "VM image park state save failed", attrs...)
+	}
 	return err
 }
 
