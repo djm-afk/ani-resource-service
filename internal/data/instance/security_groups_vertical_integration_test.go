@@ -428,7 +428,7 @@ func TestInstanceSecurityGroupsVerticalRealCatalogCreateReplaceClearDelete(t *te
 	}
 	configureVerticalPullSecret(t, f, c, boundary, notebook)
 	diagnostics := &verticalNotebookDiagnostics{Notebook: notebook}
-	worker, err := biz.NewWorker(f.repo, diagnostics, "sg-vertical")
+	worker, err := biz.NewWorker(f.repo, diagnostics, "sg-vertical", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

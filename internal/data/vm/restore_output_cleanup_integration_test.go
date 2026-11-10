@@ -97,7 +97,7 @@ func TestRestoreMissingRegisteredOutputsDoNotBlockSnapshotDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.ClearActions() // Check only the deletion path, excluding fixture setup.
-	worker, err := biz.NewWorker(repo, native, powerVMNetwork{})
+	worker, err := biz.NewWorker(repo, native, powerVMNetwork{}, discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}

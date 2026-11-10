@@ -261,7 +261,7 @@ func TestInstanceGovernanceFixture(t *testing.T) {
 	{
 		// Only the external Kubernetes boundary is controlled in this ledger
 		// slice. Admission, worker, cleanup decisions, outbox and Gov RPC are real.
-		worker, e := biz.NewWorker(f.repo, providerState, "cross-service-worker")
+		worker, e := biz.NewWorker(f.repo, providerState, "cross-service-worker", discardLogger())
 		if e != nil {
 			t.Fatal(e)
 		}

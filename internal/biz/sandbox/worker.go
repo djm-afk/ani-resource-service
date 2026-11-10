@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"time"
 
@@ -14,19 +15,22 @@ type Worker struct {
 	provider Provider
 	owner    string
 	lease    time.Duration
+	logger   *slog.Logger
 }
 
-func NewWorker(repo WorkerRepository, provider Provider, owner string, lease time.Duration) (*Worker, error) {
+func NewWorker(repo WorkerRepository, provider Provider, owner string, lease time.Duration, logger *slog.Logger) (*Worker, error) {
 	if repo == nil || provider == nil || owner == "" || lease <= 5*time.Second {
 		return nil, ErrInvalid
 	}
-	return &Worker{repo: repo, provider: provider, owner: owner, lease: lease}, nil
+	return &Worker{repo: repo, provider: provider, owner: owner, lease: lease, logger: logger}, nil
 }
 func (w *Worker) Step(ctx context.Context) (bool, error) {
 	work, err := w.repo.Claim(ctx, w.owner, w.lease)
 	if err != nil || work == nil {
 		return false, err
 	}
+	// Restore the claimed record's trace; missing/invalid is recorded and work continues.
+	ctx = w.restoreSandboxContext(ctx, work)
 	// Reserve the last five seconds for recording the result, including an
 	// unknown result when the provider call exhausts its own deadline.
 	callCtx, cancel := context.WithTimeout(ctx, w.lease-5*time.Second)
@@ -35,7 +39,11 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 	finish := func() (bool, error) {
 		persistCtx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer done()
-		return true, w.repo.Finish(persistCtx, *work, p)
+		if e := w.repo.Finish(persistCtx, *work, p); e != nil {
+			w.logSandboxPersistFailed(persistCtx, work, "persist_operation", e)
+			return true, e
+		}
+		return true, nil
 	}
 	// A PV read can consume its entire observation deadline after the Pod has
 	// already been verified. Reserve a separate part of the lease budget for
@@ -44,6 +52,8 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 	obs, observeErr := w.provider.Observe(observeCtx, work.Sandbox)
 	observeCancel()
 	if observeErr != nil {
+		// Record the real provider error before it becomes a fixed reason.
+		w.logSandboxStepFailed(ctx, work, "observe", observeErr)
 		p.Sandbox.Observed, p.Sandbox.Reason = ObservedUnknown, "PROVIDER_OBSERVATION_FAILED"
 		if errors.Is(observeErr, ErrClusterMismatch) {
 			p.Sandbox.Reason = ErrClusterMismatch.Error()
@@ -72,6 +82,8 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 			}
 		}
 		if mutateErr != nil || result.Outcome != MutationApplied {
+			// A real provider mutation failure is recorded before the state change.
+			w.logSandboxStepFailed(ctx, work, "apply", mutateErr)
 			p.Sandbox.Observed, p.Sandbox.Reason = ObservedUnknown, result.Reason
 			if p.Sandbox.Reason == "" {
 				p.Sandbox.Reason = "PROVIDER_MUTATION_FAILED"

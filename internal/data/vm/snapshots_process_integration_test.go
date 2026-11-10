@@ -142,7 +142,7 @@ func TestSnapshotRestoreProcessChild(t *testing.T) {
 		t.Fatal("open child repository")
 	}
 	defer repo.Close()
-	worker, err := biz.NewWorker(snapshotProcessRepository{repo, in.StopStep, in.ExitCode}, snapshotProcessNative{input: in}, snapshotProcessNetwork{})
+	worker, err := biz.NewWorker(snapshotProcessRepository{repo, in.StopStep, in.ExitCode}, snapshotProcessNative{input: in}, snapshotProcessNetwork{}, discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}

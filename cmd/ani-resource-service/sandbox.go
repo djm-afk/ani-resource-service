@@ -202,7 +202,7 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 		repo.Close()
 		return unavailable("sandbox service initialization failed", err)
 	}
-	worker, err := biz.NewWorker(repo, provider, uuid.NewString(), 45*time.Second)
+	worker, err := biz.NewWorker(repo, provider, uuid.NewString(), 45*time.Second, logger)
 	if err != nil {
 		repo.Close()
 		return unavailable("sandbox worker initialization failed", err)

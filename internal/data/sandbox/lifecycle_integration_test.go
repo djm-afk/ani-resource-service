@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/sandbox"
+	"io"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -21,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic/fake"
 	ktesting "k8s.io/client-go/testing"
+	"log/slog"
 )
 
 var lifecyclePVC = schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}
@@ -82,7 +84,7 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.worker, err = biz.NewWorker(f.db.repo, provider, "lifecycle-worker", time.Minute)
+	f.worker, err = biz.NewWorker(f.db.repo, provider, "lifecycle-worker", time.Minute, discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,3 +291,5 @@ func TestSandboxWorkerRepositoryOldReceiptCannotCompleteResume(t *testing.T) {
 		t.Fatalf("resume failed ordered recovery: %+v", current)
 	}
 }
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

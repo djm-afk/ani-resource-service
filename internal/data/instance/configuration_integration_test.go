@@ -45,7 +45,7 @@ func TestBorrowedVolumeReferencesPersistAndReleaseWithCompute(t *testing.T) {
 	// Only the Kubernetes/controller boundary is substituted. The real worker
 	// must prove the CREATE template before PostgreSQL activates its references.
 	boundary := &lifecycleBoundary{}
-	worker, e := biz.NewWorker(f.repo, boundary, "config-test")
+	worker, e := biz.NewWorker(f.repo, boundary, "config-test", discardLogger())
 	if e != nil {
 		t.Fatal(e)
 	}

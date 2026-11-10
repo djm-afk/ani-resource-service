@@ -15,6 +15,8 @@ import (
 	"github.com/go-kratos/kratos/v3/middleware/recovery"
 	"github.com/go-kratos/kratos/v3/middleware/validate"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 	"go.opentelemetry.io/otel"
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -33,6 +35,9 @@ type Observability struct {
 	seconds           metric.Float64Histogram
 	workerAttempts    metric.Int64Counter
 	providerReachable metric.Int64Gauge
+	// attachmentLogger is bound at wiring so the metrics-only attachment lane
+	// can also record a real failure.
+	attachmentLogger *slog.Logger
 }
 
 func NewObservability(name, version string, readiness *Readiness) (*Observability, error) {
@@ -118,6 +123,9 @@ func NewObservability(name, version string, readiness *Readiness) (*Observabilit
 	}, nil
 }
 
+// SetAttachmentLogger binds the logger the attachment lane uses for failures.
+func (o *Observability) SetAttachmentLogger(logger *slog.Logger) { o.attachmentLogger = logger }
+
 func (o *Observability) Gatherer() prometheus.Gatherer {
 	return o.registry
 }
@@ -164,12 +172,36 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 
 func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, work biz.Work, progress biz.Progress, err error) {
 	if progress.ProviderError != nil {
+		// Real provider failures are ERROR with the unwrapped cause. A genuine
+		// concurrent/lease conflict is the only class that stays WARN; the level
+		// is decided from the typed kind, never from a string.
 		cause := progress.ProviderError
+		kind := biz.ProviderFailure("")
 		var failure *biz.ProviderError
-		if errors.As(cause, &failure) && failure.Cause != nil {
-			cause = failure.Cause
+		if errors.As(cause, &failure) {
+			kind = failure.Kind
+			if failure.Cause != nil {
+				cause = failure.Cause
+			}
 		}
-		logger.WarnContext(ctx, "network provider request failed", "resource_type", work.Resource.Kind, "resource_id", work.Resource.ID, "operation_id", work.Operation.ID, "binding_id", work.BindingID, "epoch", work.Epoch, "reason", progress.Reason, "error", cause)
+		level := slog.LevelError
+		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
+			level = slog.LevelWarn
+		}
+		attrs := []any{"event", "step.failed", "dependency", "kubernetes",
+			"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
+			"reason", progress.Reason, "epoch", int(work.Epoch)}
+		if work.Operation.ID != "" {
+			attrs = append(attrs, "operation_id", work.Operation.ID)
+		}
+		if work.Resource.TenantID != "" {
+			attrs = append(attrs, "tenant_id", work.Resource.TenantID)
+		}
+		if work.BindingID != "" {
+			attrs = append(attrs, "binding_id", work.BindingID)
+		}
+		attrs = append(attrs, logfields.ErrorFields(cause)...)
+		logger.Log(ctx, level, "network provider request failed", attrs...)
 	}
 	result := "observed"
 	if work.ActiveOperation {
@@ -197,6 +229,11 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 }
 
 func (o *Observability) ObserveAttachmentWork(ctx context.Context, work biz.AttachmentWork, p biz.AttachmentProgress, err error) {
+	// The attachment lane previously recorded metrics only. A real provider or
+	// read failure must be visible with the existing identity.
+	if p.ProviderError != nil || p.ObservationError != "" || err != nil {
+		o.logAttachmentFailure(o.attachmentLogger, ctx, work, p, err)
+	}
 	result := "observed"
 	if errors.Is(err, biz.ErrLeaseLost) {
 		result = "lease_lost"
@@ -219,11 +256,30 @@ func (o *Observability) ObserveAttachmentWork(ctx context.Context, work biz.Atta
 func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *slog.Logger, work biz.VirtualSwitchWork, progress biz.VirtualSwitchProgress, err error) {
 	if progress.ProviderError != nil {
 		cause := progress.ProviderError
+		kind := biz.ProviderFailure("")
 		var failure *biz.ProviderError
-		if errors.As(cause, &failure) && failure.Cause != nil {
-			cause = failure.Cause
+		if errors.As(cause, &failure) {
+			kind = failure.Kind
+			if failure.Cause != nil {
+				cause = failure.Cause
+			}
 		}
-		logger.WarnContext(ctx, "virtual switch provider request failed", "resource_type", "virtual_switch", "resource_id", work.Switch.ID, "operation_id", work.Switch.LastOperationID, "binding_id", work.Switch.BindingID, "epoch", work.Epoch, "action", progress.Action, "node_name", progress.NodeName, "node_uid", progress.NodeUID, "binding_state", progress.BindingState, "reason", progress.Reason, "error", cause)
+		level := slog.LevelError
+		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
+			level = slog.LevelWarn
+		}
+		attrs := []any{"event", "step.failed", "dependency", "kubernetes", "action", progress.Action,
+			"resource_type", "virtual_switch", "resource_id", work.Switch.ID,
+			"reason", progress.Reason, "provider_failure", string(kind),
+			"node_name", progress.NodeName, "node_uid", progress.NodeUID, "binding_state", progress.BindingState}
+		if work.Switch.LastOperationID != "" {
+			attrs = append(attrs, "operation_id", work.Switch.LastOperationID)
+		}
+		if work.Switch.BindingID != "" {
+			attrs = append(attrs, "binding_id", work.Switch.BindingID)
+		}
+		attrs = append(attrs, logfields.ErrorFields(cause)...)
+		logger.Log(ctx, level, "virtual switch provider request failed", attrs...)
 	}
 	result := progress.BindingState
 	if progress.Observed {
@@ -250,4 +306,55 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 	if err != nil || progress.ProviderError != nil || work.Switch.BindingState != progress.BindingState || work.Switch.Reason != progress.Reason {
 		logger.InfoContext(ctx, "virtual switch reconciliation", "resource_id", work.Switch.ID, "operation_id", work.Switch.LastOperationID, "binding_id", work.Switch.BindingID, "epoch", work.Epoch, "binding_state", progress.BindingState, "observed", progress.Observed, "result", result, "reason", progress.Reason)
 	}
+}
+
+// logAttachmentFailure records a real attachment provider/read failure with the
+// existing attachment/submission identity. The lane has no business operation,
+// so operation_id is omitted rather than fabricated. Provider conflicts are the
+// only class that stays WARN.
+func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Context, work biz.AttachmentWork, p biz.AttachmentProgress, err error) {
+	if logger == nil {
+		return
+	}
+	level := slog.LevelError
+	cause := error(p.ProviderError)
+	kind := biz.ProviderFailure("")
+	var failure *biz.ProviderError
+	if errors.As(p.ProviderError, &failure) {
+		kind = failure.Kind
+		if failure.Cause != nil {
+			cause = failure.Cause
+		}
+		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
+			level = slog.LevelWarn
+		}
+	}
+	if cause == nil && p.ObservationError != "" {
+		cause = errors.New(string(p.ObservationError))
+	}
+	if cause == nil {
+		cause = err
+	}
+	attrs := []any{"event", "step.failed", "dependency", "kubernetes", "action", "attach",
+		"resource_type", "attachment", "resource_id", work.Attachment.ID}
+	if work.Attachment.ID != "" {
+		attrs = append(attrs, "attachment_id", work.Attachment.ID)
+	}
+	if work.Attachment.SubmissionID != "" {
+		attrs = append(attrs, "submission_id", work.Attachment.SubmissionID)
+	}
+	if work.Attachment.TenantID != "" {
+		attrs = append(attrs, "tenant_id", work.Attachment.TenantID)
+	}
+	if p.Reason != "" {
+		attrs = append(attrs, "reason", string(p.Reason))
+	}
+	if work.Plan.Namespace != "" || p.PodName != "" {
+		attrs = append(attrs, telemetry.Target{Kind: "Pod",
+			Namespace: work.Plan.Namespace, Name: p.PodName, UID: p.PodUID}.KV()...)
+	}
+	if cause != nil {
+		attrs = append(attrs, logfields.ErrorFields(cause)...)
+	}
+	logger.Log(ctx, level, "attachment provider request failed", attrs...)
 }

@@ -1,3 +1,5 @@
+//go:build instanceintegration
+
 package vm
 
 import (

@@ -168,7 +168,7 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 	if e != nil {
 		return nil, e
 	}
-	worker, e := biz.NewWorker(repo, provider, uuid.NewString())
+	worker, e := biz.NewWorker(repo, provider, uuid.NewString(), logger)
 	if e != nil {
 		return nil, e
 	}

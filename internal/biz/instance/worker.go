@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/google/uuid"
+	"log/slog"
 	"time"
 )
 
@@ -13,13 +14,14 @@ type Worker struct {
 	owner          string
 	network        NetworkPort
 	securityGroups SecurityGroupPort
+	logger         *slog.Logger
 }
 
-func NewWorker(r Repository, p Provider, owner string) (*Worker, error) {
+func NewWorker(r Repository, p Provider, owner string, logger *slog.Logger) (*Worker, error) {
 	if r == nil || p == nil || owner == "" {
 		return nil, ErrInvalid
 	}
-	return &Worker{repo: r, provider: p, owner: owner}, nil
+	return &Worker{repo: r, provider: p, owner: owner, logger: logger}, nil
 }
 func (w *Worker) Step(ctx context.Context) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -28,6 +30,9 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 	if err != nil || work == nil {
 		return false, err
 	}
+	// Restore the accepted request's trace for this run; missing/invalid is
+	// recorded and the original business work continues.
+	ctx = w.restoreInstanceContext(ctx, work)
 	if work.Operation != nil && work.Operation.Action == "set-network-interface" {
 		return w.stepNetworkInterface(ctx, *work)
 	}
@@ -102,6 +107,9 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 		p.Instance.ComputeCleaned = false
 	}
 	if err != nil {
+		// Record the real provider failure before it becomes a fixed reason and
+		// Finish returns nil.
+		w.logInstanceStepFailed(ctx, work, "observe", err)
 		p.Instance.Reason = "PROVIDER_OBSERVATION_FAILED"
 		if errors.Is(err, ErrSchedulingConflict) {
 			p.Instance.Reason = "SCHEDULING_FIELD_CONFLICT"

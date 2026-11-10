@@ -142,6 +142,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	attachments.UseConsumerDirectory(networkConsumerDirectory(instances, vms))
 	defer vms.Close()
+	observability.SetAttachmentLogger(logger)
 	attachmentWorker, err := biz.NewAttachmentWorker(repository, consumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
 	if err != nil {
 		return err

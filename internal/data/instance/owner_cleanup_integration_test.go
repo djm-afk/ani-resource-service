@@ -24,7 +24,7 @@ func TestInstanceOwnerCleanupOutboxDispatchWithoutACC(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &provider{failPVC: true}
-	worker, err := biz.NewWorker(f.repo, p, "owner-cleanup")
+	worker, err := biz.NewWorker(f.repo, p, "owner-cleanup", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestInstanceLegacyReleaseOutboxNeedsOwnerCleanupFact(t *testing.T) {
 				t.Fatal(err)
 			}
 			p := &provider{failPVC: true}
-			worker, err := biz.NewWorker(f.repo, p, "legacy-owner")
+			worker, err := biz.NewWorker(f.repo, p, "legacy-owner", discardLogger())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +216,7 @@ func TestInstanceLegacyCleanupFlagsCannotSealAfterFailedObservation(t *testing.T
 				t.Fatal(err)
 			}
 			p := &provider{obs: tc.observation, observeErr: tc.observeErr}
-			worker, err := biz.NewWorker(f.repo, p, "legacy-observation")
+			worker, err := biz.NewWorker(f.repo, p, "legacy-observation", discardLogger())
 			if err != nil {
 				t.Fatal(err)
 			}

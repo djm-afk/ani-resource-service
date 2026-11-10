@@ -73,7 +73,7 @@ func TestVMIndependentObservationAfterSuccessfulStart(t *testing.T) {
 	// Only KubeVirt and Network boundaries are replaced. The actual create,
 	// checkpoints, power worker and PostgreSQL operation run to completion.
 	native := &powerVMNative{ref: biz.ObjectRef{Kind: "VirtualMachine", Namespace: a.Spec.Namespace, Name: "vm-" + a.VMID, UID: uuid.NewString()}, starts: 1}
-	worker, err := biz.NewWorker(p, native, powerVMNetwork{})
+	worker, err := biz.NewWorker(p, native, powerVMNetwork{}, discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestVMIndependentObservationAfterSuccessfulStart(t *testing.T) {
 	native.vmi = "" // guest shutdown, with no platform command or open page
 	observer, err := biz.NewObserver(p, observationRead(func(_ context.Context, v biz.VM) (biz.Observation, error) {
 		return stoppedObservation(v), nil
-	}))
+	}), discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker(t *testing.T) 
 		case <-ctx.Done():
 			return biz.Observation{}, ctx.Err()
 		}
-	}))
+	}), discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestVMBlockedObservationDoesNotBlockCommandOrOperationWorker(t *testing.T) 
 		t.Fatalf("observer blocked acceptance: %v", err)
 	}
 	native := &powerVMNative{ref: v.Native, vmi: uuid.NewString()}
-	worker, err := biz.NewWorker(p, native, powerVMNetwork{})
+	worker, err := biz.NewWorker(p, native, powerVMNetwork{}, discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}

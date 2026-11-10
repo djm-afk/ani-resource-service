@@ -17,7 +17,7 @@ func TestDeleteCleansEntireInstanceBeforeQuotaDelivery(t *testing.T) {
 		NotebookExists: true, NotebookUID: "notebook-uid", PodExists: true,
 		StatefulSetUID: "controller-uid", PVCExists: true, PVCUID: "workspace-uid", VolumeExists: true,
 	}}
-	w, err := NewWorker(repo, &identityCleanupProvider{cleanupWorkerProvider: provider}, "cleanup-worker")
+	w, err := NewWorker(repo, &identityCleanupProvider{cleanupWorkerProvider: provider}, "cleanup-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestDeleteWaitsForNetworkReleaseBeforeOwnerCleanup(t *testing.T) {
 	}}
 	provider := &cleanupWorkerProvider{}
 	network := &cleanupWorkerNetwork{state: "attached"}
-	w, err := NewWorker(repo, provider, "network-cleanup-worker")
+	w, err := NewWorker(repo, provider, "network-cleanup-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestUnknownWorkspaceCreateUsesWorkspaceObservation(t *testing.T) {
 		Desired: Running, RuntimeDesired: Running, Pending: &Mutation{Kind: "create_workspace"},
 	}}
 	provider := &cleanupWorkerProvider{observation: Observation{PVCExists: true, PVCUID: "workspace-uid"}}
-	w, err := NewWorker(repo, &identityCleanupProvider{cleanupWorkerProvider: provider}, "workspace-recovery-worker")
+	w, err := NewWorker(repo, &identityCleanupProvider{cleanupWorkerProvider: provider}, "workspace-recovery-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestDurableOwnerCleanupSkipsExternalObservation(t *testing.T) {
 		CleanupCompletedAt: time.Now().UTC(), Network: &NetworkRuntime{Cleaned: true},
 	}}
 	provider := &cleanupWorkerProvider{observeError: errors.New("Kubernetes unavailable")}
-	w, err := NewWorker(repo, provider, "resumed-cleanup-worker")
+	w, err := NewWorker(repo, provider, "resumed-cleanup-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestFailedObservationCannotSealStoredCleanupFlags(t *testing.T) {
 		ComputeCleaned: true, WorkspaceCleaned: true, VolumeReferencesReleased: true,
 	}}
 	provider := &cleanupWorkerProvider{observeError: errors.New("Kubernetes unavailable")}
-	w, err := NewWorker(repo, provider, "unsealed-cleanup-worker")
+	w, err := NewWorker(repo, provider, "unsealed-cleanup-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestUnknownCreateStillBlocksOwnerCleanup(t *testing.T) {
 				ComputeCleaned: true, WorkspaceCleaned: true, VolumeReferencesReleased: true,
 			}}
 			provider := &cleanupWorkerProvider{}
-			w, err := NewWorker(repo, provider, "unknown-create-worker")
+			w, err := NewWorker(repo, provider, "unknown-create-worker", discardLogger())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -161,7 +161,7 @@ func TestOnlyFinalCPUDeleteCompletesWithoutQuotaDelivery(t *testing.T) {
 			if desired != Deleted {
 				provider.observation = Observation{NotebookExists: true, PVCExists: true, PodReady: true, Stopped: desired == Stopped}
 			}
-			w, err := NewWorker(repo, provider, "cpu-worker")
+			w, err := NewWorker(repo, provider, "cpu-worker", discardLogger())
 			if err != nil {
 				t.Fatal(err)
 			}

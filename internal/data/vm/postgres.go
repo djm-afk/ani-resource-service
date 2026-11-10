@@ -17,8 +17,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
-	migrations "github.com/zhangzhe-ctrl/ani-resource-service/migrations/vm"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	migrations "github.com/zhangzhe-ctrl/ani-resource-service/migrations/vm"
 )
 
 type Postgres struct {

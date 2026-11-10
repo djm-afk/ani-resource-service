@@ -70,7 +70,7 @@ func TestLoadBalancerWorkerObservationFailureReachesFormalDiagnostics(t *testing
 	if worked, err := worker.Step(context.Background()); !worked || err != nil || calls != 1 {
 		t.Fatalf("worker diagnostic handoff: worked=%v calls=%d err=%v", worked, calls, err)
 	}
-	for _, want := range []string{cause.Error(), `"msg":"network provider request failed"`, `"resource_type":"load_balancer"`, "lb-diagnostics", "lb-binding-id", "lb-operation-id", `"epoch":79`} {
+	for _, want := range []string{cause.Error(), `"event":"step.failed"`, `"resource_type":"load_balancer"`, "lb-diagnostics", "lb-binding-id", "lb-operation-id", `"epoch":79`} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing LB diagnostic %q: %s", want, output.String())
 		}

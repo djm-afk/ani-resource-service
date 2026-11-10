@@ -141,6 +141,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			vms.Close()
 		}
 	}()
+	observability.SetAttachmentLogger(logger)
 	attachmentWorker, err := biz.NewAttachmentWorker(repository, routedConsumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
 	if err != nil {
 		consumer.Close()

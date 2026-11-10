@@ -54,7 +54,7 @@ func TestVMWorkerPersistsNativeFailureWithoutStoppingService(t *testing.T) {
 				t.Fatal(e)
 			}
 			native := &preparingVMNative{result: tc.reason}
-			w, e := biz.NewWorker(p, native, preparingVMNetwork{})
+			w, e := biz.NewWorker(p, native, preparingVMNetwork{}, discardLoggerVMLane())
 			if e != nil {
 				t.Fatal(e)
 			}
