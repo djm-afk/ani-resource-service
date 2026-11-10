@@ -4,20 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
 	storage "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/storage"
-	"log/slog"
-	"time"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
-const guardSelect = `SELECT tenant_id::text,cluster_id::text,namespace,pvc_name,target_uid,COALESCE(ticket_id::text,''),guard_epoch,lease_owner,lease_epoch,CASE WHEN lease_until='-infinity'::timestamptz THEN 'epoch'::timestamptz ELSE lease_until END AS lease_until,phase,write_started,last_write_outcome,last_observation,last_reason,retry_at,created_at,updated_at FROM instance.borrowed_pvc_guards`
+const guardSelect = `SELECT tenant_id::text,cluster_id::text,namespace,pvc_name,target_uid,COALESCE(ticket_id::text,''),guard_epoch,lease_owner,lease_epoch,CASE WHEN lease_until='-infinity'::timestamptz THEN 'epoch'::timestamptz ELSE lease_until END AS lease_until,phase,write_started,last_write_outcome,last_observation,last_reason,retry_at,created_at,updated_at,telemetry_context FROM instance.borrowed_pvc_guards`
 
 func scanGuard(row scanner) (storage.DeleteRecord, error) {
 	var r storage.DeleteRecord
-	var obs []byte
-	err := row.Scan(&r.Identity.TenantID, &r.Identity.ClusterID, &r.Identity.Namespace, &r.Identity.PVCName, &r.Identity.TargetUID, &r.Token.TicketID, &r.Token.GuardEpoch, &r.Token.LeaseOwner, &r.Token.LeaseEpoch, &r.Token.LeaseUntil, &r.Phase, &r.WriteStarted, &r.LastWriteOutcome, &obs, &r.LastReason, &r.RetryAt, &r.CreatedAt, &r.UpdatedAt)
+	var obs, telemetryRaw []byte
+	err := row.Scan(&r.Identity.TenantID, &r.Identity.ClusterID, &r.Identity.Namespace, &r.Identity.PVCName, &r.Identity.TargetUID, &r.Token.TicketID, &r.Token.GuardEpoch, &r.Token.LeaseOwner, &r.Token.LeaseEpoch, &r.Token.LeaseUntil, &r.Phase, &r.WriteStarted, &r.LastWriteOutcome, &obs, &r.LastReason, &r.RetryAt, &r.CreatedAt, &r.UpdatedAt, &telemetryRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, biz.ErrNotFound
 	}
@@ -31,6 +33,13 @@ func scanGuard(row scanner) (storage.DeleteRecord, error) {
 		}
 		r.LastObservation = o.State
 		r.ObservedUID = o.ObservedUID
+	}
+	// Logging metadata decodes independently; a malformed value never fails the
+	// ticket read.
+	if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+		r.TelemetryContextError = te
+	} else {
+		r.TelemetryContext = tc
 	}
 	return r, nil
 }
@@ -90,7 +99,7 @@ func (p *Postgres) ReserveDelete(ctx context.Context, id storage.PVCIdentity, ex
 		p.pvcReferenceConflicts.Add(1)
 		return r, false, storage.ErrVolumeInUse
 	}
-	r, err = scanGuard(tx.QueryRow(ctx, `UPDATE instance.borrowed_pvc_guards SET target_uid=$4,ticket_id=$5,guard_epoch=guard_epoch+1,phase='reserved',write_started=false,lease_owner=$6,lease_epoch=lease_epoch+1,lease_until=clock_timestamp()+interval '45 seconds',last_write_outcome='not_sent',last_observation=NULL,last_reason='',retry_at=clock_timestamp(),created_at=clock_timestamp(),updated_at=clock_timestamp() WHERE cluster_id=$1 AND namespace=$2 AND pvc_name=$3 RETURNING `+guardSelect[len("SELECT "):len(guardSelect)-len(" FROM instance.borrowed_pvc_guards")], id.ClusterID, id.Namespace, id.PVCName, id.TargetUID, uuid.NewString(), executor))
+	r, err = scanGuard(tx.QueryRow(ctx, `UPDATE instance.borrowed_pvc_guards SET target_uid=$4,ticket_id=$5,telemetry_context=$7,guard_epoch=guard_epoch+1,phase='reserved',write_started=false,lease_owner=$6,lease_epoch=lease_epoch+1,lease_until=clock_timestamp()+interval '45 seconds',last_write_outcome='not_sent',last_observation=NULL,last_reason='',retry_at=clock_timestamp(),created_at=clock_timestamp(),updated_at=clock_timestamp() WHERE cluster_id=$1 AND namespace=$2 AND pvc_name=$3 RETURNING `+guardSelect[len("SELECT "):len(guardSelect)-len(" FROM instance.borrowed_pvc_guards")], id.ClusterID, id.Namespace, id.PVCName, id.TargetUID, uuid.NewString(), executor, telemetryJSON(ctx)))
 	if err != nil {
 		return r, false, err
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var ErrDeleteLease = errors.New("STORAGE_DELETE_LEASE_LOST")
@@ -30,6 +32,11 @@ type DeleteRecord struct {
 	LastWriteOutcome, LastObservation, LastReason string
 	ObservedUID                                   string
 	RetryAt, CreatedAt, UpdatedAt                 time.Time
+	// TelemetryContext is independent logging metadata for the delete ticket.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the recovery
+	// worker without changing the ticket semantics.
+	TelemetryContextError error
 }
 
 type DeleteObservation struct {

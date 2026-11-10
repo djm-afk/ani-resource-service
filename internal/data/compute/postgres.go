@@ -73,7 +73,7 @@ func checkReady(ctx context.Context, db schemaReader) error {
 	return nil
 }
 
-var historyFiles = []string{"001_instance.sql", "002_compute_presets.sql", "003_whole_gpu_quantity.sql", "004_gpu_execution.sql", "005_instance_configuration.sql", "006_instance_network_submissions.sql", "007_owner_cleanup_release.sql", "008_restart_pvc.sql", "009_unversioned_configuration.sql", "010_gpu_contract_archive.sql"}
+var historyFiles = []string{"001_instance.sql", "002_compute_presets.sql", "003_whole_gpu_quantity.sql", "004_gpu_execution.sql", "005_instance_configuration.sql", "006_instance_network_submissions.sql", "007_owner_cleanup_release.sql", "008_restart_pvc.sql", "009_unversioned_configuration.sql", "010_gpu_contract_archive.sql", "011_logging_telemetry.sql"}
 
 // Migrate is explicit; it never executes historical instance SQL.
 func Migrate(ctx context.Context, dsn, runtimeRole string) error {

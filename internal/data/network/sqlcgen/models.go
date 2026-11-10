@@ -504,23 +504,24 @@ type NetworkLoadBalancer struct {
 }
 
 type NetworkOperation struct {
-	TenantID       string
-	OperationID    string
-	VpcID          *string
-	Kind           string
-	State          string
-	Reason         string
-	Attempt        int32
-	ExecutionEpoch int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	CompletedAt    *time.Time
-	NextAttemptAt  *time.Time
-	SubnetID       *string
-	EipID          *string
-	SnatID         *string
-	LbID           *string
-	VnicID         *string
+	TenantID         string
+	OperationID      string
+	VpcID            *string
+	Kind             string
+	State            string
+	Reason           string
+	Attempt          int32
+	ExecutionEpoch   int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	NextAttemptAt    *time.Time
+	SubnetID         *string
+	EipID            *string
+	SnatID           *string
+	LbID             *string
+	VnicID           *string
+	TelemetryContext []byte
 }
 
 type NetworkPlatformHistory struct {

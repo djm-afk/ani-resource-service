@@ -1,6 +1,10 @@
 package sandbox
 
-import "context"
+import (
+	"context"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+)
 
 const TenantSpaceActor = "governance:tenant-space"
 
@@ -21,6 +25,11 @@ type TenantSpace struct {
 	TenantID, OperationID, Phase string
 	PendingID, PendingKind       string
 	NamespaceUID                 string
+	// TelemetryContext is independent logging metadata for the tenant space
+	// worker; it is never part of the mutation receipt.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error
 }
 
 // TenantSpaceMutation is a journaled single provider write. Dispatch is true

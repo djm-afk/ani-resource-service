@@ -379,7 +379,7 @@ func (p *Postgres) acceptBaseBackfillCandidate(ctx context.Context, q *sqlcgen.Q
 		return conflict("VPC operation is not completed")
 	}
 	opID := uuid.NewString()
-	if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: c.TenantID, VpcID: c.VpcID, OperationID: opID, Kind: "ensure_vpc_base_connectivity", CreatedAt: now}); err != nil {
+	if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: c.TenantID, VpcID: c.VpcID, OperationID: opID, Kind: "ensure_vpc_base_connectivity", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return "", databaseFailure(err)
 	}
 	if err = affected(q.AdmitBaseBackfillVPC(ctx, sqlcgen.AdmitBaseBackfillVPCParams{TenantID: c.TenantID, VpcID: c.VpcID, Version: v.Version, OperationID: opID})); err != nil {

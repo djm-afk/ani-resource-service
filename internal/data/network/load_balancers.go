@@ -515,7 +515,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 			return biz.LoadBalancerResult{}, databaseFailure(err)
 		}
 	}
-	if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: i.TenantID, LbID: row.LbID, OperationID: opID, Kind: i.Kind, CreatedAt: now}); err != nil {
+	if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: i.TenantID, LbID: row.LbID, OperationID: opID, Kind: i.Kind, CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.LoadBalancerResult{}, databaseFailure(err)
 	}
 	if creating {
@@ -639,7 +639,7 @@ func (p *Postgres) DeleteLoadBalancer(ctx context.Context, tenant, id string, a 
 		return biz.LoadBalancerResult{}, databaseFailure(err)
 	}
 	opID := uuid.NewString()
-	if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, LbID: id, OperationID: opID, Kind: "delete_load_balancer", CreatedAt: now}); err != nil {
+	if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, LbID: id, OperationID: opID, Kind: "delete_load_balancer", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.LoadBalancerResult{}, databaseFailure(err)
 	}
 	row, err = q.AdmitLBDeletion(ctx, sqlcgen.AdmitLBDeletionParams{TenantID: tenant, LbID: id, Version: row.Version, OperationID: &opID})

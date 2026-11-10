@@ -140,7 +140,7 @@ func TestBaseSchemaLegacyPublicUpgradePreservesDurableFactsAndReplay(t *testing.
 	snapshot := func(owner *pgxpool.Pool, table string) string {
 		t.Helper()
 		var s string
-		err := owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(r)-'evidence_hash'-'evidence_applied_at'-'vnic_id'-'observation_error'-'target_generation'-'lease_owner'-'lease_until'-'lease_epoch'-'next_run_at'-'base_connectivity_required'-'scope'-'managed_by'-'system_owner_vpc'-'purpose'-'create_dispatched'-'retired'-'lb_id'-'provider_generation'-'provider_ready'-'provider_observed_at'-'provider_observed_uid'-'provider_observed_generation' ORDER BY to_jsonb(r)::text),'[]')::text FROM `+table+` r WHERE tenant_id=$1`, legacy.Tenant).Scan(&s)
+		err := owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(r)-'evidence_hash'-'evidence_applied_at'-'vnic_id'-'observation_error'-'target_generation'-'lease_owner'-'lease_until'-'lease_epoch'-'next_run_at'-'base_connectivity_required'-'scope'-'managed_by'-'system_owner_vpc'-'purpose'-'create_dispatched'-'retired'-'lb_id'-'provider_generation'-'provider_ready'-'provider_observed_at'-'provider_observed_uid'-'provider_observed_generation'-'telemetry_context' ORDER BY to_jsonb(r)::text),'[]')::text FROM `+table+` r WHERE tenant_id=$1`, legacy.Tenant).Scan(&s)
 		if err != nil {
 			t.Fatal(err)
 		}

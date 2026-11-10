@@ -352,7 +352,7 @@ func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, e
 		return biz.VPC{}, databaseFailure(err)
 	}
 	opID := uuid.NewString()
-	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, VpcID: id, OperationID: opID, Kind: "delete_vpc", CreatedAt: now}); err != nil {
+	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, VpcID: id, OperationID: opID, Kind: "delete_vpc", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.VPC{}, databaseFailure(err)
 	}
 	row, err = q.AdmitDeletion(ctx, sqlcgen.AdmitDeletionParams{TenantID: tenant, VpcID: id, Version: row.Version, OperationID: opID})

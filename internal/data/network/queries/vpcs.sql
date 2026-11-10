@@ -14,8 +14,8 @@ VALUES ($1,$2,$3,$4,$5,'provisioning',$6,$6,$7)
 RETURNING *;
 
 -- name: InsertOperation :exec
-INSERT INTO network_operations (tenant_id,operation_id,vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id,kind,state,created_at,updated_at,next_attempt_at)
-VALUES (sqlc.arg(tenant_id),sqlc.arg(operation_id),NULLIF(sqlc.arg(vpc_id)::text,''),NULLIF(sqlc.arg(subnet_id)::text,''),NULLIF(sqlc.arg(eip_id)::text,''),NULLIF(sqlc.arg(snat_id)::text,''),NULLIF(sqlc.arg(lb_id)::text,''),NULLIF(sqlc.arg(vnic_id)::text,''),sqlc.arg(kind),'queued',sqlc.arg(created_at),sqlc.arg(created_at),sqlc.arg(created_at));
+INSERT INTO network_operations (tenant_id,operation_id,vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id,kind,state,created_at,updated_at,next_attempt_at,telemetry_context)
+VALUES (sqlc.arg(tenant_id),sqlc.arg(operation_id),NULLIF(sqlc.arg(vpc_id)::text,''),NULLIF(sqlc.arg(subnet_id)::text,''),NULLIF(sqlc.arg(eip_id)::text,''),NULLIF(sqlc.arg(snat_id)::text,''),NULLIF(sqlc.arg(lb_id)::text,''),NULLIF(sqlc.arg(vnic_id)::text,''),sqlc.arg(kind),'queued',sqlc.arg(created_at),sqlc.arg(created_at),sqlc.arg(created_at),sqlc.narg(telemetry_context));
 
 -- name: InsertReconciliation :exec
 INSERT INTO network_reconciliations (tenant_id,vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id,next_run_at) VALUES (sqlc.arg(tenant_id),NULLIF(sqlc.arg(vpc_id)::text,''),NULLIF(sqlc.arg(subnet_id)::text,''),NULLIF(sqlc.arg(eip_id)::text,''),NULLIF(sqlc.arg(snat_id)::text,''),NULLIF(sqlc.arg(lb_id)::text,''),NULLIF(sqlc.arg(vnic_id)::text,''),sqlc.arg(next_run_at));

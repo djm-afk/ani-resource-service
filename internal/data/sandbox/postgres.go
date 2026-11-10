@@ -15,12 +15,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	migrations "github.com/zhangzhe-ctrl/ani-resource-service/migrations/sandbox"
 )
 
 type Postgres struct{ pool *pgxpool.Pool }
 
-var schemaFiles = []string{"001_sandbox.sql", "002_workspace_bindings.sql", "003_recovery_and_create_intent.sql", "004_tenant_listing.sql", "005_code_runs.sql", "006_file_operations.sql", "007_access_tokens.sql", "008_tenant_space.sql"}
+var schemaFiles = []string{"001_sandbox.sql", "002_workspace_bindings.sql", "003_recovery_and_create_intent.sql", "004_tenant_listing.sql", "005_code_runs.sql", "006_file_operations.sql", "007_access_tokens.sql", "008_tenant_space.sql", "009_logging_telemetry.sql"}
 
 func validDigest(v string) bool {
 	if len(v) != 64 || strings.ToLower(v) != v {
@@ -201,7 +202,7 @@ func (p *Postgres) AcceptCreate(ctx context.Context, c biz.Create) (biz.ACK, err
 	if err != nil {
 		return biz.ACK{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO sandbox.operations(tenant_id,operation_id,sandbox_id,action,idempotency_key,request_digest,intent_version,state) VALUES($1,$2,$3,'create',$4,$5,1,'queued')`, c.TenantID, c.OperationID, c.ID, c.OperationID, c.RequestDigest)
+	_, err = tx.Exec(ctx, `INSERT INTO sandbox.operations(tenant_id,operation_id,sandbox_id,action,idempotency_key,request_digest,intent_version,state,telemetry_context) VALUES($1,$2,$3,'create',$4,$5,1,'queued',$6)`, c.TenantID, c.OperationID, c.ID, c.OperationID, c.RequestDigest, telemetryJSON(ctx))
 	if err != nil {
 		return biz.ACK{}, err
 	}
@@ -283,13 +284,22 @@ func (p *Postgres) GetOperation(ctx context.Context, tenant, id string) (biz.Ope
 		return biz.Operation{}, err
 	}
 	var o biz.Operation
-	err := p.pool.QueryRow(ctx, `SELECT o.operation_id::text,o.sandbox_id::text,s.instance_id,o.action,o.idempotency_key,o.state,o.reason,o.intent_version,o.created_at
+	var telemetryRaw []byte
+	err := p.pool.QueryRow(ctx, `SELECT o.operation_id::text,o.sandbox_id::text,s.instance_id,o.action,o.idempotency_key,o.state,o.reason,o.intent_version,o.created_at,o.telemetry_context
 		FROM sandbox.operations o JOIN sandbox.sandboxes s ON s.tenant_id=o.tenant_id AND s.sandbox_id=o.sandbox_id
-		WHERE o.tenant_id=$1 AND o.operation_id=$2`, tenant, id).Scan(&o.ID, &o.SandboxID, &o.InstanceID, &o.Action, &o.IdempotencyKey, &o.State, &o.Reason, &o.IntentVersion, &o.CreatedAt)
+		WHERE o.tenant_id=$1 AND o.operation_id=$2`, tenant, id).Scan(&o.ID, &o.SandboxID, &o.InstanceID, &o.Action, &o.IdempotencyKey, &o.State, &o.Reason, &o.IntentVersion, &o.CreatedAt, &telemetryRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return o, biz.ErrNotFound
 	}
-	return o, err
+	if err != nil {
+		return o, err
+	}
+	if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+		o.TelemetryContextError = te
+	} else {
+		o.TelemetryContext = tc
+	}
+	return o, nil
 }
 func (p *Postgres) Change(ctx context.Context, c biz.Command) (biz.ACK, error) {
 	if err := biz.RequireTenant(ctx, c.TenantID); err != nil {
@@ -349,7 +359,7 @@ func (p *Postgres) Change(ctx context.Context, c biz.Command) (biz.ACK, error) {
 	if _, err = tx.Exec(ctx, "UPDATE sandbox.sandboxes SET version=version+1,desired=$3,last_operation_id=$4,updated_at=clock_timestamp() WHERE tenant_id=$1 AND sandbox_id=$2", c.TenantID, c.ID, newDesired, c.OperationID); err != nil {
 		return biz.ACK{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO sandbox.operations(tenant_id,operation_id,sandbox_id,action,idempotency_key,request_digest,intent_version,state) VALUES($1,$2,$3,$4,$5,$6,$7,'queued')`, c.TenantID, c.OperationID, c.ID, c.Action, c.IdempotencyKey, c.RequestDigest, version+1); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO sandbox.operations(tenant_id,operation_id,sandbox_id,action,idempotency_key,request_digest,intent_version,state,telemetry_context) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8)`, c.TenantID, c.OperationID, c.ID, c.Action, c.IdempotencyKey, c.RequestDigest, version+1, telemetryJSON(ctx)); err != nil {
 		return biz.ACK{}, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE sandbox.operations SET state='superseded'
@@ -421,10 +431,20 @@ func (p *Postgres) Claim(ctx context.Context, owner string, lease time.Duration)
 		WHERE tenant_id=$1 AND operation_id=$2 AND state IN ('queued','retrying','unknown')`, tenant, s.LastOperationID); err != nil {
 		return nil, err
 	}
+	var telemetryRaw []byte
+	if err = tx.QueryRow(ctx, `SELECT telemetry_context FROM sandbox.operations WHERE tenant_id=$1 AND operation_id=$2`, tenant, s.LastOperationID).Scan(&telemetryRaw); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &biz.Work{Sandbox: s, LeaseOwner: owner, LeaseEpoch: epoch}, nil
+	work := &biz.Work{Sandbox: s, LeaseOwner: owner, LeaseEpoch: epoch, OperationID: s.LastOperationID}
+	if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+		work.TelemetryContextError = te
+	} else {
+		work.TelemetryContext = tc
+	}
+	return work, nil
 }
 
 // PrepareMutation is the durable fence before any Provider write. Actions and
@@ -663,4 +683,18 @@ func (p *Postgres) Finish(ctx context.Context, work biz.Work, progress biz.Progr
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// telemetryJSON renders the logging metadata for an insert, or nil when the
+// context carries no captured trace.
+func telemetryJSON(ctx context.Context) []byte {
+	tc := telemetry.Capture(ctx)
+	if !tc.Valid() {
+		return nil
+	}
+	b, e := json.Marshal(tc)
+	if e != nil {
+		return nil
+	}
+	return b
 }

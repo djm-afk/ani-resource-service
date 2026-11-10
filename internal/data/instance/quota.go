@@ -66,13 +66,13 @@ func sealQuotaRelease(ctx context.Context, tx pgx.Tx, i *biz.Instance) error {
 	var event, create, reason string
 	var acknowledged bool
 	err := tx.QueryRow(ctx, `INSERT INTO instance.instance_quota_release_outbox
-		(tenant_id,instance_id,event_id,original_create_operation_id,reason,cleanup_completed_at,cleanup_version)
-		VALUES($1,$2,$3,$4,'RESOURCE_RELEASED',$5,$6)
+		(tenant_id,instance_id,event_id,original_create_operation_id,reason,cleanup_completed_at,cleanup_version,telemetry_context)
+		VALUES($1,$2,$3,$4,'RESOURCE_RELEASED',$5,$6,$7)
 		ON CONFLICT(tenant_id,instance_id) DO UPDATE SET
 		cleanup_completed_at=COALESCE(instance.instance_quota_release_outbox.cleanup_completed_at,EXCLUDED.cleanup_completed_at),
 		cleanup_version=COALESCE(instance.instance_quota_release_outbox.cleanup_version,EXCLUDED.cleanup_version)
 		RETURNING event_id::text,original_create_operation_id::text,reason,acknowledged`,
-		i.TenantID, i.ID, releaseEventID(*i), i.CreateOperationID, i.CleanupCompletedAt, i.Version).Scan(&event, &create, &reason, &acknowledged)
+		i.TenantID, i.ID, releaseEventID(*i), i.CreateOperationID, i.CleanupCompletedAt, i.Version, telemetryJSON(ctx)).Scan(&event, &create, &reason, &acknowledged)
 	if err != nil {
 		return err
 	}
