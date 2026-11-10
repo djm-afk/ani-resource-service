@@ -85,19 +85,23 @@ func (Usage) EnumDescriptor() ([]byte, []int) {
 
 // Trusted, managed reference; never accepted directly from public JSON.
 type GpuPresetReference struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId          string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
-	ProfileVersion     uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
-	SpecDigest         string                 `protobuf:"bytes,3,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
-	DevicesPerInstance uint32                 `protobuf:"varint,4,opt,name=devices_per_instance,proto3" json:"devices_per_instance,omitempty"`
-	ClusterId          string                 `protobuf:"bytes,5,opt,name=cluster_id,proto3" json:"cluster_id,omitempty"`
-	PoolId             string                 `protobuf:"bytes,6,opt,name=pool_id,proto3" json:"pool_id,omitempty"`
-	Mode               v1.SupplyMode          `protobuf:"varint,7,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
-	ModelKey           string                 `protobuf:"bytes,8,opt,name=model_key,proto3" json:"model_key,omitempty"`
-	MemoryMibPerDevice int64                  `protobuf:"varint,11,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
-	CoreLimitPercent   uint32                 `protobuf:"varint,10,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId             string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
+	ProfileVersion        uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
+	SpecDigest            string                 `protobuf:"bytes,3,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
+	DevicesPerInstance    uint32                 `protobuf:"varint,4,opt,name=devices_per_instance,proto3" json:"devices_per_instance,omitempty"`
+	ClusterId             string                 `protobuf:"bytes,5,opt,name=cluster_id,proto3" json:"cluster_id,omitempty"`
+	PoolId                string                 `protobuf:"bytes,6,opt,name=pool_id,proto3" json:"pool_id,omitempty"`
+	Mode                  v1.SupplyMode          `protobuf:"varint,7,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
+	ModelKey              string                 `protobuf:"bytes,8,opt,name=model_key,proto3" json:"model_key,omitempty"`
+	MemoryMibPerDevice    int64                  `protobuf:"varint,11,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
+	CoreLimitPercent      uint32                 `protobuf:"varint,10,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
+	AllocationType        v1.AllocationType      `protobuf:"varint,12,opt,name=allocation_type,proto3,enum=accelerator.v1.AllocationType" json:"allocation_type,omitempty"`
+	ResourceKey           string                 `protobuf:"bytes,13,opt,name=resource_key,proto3" json:"resource_key,omitempty"`
+	ComputeUnitsPerDevice uint32                 `protobuf:"varint,14,opt,name=compute_units_per_device,proto3" json:"compute_units_per_device,omitempty"`
+	AdapterId             string                 `protobuf:"bytes,15,opt,name=adapter_id,proto3" json:"adapter_id,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GpuPresetReference) Reset() {
@@ -198,6 +202,34 @@ func (x *GpuPresetReference) GetCoreLimitPercent() uint32 {
 		return x.CoreLimitPercent
 	}
 	return 0
+}
+
+func (x *GpuPresetReference) GetAllocationType() v1.AllocationType {
+	if x != nil {
+		return x.AllocationType
+	}
+	return v1.AllocationType(0)
+}
+
+func (x *GpuPresetReference) GetResourceKey() string {
+	if x != nil {
+		return x.ResourceKey
+	}
+	return ""
+}
+
+func (x *GpuPresetReference) GetComputeUnitsPerDevice() uint32 {
+	if x != nil {
+		return x.ComputeUnitsPerDevice
+	}
+	return 0
+}
+
+func (x *GpuPresetReference) GetAdapterId() string {
+	if x != nil {
+		return x.AdapterId
+	}
+	return ""
 }
 
 type Preset struct {
@@ -1113,19 +1145,23 @@ func (x *ComputeSelection) GetSelectionDigest() string {
 }
 
 type GpuSelection struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId          string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
-	ProfileVersion     uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
-	SpecDigest         string                 `protobuf:"bytes,3,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
-	DevicesPerUnit     uint32                 `protobuf:"varint,4,opt,name=devices_per_unit,proto3" json:"devices_per_unit,omitempty"`
-	ClusterId          string                 `protobuf:"bytes,5,opt,name=cluster_id,proto3" json:"cluster_id,omitempty"`
-	PoolId             string                 `protobuf:"bytes,6,opt,name=pool_id,proto3" json:"pool_id,omitempty"`
-	Mode               v1.SupplyMode          `protobuf:"varint,7,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
-	ModelKey           string                 `protobuf:"bytes,8,opt,name=model_key,proto3" json:"model_key,omitempty"`
-	MemoryMibPerDevice int64                  `protobuf:"varint,9,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
-	CoreLimitPercent   uint32                 `protobuf:"varint,10,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId             string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
+	ProfileVersion        uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
+	SpecDigest            string                 `protobuf:"bytes,3,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
+	DevicesPerUnit        uint32                 `protobuf:"varint,4,opt,name=devices_per_unit,proto3" json:"devices_per_unit,omitempty"`
+	ClusterId             string                 `protobuf:"bytes,5,opt,name=cluster_id,proto3" json:"cluster_id,omitempty"`
+	PoolId                string                 `protobuf:"bytes,6,opt,name=pool_id,proto3" json:"pool_id,omitempty"`
+	Mode                  v1.SupplyMode          `protobuf:"varint,7,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
+	ModelKey              string                 `protobuf:"bytes,8,opt,name=model_key,proto3" json:"model_key,omitempty"`
+	MemoryMibPerDevice    int64                  `protobuf:"varint,9,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
+	CoreLimitPercent      uint32                 `protobuf:"varint,10,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
+	AllocationType        v1.AllocationType      `protobuf:"varint,11,opt,name=allocation_type,proto3,enum=accelerator.v1.AllocationType" json:"allocation_type,omitempty"`
+	ResourceKey           string                 `protobuf:"bytes,12,opt,name=resource_key,proto3" json:"resource_key,omitempty"`
+	ComputeUnitsPerDevice uint32                 `protobuf:"varint,13,opt,name=compute_units_per_device,proto3" json:"compute_units_per_device,omitempty"`
+	AdapterId             string                 `protobuf:"bytes,14,opt,name=adapter_id,proto3" json:"adapter_id,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GpuSelection) Reset() {
@@ -1228,12 +1264,40 @@ func (x *GpuSelection) GetCoreLimitPercent() uint32 {
 	return 0
 }
 
+func (x *GpuSelection) GetAllocationType() v1.AllocationType {
+	if x != nil {
+		return x.AllocationType
+	}
+	return v1.AllocationType(0)
+}
+
+func (x *GpuSelection) GetResourceKey() string {
+	if x != nil {
+		return x.ResourceKey
+	}
+	return ""
+}
+
+func (x *GpuSelection) GetComputeUnitsPerDevice() uint32 {
+	if x != nil {
+		return x.ComputeUnitsPerDevice
+	}
+	return 0
+}
+
+func (x *GpuSelection) GetAdapterId() string {
+	if x != nil {
+		return x.AdapterId
+	}
+	return ""
+}
+
 var File_compute_v1_compute_proto protoreflect.FileDescriptor
 
 const file_compute_v1_compute_proto_rawDesc = "" +
 	"\n" +
 	"\x18compute/v1/compute.proto\x12\n" +
-	"compute.v1\x1a accelerator/v1/accelerator.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bgoogle/protobuf/empty.proto\"\xc6\x03\n" +
+	"compute.v1\x1a accelerator/v1/accelerator.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bgoogle/protobuf/empty.proto\"\x90\x05\n" +
 	"\x12GpuPresetReference\x12\x1e\n" +
 	"\n" +
 	"profile_id\x18\x01 \x01(\tR\n" +
@@ -1249,7 +1313,13 @@ const file_compute_v1_compute_proto_rawDesc = "" +
 	"\tmodel_key\x18\b \x01(\tR\tmodel_key\x124\n" +
 	"\x15memory_mib_per_device\x18\v \x01(\x03R\x15memory_mib_per_device\x12.\n" +
 	"\x12core_limit_percent\x18\n" +
-	" \x01(\rR\x12core_limit_percentJ\x04\b\t\x10\n" +
+	" \x01(\rR\x12core_limit_percent\x12H\n" +
+	"\x0fallocation_type\x18\f \x01(\x0e2\x1e.accelerator.v1.AllocationTypeR\x0fallocation_type\x12\"\n" +
+	"\fresource_key\x18\r \x01(\tR\fresource_key\x12:\n" +
+	"\x18compute_units_per_device\x18\x0e \x01(\rR\x18compute_units_per_device\x12\x1e\n" +
+	"\n" +
+	"adapter_id\x18\x0f \x01(\tR\n" +
+	"adapter_idJ\x04\b\t\x10\n" +
 	"R\x1cshared_memory_mib_per_device\"\x9d\x04\n" +
 	"\x06Preset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -1349,7 +1419,7 @@ const file_compute_v1_compute_proto_rawDesc = "" +
 	"memory_mib\x18\a \x01(\x03R\n" +
 	"memory_mib\x12*\n" +
 	"\x03gpu\x18\b \x01(\v2\x18.compute.v1.GpuSelectionR\x03gpu\x12*\n" +
-	"\x10selection_digest\x18\t \x01(\tR\x10selection_digest\"\x94\x03\n" +
+	"\x10selection_digest\x18\t \x01(\tR\x10selection_digest\"\xde\x04\n" +
 	"\fGpuSelection\x12\x1e\n" +
 	"\n" +
 	"profile_id\x18\x01 \x01(\tR\n" +
@@ -1365,7 +1435,13 @@ const file_compute_v1_compute_proto_rawDesc = "" +
 	"\tmodel_key\x18\b \x01(\tR\tmodel_key\x124\n" +
 	"\x15memory_mib_per_device\x18\t \x01(\x03R\x15memory_mib_per_device\x12.\n" +
 	"\x12core_limit_percent\x18\n" +
-	" \x01(\rR\x12core_limit_percent*u\n" +
+	" \x01(\rR\x12core_limit_percent\x12H\n" +
+	"\x0fallocation_type\x18\v \x01(\x0e2\x1e.accelerator.v1.AllocationTypeR\x0fallocation_type\x12\"\n" +
+	"\fresource_key\x18\f \x01(\tR\fresource_key\x12:\n" +
+	"\x18compute_units_per_device\x18\r \x01(\rR\x18compute_units_per_device\x12\x1e\n" +
+	"\n" +
+	"adapter_id\x18\x0e \x01(\tR\n" +
+	"adapter_id*u\n" +
 	"\x05Usage\x12\x15\n" +
 	"\x11USAGE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12CONTAINER_INSTANCE\x10\x01\x12\f\n" +
@@ -1414,46 +1490,49 @@ var file_compute_v1_compute_proto_goTypes = []any{
 	(*ComputeSelection)(nil),             // 13: compute.v1.ComputeSelection
 	(*GpuSelection)(nil),                 // 14: compute.v1.GpuSelection
 	(v1.SupplyMode)(0),                   // 15: accelerator.v1.SupplyMode
-	(*timestamppb.Timestamp)(nil),        // 16: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),        // 17: google.protobuf.FieldMask
-	(*emptypb.Empty)(nil),                // 18: google.protobuf.Empty
+	(v1.AllocationType)(0),               // 16: accelerator.v1.AllocationType
+	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),        // 18: google.protobuf.FieldMask
+	(*emptypb.Empty)(nil),                // 19: google.protobuf.Empty
 }
 var file_compute_v1_compute_proto_depIdxs = []int32{
 	15, // 0: compute.v1.GpuPresetReference.mode:type_name -> accelerator.v1.SupplyMode
-	1,  // 1: compute.v1.Preset.gpu:type_name -> compute.v1.GpuPresetReference
-	16, // 2: compute.v1.Preset.created_at:type_name -> google.protobuf.Timestamp
-	16, // 3: compute.v1.Preset.updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 4: compute.v1.PresetData.gpu:type_name -> compute.v1.GpuPresetReference
-	1,  // 5: compute.v1.ListPresetsRequest.allowed_gpu_profiles:type_name -> compute.v1.GpuPresetReference
-	0,  // 6: compute.v1.ListPresetsRequest.usage:type_name -> compute.v1.Usage
-	2,  // 7: compute.v1.ListPresetsResponse.items:type_name -> compute.v1.Preset
-	3,  // 8: compute.v1.AdminCreatePresetRequest.data:type_name -> compute.v1.PresetData
-	3,  // 9: compute.v1.AdminUpdatePresetRequest.data:type_name -> compute.v1.PresetData
-	17, // 10: compute.v1.AdminUpdatePresetRequest.update_mask:type_name -> google.protobuf.FieldMask
-	0,  // 11: compute.v1.ResolveComputePresetRequest.usage:type_name -> compute.v1.Usage
-	14, // 12: compute.v1.ComputeSelection.gpu:type_name -> compute.v1.GpuSelection
-	15, // 13: compute.v1.GpuSelection.mode:type_name -> accelerator.v1.SupplyMode
-	6,  // 14: compute.v1.ComputePresetService.AdminListPresets:input_type -> compute.v1.AdminListPresetsRequest
-	7,  // 15: compute.v1.ComputePresetService.AdminGetPreset:input_type -> compute.v1.AdminGetPresetRequest
-	8,  // 16: compute.v1.ComputePresetService.AdminCreatePreset:input_type -> compute.v1.AdminCreatePresetRequest
-	9,  // 17: compute.v1.ComputePresetService.AdminUpdatePreset:input_type -> compute.v1.AdminUpdatePresetRequest
-	10, // 18: compute.v1.ComputePresetService.AdminSetPresetEnabled:input_type -> compute.v1.AdminSetPresetEnabledRequest
-	11, // 19: compute.v1.ComputePresetService.AdminDeletePreset:input_type -> compute.v1.AdminDeletePresetRequest
-	4,  // 20: compute.v1.ComputePresetService.ListPresets:input_type -> compute.v1.ListPresetsRequest
-	12, // 21: compute.v1.ComputePresetService.ResolveComputePreset:input_type -> compute.v1.ResolveComputePresetRequest
-	5,  // 22: compute.v1.ComputePresetService.AdminListPresets:output_type -> compute.v1.ListPresetsResponse
-	2,  // 23: compute.v1.ComputePresetService.AdminGetPreset:output_type -> compute.v1.Preset
-	2,  // 24: compute.v1.ComputePresetService.AdminCreatePreset:output_type -> compute.v1.Preset
-	2,  // 25: compute.v1.ComputePresetService.AdminUpdatePreset:output_type -> compute.v1.Preset
-	2,  // 26: compute.v1.ComputePresetService.AdminSetPresetEnabled:output_type -> compute.v1.Preset
-	18, // 27: compute.v1.ComputePresetService.AdminDeletePreset:output_type -> google.protobuf.Empty
-	5,  // 28: compute.v1.ComputePresetService.ListPresets:output_type -> compute.v1.ListPresetsResponse
-	13, // 29: compute.v1.ComputePresetService.ResolveComputePreset:output_type -> compute.v1.ComputeSelection
-	22, // [22:30] is the sub-list for method output_type
-	14, // [14:22] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	16, // 1: compute.v1.GpuPresetReference.allocation_type:type_name -> accelerator.v1.AllocationType
+	1,  // 2: compute.v1.Preset.gpu:type_name -> compute.v1.GpuPresetReference
+	17, // 3: compute.v1.Preset.created_at:type_name -> google.protobuf.Timestamp
+	17, // 4: compute.v1.Preset.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 5: compute.v1.PresetData.gpu:type_name -> compute.v1.GpuPresetReference
+	1,  // 6: compute.v1.ListPresetsRequest.allowed_gpu_profiles:type_name -> compute.v1.GpuPresetReference
+	0,  // 7: compute.v1.ListPresetsRequest.usage:type_name -> compute.v1.Usage
+	2,  // 8: compute.v1.ListPresetsResponse.items:type_name -> compute.v1.Preset
+	3,  // 9: compute.v1.AdminCreatePresetRequest.data:type_name -> compute.v1.PresetData
+	3,  // 10: compute.v1.AdminUpdatePresetRequest.data:type_name -> compute.v1.PresetData
+	18, // 11: compute.v1.AdminUpdatePresetRequest.update_mask:type_name -> google.protobuf.FieldMask
+	0,  // 12: compute.v1.ResolveComputePresetRequest.usage:type_name -> compute.v1.Usage
+	14, // 13: compute.v1.ComputeSelection.gpu:type_name -> compute.v1.GpuSelection
+	15, // 14: compute.v1.GpuSelection.mode:type_name -> accelerator.v1.SupplyMode
+	16, // 15: compute.v1.GpuSelection.allocation_type:type_name -> accelerator.v1.AllocationType
+	6,  // 16: compute.v1.ComputePresetService.AdminListPresets:input_type -> compute.v1.AdminListPresetsRequest
+	7,  // 17: compute.v1.ComputePresetService.AdminGetPreset:input_type -> compute.v1.AdminGetPresetRequest
+	8,  // 18: compute.v1.ComputePresetService.AdminCreatePreset:input_type -> compute.v1.AdminCreatePresetRequest
+	9,  // 19: compute.v1.ComputePresetService.AdminUpdatePreset:input_type -> compute.v1.AdminUpdatePresetRequest
+	10, // 20: compute.v1.ComputePresetService.AdminSetPresetEnabled:input_type -> compute.v1.AdminSetPresetEnabledRequest
+	11, // 21: compute.v1.ComputePresetService.AdminDeletePreset:input_type -> compute.v1.AdminDeletePresetRequest
+	4,  // 22: compute.v1.ComputePresetService.ListPresets:input_type -> compute.v1.ListPresetsRequest
+	12, // 23: compute.v1.ComputePresetService.ResolveComputePreset:input_type -> compute.v1.ResolveComputePresetRequest
+	5,  // 24: compute.v1.ComputePresetService.AdminListPresets:output_type -> compute.v1.ListPresetsResponse
+	2,  // 25: compute.v1.ComputePresetService.AdminGetPreset:output_type -> compute.v1.Preset
+	2,  // 26: compute.v1.ComputePresetService.AdminCreatePreset:output_type -> compute.v1.Preset
+	2,  // 27: compute.v1.ComputePresetService.AdminUpdatePreset:output_type -> compute.v1.Preset
+	2,  // 28: compute.v1.ComputePresetService.AdminSetPresetEnabled:output_type -> compute.v1.Preset
+	19, // 29: compute.v1.ComputePresetService.AdminDeletePreset:output_type -> google.protobuf.Empty
+	5,  // 30: compute.v1.ComputePresetService.ListPresets:output_type -> compute.v1.ListPresetsResponse
+	13, // 31: compute.v1.ComputePresetService.ResolveComputePreset:output_type -> compute.v1.ComputeSelection
+	24, // [24:32] is the sub-list for method output_type
+	16, // [16:24] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_compute_v1_compute_proto_init() }

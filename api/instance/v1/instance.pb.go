@@ -911,19 +911,23 @@ func (x *InstanceConfiguration) GetSecurityGroupIds() []string {
 
 // Trusted, managed reference; never accepted directly from public JSON.
 type GpuPresetReference struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId          string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
-	ProfileVersion     uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
-	SpecDigest         string                 `protobuf:"bytes,3,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
-	DevicesPerInstance uint32                 `protobuf:"varint,4,opt,name=devices_per_instance,proto3" json:"devices_per_instance,omitempty"`
-	ClusterId          string                 `protobuf:"bytes,5,opt,name=cluster_id,proto3" json:"cluster_id,omitempty"`
-	PoolId             string                 `protobuf:"bytes,6,opt,name=pool_id,proto3" json:"pool_id,omitempty"`
-	Mode               v1.SupplyMode          `protobuf:"varint,7,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
-	ModelKey           string                 `protobuf:"bytes,8,opt,name=model_key,proto3" json:"model_key,omitempty"`
-	MemoryMibPerDevice int64                  `protobuf:"varint,11,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
-	CoreLimitPercent   uint32                 `protobuf:"varint,10,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId             string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
+	ProfileVersion        uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
+	SpecDigest            string                 `protobuf:"bytes,3,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
+	DevicesPerInstance    uint32                 `protobuf:"varint,4,opt,name=devices_per_instance,proto3" json:"devices_per_instance,omitempty"`
+	ClusterId             string                 `protobuf:"bytes,5,opt,name=cluster_id,proto3" json:"cluster_id,omitempty"`
+	PoolId                string                 `protobuf:"bytes,6,opt,name=pool_id,proto3" json:"pool_id,omitempty"`
+	Mode                  v1.SupplyMode          `protobuf:"varint,7,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
+	ModelKey              string                 `protobuf:"bytes,8,opt,name=model_key,proto3" json:"model_key,omitempty"`
+	MemoryMibPerDevice    int64                  `protobuf:"varint,11,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
+	CoreLimitPercent      uint32                 `protobuf:"varint,10,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
+	AllocationType        v1.AllocationType      `protobuf:"varint,12,opt,name=allocation_type,proto3,enum=accelerator.v1.AllocationType" json:"allocation_type,omitempty"`
+	ResourceKey           string                 `protobuf:"bytes,13,opt,name=resource_key,proto3" json:"resource_key,omitempty"`
+	ComputeUnitsPerDevice uint32                 `protobuf:"varint,14,opt,name=compute_units_per_device,proto3" json:"compute_units_per_device,omitempty"`
+	AdapterId             string                 `protobuf:"bytes,15,opt,name=adapter_id,proto3" json:"adapter_id,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GpuPresetReference) Reset() {
@@ -1026,18 +1030,52 @@ func (x *GpuPresetReference) GetCoreLimitPercent() uint32 {
 	return 0
 }
 
+func (x *GpuPresetReference) GetAllocationType() v1.AllocationType {
+	if x != nil {
+		return x.AllocationType
+	}
+	return v1.AllocationType(0)
+}
+
+func (x *GpuPresetReference) GetResourceKey() string {
+	if x != nil {
+		return x.ResourceKey
+	}
+	return ""
+}
+
+func (x *GpuPresetReference) GetComputeUnitsPerDevice() uint32 {
+	if x != nil {
+		return x.ComputeUnitsPerDevice
+	}
+	return 0
+}
+
+func (x *GpuPresetReference) GetAdapterId() string {
+	if x != nil {
+		return x.AdapterId
+	}
+	return ""
+}
+
 type GpuSummary struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId          string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
-	ProfileVersion     uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
-	Mode               v1.SupplyMode          `protobuf:"varint,3,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
-	ModelKey           string                 `protobuf:"bytes,4,opt,name=model_key,proto3" json:"model_key,omitempty"`
-	DevicesPerInstance uint32                 `protobuf:"varint,5,opt,name=devices_per_instance,proto3" json:"devices_per_instance,omitempty"`
-	MemoryMibPerDevice int64                  `protobuf:"varint,9,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
-	MemoryMibTotal     int64                  `protobuf:"varint,10,opt,name=memory_mib_total,proto3" json:"memory_mib_total,omitempty"`
-	CoreLimitPercent   uint32                 `protobuf:"varint,8,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId             string                 `protobuf:"bytes,1,opt,name=profile_id,proto3" json:"profile_id,omitempty"`
+	ProfileVersion        uint64                 `protobuf:"varint,2,opt,name=profile_version,proto3" json:"profile_version,omitempty"`
+	Mode                  v1.SupplyMode          `protobuf:"varint,3,opt,name=mode,proto3,enum=accelerator.v1.SupplyMode" json:"mode,omitempty"`
+	ModelKey              string                 `protobuf:"bytes,4,opt,name=model_key,proto3" json:"model_key,omitempty"`
+	DevicesPerInstance    uint32                 `protobuf:"varint,5,opt,name=devices_per_instance,proto3" json:"devices_per_instance,omitempty"`
+	MemoryMibPerDevice    int64                  `protobuf:"varint,9,opt,name=memory_mib_per_device,proto3" json:"memory_mib_per_device,omitempty"`
+	MemoryMibTotal        int64                  `protobuf:"varint,10,opt,name=memory_mib_total,proto3" json:"memory_mib_total,omitempty"`
+	CoreLimitPercent      uint32                 `protobuf:"varint,8,opt,name=core_limit_percent,proto3" json:"core_limit_percent,omitempty"`
+	AllocationType        v1.AllocationType      `protobuf:"varint,11,opt,name=allocation_type,proto3,enum=accelerator.v1.AllocationType" json:"allocation_type,omitempty"`
+	ResourceKey           string                 `protobuf:"bytes,12,opt,name=resource_key,proto3" json:"resource_key,omitempty"`
+	ComputeUnitsPerDevice uint32                 `protobuf:"varint,13,opt,name=compute_units_per_device,proto3" json:"compute_units_per_device,omitempty"`
+	AdapterId             string                 `protobuf:"bytes,14,opt,name=adapter_id,proto3" json:"adapter_id,omitempty"`
+	ProfileName           string                 `protobuf:"bytes,15,opt,name=profile_name,proto3" json:"profile_name,omitempty"`
+	SpecDigest            string                 `protobuf:"bytes,16,opt,name=spec_digest,proto3" json:"spec_digest,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GpuSummary) Reset() {
@@ -1124,6 +1162,48 @@ func (x *GpuSummary) GetCoreLimitPercent() uint32 {
 		return x.CoreLimitPercent
 	}
 	return 0
+}
+
+func (x *GpuSummary) GetAllocationType() v1.AllocationType {
+	if x != nil {
+		return x.AllocationType
+	}
+	return v1.AllocationType(0)
+}
+
+func (x *GpuSummary) GetResourceKey() string {
+	if x != nil {
+		return x.ResourceKey
+	}
+	return ""
+}
+
+func (x *GpuSummary) GetComputeUnitsPerDevice() uint32 {
+	if x != nil {
+		return x.ComputeUnitsPerDevice
+	}
+	return 0
+}
+
+func (x *GpuSummary) GetAdapterId() string {
+	if x != nil {
+		return x.AdapterId
+	}
+	return ""
+}
+
+func (x *GpuSummary) GetProfileName() string {
+	if x != nil {
+		return x.ProfileName
+	}
+	return ""
+}
+
+func (x *GpuSummary) GetSpecDigest() string {
+	if x != nil {
+		return x.SpecDigest
+	}
+	return ""
 }
 
 type ResolveCreateSpecRequest struct {
@@ -1218,7 +1298,6 @@ type CreateSpec struct {
 	PresetName     string                 `protobuf:"bytes,19,opt,name=preset_name,proto3" json:"preset_name,omitempty"`
 	PresetCode     string                 `protobuf:"bytes,20,opt,name=preset_code,proto3" json:"preset_code,omitempty"`
 	GpuExecution   *v1.GpuExecution       `protobuf:"bytes,21,opt,name=gpu_execution,proto3" json:"gpu_execution,omitempty"`
-	GpuDisplay     *v1.GpuDisplay         `protobuf:"bytes,22,opt,name=gpu_display,proto3" json:"gpu_display,omitempty"`
 	// Resolver-only managed selection reference, removed from accepted commands.
 	GpuSelection       *GpuPresetReference  `protobuf:"bytes,23,opt,name=gpu_selection,proto3" json:"gpu_selection,omitempty"`
 	WorkspaceMountPath string               `protobuf:"bytes,25,opt,name=workspace_mount_path,proto3" json:"workspace_mount_path,omitempty"`
@@ -1228,6 +1307,7 @@ type CreateSpec struct {
 	Annotations        map[string]string    `protobuf:"bytes,29,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Env                []*InstanceEnvVar    `protobuf:"bytes,30,rep,name=env,proto3" json:"env,omitempty"`
 	SecurityGroupIds   []string             `protobuf:"bytes,31,rep,name=security_group_ids,proto3" json:"security_group_ids,omitempty"`
+	GpuBusinessSpec    *v1.GpuBusinessSpec  `protobuf:"bytes,32,opt,name=gpu_business_spec,proto3" json:"gpu_business_spec,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1409,13 +1489,6 @@ func (x *CreateSpec) GetGpuExecution() *v1.GpuExecution {
 	return nil
 }
 
-func (x *CreateSpec) GetGpuDisplay() *v1.GpuDisplay {
-	if x != nil {
-		return x.GpuDisplay
-	}
-	return nil
-}
-
 func (x *CreateSpec) GetGpuSelection() *GpuPresetReference {
 	if x != nil {
 		return x.GpuSelection
@@ -1468,6 +1541,13 @@ func (x *CreateSpec) GetEnv() []*InstanceEnvVar {
 func (x *CreateSpec) GetSecurityGroupIds() []string {
 	if x != nil {
 		return x.SecurityGroupIds
+	}
+	return nil
+}
+
+func (x *CreateSpec) GetGpuBusinessSpec() *v1.GpuBusinessSpec {
+	if x != nil {
+		return x.GpuBusinessSpec
 	}
 	return nil
 }
@@ -3956,7 +4036,7 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
 	"\x10AnnotationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x02\x10\x03R\x19instance_contract_version\"\xc6\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x02\x10\x03R\x19instance_contract_version\"\x90\x05\n" +
 	"\x12GpuPresetReference\x12\x1e\n" +
 	"\n" +
 	"profile_id\x18\x01 \x01(\tR\n" +
@@ -3972,8 +4052,14 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"\tmodel_key\x18\b \x01(\tR\tmodel_key\x124\n" +
 	"\x15memory_mib_per_device\x18\v \x01(\x03R\x15memory_mib_per_device\x12.\n" +
 	"\x12core_limit_percent\x18\n" +
-	" \x01(\rR\x12core_limit_percentJ\x04\b\t\x10\n" +
-	"R\x1cshared_memory_mib_per_device\"\xad\x03\n" +
+	" \x01(\rR\x12core_limit_percent\x12H\n" +
+	"\x0fallocation_type\x18\f \x01(\x0e2\x1e.accelerator.v1.AllocationTypeR\x0fallocation_type\x12\"\n" +
+	"\fresource_key\x18\r \x01(\tR\fresource_key\x12:\n" +
+	"\x18compute_units_per_device\x18\x0e \x01(\rR\x18compute_units_per_device\x12\x1e\n" +
+	"\n" +
+	"adapter_id\x18\x0f \x01(\tR\n" +
+	"adapter_idJ\x04\b\t\x10\n" +
+	"R\x1cshared_memory_mib_per_device\"\xbd\x05\n" +
 	"\n" +
 	"GpuSummary\x12\x1e\n" +
 	"\n" +
@@ -3986,12 +4072,20 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"\x15memory_mib_per_device\x18\t \x01(\x03R\x15memory_mib_per_device\x12*\n" +
 	"\x10memory_mib_total\x18\n" +
 	" \x01(\x03R\x10memory_mib_total\x12.\n" +
-	"\x12core_limit_percent\x18\b \x01(\rR\x12core_limit_percentJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x1cshared_memory_mib_per_deviceR\x17shared_memory_mib_total\"\xfc\x01\n" +
+	"\x12core_limit_percent\x18\b \x01(\rR\x12core_limit_percent\x12H\n" +
+	"\x0fallocation_type\x18\v \x01(\x0e2\x1e.accelerator.v1.AllocationTypeR\x0fallocation_type\x12\"\n" +
+	"\fresource_key\x18\f \x01(\tR\fresource_key\x12:\n" +
+	"\x18compute_units_per_device\x18\r \x01(\rR\x18compute_units_per_device\x12\x1e\n" +
+	"\n" +
+	"adapter_id\x18\x0e \x01(\tR\n" +
+	"adapter_id\x12\"\n" +
+	"\fprofile_name\x18\x0f \x01(\tR\fprofile_name\x12 \n" +
+	"\vspec_digest\x18\x10 \x01(\tR\vspec_digestJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x1cshared_memory_mib_per_deviceR\x17shared_memory_mib_total\"\xfc\x01\n" +
 	"\x18ResolveCreateSpecRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x123\n" +
 	"\x04data\x18\x02 \x01(\v2\x1f.instance.v1.CreateInstanceDataR\x04data\x12\x1c\n" +
 	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12O\n" +
-	"\x13scheduling_defaults\x18\x04 \x01(\v2\x1e.instance.v1.SchedulingOptionsR\x12schedulingDefaultsJ\x04\b\x05\x10\x06R\x19instance_contract_version\"\x8e\v\n" +
+	"\x13scheduling_defaults\x18\x04 \x01(\v2\x1e.instance.v1.SchedulingOptionsR\x12schedulingDefaultsJ\x04\b\x05\x10\x06R\x19instance_contract_version\"\xb2\v\n" +
 	"\n" +
 	"CreateSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
@@ -4019,8 +4113,7 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"scheduling\x12 \n" +
 	"\vpreset_name\x18\x13 \x01(\tR\vpreset_name\x12 \n" +
 	"\vpreset_code\x18\x14 \x01(\tR\vpreset_code\x12B\n" +
-	"\rgpu_execution\x18\x15 \x01(\v2\x1c.accelerator.v1.GpuExecutionR\rgpu_execution\x12<\n" +
-	"\vgpu_display\x18\x16 \x01(\v2\x1a.accelerator.v1.GpuDisplayR\vgpu_display\x12E\n" +
+	"\rgpu_execution\x18\x15 \x01(\v2\x1c.accelerator.v1.GpuExecutionR\rgpu_execution\x12E\n" +
 	"\rgpu_selection\x18\x17 \x01(\v2\x1f.instance.v1.GpuPresetReferenceR\rgpu_selection\x122\n" +
 	"\x14workspace_mount_path\x18\x19 \x01(\tR\x14workspace_mount_path\x12D\n" +
 	"\rvolume_mounts\x18\x1a \x03(\v2\x1e.instance.v1.FrozenVolumeMountR\rvolume_mounts\x127\n" +
@@ -4028,13 +4121,14 @@ const file_instance_v1_instance_proto_rawDesc = "" +
 	"\x06labels\x18\x1c \x03(\v2#.instance.v1.CreateSpec.LabelsEntryR\x06labels\x12J\n" +
 	"\vannotations\x18\x1d \x03(\v2(.instance.v1.CreateSpec.AnnotationsEntryR\vannotations\x12-\n" +
 	"\x03env\x18\x1e \x03(\v2\x1b.instance.v1.InstanceEnvVarR\x03env\x12.\n" +
-	"\x12security_group_ids\x18\x1f \x03(\tR\x12security_group_ids\x1a9\n" +
+	"\x12security_group_ids\x18\x1f \x03(\tR\x12security_group_ids\x12M\n" +
+	"\x11gpu_business_spec\x18  \x01(\v2\x1f.accelerator.v1.GpuBusinessSpecR\x11gpu_business_spec\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
 	"\x10AnnotationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19R\x19instance_contract_version\"\x9c\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x16\x10\x17J\x04\b\x18\x10\x19R\vgpu_displayR\x19instance_contract_version\"\x9c\x01\n" +
 	"\x0eCommandContext\x12\x1c\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\ttenant_id\x12 \n" +
 	"\vresource_id\x18\x02 \x01(\tR\vresource_id\x12\"\n" +
@@ -4364,12 +4458,13 @@ var file_instance_v1_instance_proto_goTypes = []any{
 	nil,                                      // 50: instance.v1.CreateSpec.LabelsEntry
 	nil,                                      // 51: instance.v1.CreateSpec.AnnotationsEntry
 	(v1.SupplyMode)(0),                       // 52: accelerator.v1.SupplyMode
-	(*v1.GpuExecution)(nil),                  // 53: accelerator.v1.GpuExecution
-	(*v1.GpuDisplay)(nil),                    // 54: accelerator.v1.GpuDisplay
-	(*v11.DurableOwnerAck)(nil),              // 55: accelerator.command.v1.DurableOwnerAck
-	(*timestamppb.Timestamp)(nil),            // 56: google.protobuf.Timestamp
-	(*v12.NetworkInterfaces)(nil),            // 57: network.v1.NetworkInterfaces
-	(*v13.TerminalTarget)(nil),               // 58: instance.terminal.v1.TerminalTarget
+	(v1.AllocationType)(0),                   // 53: accelerator.v1.AllocationType
+	(*v1.GpuExecution)(nil),                  // 54: accelerator.v1.GpuExecution
+	(*v1.GpuBusinessSpec)(nil),               // 55: accelerator.v1.GpuBusinessSpec
+	(*v11.DurableOwnerAck)(nil),              // 56: accelerator.command.v1.DurableOwnerAck
+	(*timestamppb.Timestamp)(nil),            // 57: google.protobuf.Timestamp
+	(*v12.NetworkInterfaces)(nil),            // 58: network.v1.NetworkInterfaces
+	(*v13.TerminalTarget)(nil),               // 59: instance.terminal.v1.TerminalTarget
 }
 var file_instance_v1_instance_proto_depIdxs = []int32{
 	0,  // 0: instance.v1.SchedulingOptions.pod_placement:type_name -> instance.v1.SchedulingOptions.PodPlacement
@@ -4387,89 +4482,91 @@ var file_instance_v1_instance_proto_depIdxs = []int32{
 	6,  // 12: instance.v1.InstanceConfiguration.env:type_name -> instance.v1.InstanceEnvVar
 	26, // 13: instance.v1.InstanceConfiguration.pending_change:type_name -> instance.v1.PendingMountChange
 	52, // 14: instance.v1.GpuPresetReference.mode:type_name -> accelerator.v1.SupplyMode
-	52, // 15: instance.v1.GpuSummary.mode:type_name -> accelerator.v1.SupplyMode
-	3,  // 16: instance.v1.ResolveCreateSpecRequest.data:type_name -> instance.v1.CreateInstanceData
-	2,  // 17: instance.v1.ResolveCreateSpecRequest.scheduling_defaults:type_name -> instance.v1.SchedulingOptions
-	2,  // 18: instance.v1.CreateSpec.scheduling:type_name -> instance.v1.SchedulingOptions
-	53, // 19: instance.v1.CreateSpec.gpu_execution:type_name -> accelerator.v1.GpuExecution
-	54, // 20: instance.v1.CreateSpec.gpu_display:type_name -> accelerator.v1.GpuDisplay
-	12, // 21: instance.v1.CreateSpec.gpu_selection:type_name -> instance.v1.GpuPresetReference
-	5,  // 22: instance.v1.CreateSpec.volume_mounts:type_name -> instance.v1.FrozenVolumeMount
-	7,  // 23: instance.v1.CreateSpec.network:type_name -> instance.v1.NetworkSelection
-	50, // 24: instance.v1.CreateSpec.labels:type_name -> instance.v1.CreateSpec.LabelsEntry
-	51, // 25: instance.v1.CreateSpec.annotations:type_name -> instance.v1.CreateSpec.AnnotationsEntry
-	6,  // 26: instance.v1.CreateSpec.env:type_name -> instance.v1.InstanceEnvVar
-	16, // 27: instance.v1.AcceptCreateRequest.context:type_name -> instance.v1.CommandContext
-	15, // 28: instance.v1.AcceptCreateRequest.spec:type_name -> instance.v1.CreateSpec
-	16, // 29: instance.v1.AcceptDeleteRequest.context:type_name -> instance.v1.CommandContext
-	4,  // 30: instance.v1.MountConfiguration.volume_mounts:type_name -> instance.v1.VolumeMount
-	25, // 31: instance.v1.PendingMountChange.target_configuration:type_name -> instance.v1.MountConfiguration
-	55, // 32: instance.v1.OperationResponse.durable_owner_ack:type_name -> accelerator.command.v1.DurableOwnerAck
-	31, // 33: instance.v1.ListInstancesResponse.items:type_name -> instance.v1.Instance
-	56, // 34: instance.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
-	13, // 35: instance.v1.Instance.gpu_summary:type_name -> instance.v1.GpuSummary
-	2,  // 36: instance.v1.Instance.scheduling:type_name -> instance.v1.SchedulingOptions
-	32, // 37: instance.v1.RuntimePod.environment_sources:type_name -> instance.v1.EnvironmentSource
-	33, // 38: instance.v1.RuntimePod.mounts:type_name -> instance.v1.RuntimeMount
-	56, // 39: instance.v1.InstanceRuntime.observed_at:type_name -> google.protobuf.Timestamp
-	34, // 40: instance.v1.InstanceRuntime.pod:type_name -> instance.v1.RuntimePod
-	35, // 41: instance.v1.InstanceRuntime.stateful_set:type_name -> instance.v1.RuntimeStatefulSet
-	56, // 42: instance.v1.InstanceEvent.last_occurred_at:type_name -> google.protobuf.Timestamp
-	56, // 43: instance.v1.InstanceEvents.observed_at:type_name -> google.protobuf.Timestamp
-	37, // 44: instance.v1.InstanceEvents.events:type_name -> instance.v1.InstanceEvent
-	1,  // 45: instance.v1.InstanceLogFrame.kind:type_name -> instance.v1.InstanceLogFrame.Kind
-	25, // 46: instance.v1.Operation.target_configuration:type_name -> instance.v1.MountConfiguration
-	28, // 47: instance.v1.InstanceService.GetInstanceRuntime:input_type -> instance.v1.GetInstanceRequest
-	28, // 48: instance.v1.InstanceService.ListInstanceEvents:input_type -> instance.v1.GetInstanceRequest
-	39, // 49: instance.v1.InstanceService.StreamInstanceLogs:input_type -> instance.v1.StreamInstanceLogsRequest
-	8,  // 50: instance.v1.InstanceService.ListMountablePVCs:input_type -> instance.v1.ListMountablePVCsRequest
-	28, // 51: instance.v1.InstanceService.GetInstanceConfiguration:input_type -> instance.v1.GetInstanceRequest
-	14, // 52: instance.v1.InstanceService.ResolveCreateSpec:input_type -> instance.v1.ResolveCreateSpecRequest
-	17, // 53: instance.v1.InstanceService.AcceptCreate:input_type -> instance.v1.AcceptCreateRequest
-	18, // 54: instance.v1.InstanceService.AcceptDelete:input_type -> instance.v1.AcceptDeleteRequest
-	19, // 55: instance.v1.InstanceService.Start:input_type -> instance.v1.ChangeInstanceRequest
-	19, // 56: instance.v1.InstanceService.Stop:input_type -> instance.v1.ChangeInstanceRequest
-	19, // 57: instance.v1.InstanceService.Restart:input_type -> instance.v1.ChangeInstanceRequest
-	28, // 58: instance.v1.InstanceService.GetNetworkInterfaces:input_type -> instance.v1.GetInstanceRequest
-	45, // 59: instance.v1.InstanceService.SetNetworkInterface:input_type -> instance.v1.SetNetworkInterfaceRequest
-	20, // 60: instance.v1.InstanceService.SetSecurityGroups:input_type -> instance.v1.SetSecurityGroupsRequest
-	21, // 61: instance.v1.InstanceService.AttachPVC:input_type -> instance.v1.AttachPVCRequest
-	22, // 62: instance.v1.InstanceService.DetachPVC:input_type -> instance.v1.DetachPVCRequest
-	23, // 63: instance.v1.InstanceService.ListInstanceMountablePVCs:input_type -> instance.v1.ListInstanceMountablePVCsRequest
-	24, // 64: instance.v1.InstanceService.LookupCommandReplay:input_type -> instance.v1.LookupCommandReplayRequest
-	28, // 65: instance.v1.InstanceService.GetInstance:input_type -> instance.v1.GetInstanceRequest
-	28, // 66: instance.v1.InstanceService.ResolveInstanceMetricScope:input_type -> instance.v1.GetInstanceRequest
-	29, // 67: instance.v1.InstanceService.ListInstances:input_type -> instance.v1.ListInstancesRequest
-	41, // 68: instance.v1.InstanceService.GetOperation:input_type -> instance.v1.GetOperationRequest
-	43, // 69: instance.v1.InstanceService.ResolveTerminalTarget:input_type -> instance.v1.ResolveTerminalTargetRequest
-	36, // 70: instance.v1.InstanceService.GetInstanceRuntime:output_type -> instance.v1.InstanceRuntime
-	38, // 71: instance.v1.InstanceService.ListInstanceEvents:output_type -> instance.v1.InstanceEvents
-	40, // 72: instance.v1.InstanceService.StreamInstanceLogs:output_type -> instance.v1.InstanceLogFrame
-	10, // 73: instance.v1.InstanceService.ListMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
-	11, // 74: instance.v1.InstanceService.GetInstanceConfiguration:output_type -> instance.v1.InstanceConfiguration
-	15, // 75: instance.v1.InstanceService.ResolveCreateSpec:output_type -> instance.v1.CreateSpec
-	27, // 76: instance.v1.InstanceService.AcceptCreate:output_type -> instance.v1.OperationResponse
-	27, // 77: instance.v1.InstanceService.AcceptDelete:output_type -> instance.v1.OperationResponse
-	27, // 78: instance.v1.InstanceService.Start:output_type -> instance.v1.OperationResponse
-	27, // 79: instance.v1.InstanceService.Stop:output_type -> instance.v1.OperationResponse
-	27, // 80: instance.v1.InstanceService.Restart:output_type -> instance.v1.OperationResponse
-	57, // 81: instance.v1.InstanceService.GetNetworkInterfaces:output_type -> network.v1.NetworkInterfaces
-	27, // 82: instance.v1.InstanceService.SetNetworkInterface:output_type -> instance.v1.OperationResponse
-	27, // 83: instance.v1.InstanceService.SetSecurityGroups:output_type -> instance.v1.OperationResponse
-	27, // 84: instance.v1.InstanceService.AttachPVC:output_type -> instance.v1.OperationResponse
-	27, // 85: instance.v1.InstanceService.DetachPVC:output_type -> instance.v1.OperationResponse
-	10, // 86: instance.v1.InstanceService.ListInstanceMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
-	27, // 87: instance.v1.InstanceService.LookupCommandReplay:output_type -> instance.v1.OperationResponse
-	31, // 88: instance.v1.InstanceService.GetInstance:output_type -> instance.v1.Instance
-	44, // 89: instance.v1.InstanceService.ResolveInstanceMetricScope:output_type -> instance.v1.InstanceMetricScope
-	30, // 90: instance.v1.InstanceService.ListInstances:output_type -> instance.v1.ListInstancesResponse
-	42, // 91: instance.v1.InstanceService.GetOperation:output_type -> instance.v1.Operation
-	58, // 92: instance.v1.InstanceService.ResolveTerminalTarget:output_type -> instance.terminal.v1.TerminalTarget
-	70, // [70:93] is the sub-list for method output_type
-	47, // [47:70] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	53, // 15: instance.v1.GpuPresetReference.allocation_type:type_name -> accelerator.v1.AllocationType
+	52, // 16: instance.v1.GpuSummary.mode:type_name -> accelerator.v1.SupplyMode
+	53, // 17: instance.v1.GpuSummary.allocation_type:type_name -> accelerator.v1.AllocationType
+	3,  // 18: instance.v1.ResolveCreateSpecRequest.data:type_name -> instance.v1.CreateInstanceData
+	2,  // 19: instance.v1.ResolveCreateSpecRequest.scheduling_defaults:type_name -> instance.v1.SchedulingOptions
+	2,  // 20: instance.v1.CreateSpec.scheduling:type_name -> instance.v1.SchedulingOptions
+	54, // 21: instance.v1.CreateSpec.gpu_execution:type_name -> accelerator.v1.GpuExecution
+	12, // 22: instance.v1.CreateSpec.gpu_selection:type_name -> instance.v1.GpuPresetReference
+	5,  // 23: instance.v1.CreateSpec.volume_mounts:type_name -> instance.v1.FrozenVolumeMount
+	7,  // 24: instance.v1.CreateSpec.network:type_name -> instance.v1.NetworkSelection
+	50, // 25: instance.v1.CreateSpec.labels:type_name -> instance.v1.CreateSpec.LabelsEntry
+	51, // 26: instance.v1.CreateSpec.annotations:type_name -> instance.v1.CreateSpec.AnnotationsEntry
+	6,  // 27: instance.v1.CreateSpec.env:type_name -> instance.v1.InstanceEnvVar
+	55, // 28: instance.v1.CreateSpec.gpu_business_spec:type_name -> accelerator.v1.GpuBusinessSpec
+	16, // 29: instance.v1.AcceptCreateRequest.context:type_name -> instance.v1.CommandContext
+	15, // 30: instance.v1.AcceptCreateRequest.spec:type_name -> instance.v1.CreateSpec
+	16, // 31: instance.v1.AcceptDeleteRequest.context:type_name -> instance.v1.CommandContext
+	4,  // 32: instance.v1.MountConfiguration.volume_mounts:type_name -> instance.v1.VolumeMount
+	25, // 33: instance.v1.PendingMountChange.target_configuration:type_name -> instance.v1.MountConfiguration
+	56, // 34: instance.v1.OperationResponse.durable_owner_ack:type_name -> accelerator.command.v1.DurableOwnerAck
+	31, // 35: instance.v1.ListInstancesResponse.items:type_name -> instance.v1.Instance
+	57, // 36: instance.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
+	13, // 37: instance.v1.Instance.gpu_summary:type_name -> instance.v1.GpuSummary
+	2,  // 38: instance.v1.Instance.scheduling:type_name -> instance.v1.SchedulingOptions
+	32, // 39: instance.v1.RuntimePod.environment_sources:type_name -> instance.v1.EnvironmentSource
+	33, // 40: instance.v1.RuntimePod.mounts:type_name -> instance.v1.RuntimeMount
+	57, // 41: instance.v1.InstanceRuntime.observed_at:type_name -> google.protobuf.Timestamp
+	34, // 42: instance.v1.InstanceRuntime.pod:type_name -> instance.v1.RuntimePod
+	35, // 43: instance.v1.InstanceRuntime.stateful_set:type_name -> instance.v1.RuntimeStatefulSet
+	57, // 44: instance.v1.InstanceEvent.last_occurred_at:type_name -> google.protobuf.Timestamp
+	57, // 45: instance.v1.InstanceEvents.observed_at:type_name -> google.protobuf.Timestamp
+	37, // 46: instance.v1.InstanceEvents.events:type_name -> instance.v1.InstanceEvent
+	1,  // 47: instance.v1.InstanceLogFrame.kind:type_name -> instance.v1.InstanceLogFrame.Kind
+	25, // 48: instance.v1.Operation.target_configuration:type_name -> instance.v1.MountConfiguration
+	28, // 49: instance.v1.InstanceService.GetInstanceRuntime:input_type -> instance.v1.GetInstanceRequest
+	28, // 50: instance.v1.InstanceService.ListInstanceEvents:input_type -> instance.v1.GetInstanceRequest
+	39, // 51: instance.v1.InstanceService.StreamInstanceLogs:input_type -> instance.v1.StreamInstanceLogsRequest
+	8,  // 52: instance.v1.InstanceService.ListMountablePVCs:input_type -> instance.v1.ListMountablePVCsRequest
+	28, // 53: instance.v1.InstanceService.GetInstanceConfiguration:input_type -> instance.v1.GetInstanceRequest
+	14, // 54: instance.v1.InstanceService.ResolveCreateSpec:input_type -> instance.v1.ResolveCreateSpecRequest
+	17, // 55: instance.v1.InstanceService.AcceptCreate:input_type -> instance.v1.AcceptCreateRequest
+	18, // 56: instance.v1.InstanceService.AcceptDelete:input_type -> instance.v1.AcceptDeleteRequest
+	19, // 57: instance.v1.InstanceService.Start:input_type -> instance.v1.ChangeInstanceRequest
+	19, // 58: instance.v1.InstanceService.Stop:input_type -> instance.v1.ChangeInstanceRequest
+	19, // 59: instance.v1.InstanceService.Restart:input_type -> instance.v1.ChangeInstanceRequest
+	28, // 60: instance.v1.InstanceService.GetNetworkInterfaces:input_type -> instance.v1.GetInstanceRequest
+	45, // 61: instance.v1.InstanceService.SetNetworkInterface:input_type -> instance.v1.SetNetworkInterfaceRequest
+	20, // 62: instance.v1.InstanceService.SetSecurityGroups:input_type -> instance.v1.SetSecurityGroupsRequest
+	21, // 63: instance.v1.InstanceService.AttachPVC:input_type -> instance.v1.AttachPVCRequest
+	22, // 64: instance.v1.InstanceService.DetachPVC:input_type -> instance.v1.DetachPVCRequest
+	23, // 65: instance.v1.InstanceService.ListInstanceMountablePVCs:input_type -> instance.v1.ListInstanceMountablePVCsRequest
+	24, // 66: instance.v1.InstanceService.LookupCommandReplay:input_type -> instance.v1.LookupCommandReplayRequest
+	28, // 67: instance.v1.InstanceService.GetInstance:input_type -> instance.v1.GetInstanceRequest
+	28, // 68: instance.v1.InstanceService.ResolveInstanceMetricScope:input_type -> instance.v1.GetInstanceRequest
+	29, // 69: instance.v1.InstanceService.ListInstances:input_type -> instance.v1.ListInstancesRequest
+	41, // 70: instance.v1.InstanceService.GetOperation:input_type -> instance.v1.GetOperationRequest
+	43, // 71: instance.v1.InstanceService.ResolveTerminalTarget:input_type -> instance.v1.ResolveTerminalTargetRequest
+	36, // 72: instance.v1.InstanceService.GetInstanceRuntime:output_type -> instance.v1.InstanceRuntime
+	38, // 73: instance.v1.InstanceService.ListInstanceEvents:output_type -> instance.v1.InstanceEvents
+	40, // 74: instance.v1.InstanceService.StreamInstanceLogs:output_type -> instance.v1.InstanceLogFrame
+	10, // 75: instance.v1.InstanceService.ListMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
+	11, // 76: instance.v1.InstanceService.GetInstanceConfiguration:output_type -> instance.v1.InstanceConfiguration
+	15, // 77: instance.v1.InstanceService.ResolveCreateSpec:output_type -> instance.v1.CreateSpec
+	27, // 78: instance.v1.InstanceService.AcceptCreate:output_type -> instance.v1.OperationResponse
+	27, // 79: instance.v1.InstanceService.AcceptDelete:output_type -> instance.v1.OperationResponse
+	27, // 80: instance.v1.InstanceService.Start:output_type -> instance.v1.OperationResponse
+	27, // 81: instance.v1.InstanceService.Stop:output_type -> instance.v1.OperationResponse
+	27, // 82: instance.v1.InstanceService.Restart:output_type -> instance.v1.OperationResponse
+	58, // 83: instance.v1.InstanceService.GetNetworkInterfaces:output_type -> network.v1.NetworkInterfaces
+	27, // 84: instance.v1.InstanceService.SetNetworkInterface:output_type -> instance.v1.OperationResponse
+	27, // 85: instance.v1.InstanceService.SetSecurityGroups:output_type -> instance.v1.OperationResponse
+	27, // 86: instance.v1.InstanceService.AttachPVC:output_type -> instance.v1.OperationResponse
+	27, // 87: instance.v1.InstanceService.DetachPVC:output_type -> instance.v1.OperationResponse
+	10, // 88: instance.v1.InstanceService.ListInstanceMountablePVCs:output_type -> instance.v1.ListMountablePVCsResponse
+	27, // 89: instance.v1.InstanceService.LookupCommandReplay:output_type -> instance.v1.OperationResponse
+	31, // 90: instance.v1.InstanceService.GetInstance:output_type -> instance.v1.Instance
+	44, // 91: instance.v1.InstanceService.ResolveInstanceMetricScope:output_type -> instance.v1.InstanceMetricScope
+	30, // 92: instance.v1.InstanceService.ListInstances:output_type -> instance.v1.ListInstancesResponse
+	42, // 93: instance.v1.InstanceService.GetOperation:output_type -> instance.v1.Operation
+	59, // 94: instance.v1.InstanceService.ResolveTerminalTarget:output_type -> instance.terminal.v1.TerminalTarget
+	72, // [72:95] is the sub-list for method output_type
+	49, // [49:72] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_instance_v1_instance_proto_init() }

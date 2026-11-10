@@ -114,6 +114,11 @@ message GpuPresetReference {
   reserved 9; reserved "shared_memory_mib_per_device";
   int64 memory_mib_per_device = 11 [json_name = "memory_mib_per_device"];
   uint32 core_limit_percent = 10 [json_name = "core_limit_percent"];
+  accelerator.v1.AllocationType allocation_type = 12 [json_name="allocation_type"];
+  string resource_key = 13 [json_name="resource_key"];
+  uint32 compute_units_per_device = 14 [json_name="compute_units_per_device"];
+  string adapter_id = 15 [json_name="adapter_id"];
+
 }
 message GpuSummary {
   string profile_id = 1 [json_name = "profile_id"];
@@ -125,6 +130,13 @@ message GpuSummary {
   int64 memory_mib_per_device = 9 [json_name = "memory_mib_per_device"];
   int64 memory_mib_total = 10 [json_name = "memory_mib_total"];
   uint32 core_limit_percent = 8 [json_name = "core_limit_percent"];
+  accelerator.v1.AllocationType allocation_type = 11 [json_name="allocation_type"];
+  string resource_key = 12 [json_name="resource_key"];
+  uint32 compute_units_per_device = 13 [json_name="compute_units_per_device"];
+  string adapter_id = 14 [json_name="adapter_id"];
+  string profile_name = 15 [json_name="profile_name"];
+  string spec_digest = 16 [json_name="spec_digest"];
+
 }
 message ResolveCreateSpecRequest {
   string tenant_id = 1;
@@ -147,7 +159,8 @@ message CreateSpec {
   string preset_name = 19 [json_name = "preset_name"];
   string preset_code = 20 [json_name = "preset_code"];
   accelerator.v1.GpuExecution gpu_execution = 21 [json_name = "gpu_execution"];
-  accelerator.v1.GpuDisplay gpu_display = 22 [json_name = "gpu_display"];
+  reserved 22;
+  reserved "gpu_display";
   // Resolver-only managed selection reference, removed from accepted commands.
   GpuPresetReference gpu_selection = 23 [json_name = "gpu_selection"];
   reserved 24;
@@ -158,6 +171,7 @@ message CreateSpec {
   map<string,string> labels = 28; map<string,string> annotations = 29;
   repeated InstanceEnvVar env = 30;
   repeated string security_group_ids = 31 [json_name = "security_group_ids"];
+  accelerator.v1.GpuBusinessSpec gpu_business_spec = 32 [json_name="gpu_business_spec"];
 }
 message CommandContext {
   string tenant_id = 1 [json_name = "tenant_id"];

@@ -13,7 +13,7 @@ func ExecutionDigest(g *acc.GpuExecution) (string, error) {
 	return gpuprotocol.GpuExecutionDigest(g)
 }
 func ValidateGpuExecution(g *acc.GpuExecution) error {
-	if g == nil || ValidateGPURuntimeClassName(g.RuntimeClassName) != nil {
+	if g == nil || (g.RuntimeClassName != "" && ValidateGPURuntimeClassName(g.RuntimeClassName) != nil) {
 		return ErrInvalidBusiness
 	}
 	if err := gpuprotocol.ValidateGpuExecution(g); err != nil {
