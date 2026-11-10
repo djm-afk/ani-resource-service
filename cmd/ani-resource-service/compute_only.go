@@ -68,13 +68,14 @@ func buildComputeOnlyApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, 
 		})
 	}
 	middlewares := obs.ServerMiddleware(logger)
-	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, middlewares...)
+	adminMiddlewares := obs.AdminMiddleware(logger)
+	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, logger, middlewares...)
 	if err != nil {
 		closeApp()
 		return nil, nil, err
 	}
 	computev1.RegisterComputePresetServiceServer(grpcServer, compute.service)
-	admin := server.NewAdminServer(bc.Server.Admin, readiness, obs.Gatherer(), middlewares...)
+	admin := server.NewAdminServer(bc.Server.Admin, readiness, obs.Gatherer(), logger, adminMiddlewares...)
 	app := kratos.New(
 		kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(grpcServer, admin),

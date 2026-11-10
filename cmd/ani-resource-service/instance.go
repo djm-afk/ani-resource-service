@@ -23,6 +23,7 @@ import (
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/instance"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"k8s.io/client-go/dynamic"
@@ -158,7 +159,7 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 	if e = provider.ConfigureImages(images.runtime); e != nil {
 		return nil, e
 	}
-	connection, e := instanceClientConnection(cfg.QuotaAddress, cfg.QuotaCAFile, cfg.QuotaCertFile, cfg.QuotaKeyFile, cfg.QuotaServerName)
+	connection, e := instanceClientConnection(cfg.QuotaAddress, cfg.QuotaCAFile, cfg.QuotaCertFile, cfg.QuotaKeyFile, cfg.QuotaServerName, logger)
 	if e != nil {
 		return nil, e
 	}
@@ -198,7 +199,7 @@ func validateInstanceSettings(cfg instanceSettings) error {
 	return nil
 }
 
-func instanceClientConnection(address, caFile, certFile, keyFile, serverName string) (*grpc.ClientConn, error) {
+func instanceClientConnection(address, caFile, certFile, keyFile, serverName string, logger *slog.Logger) (*grpc.ClientConn, error) {
 	if address == "" || serverName == "" || strings.ContainsAny(serverName, "*:/") {
 		return nil, fmt.Errorf("instance exact peer identity required")
 	}
@@ -225,7 +226,11 @@ func instanceClientConnection(address, caFile, certFile, keyFile, serverName str
 		}
 		return fmt.Errorf("instance peer exact DNS SAN mismatch")
 	}}
-	return grpc.NewClient(address, grpc.WithDisableServiceConfig(), grpc.WithDisableRetry(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	// Trace propagation and one completion record at the real RPC boundary;
+	// TLS, exact-peer identity and retry suppression are unchanged.
+	opts := append([]grpc.DialOption{grpc.WithDisableServiceConfig(), grpc.WithDisableRetry(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))},
+		telemetry.ClientDialOptions("ani-governance", logger)...)
+	return grpc.NewClient(address, opts...)
 }
 
 // Cross-domain wiring stays in the composition root and uses only public use

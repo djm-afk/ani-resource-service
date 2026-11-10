@@ -3,8 +3,11 @@ package data
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
 	networkv1 "github.com/zhangzhe-ctrl/ani-resource-service/api/network/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -14,12 +17,16 @@ type InstanceConsumer struct {
 	conn   *grpc.ClientConn
 }
 
-func NewInstanceConsumer(endpoint string) (*InstanceConsumer, error) {
+func NewInstanceConsumer(endpoint string, logger *slog.Logger) (*InstanceConsumer, error) {
 	c := &InstanceConsumer{}
 	if endpoint == "" {
 		return c, nil
 	}
-	conn, e := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Trace propagation at the existing outbound boundary; the transport
+	// security mode and routing policy are unchanged.
+	opts := append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
+		telemetry.ClientDialOptions("instance-consumer", logger)...)
+	conn, e := grpc.NewClient(endpoint, opts...)
 	if e != nil {
 		return nil, fmt.Errorf("invalid instance consumer target")
 	}

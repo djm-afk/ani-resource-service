@@ -123,11 +123,30 @@ func (o *Observability) Gatherer() prometheus.Gatherer {
 }
 
 func (o *Observability) ServerMiddleware(logger *slog.Logger) []middleware.Middleware {
+	// The RPC completion record now comes from the native stats handler
+	// (rpc_observability.go). kratostracing.Server and requestLogging would add a
+	// second server span and a duplicate completion, so they are not installed
+	// on the gRPC listeners. The panic recovery stays and is bound to the shared
+	// process.panic event.
 	return []middleware.Middleware{
-		recovery.Recovery(recovery.WithLogger(logger)),
+		recovery.Recovery(recovery.WithLogger(logger.With("event", "process.panic"))),
+		metadata.Server(),
+		kratosmetrics.Server(
+			kratosmetrics.WithRequests(o.requests),
+			kratosmetrics.WithSeconds(o.seconds),
+		),
+		validate.Validator(),
+	}
+}
+
+// AdminMiddleware is the middleware chain for the admin HTTP listener. It keeps
+// request tracing at the HTTP transport and adds the admin observability filter
+// (see admin.go); RPC completion logging is not relevant here.
+func (o *Observability) AdminMiddleware(logger *slog.Logger) []middleware.Middleware {
+	return []middleware.Middleware{
+		recovery.Recovery(recovery.WithLogger(logger.With("event", "process.panic"))),
 		metadata.Server(),
 		kratostracing.Server(kratostracing.WithTracerProvider(o.tracerProvider)),
-		requestLogging(logger),
 		kratosmetrics.Server(
 			kratosmetrics.WithRequests(o.requests),
 			kratosmetrics.WithSeconds(o.seconds),

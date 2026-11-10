@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/go-kratos/kratos/v3/middleware"
@@ -148,7 +149,7 @@ func ImageRuntimeUnary() grpc.UnaryServerInterceptor {
 
 // NewImageRuntimeGRPCServer exposes only the trusted runtime methods. It has no
 // HTTP, health, reflection, catalog or streaming surface.
-func NewImageRuntimeGRPCServer(c *conf.Server_GRPC, tlsConfig *tls.Config, runtime imagev1.ImageRuntimeServiceServer, middlewares ...middleware.Middleware) (*kratosgrpc.Server, error) {
+func NewImageRuntimeGRPCServer(c *conf.Server_GRPC, tlsConfig *tls.Config, runtime imagev1.ImageRuntimeServiceServer, logger *slog.Logger, middlewares ...middleware.Middleware) (*kratosgrpc.Server, error) {
 	if c == nil || c.Addr == "" || runtime == nil || tlsConfig == nil || tlsConfig.MinVersion < tls.VersionTLS13 ||
 		tlsConfig.ClientAuth != tls.RequireAndVerifyClientCert || tlsConfig.ClientCAs == nil || len(tlsConfig.Certificates) == 0 || tlsConfig.VerifyConnection == nil {
 		return nil, fmt.Errorf("image runtime listener requires configured TLS 1.3 mutual authentication")
@@ -161,9 +162,14 @@ func NewImageRuntimeGRPCServer(c *conf.Server_GRPC, tlsConfig *tls.Config, runti
 		kratosgrpc.StreamInterceptor(func(any, grpc.ServerStream, *grpc.StreamServerInfo, grpc.StreamHandler) error {
 			return status.Error(codes.PermissionDenied, "image runtime streams are not permitted")
 		}),
-		kratosgrpc.Options(grpc.UnknownServiceHandler(func(any, grpc.ServerStream) error {
-			return status.Error(codes.PermissionDenied, "image runtime RPC is not registered")
-		})),
+		// One Options call only, preserving the security UnknownServiceHandler
+		// and adding the completion/trace stats handler in the same set.
+		kratosgrpc.Options(
+			grpc.UnknownServiceHandler(func(any, grpc.ServerStream) error {
+				return status.Error(codes.PermissionDenied, "image runtime RPC is not registered")
+			}),
+			grpc.StatsHandler(newServerStatsHandler(logger)),
+		),
 		kratosgrpc.Middleware(middlewares...), kratosgrpc.DisableReflection(),
 	)
 	imagev1.RegisterImageRuntimeServiceServer(s, runtime)

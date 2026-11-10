@@ -139,7 +139,7 @@ func TestImageRuntimeMTLSListener(t *testing.T) {
 	addr := listen.Addr().String()
 	listen.Close()
 	var logs bytes.Buffer
-	s, err := NewImageRuntimeGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: addr, Timeout: durationpb.New(time.Second)}, serverTLS, imageservice.NewRuntimeService(runtimeTransportProbe{}), requestLogging(slog.New(slog.NewJSONHandler(&logs, nil))))
+	s, err := NewImageRuntimeGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: addr, Timeout: durationpb.New(time.Second)}, serverTLS, imageservice.NewRuntimeService(runtimeTransportProbe{}), slog.New(slog.NewJSONHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

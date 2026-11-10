@@ -119,7 +119,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		_ = observability.Shutdown(ctx)
 		return nil, err
 	}
-	consumer, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint)
+	consumer, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint, logger)
 	if err != nil {
 		_ = observability.Shutdown(ctx)
 		return nil, err
@@ -182,7 +182,8 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		}
 	}
 	middlewares := observability.ServerMiddleware(logger)
-	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, middlewares...)
+	adminMiddlewares := observability.AdminMiddleware(logger)
+	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, logger, middlewares...)
 	if err != nil {
 		return nil, err
 	}
@@ -234,12 +235,12 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			vmv1.RegisterVMImageServiceServer(grpcServer, vms.imageService)
 		}
 	}
-	adminServer := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), middlewares...)
+	adminServer := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), logger, adminMiddlewares...)
 	servers := []transport.Server{grpcServer, adminServer, observation, execution}
 	if storageComponents.worker != nil {
 		servers = append(servers, storageComponents.worker)
 	}
-	imageRuntime, err := openImageRuntime(images, middlewares...)
+	imageRuntime, err := openImageRuntime(images, logger, middlewares...)
 	if err != nil {
 		return nil, err
 	}
@@ -261,9 +262,18 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	app := kratos.New(
 		kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(servers...),
-		kratos.AfterStart(func(context.Context) error { readiness.Set(true); return nil }),
-		kratos.BeforeStop(func(context.Context) error { readiness.Set(false); return nil }),
+		kratos.AfterStart(func(context.Context) error {
+			readiness.Set(true)
+			logger.Info("service ready", "event", "process.ready")
+			return nil
+		}),
+		kratos.BeforeStop(func(context.Context) error {
+			readiness.Set(false)
+			logger.Info("service stopping", "event", "process.stopping")
+			return nil
+		}),
 		kratos.AfterStop(func(ctx context.Context) error {
+			logger.Info("service stopped", "event", "process.stopped")
 			clusterOps.Close()
 			sandboxes.Close()
 			vms.Close()

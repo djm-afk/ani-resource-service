@@ -107,7 +107,7 @@ func clusterOpsListener(t *testing.T, readOnly bool, handler pb.PlatformClusterO
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	gs, err := NewGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(time.Second)}, NewReadiness(), tlsConfig, readOnly, requestLogging(logger))
+	gs, err := NewGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(time.Second)}, NewReadiness(), tlsConfig, readOnly, logger)
 	if err != nil {
 		t.Fatal(err)
 	}

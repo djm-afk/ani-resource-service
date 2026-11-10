@@ -127,7 +127,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 		return err
 	}
 	attachments := biz.NewAttachments(repository)
-	fallback, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint)
+	fallback, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint, logger)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,8 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 		}
 	}
 	middlewares := observability.ServerMiddleware(logger)
-	gs, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, middlewares...)
+	adminMiddlewares := observability.AdminMiddleware(logger)
+	gs, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, logger, middlewares...)
 	if err != nil {
 		return err
 	}
@@ -217,12 +218,12 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	storagev1.RegisterStorageServiceServer(gs, storageComponents.service)
 	storageRecovery = storageComponents.worker
 	configured = true
-	admin := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), middlewares...)
+	admin := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), logger, adminMiddlewares...)
 	servers := []transport.Server{gs, admin, observation, execution}
 	if storageComponents.worker != nil {
 		servers = append(servers, storageComponents.worker)
 	}
-	imageRuntime, err := openImageRuntime(images, middlewares...)
+	imageRuntime, err := openImageRuntime(images, logger, middlewares...)
 	if err != nil {
 		return err
 	}

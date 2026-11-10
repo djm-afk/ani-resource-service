@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-kratos/kratos/v3/errors"
@@ -17,6 +18,7 @@ func NewAdminServer(
 	c *conf.Server_Admin,
 	readiness *Readiness,
 	gatherer prometheus.Gatherer,
+	logger *slog.Logger,
 	middlewares ...middleware.Middleware,
 ) *kratoshttp.Server {
 	server := kratoshttp.NewServer(
@@ -24,6 +26,9 @@ func NewAdminServer(
 		kratoshttp.Address(c.Addr),
 		kratoshttp.Timeout(c.Timeout.AsDuration()),
 		kratoshttp.Middleware(middlewares...),
+		// The observability filter is the outer HTTP boundary: it covers
+		// health/metrics/404/405 with one trace and one completion record.
+		kratoshttp.Filter(adminObservabilityFilter(logger)),
 		kratoshttp.StrictSlash(false),
 		kratoshttp.NotFoundHandler(http.NotFoundHandler()),
 		kratoshttp.MethodNotAllowedHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

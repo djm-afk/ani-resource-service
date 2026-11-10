@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-kratos/kratos/contrib/otel/v3/tracing"
 	"github.com/go-kratos/kratos/v3/config"
@@ -15,6 +20,7 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 
 	conf "github.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 // Name and Version can be overridden with -ldflags at build time.
@@ -48,9 +54,18 @@ func main() {
 		// Keep the operator's single JSON result readable on stdout.
 		logOutput = os.Stderr
 	}
-	logger := newRuntimeLogger(logOutput)
+	// Validate the level before anything else so an invalid value fails fast and
+	// visibly instead of silently clamping the process to a different level.
+	level, levelErr := parseRuntimeLevel(os.Getenv("ANI_LOG_LEVEL"))
+	logger := newRuntimeLoggerAtLevel(logOutput, level)
 	log.SetDefault(logger)
 	slog.SetDefault(logger)
+	if levelErr != nil {
+		attrs := append([]any{"event", "process.start_failed", "step", "logger", "log_format", "json"},
+			telemetry.ErrorFields(levelErr)...)
+		logger.Error("invalid log configuration", attrs...)
+		os.Exit(1)
+	}
 	execute := func() error {
 		if vmCloneReleaseMode {
 			if sandboxReviewMode || flagVMMigrate || flagComputeRestore || flagInstanceMigrate || flagSandboxMigrate || flagMigrate || flagImageMigrate || imageAdminAction != "" || baseConnectivityAction != "" {
@@ -112,7 +127,10 @@ func main() {
 		return run(logger)
 	}
 	if err := execute(); err != nil {
-		logger.Error("service terminated", "error", err)
+		// The terminal error keeps its real cause; the event name distinguishes a
+		// failure after readiness from one during startup.
+		attrs := append([]any{"event", "process.failed"}, telemetry.ErrorFields(err)...)
+		logger.Error("service terminated", attrs...)
 		os.Exit(1)
 	}
 }
@@ -172,12 +190,38 @@ func run(logger *slog.Logger) error {
 }
 
 func newRuntimeLogger(writer io.Writer) *slog.Logger {
+	return newRuntimeLoggerAtLevel(writer, runtimeLevel(os.Getenv("ANI_LOG_LEVEL")))
+}
+
+// runtimeLevel parses ANI_LOG_LEVEL. Only info and debug are accepted for the
+// runtime process; an unsupported value is a startup error handled by main.
+func runtimeLevel(raw string) slog.Level {
+	level, err := parseRuntimeLevel(raw)
+	if err != nil {
+		return slog.LevelInfo
+	}
+	return level
+}
+
+func parseRuntimeLevel(raw string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf("unsupported ANI_LOG_LEVEL %q: only info or debug are accepted", raw)
+	}
+}
+
+func newRuntimeLoggerAtLevel(writer io.Writer, level slog.Level) *slog.Logger {
 	handler := log.NewHandler(
 		log.WithWriter(writer),
 		log.WithFormat(log.FormatJSON),
-		log.WithLevel(log.LevelInfo),
+		log.WithLevel(level),
 		log.WithAddSource(true),
-		log.WithExtractor(tracing.TraceAttrs),
+		log.WithReplaceAttr(contractReplaceAttr),
+		log.WithExtractor(tracing.TraceAttrs, businessAttrs),
 		log.WithFilter(log.FilterKey(
 			"args",
 			"authorization",
@@ -185,13 +229,55 @@ func newRuntimeLogger(writer io.Writer) *slog.Logger {
 			"credential",
 			"password",
 			"private_key",
+			"request",
 			"set-cookie",
 			"token",
 		)),
 	)
 	return slog.New(handler).With(
-		slog.String("service.id", id),
 		slog.String("service.name", Name),
 		slog.String("service.version", Version),
+		slog.String("service.instance.id", id),
 	)
+}
+
+// contractReplaceAttr maps the framework-owned keys onto the public contract:
+// the caller location becomes `source` (file:line string) and the timestamp is
+// only emitted once, as UTC RFC3339Nano `time`.
+func contractReplaceAttr(groups []string, a slog.Attr) slog.Attr {
+	switch a.Key {
+	case slog.TimeKey:
+		if t, ok := a.Value.Any().(time.Time); ok {
+			return slog.String(slog.TimeKey, t.UTC().Format(time.RFC3339Nano))
+		}
+	case slog.LevelKey:
+		if lv, ok := a.Value.Any().(slog.Level); ok {
+			return slog.String(slog.LevelKey, resLevelName(lv))
+		}
+	case slog.SourceKey:
+		if src, ok := a.Value.Any().(*slog.Source); ok && src != nil {
+			return slog.String("source", filepath.Base(src.File)+":"+strconv.Itoa(src.Line))
+		}
+	case "service.id":
+		return slog.String("service.instance.id", a.Value.String())
+	}
+	return a
+}
+
+func resLevelName(lv slog.Level) string {
+	switch {
+	case lv < slog.LevelInfo:
+		return "DEBUG"
+	case lv < slog.LevelWarn:
+		return "INFO"
+	case lv < slog.LevelError:
+		return "WARN"
+	default:
+		return "ERROR"
+	}
+}
+
+// businessAttrs injects the business identity bound once per operation.
+func businessAttrs(ctx context.Context) []slog.Attr {
+	return telemetry.BusinessAttrs(ctx)
 }

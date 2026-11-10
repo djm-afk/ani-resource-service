@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -315,7 +317,7 @@ func TestResourceOldClientSchemaCompatibleSameDatabaseRollback(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	consumer, err := data.NewInstanceConsumer("unix://" + socket)
+	consumer, err := data.NewInstanceConsumer("unix://"+socket, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

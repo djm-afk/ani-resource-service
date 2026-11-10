@@ -75,7 +75,7 @@ func startCallRulesServer(t *testing.T, readOnly bool) (*grpc.ClientConn, *callR
 	if err != nil {
 		t.Fatal(err)
 	}
-	gs, err := NewGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(time.Second)}, NewReadiness(), serverTLS, readOnly)
+	gs, err := NewGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(time.Second)}, NewReadiness(), serverTLS, readOnly, discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestClientIdentityRequiresOnlyOneExactDNS(t *testing.T) {
 func TestInternalBusinessListenerRejectsMissingTLS(t *testing.T) {
 	config := &conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(time.Second)}
 	for _, tlsConfig := range []*tls.Config{nil, {MinVersion: tls.VersionTLS12}, {MinVersion: tls.VersionTLS13}} {
-		if _, err := NewGRPCServer(config, NewReadiness(), tlsConfig, false); err == nil {
+		if _, err := NewGRPCServer(config, NewReadiness(), tlsConfig, false, discardLogger()); err == nil {
 			t.Fatal("incomplete TLS silently enabled business listener")
 		}
 	}
