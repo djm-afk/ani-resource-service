@@ -5,7 +5,6 @@ package instance_test
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
 	"testing"
 
 	pb "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/v1"
@@ -53,9 +52,6 @@ func TestInstanceDiagnosticDatabaseScopeAndNoWrites(t *testing.T) {
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{{Version: "v1", Resource: "pods"}: "PodList", {Version: "v1", Resource: "events"}: "EventList"}, notebook, set, pod)
 	provider, e := data.NewNotebook(client)
 	if e != nil {
-		t.Fatal(e)
-	}
-	if e = provider.ConfigureSigningKey(ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))); e != nil {
 		t.Fatal(e)
 	}
 	s, e := service.NewService(f.repo, computeResolver(t, f, i.Spec.ClusterID), fixtureImage{}, provider, service.Config{NamespacePrefix: "tenant-", ClusterID: i.Spec.ClusterID, ServiceAccount: i.Spec.ServiceAccount, StorageClass: i.Spec.StorageClass, WorkspaceSize: i.Spec.WorkspaceSize, Shell: i.Spec.Shell, UID: i.Spec.UID, GID: i.Spec.GID})

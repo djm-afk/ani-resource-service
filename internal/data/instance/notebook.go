@@ -2,9 +2,6 @@ package instance
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"strconv"
@@ -35,12 +32,11 @@ const ownerLabel = "accelerator.ani.io/owner-service"
 const createLabel = "accelerator.ani.io/create-operation-id"
 
 type Notebook struct {
-	client     dynamic.Interface
-	clusterID  string
-	signingKey ed25519.PrivateKey
-	images     imagebiz.RuntimeImages
-	logSource  podLogSource
-	logLimits  biz.LogLimits
+	client    dynamic.Interface
+	clusterID string
+	images    imagebiz.RuntimeImages
+	logSource podLogSource
+	logLimits biz.LogLimits
 }
 
 func (n *Notebook) ConfigureClusterID(id string) error {
@@ -57,13 +53,7 @@ func NewNotebook(client dynamic.Interface) (*Notebook, error) {
 	}
 	return &Notebook{client: client}, nil
 }
-func (n *Notebook) ConfigureSigningKey(key ed25519.PrivateKey) error {
-	if len(key) != ed25519.PrivateKeySize {
-		return biz.ErrInvalid
-	}
-	n.signingKey = append(ed25519.PrivateKey(nil), key...)
-	return nil
-}
+
 func (n *Notebook) ConfigureImages(images imagebiz.RuntimeImages) error {
 	if images == nil {
 		return biz.ErrInvalid
@@ -136,10 +126,9 @@ func RenderNotebook(i biz.Instance) (*unstructured.Unstructured, error) {
 		return nil, err
 	}
 	limits := map[string]any{"cpu": s.CPU, "memory": s.Memory}
+	requests := map[string]any{"cpu": s.CPU, "memory": s.Memory}
 	for k, v := range s.GPU.Limits {
-		if !strings.HasPrefix(k, "volcano.sh/vgpu-") {
-			return nil, biz.ErrInvalid
-		}
+		requests[k] = v
 		limits[k] = v
 	}
 	ann := map[string]string{}
@@ -165,7 +154,7 @@ func RenderNotebook(i biz.Instance) (*unstructured.Unstructured, error) {
 		mounts = append(mounts, map[string]any{"name": name, "mountPath": mount.MountPath, "readOnly": mount.ReadOnly})
 		volumes = append(volumes, map[string]any{"name": name, "persistentVolumeClaim": map[string]any{"claimName": mount.PVCName, "readOnly": mount.ReadOnly}})
 	}
-	pod := map[string]any{"serviceAccountName": s.ServiceAccount, "automountServiceAccountToken": false, "securityContext": map[string]any{"runAsUser": s.UID, "runAsGroup": s.GID, "fsGroup": s.GID}, "containers": []any{map[string]any{"name": biz.Container, "image": s.ImageReference, "imagePullPolicy": "Always", "workingDir": s.WorkspaceMountPath, "securityContext": map[string]any{"allowPrivilegeEscalation": false, "capabilities": map[string]any{"drop": []any{"ALL"}}}, "resources": map[string]any{"requests": map[string]any{"cpu": s.CPU, "memory": s.Memory}, "limits": limits}, "volumeMounts": mounts}}, "volumes": volumes}
+	pod := map[string]any{"serviceAccountName": s.ServiceAccount, "automountServiceAccountToken": false, "securityContext": map[string]any{"runAsUser": s.UID, "runAsGroup": s.GID, "fsGroup": s.GID}, "containers": []any{map[string]any{"name": biz.Container, "image": s.ImageReference, "imagePullPolicy": "Always", "workingDir": s.WorkspaceMountPath, "securityContext": map[string]any{"allowPrivilegeEscalation": false, "capabilities": map[string]any{"drop": []any{"ALL"}}}, "resources": map[string]any{"requests": requests, "limits": limits}, "volumeMounts": mounts}}, "volumes": volumes}
 	if s.ComputeType == biz.TypeGPU {
 		ann["scheduling.volcano.sh/queue-name"] = s.GPU.Queue
 		ann["accelerator.ani.io/execution-digest"] = s.GPU.Digest
@@ -353,7 +342,7 @@ func verifyPod(p *unstructured.Unstructured, i biz.Instance) error {
 			for _, resourceField := range []string{"requests", "limits"} {
 				resources, _, _ := unstructured.NestedStringMap(container, "resources", resourceField)
 				for k := range resources {
-					if strings.Contains(k, "gpu") || (i.Spec.ComputeType == biz.TypeCPU && strings.Contains(k, "/")) {
+					if i.Spec.GPU.Limits[k] != "" || (i.Spec.ComputeType == biz.TypeCPU && strings.Contains(k, "/")) {
 						return biz.ErrOwnership
 					}
 				}
@@ -409,6 +398,19 @@ func verifyPod(p *unstructured.Unstructured, i biz.Instance) error {
 				return biz.ErrOwnership
 			}
 		}
+		for key, value := range i.Spec.GPU.Limits {
+			actual, ae := resource.ParseQuantity(resources[key])
+			expected, ee := resource.ParseQuantity(value)
+			if ae != nil || ee != nil || actual.Cmp(expected) != 0 {
+				return biz.ErrOwnership
+			}
+		}
+		for key := range resources {
+			if key != "cpu" && key != "memory" && i.Spec.GPU.Limits[key] == "" {
+				return biz.ErrOwnership
+			}
+		}
+
 		if i.Spec.ComputeType == biz.TypeCPU && len(resources) != 2 {
 			return biz.ErrOwnership
 		}
@@ -435,17 +437,6 @@ func verifyPod(p *unstructured.Unstructured, i biz.Instance) error {
 	}
 	if err := verifyFrozenMounts(p, c, i.Spec); err != nil {
 		return err
-	}
-	limits, _, _ := unstructured.NestedStringMap(c, "resources", "limits")
-	for k, v := range i.Spec.GPU.Limits {
-		if limits[k] != v {
-			return fmt.Errorf("GPU execution was not projected to Pod")
-		}
-	}
-	for k := range limits {
-		if strings.Contains(k, "gpu") && i.Spec.GPU.Limits[k] == "" {
-			return biz.ErrOwnership
-		}
 	}
 	scheduler, _, _ := unstructured.NestedString(p.Object, "spec", "schedulerName")
 	if i.Spec.ComputeType == biz.TypeCPU {
@@ -492,24 +483,7 @@ func verifyPod(p *unstructured.Unstructured, i biz.Instance) error {
 	}
 	return nil
 }
-func (n *Notebook) signPod(ctx context.Context, p *unstructured.Unstructured, i biz.Instance) error {
-	if i.Spec.ComputeType != biz.TypeGPU {
-		return biz.ErrInvalid
-	}
-	payload, e := json.Marshal(map[string]any{"pod": map[string]string{"cluster_id": i.Spec.ClusterID, "namespace": p.GetNamespace(), "name": p.GetName(), "uid": string(p.GetUID()), "container_name": biz.Container}, "ref": map[string]string{"tenant_id": i.TenantID, "owner_service": biz.Owner, "resource_id": i.ID, "create_operation_id": i.CreateOperationID}, "execution_digest": i.Spec.GPU.Digest})
-	if e != nil {
-		return e
-	}
-	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(n.signingKey, append([]byte("acc-owner-pod-v2\n"), payload...)))
-	ann := p.GetAnnotations()
-	if ann["accelerator.ani.io/owner-signature"] == sig {
-		return nil
-	}
-	ann["accelerator.ani.io/owner-signature"] = sig
-	p.SetAnnotations(ann)
-	_, e = n.client.Resource(podGVR).Namespace(p.GetNamespace()).Update(ctx, p, metav1.UpdateOptions{})
-	return e
-}
+
 func (n *Notebook) EnsureWorkspace(ctx context.Context, i biz.Instance) (string, error) {
 	obj := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": map[string]any{"name": i.Spec.PVCName, "namespace": i.Spec.Namespace, "labels": stringMap(labels(i))}, "spec": map[string]any{"accessModes": []any{"ReadWriteOnce"}, "storageClassName": i.Spec.StorageClass, "resources": map[string]any{"requests": map[string]any{"storage": i.Spec.WorkspaceSize}}}}}
 	created, e := n.client.Resource(pvcGVR).Namespace(i.Spec.Namespace).Create(ctx, obj, metav1.CreateOptions{})

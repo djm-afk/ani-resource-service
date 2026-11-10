@@ -151,7 +151,7 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	return tx.Commit(ctx)
 }
 
-const instanceSelect = "SELECT snapshot,version,desired,created_at,updated_at,current_mounts,mounts_initialized,applied_mount_version,runtime_desired,recovery_fence FROM instance.instances WHERE tenant_id=$1 AND instance_id=$2"
+const instanceSelect = "SELECT snapshot,version,desired,created_at,updated_at,current_mounts,mounts_initialized,applied_mount_version,runtime_desired,recovery_fence FROM instance.instances WHERE tenant_id=$1 AND instance_id=$2 AND archived_at IS NULL"
 
 type scanner interface{ Scan(...any) error }
 
@@ -192,6 +192,11 @@ func decodeSnapshot(raw []byte, i *biz.Instance) error {
 	}
 	if i.Spec.InstanceKind != biz.KindContainer || (i.Spec.ComputeType != biz.TypeCPU && i.Spec.ComputeType != biz.TypeGPU) {
 		return biz.ErrInvalid
+	}
+	if i.Spec.ComputeType == biz.TypeCPU || i.CreateRequestHash != "" {
+		if err := biz.ValidateFrozenGPU(i.Spec.ComputeType, i.Spec.GPU, i.Spec.GPUSummary); err != nil {
+			return err
+		}
 	}
 	if biz.ValidateConfiguration(i.Spec) != nil || (i.CreateRequestHash != "" && biz.ValidateScheduling(i.Spec.Scheduling) != nil) {
 		return biz.ErrInvalid
@@ -239,7 +244,7 @@ func (p *Postgres) List(ctx context.Context, tenant string, f biz.ListFilter) ([
 		return nil, 0, e
 	}
 	defer tx.Rollback(ctx)
-	where := " WHERE tenant_id=$1 AND ($2::text='' OR snapshot->'Spec'->>'instance_kind'=$2) AND ($3::text='' OR snapshot->'Spec'->>'compute_type'=$3) AND ($4::text='' OR coalesce(snapshot->>'Observed','')=$4) AND ($4::text<>'' OR coalesce(snapshot->>'Observed','')<>'deleted') AND ($5::text='' OR position(lower($5) in lower(snapshot->'Spec'->>'Name'))>0) AND ($6::text='' OR position(lower($6) in lower(instance_id::text))>0)"
+	where := " WHERE archived_at IS NULL AND tenant_id=$1 AND ($2::text='' OR snapshot->'Spec'->>'instance_kind'=$2) AND ($3::text='' OR snapshot->'Spec'->>'compute_type'=$3) AND ($4::text='' OR coalesce(snapshot->>'Observed','')=$4) AND ($4::text<>'' OR coalesce(snapshot->>'Observed','')<>'deleted') AND ($5::text='' OR position(lower($5) in lower(snapshot->'Spec'->>'Name'))>0) AND ($6::text='' OR position(lower($6) in lower(instance_id::text))>0)"
 	where += " AND ($7::text='' OR snapshot->'Spec'->'Network'->>'SubnetID'=$7) AND ($8::text='' OR snapshot->'Spec'->>'ClusterID'=$8) AND ($9::text='' OR snapshot->'Spec'->>'Namespace'=$9) AND (NOT $10::boolean OR (desired<>'deleted' AND coalesce(snapshot->>'Observed','')<>'deleted' AND snapshot->'Spec'->'Network' IS NOT NULL AND snapshot->'Spec'->'Network'<>'null'::jsonb))"
 	args := []any{tenant, f.InstanceKind, f.ComputeType, f.ObservedState, strings.TrimSpace(f.Name), strings.TrimSpace(f.ID), f.SubnetID, f.ClusterID, f.Namespace, f.BindableOnly}
 	var total int64
@@ -287,6 +292,14 @@ func (p *Postgres) AcceptCreate(ctx context.Context, c biz.Create) (biz.ACK, err
 		return biz.ACK{}, e
 	}
 	defer tx.Rollback(ctx)
+	var archived bool
+	if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM instance.instances WHERE tenant_id=$1 AND instance_id=$2 AND archived_at IS NOT NULL)", c.TenantID, c.ID).Scan(&archived); e != nil {
+		return biz.ACK{}, e
+	}
+	if archived {
+		return biz.ACK{}, biz.ErrConflict
+	}
+
 	// This serializes admission for one immutable tenant/resource identity, including DELETE-first.
 	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", c.TenantID+":"+c.ID); e != nil {
 		return biz.ACK{}, e
@@ -391,6 +404,14 @@ func (p *Postgres) AcceptDelete(ctx context.Context, d biz.Delete) (biz.ACK, err
 		return ack, e
 	}
 	defer tx.Rollback(ctx)
+	var archived bool
+	if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM instance.instances WHERE tenant_id=$1 AND instance_id=$2 AND archived_at IS NOT NULL)", d.TenantID, d.ID).Scan(&archived); e != nil {
+		return ack, e
+	}
+	if archived {
+		return ack, biz.ErrConflict
+	}
+
 	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", d.TenantID+":"+d.ID); e != nil {
 		return ack, e
 	}
@@ -472,7 +493,7 @@ func (p *Postgres) Claim(ctx context.Context, owner string, lease time.Duration)
 	var tenant, id string
 	var epoch int64
 	var until time.Time
-	e = tx.QueryRow(ctx, "WITH candidate AS (SELECT tenant_id,instance_id FROM instance.instance_work WHERE due_at<=clock_timestamp() AND lease_until<clock_timestamp() ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE instance.instance_work w SET lease_owner=$1,lease_epoch=w.lease_epoch+1,lease_until=clock_timestamp()+($2::bigint*interval '1 millisecond') FROM candidate c WHERE w.tenant_id=c.tenant_id AND w.instance_id=c.instance_id RETURNING w.tenant_id::text,w.instance_id::text,w.lease_epoch,w.lease_until", owner, lease.Milliseconds()).Scan(&tenant, &id, &epoch, &until)
+	e = tx.QueryRow(ctx, "WITH candidate AS (SELECT w.tenant_id,w.instance_id FROM instance.instance_work w JOIN instance.instances i USING(tenant_id,instance_id) WHERE i.archived_at IS NULL AND w.due_at<=clock_timestamp() AND w.lease_until<clock_timestamp() ORDER BY w.due_at FOR UPDATE OF w SKIP LOCKED LIMIT 1) UPDATE instance.instance_work w SET lease_owner=$1,lease_epoch=w.lease_epoch+1,lease_until=clock_timestamp()+($2::bigint*interval '1 millisecond') FROM candidate c WHERE w.tenant_id=c.tenant_id AND w.instance_id=c.instance_id RETURNING w.tenant_id::text,w.instance_id::text,w.lease_epoch,w.lease_until", owner, lease.Milliseconds()).Scan(&tenant, &id, &epoch, &until)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return nil, nil
 	}

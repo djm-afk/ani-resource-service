@@ -174,3 +174,8 @@ func TestMetricScopeRejectsInvalidAndUnavailableRanges(t *testing.T) {
 		})
 	}
 }
+
+func (r *metricScopeRepository) ReadMetricScope(ctx context.Context, tenant, id string) (biz.MetricScope, error) {
+	i, e := r.Get(ctx, tenant, id)
+	return biz.MetricScope{TenantID: i.TenantID, ID: i.ID, CreateOperationID: i.CreateOperationID, ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace}, e
+}

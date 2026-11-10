@@ -79,7 +79,7 @@ func TestVirtualMachineResolveUsesSameSingleReadSelection(t *testing.T) {
 }
 
 func TestVirtualMachineKeepsGenericGPUValidationAndDirectoryFilter(t *testing.T) {
-	gpu := &biz.GPUReference{ProfileID: testPreset, ProfileVersion: 1, SpecDigest: strings.Repeat("a", 64), DevicesPerInstance: 1, ClusterID: testCluster, PoolID: testTenant, Mode: "WHOLE_EXCLUSIVE", ModelKey: "T4", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
+	gpu := &biz.GPUReference{AllocationType: "PHYSICAL", ResourceKey: "volcano.sh/vgpu-number", AdapterID: "volcano-hami-mib-v1", ProfileID: testPreset, ProfileVersion: 1, SpecDigest: strings.Repeat("a", 64), DevicesPerInstance: 1, ClusterID: testCluster, PoolID: testTenant, Mode: "WHOLE_EXCLUSIVE", ModelKey: "T4", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
 	repo := &presetReadProbe{preset: biz.Preset{ID: testPreset, Code: "gpu", Name: "GPU", ComputeType: biz.TypeGPU, CPUMillis: 1500, MemoryMiB: 1536, Enabled: true, GPU: gpu}}
 	resolver, _ := biz.NewResolver(repo, testCluster)
 	service, _ := NewService(repo, resolver, testCluster)

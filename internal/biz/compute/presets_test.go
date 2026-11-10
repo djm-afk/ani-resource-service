@@ -26,8 +26,8 @@ func TestPresetFinalObjectValidation(t *testing.T) {
 			t.Fatal("invalid mask", mask)
 		}
 	}
-	g := GPUReference{ProfileID: id, ProfileVersion: 2, SpecDigest: strings.Repeat("a", 64), DevicesPerInstance: 1, ClusterID: id, PoolID: id, Mode: "WHOLE_EXCLUSIVE", ModelKey: "A100", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
-	for _, n := range []uint32{1, 2, 4, math.MaxUint32} {
+	g := GPUReference{AllocationType: "PHYSICAL", ResourceKey: "volcano.sh/vgpu-number", AdapterID: "volcano-hami-mib-v1", ProfileID: id, ProfileVersion: 2, SpecDigest: strings.Repeat("a", 64), DevicesPerInstance: 1, ClusterID: id, PoolID: id, Mode: "WHOLE_EXCLUSIVE", ModelKey: "A100", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
+	for _, n := range []uint32{1, 2, 4, math.MaxInt32} {
 		g.DevicesPerInstance = n
 		if ValidateGPUReference(&g) != nil {
 			t.Fatal("supported whole quantity", n)
@@ -39,6 +39,7 @@ func TestPresetFinalObjectValidation(t *testing.T) {
 	}
 	g.DevicesPerInstance = 2
 	g.Mode = "SHARED_FIXED"
+	g.AllocationType = "DYNAMIC_SHARED"
 	m := int64(6144)
 	g.MemoryMiBPerDevice = m
 	g.CoreLimitPercent = 25

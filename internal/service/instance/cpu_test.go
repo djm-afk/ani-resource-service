@@ -74,7 +74,7 @@ func TestTrustedCPUAndGPUIntake(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			repo := &cpuIntake{preset: compute.Preset{ID: resource, Code: "small", Name: "small", ComputeType: kind, CPUMillis: 4000, MemoryMiB: 8192, Enabled: true}}
 			if kind == biz.TypeGPU {
-				repo.preset.GPU = &compute.GPUReference{ProfileID: resource, ProfileVersion: 1, SpecDigest: strings.Repeat("b", 64), DevicesPerInstance: 1, ClusterID: tenant, PoolID: tenant, Mode: "SHARED_FIXED", ModelKey: "t4", MemoryMiBPerDevice: 8192, CoreLimitPercent: 25}
+				repo.preset.GPU = &compute.GPUReference{AllocationType: "DYNAMIC_SHARED", ResourceKey: "volcano.sh/vgpu-number", AdapterID: "volcano-hami-mib-v1", ProfileID: resource, ProfileVersion: 1, SpecDigest: strings.Repeat("b", 64), DevicesPerInstance: 1, ClusterID: tenant, PoolID: tenant, Mode: "SHARED_FIXED", ModelKey: "t4", MemoryMiBPerDevice: 8192, CoreLimitPercent: 25}
 			}
 			images, environment := &cpuImageBoundary{}, &cpuEnvironmentBoundary{}
 			s, e := NewService(repo, newTestComputeResolver(t, repo, tenant), images, environment, Config{NewIntentsEnabled: true, NamespacePrefix: "tenant-", ClusterID: tenant, ServiceAccount: "workload", StorageClass: "ani-block", WorkspaceSize: "1Gi", Shell: "/bin/bash", UID: 1000, GID: 1000})
@@ -96,7 +96,7 @@ func TestTrustedCPUAndGPUIntake(t *testing.T) {
 			if kind == biz.TypeGPU {
 				resolved.GpuSelection = nil
 				resolved.GpuExecution = testGPU()
-				resolved.GpuDisplay = &acc.GpuDisplay{ProfileId: resource, ProfileVersion: 1, ProfileName: "T4", ModelKey: "t4", Mode: acc.SupplyMode_SHARED_FIXED}
+				resolved.GpuBusinessSpec = &acc.GpuBusinessSpec{ProfileId: resource, ProfileVersion: 1, ProfileName: "T4", ModelKey: "t4", Mode: acc.SupplyMode_SHARED_FIXED, AllocationType: acc.AllocationType_DYNAMIC_SHARED, DevicesPerReplica: 1, MemoryMibPerDevice: 8192, CoreLimitPercent: 25, ResourceKey: "volcano.sh/vgpu-number", AdapterId: "volcano-hami-mib-v1", SpecDigest: strings.Repeat("b", 64)}
 			}
 			request := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: tenant, ResourceId: resource, OperationId: operation}, Spec: resolved}
 			request.Context.RequestDigest, e = pb.CommandDigest(request.Context, request.Spec)

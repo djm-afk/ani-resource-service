@@ -2,7 +2,6 @@ package instance
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +30,7 @@ func diagnosticFixture(t *testing.T, gpu bool) (*Notebook, biz.Instance, *fake.F
 	if gpu {
 		i.Spec.ComputeType = biz.TypeGPU
 		i.Spec.GPU = biz.GPU{Scheduler: "volcano", RuntimeClass: "nvidia", Queue: "default", Digest: strings.Repeat("d", 64), Limits: map[string]string{"volcano.sh/vgpu-number": "1", "volcano.sh/vgpu-cores": "100", "volcano.sh/vgpu-memory": "15360"}, NodeLabels: map[string]string{"gpu": "test"}}
+		freezeNvidiaFixture(t, &i)
 	}
 	notebook, e := RenderNotebook(i)
 	if e != nil {
@@ -55,9 +55,6 @@ func diagnosticFixture(t *testing.T, gpu bool) (*Notebook, biz.Instance, *fake.F
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{podGVR: "PodList", eventGVR: "EventList"}, notebook, set, pod)
 	n, e := NewNotebook(client)
 	if e != nil {
-		t.Fatal(e)
-	}
-	if e = n.ConfigureSigningKey(ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))); e != nil {
 		t.Fatal(e)
 	}
 	return n, i, client, pod

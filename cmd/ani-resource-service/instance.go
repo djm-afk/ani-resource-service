@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -31,12 +30,11 @@ import (
 )
 
 type instanceSettings struct {
-	DatabaseDSNFile, SigningKeyFile                                         string
+	DatabaseDSNFile                                                         string
 	QuotaAddress, QuotaCAFile, QuotaCertFile, QuotaKeyFile, QuotaServerName string
 	// Deprecated: accepted for old private configurations, never used at runtime.
-	ReleaseAddress, ReleaseCAFile, ReleaseCertFile, ReleaseKeyFile, ReleaseServerName string
-	TerminalAddress                                                                   string
-	Service                                                                           service.Config
+	TerminalAddress string
+	Service         service.Config
 }
 type instanceComponents struct {
 	service         *service.Service
@@ -133,14 +131,6 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 			c.Close()
 		}
 	}()
-	signing, e := readImagePrivateFile(cfg.SigningKeyFile)
-	if e != nil {
-		return nil, e
-	}
-	defer clear(signing)
-	if len(signing) != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("instance signing key must contain 64 raw bytes")
-	}
 	kube, e := clientcmd.BuildConfigFromFlags("", network.Kubeconfig)
 	if e != nil {
 		return nil, fmt.Errorf("instance Kubernetes configuration invalid")
@@ -163,9 +153,6 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 		return nil, e
 	}
 	if e = provider.ConfigureLogs(kube, cfg.Service.LogLimits); e != nil {
-		return nil, e
-	}
-	if e = provider.ConfigureSigningKey(ed25519.PrivateKey(signing)); e != nil {
 		return nil, e
 	}
 	if e = provider.ConfigureImages(images.runtime); e != nil {
@@ -200,7 +187,7 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 }
 
 func validateInstanceSettings(cfg instanceSettings) error {
-	for _, f := range []string{cfg.DatabaseDSNFile, cfg.SigningKeyFile, cfg.QuotaCAFile, cfg.QuotaCertFile, cfg.QuotaKeyFile} {
+	for _, f := range []string{cfg.DatabaseDSNFile, cfg.QuotaCAFile, cfg.QuotaCertFile, cfg.QuotaKeyFile} {
 		if !filepath.IsAbs(f) {
 			return fmt.Errorf("instance requires absolute managed private paths")
 		}

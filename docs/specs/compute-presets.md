@@ -2,7 +2,7 @@
 
 算力规格由 Resource 的 compute 模块拥有：定义、校验、CRUD、启停、列表、持久化与只读解析均归此模块。实例通过依赖 compute 组合完整容器配置。实现、正式 API 发布、环境切换与业务验收的实际状态只见[执行状态](../execution/status.md#compute-preset-resolution)。
 
-唯一实表为 `compute.presets`，无租户私有副本或 Gov Preset 表。CPU 使用正整数 `cpu_millis` 和 `memory_mib`；内存不能超过 int64 字节范围。GPU 还包含 ACC 精确 Profile ID、版本、digest、cluster、pool、模式、型号、单设备显存、核心限制及设备数。规格没有递增版本；GPU Profile 版本有独立语义。规格修改、禁用或删除不改写已受理实例。
+唯一实表为 `compute.presets`，无租户私有副本或 Gov Preset 表。CPU 使用正整数 `cpu_millis` 和 `memory_mib`；内存不能超过 int64 字节范围。GPU 还包含 ACC 精确 Profile ID、版本、digest、cluster、pool、模式、型号、单设备显存、核心限制、设备数，以及 allocation_type、resource_key、compute_units_per_device、adapter_id。资源含义统一调用 ACC gpuprotocol 的普通 Go 值校验核心；领域层不构造 protobuf，也不从厂商资源键反推业务规格。规格没有递增版本；GPU Profile 版本有独立语义。规格修改、禁用或删除不改写已受理实例。
 
 ## 管理、目录与容器边界
 
@@ -32,9 +32,9 @@ InstanceService 原七个目录 RPC 直接删除，不保留转发、别名、�
 | 8 | gpu | CPU 为 null；GPU 为精确引用及设备数 |
 | 9 | selection_digest | 内容摘要 |
 
-公共 GPU 结果字段编号依次为 profile_id=1、profile_version=2、spec_digest=3、devices_per_unit=4、cluster_id=5、pool_id=6、mode=7、model_key=8、memory_mib_per_device=9、core_limit_percent=10。设备数量按一个执行容器解释，不乘 replicas、worker 或 LWS 拓扑。
+公共 GPU 结果字段编号依次为 profile_id=1、profile_version=2、spec_digest=3、devices_per_unit=4、cluster_id=5、pool_id=6、mode=7、model_key=8、memory_mib_per_device=9、core_limit_percent=10；追加 allocation_type=11、resource_key=12、compute_units_per_device=13、adapter_id=14。设备数量按一个执行容器解释，不乘 replicas、worker 或 LWS 拓扑。
 
-摘要为小写 SHA-256 十六进制：先写入域前缀 `compute-selection-v1\n`（末尾是一个换行字节），再写固定字段顺序、无空白的 UTF-8 JSON。顶层字段按上述1..8顺序，GPU 字段按1..10顺序；CPU `gpu:null`。整数使用 JSON 十进制整数，字符串使用 Go encoding/json 的转义规则；不包含 digest 自身、usage、enabled、时间或审计字段。所有合法用途（含 SANDBOX）对同一份内容产生相同资源值与摘要；用途仍独立校验，Sandbox 由自身生命周期固定使用，不继承普通容器授权。调用方使用正式 API 的摘要校验函数核对候选，再纳入自己的完整快照。
+摘要为小写 SHA-256 十六进制：先写入域前缀 `compute-selection-v1\n`（末尾是一个换行字节），再写固定字段顺序、无空白的 UTF-8 JSON。顶层字段按上述1..8顺序，GPU 字段按1..14顺序；CPU `gpu:null`。整数使用 JSON 十进制整数，字符串使用 Go encoding/json 的转义规则；不包含 digest 自身、usage、enabled、时间或审计字段。所有合法用途（含 SANDBOX）对同一份内容产生相同资源值与摘要；用途仍独立校验，Sandbox 由自身生命周期固定使用，不继承普通容器授权。调用方使用正式 API 的摘要校验函数核对候选，再纳入自己的完整快照。
 
 ## 身份、用途与时效
 
@@ -65,3 +65,9 @@ INFERENCE 解析不需要模型、引擎、Namespace 或拓扑；未来消费者
 不把DSN内容写入此文件或日志；配置不接受Preset列表、实例镜像、Namespace、Notebook或GPU执行参数。
 
 `compute.schema_version` 独立维护 compute 版本/checksum，readiness 只检查自己的版本和目标结构。实例历史001..006和 `instance.schema_version` 保留。原地移动、最小 runtime 授权、维护与逆向恢复见[迁移手册](../runbooks/compute-presets-migration.md)；发布新 API 不代表允许先部署删除旧 RPC 的 Res。
+
+## GPU v1.1 一次性切换
+
+GPU reference 同步保存新的 allocation/resource/CU/adapter 字段；SQL `002_gpu_business_reference.sql` 替换旧 NVIDIA 专属约束。海光整卡允许 memory/core/CU 为0；固定片使用已登记的计量 MiB/CU。CPU 的 `gpu:null`、canonical 字段顺序、schema_version=1 和原 selection 摘要保持不变。已接受实例不重新读取预设，不重算原额度。
+
+升级前通过受管 ACC 静态目录为每条旧 GPU 预设准备明确转换，保留可确定的 preset/profile/version/cluster/pool 身份。转换使用现有公共摘要与校验，不由 SQL 猜 resource_key 或容量。缺来源条目只能在清单中显式清理后重建；不保留旧 GPU 运行解码。一次性工具与执行顺序见[实例运行手册](../runbooks/instance-mvp-fedora.md#gpu-v11-离线切换)。

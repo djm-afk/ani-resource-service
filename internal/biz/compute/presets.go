@@ -2,9 +2,10 @@ package compute
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
+	gp "github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
 	"math"
 	"regexp"
 	"strings"
@@ -38,16 +39,20 @@ var ErrPresetDisabled = errors.New("COMPUTE_PRESET_DISABLED")
 var presetCode = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 
 type GPUReference struct {
-	ProfileID          string `json:"profile_id"`
-	ProfileVersion     uint64 `json:"profile_version"`
-	SpecDigest         string `json:"spec_digest"`
-	DevicesPerInstance uint32 `json:"devices_per_instance"`
-	ClusterID          string `json:"cluster_id"`
-	PoolID             string `json:"pool_id"`
-	Mode               string `json:"mode"`
-	ModelKey           string `json:"model_key"`
-	MemoryMiBPerDevice int64  `json:"memory_mib_per_device"`
-	CoreLimitPercent   uint32 `json:"core_limit_percent"`
+	AllocationType        string `json:"allocation_type"`
+	ResourceKey           string `json:"resource_key"`
+	ComputeUnitsPerDevice uint32 `json:"compute_units_per_device"`
+	AdapterID             string `json:"adapter_id"`
+	ProfileID             string `json:"profile_id"`
+	ProfileVersion        uint64 `json:"profile_version"`
+	SpecDigest            string `json:"spec_digest"`
+	DevicesPerInstance    uint32 `json:"devices_per_instance"`
+	ClusterID             string `json:"cluster_id"`
+	PoolID                string `json:"pool_id"`
+	Mode                  string `json:"mode"`
+	ModelKey              string `json:"model_key"`
+	MemoryMiBPerDevice    int64  `json:"memory_mib_per_device"`
+	CoreLimitPercent      uint32 `json:"core_limit_percent"`
 }
 type Preset struct {
 	ID, Code, Name, Description, ComputeType string
@@ -74,25 +79,26 @@ type PresetRepository interface {
 }
 
 func ValidateGPUReference(g *GPUReference) error {
-	if g == nil || !UUID(g.ProfileID) || !UUID(g.ClusterID) || !UUID(g.PoolID) || g.ProfileVersion < 1 || len(g.SpecDigest) != 64 || strings.ToLower(g.SpecDigest) != g.SpecDigest || strings.TrimSpace(g.ModelKey) == "" {
+	if g == nil || !UUID(g.ClusterID) || !UUID(g.PoolID) {
 		return ErrInvalid
 	}
-	if _, err := hex.DecodeString(g.SpecDigest); err != nil {
-		return ErrInvalid
-	}
-	switch g.Mode {
-	case "WHOLE_EXCLUSIVE":
-		if g.DevicesPerInstance < 1 || g.MemoryMiBPerDevice <= 0 || g.CoreLimitPercent != 100 {
-			return ErrInvalid
-		}
-	case "SHARED_FIXED":
-		if g.DevicesPerInstance != 1 || g.MemoryMiBPerDevice <= 0 || g.CoreLimitPercent < 1 || g.CoreLimitPercent > 99 {
-			return ErrInvalid
-		}
-	default:
-		return ErrInvalid
+	if err := gp.ValidateBusinessSpecFields(g.BusinessFields()); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	return nil
+}
+
+func ModeNumber(name string) int32 {
+	return map[string]int32{"WHOLE_EXCLUSIVE": gp.ModeWholeExclusive, "SHARED_FIXED": gp.ModeSharedFixed}[name]
+}
+func AllocationNumber(name string) int32 {
+	return map[string]int32{"PHYSICAL": gp.AllocationPhysical, "DYNAMIC_SHARED": gp.AllocationDynamicShared, "FIXED_PARTITION": gp.AllocationFixedPartition}[name]
+}
+func (g *GPUReference) BusinessFields() *gp.BusinessSpecFields {
+	if g == nil {
+		return nil
+	}
+	return &gp.BusinessSpecFields{ProfileID: g.ProfileID, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, ModelKey: g.ModelKey, Mode: ModeNumber(g.Mode), AllocationType: AllocationNumber(g.AllocationType), DevicesPerReplica: g.DevicesPerInstance, MemoryMiBPerDevice: g.MemoryMiBPerDevice, CoreLimitPercent: g.CoreLimitPercent, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, ResourceKey: g.ResourceKey, AdapterID: g.AdapterID}
 }
 func ValidatePreset(p Preset) error {
 	if !UUID(p.ID) || !presetCode.MatchString(p.Code) || strings.TrimSpace(p.Name) == "" || utf8.RuneCountInString(p.Name) > 128 || utf8.RuneCountInString(p.Description) > 1024 || p.CPUMillis <= 0 || p.MemoryMiB <= 0 || p.MemoryMiB > math.MaxInt64/(1024*1024) {

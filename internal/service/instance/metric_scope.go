@@ -32,7 +32,7 @@ func (s *Service) ResolveInstanceMetricScope(ctx context.Context, r *pb.GetInsta
 	if err := biz.RequireTenant(ctx, r.TenantId); err != nil {
 		return nil, rpcError(err)
 	}
-	i, err := s.repo.Get(ctx, r.TenantId, r.InstanceId)
+	i, err := s.repo.ReadMetricScope(ctx, r.TenantId, r.InstanceId)
 	if err != nil {
 		if !errors.Is(err, biz.ErrNotFound) || s.vmScope == nil {
 			return nil, rpcError(err)
@@ -54,8 +54,8 @@ func (s *Service) ResolveInstanceMetricScope(ctx context.Context, r *pb.GetInsta
 	}
 	// Historical metric reads use the persisted, tenant-scoped original location.
 	// New-create namespace selection is not an authority for historical reads.
-	if !biz.UUID(i.Spec.ClusterID) || !biz.ValidNamespaceName(i.Spec.Namespace) {
+	if !biz.UUID(i.ClusterID) || !biz.ValidNamespaceName(i.Namespace) {
 		return nil, metricScopeUnavailable()
 	}
-	return &pb.InstanceMetricScope{TenantId: i.TenantID, InstanceId: i.ID, ClusterId: i.Spec.ClusterID, Namespace: i.Spec.Namespace, ContainerName: biz.Container}, nil
+	return &pb.InstanceMetricScope{TenantId: i.TenantID, InstanceId: i.ID, ClusterId: i.ClusterID, Namespace: i.Namespace, ContainerName: biz.Container}, nil
 }

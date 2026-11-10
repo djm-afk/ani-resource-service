@@ -2,9 +2,6 @@ package instance
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -101,9 +98,6 @@ func TestCPUNotebookProjectionAndPodBinding(t *testing.T) {
 	pod.Object["status"] = map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": biz.Container, "ready": true}}, "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}}
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{podGVR: "PodList"}, notebook, set, pod)
 	provider, _ := NewNotebook(client)
-	if err = provider.ConfigureSigningKey(ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))); err != nil {
-		t.Fatal(err)
-	}
 	obs, err := provider.Observe(context.Background(), i)
 	if err != nil || !obs.PodReady || obs.PodUID != "pod-original" || obs.StatefulSetUID != "set-original" {
 		t.Fatal("managed CPU target not observed", obs, err)
@@ -117,6 +111,7 @@ func TestCPUNotebookProjectionAndPodBinding(t *testing.T) {
 func TestNotebookMappingAndConditionalStop(t *testing.T) {
 	const id = "11111111-1111-4111-8111-111111111111"
 	i := biz.Instance{TenantID: id, ID: id, CreateOperationID: id, CreateRequestHash: strings.Repeat("a", 64), BusinessDigest: strings.Repeat("b", 64), Version: 1, Desired: biz.Running, RuntimeDesired: biz.Running, MountsInitialized: true, CurrentMounts: []biz.VolumeMount{}, Spec: biz.Spec{WorkspaceMountPath: "/workspace", InstanceKind: biz.KindContainer, ComputeType: biz.TypeGPU, Scheduling: biz.Scheduling{PodPlacement: "NONE"}, Name: "work", ImageReference: "registry.invalid/work@sha256:" + strings.Repeat("c", 64), ImageDigest: "sha256:" + strings.Repeat("c", 64), CPU: "1", Memory: "2Gi", UID: 1000, GID: 1000, Shell: "/bin/sh", ServiceAccount: "workload", StorageClass: "ani-block", WorkspaceSize: "1Gi", ClusterID: id, Namespace: "tenant-" + id, NotebookName: "instance-" + id, PVCName: "workspace-" + id, GPU: biz.GPU{Scheduler: "volcano", RuntimeClass: "nvidia", Queue: "test-queue", Digest: strings.Repeat("d", 64), NodeLabels: map[string]string{"accelerator.ani.io/supply-group": id}, Annotations: map[string]string{"volcano.sh/vgpu-mode": "hami-core"}, Limits: map[string]string{"volcano.sh/vgpu-number": "1", "volcano.sh/vgpu-memory": "6144", "volcano.sh/vgpu-cores": "25"}}}}
+	freezeNvidiaFixture(t, &i)
 	obj, e := RenderNotebook(i)
 	if e != nil {
 		t.Fatal(e)
@@ -191,10 +186,6 @@ func TestNotebookMappingAndConditionalStop(t *testing.T) {
 	pod.Object["status"] = map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": biz.Container, "ready": true}}, "conditions": []any{map[string]any{"type": "Ready", "status": "False"}}}
 	observations := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{podGVR: "PodList", stsGVR: "StatefulSetList"}, current, pod, set)
 	observer, _ := NewNotebook(observations)
-	signing := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
-	if e = observer.ConfigureSigningKey(signing); e != nil {
-		t.Fatal(e)
-	}
 	obs, e := observer.Observe(context.Background(), i)
 	if e != nil || obs.PodReady {
 		t.Fatal("container-only readiness exposed terminal", e)
@@ -211,23 +202,10 @@ func TestNotebookMappingAndConditionalStop(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	signature, e := base64.StdEncoding.DecodeString(signed.GetAnnotations()["accelerator.ani.io/owner-signature"])
-	if e != nil {
-		t.Fatal(e)
+	if signed.GetAnnotations()["accelerator.ani.io/owner-signature"] != "" {
+		t.Fatal("retired owner assertion was produced")
 	}
-	assertion := map[string]any{"pod": map[string]string{"cluster_id": i.Spec.ClusterID, "namespace": signed.GetNamespace(), "name": signed.GetName(), "uid": string(signed.GetUID()), "container_name": biz.Container}, "ref": map[string]string{"tenant_id": i.TenantID, "owner_service": biz.Owner, "resource_id": i.ID, "create_operation_id": i.CreateOperationID}, "execution_digest": i.Spec.GPU.Digest}
-	payload, _ := json.Marshal(assertion)
-	if !ed25519.Verify(signing.Public().(ed25519.PublicKey), append([]byte("acc-owner-pod-v2\n"), payload...), signature) {
-		t.Fatal("owner signature does not bind new execution assertion")
-	}
-	if ed25519.Verify(signing.Public().(ed25519.PublicKey), append([]byte("acc-owner-pod-v1\n"), payload...), signature) {
-		t.Fatal("old signature domain accepted")
-	}
-	assertion["pod"].(map[string]string)["uid"] = "foreign-pod"
-	payload, _ = json.Marshal(assertion)
-	if ed25519.Verify(signing.Public().(ed25519.PublicKey), append([]byte("acc-owner-pod-v2\n"), payload...), signature) {
-		t.Fatal("signature did not bind actual Pod UID")
-	}
+
 	badDigest := pod.DeepCopy()
 	annotations := badDigest.GetAnnotations()
 	annotations["accelerator.ani.io/execution-digest"] = "forged"

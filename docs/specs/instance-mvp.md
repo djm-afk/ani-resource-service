@@ -26,15 +26,15 @@
 
 实例内外只有 `instance_kind=container`、`compute_type=cpu|gpu`，类型来自数据库规格并冻结。删除 `instance_type`、外层 `preset_version`、空类型默认 GPU、旧 canonical 分支及 `Config.Presets`。当前 schema 缺必填类型或实际调度对象直接拒绝。profile_version 与 expected_version 保留现有语义。
 
-Gov 首先检查原始幂等记录，然后解析规格和默认值，一次持久受理/占额后投递。Res Resolve 只解析，不创建/占额；Accept 只消费单一 context/spec，不重读当前目录。CPU 不调用 ACC；GPU 只持久化 `GpuExecution` 与简短展示引用，原占额留在 Gov。共享设备数为 1；整卡按已解析资源执行，实例副本始终 1。002/003 历史迁移不改写，004 显式切换到绝对显存及无账目 owner 合同。
+Gov 首先检查原始幂等记录，然后解析规格和默认值，一次持久受理/占额后投递。Res Resolve 只解析，不创建/占额；Accept 只消费单一 context/spec，不重读当前目录。CPU 不调用 ACC；GPU 只持久化 `GpuExecution` 与完整冻结 `GpuBusinessSpec`，原占额留在 Gov。共享设备数为 1；整卡按已解析资源执行，实例副本始终 1。002/003 历史迁移不改写，004 显式切换到绝对显存及无账目 owner 合同。
 
 规格 CPU/内存采用精确整数，分别转换为 `<cpu_millis>m` 与 `<memory_mib>Mi`，requests=limits。内存值必须可表达为合法 Kubernetes Quantity，超出 int64 字节上限拒绝。实例独立保存规格 ID/名称/编码、两维类型、CPU/内存、GPU 展示引用、唯一执行快照、镜像/环境和实际调度。修改、禁用或删除规格不影响已受理重试、静态展示、启停及清理。
 
-GPU 运行参数只来自 ACC 的 `GpuExecution`。Resource 保存一次执行快照及 Profile 展示引用；RuntimeClass 不再由本服务配置或回退。完整释放使用 `ReportResourceReleased`，不接收、保存或回传 Gov 的额度类型、数量和账目明细。新命令使用单一 context/spec；旧附件、Plan、百分比字段和签名格式不能进入新执行链。
+GPU 运行参数只来自 ACC 的 `GpuExecution`。Resource 保存一次执行快照及完整业务规格；RuntimeClass 不再由本服务配置或回退。完整释放使用 `ReportResourceReleased`，不接收、保存或回传 Gov 的额度类型、数量和账目明细。新命令使用单一 context/spec；旧附件、Plan、百分比字段和签名格式不能进入新执行链。
 
 原始 CreateInstanceData.scheduling 可缺失；出现时拒绝空对象、非法枚举或空优先级。FrozenSpec.scheduling 必须存在且 placement 明确，按用户值 > 本次合法默认 > NONE，priority 无来源保持缺失。接收端再次校验原始明确值与实际值相等，正确摘要不能免除这项检查。原始哈希只包含原始意图；业务摘要覆盖完整冻结对象。
 
-执行摘要只覆盖 scheduler、queue、RuntimeClass、node selector、annotations、resources 六个明确字段，使用排序 canonical JSON 与 `acc-execution-v1` 域前缀。整命令摘要覆盖身份、业务配置、执行摘要及展示；未知字段与旧附件被拒绝。Pod v2 签名另外绑定实际 UID 及执行摘要，不能用摘要代替服务认证。
+执行摘要只覆盖 scheduler、queue、RuntimeClass、node selector、annotations、resources 六个明确字段，使用排序 canonical JSON 与 `acc-execution-v1` 域前缀。整命令摘要覆盖身份、业务配置、执行摘要及展示；未知字段与旧附件被拒绝。Pod 的实际 UID、ownerReference、租户标签和冻结执行摘要继续核对；ACC Binding 专用签名与私钥配置已退出，不用摘要代替服务认证。
 
 `ApplySchedulingOptions` 只消费冻结 scheduling，COLOCATE/SPREAD 分别合并 weight=100、hostname 拓扑的软亲和/软反亲和，selector 固定可信 tenant+instance 并明确当前 namespace；NONE 不新增规则。节点约束、GPU Runtime 和不相关 affinity 保留，重复渲染去重；固定 priority 或相反受管关系冲突拒绝，不整体覆盖 affinity。Notebook v1.10 的 labels/annotations 从 Notebook metadata 传播，PodSpec 从 spec.template.spec 传播；最终 Pod 再核对所选规则与 priority。GPU Pod 引用现有 Volcano PodGroup 且本次选了 priority 时，只读核对同 namespace Group 的 priorityClassName，冲突回显 SCHEDULING_FIELD_CONFLICT，不重写 Group。
 
@@ -93,7 +93,7 @@ Notebook 运行，通过 SG 浏览器终端使用
 | Gov | 当前用户认证授权、可信租户上下文、占额、命令投递、幂等退额 | 不重新检查 Notebook／Pod 判断业务能否退额 |
 | Res／instance | 实例生命周期、Notebook 适配、工作盘、终端目标、本业务退额决定 | 不重建 IAM、配额账本或 GPU 调度器 |
 | Res／image | 镜像登记、可见范围、固定 digest、拉取材料 | 不在线修理任意镜像 |
-| Acc | GPU 规格、最终执行快照、供给与实际占用观察、使用关联 | 不将配额已退等同物理设备空闲 |
+| Acc | GPU 规格、最终执行快照、受管静态供给、只读设备事实与容量查询 | 不将配额已退等同物理设备空闲 |
 | SG | 终端票据、WebSocket 与 exec | 不管理实例生命周期，不承载新增 IDE 网页 |
 | 平台部署／镜像维护者 | 实验环境、基础镜像规范、现有网络与存储配置 | 本轮不建设通用租户环境平台 |
 | ModelDev | 本轮不修改 | 不作为 Notebook 请求转发层 |
@@ -137,7 +137,7 @@ Sandbox 租户空间开通负责不存在时的持久创建和归属核验；Ins
 ```text
 Acc 生成 execution／quota_items／selection
     ↓
-Gov 只将 execution 和展示随受管 spec 传给 Res
+Gov 将 execution 和 business_spec 随受管 spec 传给 Res
     ↓
 Res 填入 Notebook 对应位置
     ↓
@@ -154,7 +154,8 @@ Res 负责正确消费唯一执行快照，不重复开发调度逻辑，也不�
 | 主容器身份与 GPU 数量 | 与冻结请求一致，不增加额外 GPU 容器或副本 |
 | 启停重放 | 保留原 execution、Provider 资源值、冻结单位元数据和主容器名称 |
 
-GPU 执行的显存单位由冻结元数据解释：旧 F=1 执行不携带单位注解，`volcano.sh/vgpu-memory` 数值按 MiB；F=10 执行由 ACC 在 `execution.pod_annotations` 冻结 `accelerator.ani.io/memory-block-mib=10`，资源数值为显存块数。Res 始终原样渲染资源和注解，仅展示层使用 ACC 正式协议 helper 将冻结执行投影为绝对 MiB，不重新查询当前 Profile、基线或重编码旧执行摘要。共享和整卡均使用正整数显存块，整卡使用全部可用显存及 100 核心；不生成或接受显存百分比键。Res 不重新计算 F，不渲染 Profile。
+GPU 的 provider 单位与 NVIDIA F=1/F=10 元数据原样冻结和渲染；显存、设备数、allocation_type、CU 与展示来自同一 `GpuBusinessSpec`，不再从 execution 反解析。NVIDIA 保留原三资源与 hami-core 注解；海光整卡/固定片只写已登记的资源键，requests 与 limits 同时显式填写，RuntimeClass 可空。Kubernetes admission 可合入额外合法 selector/toleration；Res 只核对自己控制的键和值。业务校验通过公共普通 Go 核心，不在 biz 构造 protobuf。
+
 
 ### 5.2 验收只做应有的测试
 
@@ -162,7 +163,7 @@ GPU 执行的显存单位由冻结元数据解释：旧 F=1 执行不携带单�
 
 这不是每次创建前增加一轮人工审批，也不新建验证服务。底层版本或模板变化时回归相应接入测试；发现字段未传递就定位适配或部署兼容问题，不能用“渲染成功”代替实际支持。
 
-已观察到的 Pod 身份关联继续按现有 Acc 合同处理，作用是租户／实例关联，不作为 Gov 退额审批条件。
+Pod 现有业务身份标签由 KSM/Obs 直接关联，不经过 ACC Binding；历史监控授权与 Gov 本地原 CREATE 身份继续保留。
 
 ## 6. 镜像规范由平台维护
 
@@ -222,7 +223,7 @@ Gov 当前认证授权
                     ↓
 确定 instance_id、Notebook／主容器名称
                     ↓
-Gov 调 Acc 得到 execution、quota_items、selection
+Gov 调 Acc 得到 execution、quota_items、business_spec
                     ↓
 Gov 一次事务占额并保存命令
                     ↓
@@ -309,7 +310,7 @@ Gov 从已认证 owner 与原创建操作查原账，验证归属后幂等全退
 
 旧未 ACK outbox 可能产生于工作盘或网络清理之前：必须先完成原实例全部清理并持久最终事实，才能投递原事件。旧已 ACK 事件保留原退额事实，只继续剩余清理；不得重复退款。`WAITING_FOR_PHYSICAL_RELEASE` 的原 DELETE 按当前规则继续，不回填虚假摘要或批量改完成标志。
 
-Gov 独立异步同步 ACC 的薄 Usage 投影；失败重试不回滚已经完成退额。Usage ENDED 不能清除真实活绑定，ACC 当前分配与容量投影按其自身合同处理，不为 Gov 退额追加驱动或物理回收证明。各项实际验收状态仅见执行状态，协议和受控测试不代表真实 GPU 通过。
+ACC Usage/Binding 派生同步已退出。Gov 保留真实账本与原 charge/receipt；Obs 提供业务监控，ACC 提供只读容量，不为 Gov 退额追加驱动或物理回收证明。各项实际验收状态仅见执行状态，协议和受控测试不代表真实 GPU 通过。
 
 ## 11. API、数据与代码落点
 
@@ -464,3 +465,9 @@ Updates to existing resources：resourceVersion 条件更新与冲突处理。�
 `ani-resource-service/AGENTS.md`，本次读取 1–32 行；Git blob SHA：`716676aabc0e16272a514b77c74383d4febab7f7`。
 
 来源：<https://github.com/zhangzhe-ctrl/ani-resource-service/blob/main/AGENTS.md>
+
+## 加速器 v1.1 冻结与历史归档
+
+新 GPU CreateSpec 使用 gpu_execution=21 与 gpu_business_spec=32；22/gpu_display 已 reserved。gpu_selection 仅在 resolver 阶段存在，受理的冻结命令中必须为空。CPU canonical 继续保留原 gpu_execution/gpu_display/gpu_selection 三个 null 占位，不增加 gpu_business_spec；CPU 解码拒绝非空 GPU 对象以及任何新 GPU 键。GPU 解码禁止 gpu_display（包括 null），不提供旧合同回放或 fallback。
+
+`instance.instances.archived_at` 仅标记一次性归档。旧 GPU 在原 owner 完成清理与原账退款后，清单工具将其退出活跃读取和调度；原父身份、snapshot、create_request_hash、BusinessDigest、操作 ACK 和 release outbox 保持原值及现有外键。GetOperation 与原 ACK 保留历史；历史 metric scope 直接投影原 tenant/resource/create/cluster/namespace，不解码旧 GPU。
