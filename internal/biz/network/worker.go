@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 const (
@@ -160,6 +164,7 @@ type Worker struct {
 	owner      string
 	policy     WorkerPolicy
 	observer   func(context.Context, Work, Progress, error)
+	logger     *slog.Logger
 }
 
 func NewWorker(repository WorkRepository, provider ResourceProvider, owner string, policy WorkerPolicy, observers ...func(context.Context, Work, Progress, error)) (*Worker, error) {
@@ -178,6 +183,41 @@ func NewWorker(repository WorkRepository, provider ResourceProvider, owner strin
 	return worker, nil
 }
 
+// SetLogger attaches the structured logger used for telemetry-context events.
+// Logging must not be a construction requirement: an existing lane that has no
+// logger still runs, it just cannot report the metadata failure.
+func (w *Worker) SetLogger(logger *slog.Logger) { w.logger = logger }
+
+// logTelemetryUnavailable reports a missing/malformed persisted trace once. The
+// caller continues on the run span it just opened.
+func (w *Worker) logTelemetryUnavailable(ctx context.Context, work Work, event string, err error) {
+	if w.logger == nil {
+		return
+	}
+	kv := []any{"event", event}
+	if work.Resource.Kind != "" {
+		kv = append(kv, "resource_type", work.Resource.Kind)
+	}
+	if work.Resource.ID != "" {
+		kv = append(kv, "resource_id", work.Resource.ID)
+	}
+	if work.Resource.TenantID != "" {
+		kv = append(kv, "tenant_id", work.Resource.TenantID)
+	}
+	if work.Operation.ID != "" {
+		kv = append(kv, "operation_id", work.Operation.ID)
+	}
+	if event == "telemetry.context_invalid" {
+		kv = append(kv, "reason", "TELEMETRY_CONTEXT_INVALID")
+		if err != nil {
+			kv = append(kv, logfields.ErrorFields(err)...)
+		}
+	} else {
+		kv = append(kv, "reason", "TELEMETRY_CONTEXT_MISSING")
+	}
+	w.logger.ErrorContext(ctx, "network telemetry context unavailable", kv...)
+}
+
 // Step advances at most one durable resource. Callers may stop forever after
 // this returns; unfinished work and its due time remain in the repository.
 func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
@@ -191,6 +231,18 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	work, found, err := w.repository.Claim(ctx, w.owner, w.policy.Lease)
 	if err != nil || !found {
 		return found, err
+	}
+	// An active operation resumes the trace captured when it was accepted; this
+	// pass still gets its own span. A missing/invalid value is reported on that
+	// new span and the original business work continues.
+	runName := "network." + work.Resource.Kind
+	if work.Resource.Kind == "" {
+		runName = "network.observe"
+	}
+	ctx, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(ctx, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, runName)
+	defer runSpan.End()
+	if telemetryEvent != "" {
+		w.logTelemetryUnavailable(ctx, work, telemetryEvent, telemetryErr)
 	}
 	if work.PlatformNetwork != nil {
 		return true, w.stepPlatformNetwork(ctx, work)

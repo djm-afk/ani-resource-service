@@ -7,6 +7,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdkTrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type earlyCompletionRepository struct {
@@ -181,5 +187,59 @@ func TestWorkerReadFailureKeepsEveryPriorResourceStateAndReason(t *testing.T) {
 		if r.progress.State != old || r.progress.Reason != "last-native-reason" || r.progress.Observed || r.progress.ObservationError != ProviderUnavailable || !r.progress.Backoff || r.mutations != 0 {
 			t.Fatalf("failed read changed last projection: %+v", r.progress)
 		}
+	}
+}
+
+// observeCapture records the trace the observer callback saw, i.e. the context
+// the business step actually ran under.
+type observeCapture struct {
+	traceID, spanID string
+}
+
+// capturingRepo returns one already-completed work so no provider is called.
+type capturingRepo struct {
+	WorkRepository
+	work Work
+}
+
+func (r *capturingRepo) Claim(context.Context, string, time.Duration) (Work, bool, error) {
+	return r.work, true, nil
+}
+func (r *capturingRepo) Finish(context.Context, Work, Progress) error { return nil }
+
+// A network pass resumes the accepted operation's trace but runs on its own
+// span: the persisted traceparent came from a request span that already ended.
+func TestWorkerResumesTraceWithNewSpan(t *testing.T) {
+	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
+	otel.SetTracerProvider(sdkTrace.NewTracerProvider())
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() { otel.SetTracerProvider(previousProvider); otel.SetTextMapPropagator(previousPropagator) }()
+
+	traceID, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	requestSpanID, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	request := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: requestSpanID, TraceFlags: trace.FlagsSampled})
+	saved := telemetry.Capture(trace.ContextWithSpanContext(context.Background(), request))
+
+	work := Work{
+		Operation: Operation{ID: "op-1", TelemetryContext: saved},
+		Resource:  ResourceWork{ID: "res-1", Kind: "vpc", State: Deleted},
+	}
+	var seen observeCapture
+	w, err := NewWorker(&capturingRepo{work: work}, noProviderCalls{}, uuid.NewString(), DefaultWorkerPolicy(),
+		func(ctx context.Context, _ Work, _ Progress, _ error) {
+			sc := trace.SpanContextFromContext(ctx)
+			seen.traceID, seen.spanID = sc.TraceID().String(), sc.SpanID().String()
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if seen.traceID != traceID.String() {
+		t.Errorf("run trace_id = %s, want the accepted trace %s", seen.traceID, traceID)
+	}
+	if seen.spanID == "" || seen.spanID == requestSpanID.String() {
+		t.Errorf("run span_id = %q, want a new span distinct from the request span", seen.spanID)
 	}
 }

@@ -115,6 +115,9 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	worker, err := biz.NewWorker(repository, provider, uuid.NewString(), policy, func(ctx context.Context, work biz.Work, progress biz.Progress, err error) {
 		observability.ObserveWork(ctx, logger, work, progress, err)
 	})
+	if err == nil {
+		worker.SetLogger(logger)
+	}
 	if err != nil {
 		return err
 	}

@@ -115,6 +115,9 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	worker, err := biz.NewWorker(repository, provider, uuid.NewString(), policy, func(ctx context.Context, work biz.Work, progress biz.Progress, err error) {
 		observability.ObserveWork(ctx, logger, work, progress, err)
 	})
+	if err == nil {
+		worker.SetLogger(logger)
+	}
 	if err != nil {
 		_ = observability.Shutdown(ctx)
 		return nil, err
