@@ -1,8 +1,12 @@
 package vm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -238,7 +242,7 @@ func newCloneWorker(t *testing.T, v VM, o Operation, native *cloneTestNative) (*
 	native.events = events
 	repo := &cloneTestRepo{op: o, vm: v, events: events}
 	network := &cloneTestNetwork{events: events}
-	worker, err := NewWorker(repo, native, network)
+	worker, err := NewWorker(repo, native, network, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,6 +288,8 @@ func TestCloneWorkerFailedCleanup(t *testing.T) {
 		volumesDone: true,
 	}
 	worker, repo, events := newCloneWorker(t, v, workerCloneOp(v, CreateAction), native)
+	var logs bytes.Buffer
+	worker.logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	for i := 0; i < 12 && repo.op.State != "failed"; i++ {
 		if err := worker.RunOnce(ctx); err != nil {
 			t.Fatal(err)
@@ -291,6 +297,21 @@ func TestCloneWorkerFailedCleanup(t *testing.T) {
 	}
 	if repo.op.State != "failed" {
 		t.Fatalf("failed cleanup did not finish: %s %v", repo.op.State, *events)
+	}
+	// The terminal state is written on a later tick that returns nil, so the
+	// native failure is only visible if the observation point records it.
+	failed := 0
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("bad log JSON: %v\n%s", err, line)
+		}
+		if rec["event"] == "step.failed" && rec["reason"] == "boom" && rec["level"] == "ERROR" {
+			failed++
+		}
+	}
+	if failed == 0 {
+		t.Fatalf("native clone failure was written to state with a nil return but no step.failed ERROR: %s", logs.String())
 	}
 	want := []string{"delete-clone", "release:REGISTERED", "delete-target", "delete-volumes", "release-network", "release-security-groups"}
 	if strings.Join(*events, ",") != strings.Join(want, ",") {

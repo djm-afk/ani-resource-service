@@ -128,7 +128,7 @@ type Spec struct {
 	Driver                                                                            *Source
 	Network                                                                           NetworkSelection
 	DNS                                                                               *DNS
-	BootDevice                                                                         string
+	BootDevice                                                                        string
 	StartAfterCreate                                                                  bool
 	InitialDisks                                                                      []Disk
 	GuestInitialization                                                               *GuestInitialization

@@ -61,7 +61,7 @@ func (w *Worker) logSandboxPersistFailed(ctx context.Context, work *Work, step s
 // logSandboxTelemetry records a missing/malformed persisted trace; the business
 // work continues.
 func (w *Worker) logSandboxTelemetry(ctx context.Context, work *Work, event string, err error) {
-	if w.logger == nil {
+	if w.logger == nil || event == "" {
 		return
 	}
 	attrs := []any{"event", event}
@@ -78,22 +78,21 @@ func (w *Worker) logSandboxTelemetry(ctx context.Context, work *Work, event stri
 }
 
 // restoreSandboxContext restores the claimed operation's trace and binds identity.
-func (w *Worker) restoreSandboxContext(ctx context.Context, work *Work) context.Context {
+// It returns the telemetry.context_* event to report once the run span exists
+// ("" when the metadata is usable) and the real decode/validate error.
+func (w *Worker) restoreSandboxContext(ctx context.Context, work *Work) (context.Context, string, error) {
 	business := telemetry.BusinessContext{
 		ResourceType: "sandbox", ResourceID: work.Sandbox.ID, TenantID: work.Sandbox.TenantID, OperationID: work.Sandbox.LastOperationID,
 	}
 	if work.TelemetryContextError != nil {
-		w.logSandboxTelemetry(ctx, work, "telemetry.context_invalid", work.TelemetryContextError)
-		return telemetry.WithBusiness(ctx, business)
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", work.TelemetryContextError
 	}
 	if !work.TelemetryContext.Valid() {
-		w.logSandboxTelemetry(ctx, work, "telemetry.context_missing", nil)
-		return telemetry.WithBusiness(ctx, business)
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_missing", nil
 	}
-	if restored, e := telemetry.Restore(ctx, work.TelemetryContext); e == nil {
-		return telemetry.WithBusiness(restored, business)
-	} else {
-		w.logSandboxTelemetry(ctx, work, "telemetry.context_invalid", e)
+	restored, e := telemetry.Restore(ctx, work.TelemetryContext)
+	if e != nil {
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", e
 	}
-	return telemetry.WithBusiness(ctx, business)
+	return telemetry.WithBusiness(restored, business), "", nil
 }

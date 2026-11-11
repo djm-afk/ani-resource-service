@@ -51,7 +51,14 @@ func (w *ImageWorker) Step(ctx context.Context) (bool, error) {
 	}
 	// Restore the accepted request's trace into this run; the image has no
 	// operation, so resource_id is the run identity.
-	runCtx := w.imageRunContext(ctx, i)
+	restored, telemetryEvent, telemetryErr := w.imageRestore(ctx, i)
+	// The restored trace belongs to the finished accepting request, so this pass
+	// opens its own span and keeps the same trace_id with a new span_id.
+	runCtx, runSpan := telemetry.StartRun(restored, "image."+i.State)
+	defer runSpan.End()
+	if telemetryEvent != "" {
+		w.logImageTelemetry(runCtx, i, telemetryEvent, telemetryErr)
+	}
 	e = w.advance(runCtx, i)
 	if e == nil || errors.Is(e, ErrImageVersion) || errors.Is(e, ErrLease) {
 		return true, nil
@@ -64,27 +71,24 @@ func (w *ImageWorker) Step(ctx context.Context) (bool, error) {
 	return true, w.park(runCtx, i, imageFailureReason(e))
 }
 
-// imageRunContext restores the image's persisted trace and binds its identity.
-func (w *ImageWorker) imageRunContext(ctx context.Context, i Image) context.Context {
-	base := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
+// imageRestore restores the image's persisted trace and binds its identity. It
+// returns the telemetry.context_* event to report once the run span exists (""
+// when the metadata is usable) and the real decode/validate error.
+func (w *ImageWorker) imageRestore(ctx context.Context, i Image) (context.Context, string, error) {
+	business := telemetry.BusinessContext{
 		ResourceType: "image", ResourceID: i.ID, TenantID: i.TenantID,
-	})
+	}
 	if i.TelemetryContextError != nil {
-		w.logImageTelemetry(base, i, "telemetry.context_invalid", i.TelemetryContextError)
-		return base
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", i.TelemetryContextError
 	}
 	if !i.TelemetryContext.Valid() {
-		w.logImageTelemetry(base, i, "telemetry.context_missing", nil)
-		return base
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_missing", nil
 	}
 	restored, e := telemetry.Restore(ctx, i.TelemetryContext)
 	if e != nil {
-		w.logImageTelemetry(base, i, "telemetry.context_invalid", e)
-		return base
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", e
 	}
-	return telemetry.WithBusiness(restored, telemetry.BusinessContext{
-		ResourceType: "image", ResourceID: i.ID, TenantID: i.TenantID,
-	})
+	return telemetry.WithBusiness(restored, business), "", nil
 }
 
 // logImageFailed records the real error with the known image coordinates.

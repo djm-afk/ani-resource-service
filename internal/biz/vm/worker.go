@@ -32,9 +32,15 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		return e
 	}
 	// Restore the accepted request's trace into a fresh worker context after the
-	// claim. The original HTTP deadline/cancel/credentials are not inherited; a
-	// missing or malformed context is logged and the business work continues.
-	ctx = w.applyRestoredTelemetry(ctx, o, v)
+	// claim. The original HTTP deadline/cancel/credentials are not inherited.
+	restored, telemetryEvent, telemetryErr := w.restoreTelemetry(ctx, o, v)
+	// The restored trace belongs to the finished accepting request, so this pass
+	// opens its own span and keeps the same trace_id with a new span_id. A
+	// missing/invalid persisted context lands on a fresh span before it is
+	// reported, so the ERROR still carries a valid trace_id/span_id.
+	ctx, runSpan := telemetry.StartRun(restored, "vm.operation."+o.Action)
+	defer runSpan.End()
+	w.logTelemetryEvent(ctx, o, v, telemetryEvent, telemetryErr)
 	e = w.advance(ctx, &o, &v)
 	if e != nil {
 		// Record the real failure at the point it becomes durable state. A Save
@@ -73,40 +79,30 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	return nil
 }
 
-// applyRestoredTelemetry restores o's saved trace onto ctx and records a single
-// telemetry.context_* event when metadata is missing or malformed. The caller
-// continues the original business path either way.
-func (w *Worker) applyRestoredTelemetry(ctx context.Context, o Operation, v VM) context.Context {
+// restoreTelemetry restores o's saved trace onto ctx, binds the operation
+// identity, and returns the single telemetry.context_* event to report once the
+// run span exists ("" when the metadata is usable) together with the real
+// decode/validate error. The caller continues the original business path in
+// every case.
+func (w *Worker) restoreTelemetry(ctx context.Context, o Operation, v VM) (context.Context, string, error) {
+	business := telemetry.BusinessContext{
+		OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
+	}
 	if o.TelemetryContextError != nil {
-		// Establish a fresh run span first so the event is still correlated.
-		runCtx := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
-			OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
-		})
-		w.logTelemetryEvent(runCtx, o, v, "telemetry.context_invalid", o.TelemetryContextError)
-		return runCtx
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", o.TelemetryContextError
 	}
 	if !o.TelemetryContext.Valid() {
-		runCtx := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
-			OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
-		})
-		w.logTelemetryEvent(runCtx, o, v, "telemetry.context_missing", nil)
-		return runCtx
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_missing", nil
 	}
 	restored, e := telemetry.Restore(ctx, o.TelemetryContext)
 	if e != nil {
-		runCtx := telemetry.WithBusiness(ctx, telemetry.BusinessContext{
-			OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
-		})
-		w.logTelemetryEvent(runCtx, o, v, "telemetry.context_invalid", e)
-		return runCtx
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", e
 	}
-	return telemetry.WithBusiness(restored, telemetry.BusinessContext{
-		OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
-	})
+	return telemetry.WithBusiness(restored, business), "", nil
 }
 
 func (w *Worker) logTelemetryEvent(ctx context.Context, o Operation, v VM, event string, err error) {
-	if w.logger == nil {
+	if w.logger == nil || event == "" {
 		return
 	}
 	attrs := []any{"event", event}

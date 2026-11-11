@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 	"log/slog"
 	"time"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type Worker struct {
@@ -32,7 +34,12 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 	}
 	// Restore the accepted request's trace for this run; missing/invalid is
 	// recorded and the original business work continues.
-	ctx = w.restoreInstanceContext(ctx, work)
+	restored, telemetryEvent, telemetryErr := w.restoreInstanceContext(ctx, work)
+	// The restored trace belongs to the finished accepting request, so this pass
+	// opens its own span and keeps the same trace_id with a new span_id.
+	ctx, runSpan := telemetry.StartRun(restored, "instance."+operationAction(work))
+	defer runSpan.End()
+	w.logInstanceTelemetry(ctx, work, telemetryEvent, telemetryErr)
 	if work.Operation != nil && work.Operation.Action == "set-network-interface" {
 		return w.stepNetworkInterface(ctx, *work)
 	}

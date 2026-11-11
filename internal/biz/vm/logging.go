@@ -63,6 +63,26 @@ func (w *Worker) logStepFailed(ctx context.Context, o Operation, v VM, step stri
 	w.logger.ErrorContext(ctx, "VM step failed", attrs...)
 }
 
+// logStepFailedObserved records a failure that exists only as a native status
+// reason: there is no Go error to unwrap, so the reason plus step is the
+// evidence. The clone lane writes the terminal state on a later tick and
+// returns nil, so this is the only place the real failure is visible.
+func (w *Worker) logStepFailedObserved(ctx context.Context, o Operation, v VM, step, reason string) {
+	if w.logger == nil {
+		return
+	}
+	attrs := []any{
+		"event", "step.failed",
+		"step", step,
+		"result", "failed",
+		"reason", reason,
+		"error_unavailable", true,
+	}
+	attrs = append(attrs, operationIdentity(Operation{ID: o.ID, TenantID: o.TenantID, Action: o.Action}, v)...)
+	attrs = append(attrs, vmWorkerObject(v).KV()...)
+	w.logger.ErrorContext(ctx, "VM step failed with an observed status", attrs...)
+}
+
 // logOperationFailed records a durable failed/unknown operation outcome.
 func (w *Worker) logOperationFailed(ctx context.Context, o Operation, v VM, reason string, err error) {
 	if w.logger == nil {

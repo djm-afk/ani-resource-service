@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type Worker struct {
@@ -30,7 +32,12 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	// Restore the claimed record's trace; missing/invalid is recorded and work continues.
-	ctx = w.restoreSandboxContext(ctx, work)
+	restored, telemetryEvent, telemetryErr := w.restoreSandboxContext(ctx, work)
+	// The restored trace belongs to the finished accepting request, so this pass
+	// opens its own span and keeps the same trace_id with a new span_id.
+	ctx, runSpan := telemetry.StartRun(restored, "sandbox.step")
+	defer runSpan.End()
+	w.logSandboxTelemetry(ctx, work, telemetryEvent, telemetryErr)
 	// Reserve the last five seconds for recording the result, including an
 	// unknown result when the provider call exhausts its own deadline.
 	callCtx, cancel := context.WithTimeout(ctx, w.lease-5*time.Second)

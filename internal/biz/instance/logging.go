@@ -90,7 +90,7 @@ func (w *Worker) logInstanceWaiting(ctx context.Context, work *Work, reason stri
 // logInstanceTelemetry records a missing/malformed persisted trace. The business
 // work continues; the run keeps its own valid trace.
 func (w *Worker) logInstanceTelemetry(ctx context.Context, work *Work, event string, err error) {
-	if w.logger == nil {
+	if w.logger == nil || event == "" {
 		return
 	}
 	attrs := []any{"event", event}
@@ -116,27 +116,24 @@ func operationAction(w *Work) string {
 // restoreInstanceContext restores the operation's persisted trace and binds the
 // instance identity. A missing or malformed context is recorded once and the
 // caller keeps running on a fresh trace.
-func (w *Worker) restoreInstanceContext(ctx context.Context, work *Work) context.Context {
+func (w *Worker) restoreInstanceContext(ctx context.Context, work *Work) (context.Context, string, error) {
 	business := telemetry.BusinessContext{ResourceType: "instance", ResourceID: work.Instance.ID, TenantID: work.Instance.TenantID}
 	if work.Operation != nil {
 		business.OperationID = work.Operation.ID
 		business.Action = work.Operation.Action
 	}
 	if work.Operation == nil {
-		return telemetry.WithBusiness(ctx, business)
+		return telemetry.WithBusiness(ctx, business), "", nil
 	}
 	if work.Operation.TelemetryContextError != nil {
-		w.logInstanceTelemetry(ctx, work, "telemetry.context_invalid", work.Operation.TelemetryContextError)
-		return telemetry.WithBusiness(ctx, business)
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", work.Operation.TelemetryContextError
 	}
 	if !work.Operation.TelemetryContext.Valid() {
-		w.logInstanceTelemetry(ctx, work, "telemetry.context_missing", nil)
-		return telemetry.WithBusiness(ctx, business)
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_missing", nil
 	}
-	if restored, e := telemetry.Restore(ctx, work.Operation.TelemetryContext); e == nil {
-		return telemetry.WithBusiness(restored, business)
-	} else {
-		w.logInstanceTelemetry(ctx, work, "telemetry.context_invalid", e)
+	restored, e := telemetry.Restore(ctx, work.Operation.TelemetryContext)
+	if e != nil {
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", e
 	}
-	return telemetry.WithBusiness(ctx, business)
+	return telemetry.WithBusiness(restored, business), "", nil
 }

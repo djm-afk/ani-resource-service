@@ -87,6 +87,41 @@ func Restore(base context.Context, saved TelemetryContext) (context.Context, err
 	return ctx, nil
 }
 
+// StartRun opens the span for one worker pass on top of base. The trace from
+// Restore is a finished request span, so reusing it would attribute every later
+// pass to the accepting HTTP span; a child span keeps the same trace_id and
+// gives this pass its own span_id. Without a parent the provider assigns a new
+// trace, which keeps trace_id/span_id present for the required worker events.
+func StartRun(base context.Context, name string) (context.Context, trace.Span) {
+	return otel.Tracer("ani-resource-service/worker").Start(base, name)
+}
+
+// Resume is the single restore step for a claimed background record: it
+// restores the persisted trace when it is usable, always opens this pass's run
+// span, and reports the one telemetry.context_* event the caller must record
+// once that span exists ("" when the metadata was usable). The returned error is
+// the real decode/validate cause for the invalid case. The caller continues the
+// original business work in every case; nothing here changes business state.
+func Resume(base context.Context, saved TelemetryContext, savedErr error, name string) (context.Context, trace.Span, string, error) {
+	event, cause := "", error(nil)
+	restored := base
+	switch {
+	case savedErr != nil:
+		event, cause = "telemetry.context_invalid", savedErr
+	case !saved.Valid():
+		event = "telemetry.context_missing"
+	default:
+		next, e := Restore(base, saved)
+		if e != nil {
+			event, cause = "telemetry.context_invalid", e
+		} else {
+			restored = next
+		}
+	}
+	ctx, span := StartRun(restored, name)
+	return ctx, span, event, cause
+}
+
 // BusinessContext is the fixed business attribute set bound once per operation.
 type BusinessContext struct {
 	OperationID   string
