@@ -3,7 +3,11 @@ package biz
 import (
 	"context"
 	"errors"
+	"log/slog"
+
 	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 // This worker owns one platform aggregate and its durable lease. It uses the
@@ -13,14 +17,18 @@ type DefaultVPCEgressWorker struct {
 	provider   DefaultEgressProvider
 	owner      string
 	policy     WorkerPolicy
+	logger     *slog.Logger
 }
+
+// SetLogger attaches the structured logger for telemetry-context events.
+func (w *DefaultVPCEgressWorker) SetLogger(logger *slog.Logger) { w.logger = logger }
 
 func NewDefaultVPCEgressWorker(r DefaultEgressWorkRepository, p DefaultEgressProvider, owner string, policy WorkerPolicy) (*DefaultVPCEgressWorker, error) {
 	id, err := uuid.Parse(owner)
 	if r == nil || p == nil || err != nil || id == uuid.Nil || policy.RequestTimeout <= 0 || policy.Lease < 3*policy.RequestTimeout || policy.ObserveEvery <= 0 || policy.RetryMin <= 0 {
 		return nil, Fail(InvalidArgument, "invalid platform default egress worker dependencies")
 	}
-	return &DefaultVPCEgressWorker{r, p, id.String(), policy}, nil
+	return &DefaultVPCEgressWorker{repository: r, provider: p, owner: id.String(), policy: policy}, nil
 }
 func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err error) {
 	defer func() {
@@ -34,6 +42,11 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 	if err != nil || !found {
 		return found, err
 	}
+	// Resume the active operation's trace and open this pass's own span. The
+	// default egress is platform-scoped, so no tenant_id is invented.
+	ctx, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(ctx, x.TelemetryContext, x.TelemetryContextError, "network.default_egress")
+	defer runSpan.End()
+	logTelemetryEvent(ctx, w.logger, telemetryEvent, []any{"resource_type", "default_vpc_egress", "resource_id", x.Egress.ID, "cluster_id", x.Egress.Identity.ClusterID}, telemetryErr)
 	e := x.Egress
 	active := e.OperationState != "succeeded" && e.OperationState != "failed"
 	p := DefaultEgressProgress{State: e.State, Phase: e.Phase, Reason: e.Reason, PendingUnknown: e.PendingUnknown, Delay: w.policy.ObserveEvery}

@@ -191,14 +191,15 @@ type NetworkDefaultVpcEgressIdempotency struct {
 }
 
 type NetworkDefaultVpcEgressOperation struct {
-	OperationID string
-	ResourceID  string
-	Kind        string
-	State       string
-	Reason      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	Reason           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	TelemetryContext []byte
 }
 
 type NetworkDeviceAdoption struct {
@@ -757,12 +758,13 @@ type NetworkSecurityGroupIdempotency struct {
 }
 
 type NetworkSecurityGroupOperation struct {
-	TenantID    string
-	OperationID string
-	ActorRef    string
-	CallerRef   string
-	Intent      []byte
-	Payload     []byte
+	TenantID         string
+	OperationID      string
+	ActorRef         string
+	CallerRef        string
+	Intent           []byte
+	Payload          []byte
+	TelemetryContext []byte
 }
 
 type NetworkSecurityGroupReconciliation struct {
@@ -890,14 +892,15 @@ type NetworkVirtualSwitchIdempotency struct {
 }
 
 type NetworkVirtualSwitchOperation struct {
-	OperationID string
-	ResourceID  string
-	Kind        string
-	State       string
-	Reason      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	Reason           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	TelemetryContext []byte
 }
 
 type NetworkVirtualSwitchReconciliation struct {

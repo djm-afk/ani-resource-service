@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 func (p *Postgres) ClaimVirtualSwitch(ctx context.Context, owner string, duration time.Duration) (biz.VirtualSwitchWork, bool, error) {
@@ -24,14 +27,14 @@ func (p *Postgres) ClaimVirtualSwitch(ctx context.Context, owner string, duratio
 	if err != nil {
 		return biz.VirtualSwitchWork{}, false, databaseFailure(err)
 	}
-	l, err := q.LeaseVirtualSwitch(ctx, sqlcgen.LeaseVirtualSwitchParams{ResourceID: r.ResourceID, Owner: owner, LeaseMicros: duration.Microseconds()})
+	l, err := q.LeaseVirtualSwitch(ctx, sqlcgen.LeaseVirtualSwitchParams{ResourceID: r.NetworkVirtualSwitch.ResourceID, Owner: owner, LeaseMicros: duration.Microseconds()})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return biz.VirtualSwitchWork{}, false, nil
 	}
 	if err != nil {
 		return biz.VirtualSwitchWork{}, false, databaseFailure(err)
 	}
-	v, err := switchSnapshot(r)
+	v, err := switchSnapshot(r.NetworkVirtualSwitch)
 	if err != nil {
 		return biz.VirtualSwitchWork{}, false, err
 	}
@@ -39,7 +42,14 @@ func (p *Postgres) ClaimVirtualSwitch(ctx context.Context, owner string, duratio
 	if err != nil {
 		return biz.VirtualSwitchWork{}, false, databaseFailure(err)
 	}
-	return biz.VirtualSwitchWork{Switch: v, Owner: owner, Epoch: l.LeaseEpoch, ClaimedGeneration: l.RequestedGeneration, Now: now}, true, databaseFailure(tx.Commit(ctx))
+	w := biz.VirtualSwitchWork{Switch: v, Owner: owner, Epoch: l.LeaseEpoch, ClaimedGeneration: l.RequestedGeneration, Now: now}
+	// Logging metadata decodes independently of the business claim.
+	if tc, te := telemetry.Decode(r.OperationTelemetryContext); te != nil {
+		w.TelemetryContextError = te
+	} else {
+		w.TelemetryContext = tc
+	}
+	return w, true, databaseFailure(tx.Commit(ctx))
 }
 
 func lockSwitchWork(ctx context.Context, q *sqlcgen.Queries, w biz.VirtualSwitchWork) (sqlcgen.NetworkVirtualSwitch, error) {

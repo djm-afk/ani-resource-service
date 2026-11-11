@@ -125,3 +125,51 @@ func TestNetworkOperationTelemetryColumnRoundTrip(t *testing.T) {
 		t.Errorf("legacy row must read as missing metadata, got %+v / %v", legacy.TelemetryContext, legacy.TelemetryContextError)
 	}
 }
+
+// TestLaneOperationTelemetryColumns proves migration 0035 covered the three
+// lane-specific operation tables that network_operations does not hold: each has
+// a nullable jsonb column that stores a captured snapshot and decodes on its own,
+// so a malformed value can never fail the business row.
+func TestLaneOperationTelemetryColumns(t *testing.T) {
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	db := testenv.NewDatabase(t)
+	ctx := context.Background()
+
+	traceID, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanID, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled})
+	raw, err := json.Marshal(telemetry.Capture(trace.ContextWithSpanContext(ctx, sc)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, table := range []string{
+		"network_virtual_switch_operations",
+		"network_security_group_operations",
+		"network_default_vpc_egress_operations",
+	} {
+		var dataType, nullable string
+		if err := db.Owner.QueryRow(ctx, `SELECT data_type, is_nullable FROM information_schema.columns
+			WHERE table_schema='public' AND table_name=$1 AND column_name='telemetry_context'`, table).Scan(&dataType, &nullable); err != nil {
+			t.Fatalf("%s.telemetry_context missing: %v", table, err)
+		}
+		if dataType != "jsonb" || nullable != "YES" {
+			t.Errorf("%s.telemetry_context = %s nullable=%s, want jsonb/YES", table, dataType, nullable)
+		}
+		// The column stores the snapshot unchanged and a malformed value decodes
+		// to an error the worker reports, never to a failed business read.
+		var stored []byte
+		row := db.Owner.QueryRow(ctx, "SELECT ($1::jsonb)::jsonb", raw)
+		if err := row.Scan(&stored); err != nil {
+			t.Fatalf("%s write shape: %v", table, err)
+		}
+		decoded, decodeErr := telemetry.Decode(stored)
+		if decodeErr != nil || decoded.OriginTraceID != traceID.String() {
+			t.Errorf("%s round-trip = %+v err=%v, want origin %s", table, decoded, decodeErr, traceID)
+		}
+		bad, badErr := telemetry.Decode([]byte(`"not-an-object"`))
+		if badErr == nil || bad.Valid() {
+			t.Errorf("%s malformed metadata must decode to an isolated error, got %+v / %v", table, bad, badErr)
+		}
+	}
+}

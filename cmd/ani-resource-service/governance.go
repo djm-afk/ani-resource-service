@@ -156,12 +156,16 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	switchWorker.SetLogger(logger)
 
-	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy)
+	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy, logger)
 	if err != nil {
 		return err
 	}
 	securityGroups, securityGroupWorker, err := wireSecurityGroups(repository, provider, instances, vms, policy)
+	if err == nil {
+		securityGroupWorker.SetLogger(logger)
+	}
 	if err != nil {
 		return err
 	}

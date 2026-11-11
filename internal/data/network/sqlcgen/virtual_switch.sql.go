@@ -110,29 +110,40 @@ func (q *Queries) CheckVirtualSwitchLease(ctx context.Context, arg CheckVirtualS
 }
 
 const claimVirtualSwitch = `-- name: ClaimVirtualSwitch :one
-SELECT s.resource_id, s.name, s.state, s.reason, s.version, s.created_at, s.updated_at, s.last_operation_id, s.cluster_id, s.binding_id, s.binding_version, s.binding_state, s.membership_fingerprint, s.nodes FROM network_virtual_switches s JOIN network_virtual_switch_reconciliations r USING(resource_id)
+SELECT s.resource_id, s.name, s.state, s.reason, s.version, s.created_at, s.updated_at, s.last_operation_id, s.cluster_id, s.binding_id, s.binding_version, s.binding_state, s.membership_fingerprint, s.nodes, o.operation_id AS operation_id, o.telemetry_context AS operation_telemetry_context
+FROM network_virtual_switches s
+JOIN network_virtual_switch_reconciliations r USING(resource_id)
+LEFT JOIN network_virtual_switch_operations o ON o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id AND o.completed_at IS NULL
  WHERE r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
  AND s.state<>'deleted' ORDER BY r.next_run_at,s.resource_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED
 `
 
-func (q *Queries) ClaimVirtualSwitch(ctx context.Context) (NetworkVirtualSwitch, error) {
+type ClaimVirtualSwitchRow struct {
+	NetworkVirtualSwitch      NetworkVirtualSwitch
+	OperationID               *string
+	OperationTelemetryContext []byte
+}
+
+func (q *Queries) ClaimVirtualSwitch(ctx context.Context) (ClaimVirtualSwitchRow, error) {
 	row := q.db.QueryRow(ctx, claimVirtualSwitch)
-	var i NetworkVirtualSwitch
+	var i ClaimVirtualSwitchRow
 	err := row.Scan(
-		&i.ResourceID,
-		&i.Name,
-		&i.State,
-		&i.Reason,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastOperationID,
-		&i.ClusterID,
-		&i.BindingID,
-		&i.BindingVersion,
-		&i.BindingState,
-		&i.MembershipFingerprint,
-		&i.Nodes,
+		&i.NetworkVirtualSwitch.ResourceID,
+		&i.NetworkVirtualSwitch.Name,
+		&i.NetworkVirtualSwitch.State,
+		&i.NetworkVirtualSwitch.Reason,
+		&i.NetworkVirtualSwitch.Version,
+		&i.NetworkVirtualSwitch.CreatedAt,
+		&i.NetworkVirtualSwitch.UpdatedAt,
+		&i.NetworkVirtualSwitch.LastOperationID,
+		&i.NetworkVirtualSwitch.ClusterID,
+		&i.NetworkVirtualSwitch.BindingID,
+		&i.NetworkVirtualSwitch.BindingVersion,
+		&i.NetworkVirtualSwitch.BindingState,
+		&i.NetworkVirtualSwitch.MembershipFingerprint,
+		&i.NetworkVirtualSwitch.Nodes,
+		&i.OperationID,
+		&i.OperationTelemetryContext,
 	)
 	return i, err
 }
@@ -248,7 +259,7 @@ func (q *Queries) GetVirtualSwitch(ctx context.Context, arg GetVirtualSwitchPara
 }
 
 const getVirtualSwitchOperation = `-- name: GetVirtualSwitchOperation :one
-SELECT operation_id, resource_id, kind, state, reason, created_at, updated_at, completed_at FROM network_virtual_switch_operations WHERE operation_id=$1
+SELECT operation_id, resource_id, kind, state, reason, created_at, updated_at, completed_at, telemetry_context FROM network_virtual_switch_operations WHERE operation_id=$1
 `
 
 type GetVirtualSwitchOperationParams struct {
@@ -267,6 +278,7 @@ func (q *Queries) GetVirtualSwitchOperation(ctx context.Context, arg GetVirtualS
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.TelemetryContext,
 	)
 	return i, err
 }
@@ -362,17 +374,18 @@ func (q *Queries) InsertVirtualSwitchHistory(ctx context.Context, arg InsertVirt
 }
 
 const insertVirtualSwitchOperation = `-- name: InsertVirtualSwitchOperation :exec
-INSERT INTO network_virtual_switch_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at)
- VALUES($1,$2,$3,$4,$5,$5,$6)
+INSERT INTO network_virtual_switch_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at,telemetry_context)
+ VALUES($1,$2,$3,$4,$5,$5,$6,$7)
 `
 
 type InsertVirtualSwitchOperationParams struct {
-	OperationID string
-	ResourceID  string
-	Kind        string
-	State       string
-	CreatedAt   time.Time
-	CompletedAt *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	CreatedAt        time.Time
+	CompletedAt      *time.Time
+	TelemetryContext []byte
 }
 
 func (q *Queries) InsertVirtualSwitchOperation(ctx context.Context, arg InsertVirtualSwitchOperationParams) error {
@@ -383,6 +396,7 @@ func (q *Queries) InsertVirtualSwitchOperation(ctx context.Context, arg InsertVi
 		arg.State,
 		arg.CreatedAt,
 		arg.CompletedAt,
+		arg.TelemetryContext,
 	)
 	return err
 }

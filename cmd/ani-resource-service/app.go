@@ -162,12 +162,16 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	switchWorker.SetLogger(logger)
 
-	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy)
+	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy, logger)
 	if err != nil {
 		return nil, err
 	}
 	securityGroups, securityGroupWorker, err := wireSecurityGroups(repository, provider, instances, vms, policy)
+	if err == nil {
+		securityGroupWorker.SetLogger(logger)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -10,15 +10,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	db "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 func (p *Postgres) GetSecurityGroupOperation(ctx context.Context, tenant, id string) (biz.Operation, error) {
-	b, e := p.queries.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: tenant, OperationID: id})
+	row, e := p.queries.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: tenant, OperationID: id})
 	if e != nil {
 		return biz.Operation{}, databaseFailure(e)
 	}
 	var v biz.Operation
-	e = json.Unmarshal(b, &v)
+	e = json.Unmarshal(row.Payload, &v)
 	return v, databaseFailure(e)
 }
 func (p *Postgres) GetEIPSecurityGroups(ctx context.Context, tenant, id string) (biz.SecurityGroupBinding, error) {
@@ -153,12 +154,19 @@ func (p *Postgres) ClaimSecurityGroup(ctx context.Context, owner string, duratio
 		op = w.Binding.LastOperationID
 	}
 	if op != "" {
-		body, err := q.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: r.TenantID, OperationID: op})
+		row, err := q.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: r.TenantID, OperationID: op})
 		if err != nil {
 			return w, false, databaseFailure(err)
 		}
-		if err = json.Unmarshal(body, &w.Operation); err != nil {
+		if err = json.Unmarshal(row.Payload, &w.Operation); err != nil {
 			return w, false, databaseFailure(err)
+		}
+		// Logging metadata decodes independently: a malformed value must not fail
+		// the business claim, so the cause rides along to the worker.
+		if tc, te := telemetry.Decode(row.TelemetryContext); te != nil {
+			w.Operation.TelemetryContextError = te
+		} else {
+			w.Operation.TelemetryContext = tc
 		}
 	}
 	return w, true, databaseFailure(tx.Commit(ctx))

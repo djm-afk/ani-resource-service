@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log/slog"
+
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	conf "github.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1"
@@ -9,7 +11,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/service/network"
 )
 
-func wireDefaultVPCEgress(repository *data.Postgres, provider *data.KCProvider, network *conf.Network, policy biz.WorkerPolicy) (*service.PlatformDefaultEgressService, server.Stepper, error) {
+func wireDefaultVPCEgress(repository *data.Postgres, provider *data.KCProvider, network *conf.Network, policy biz.WorkerPolicy, logger *slog.Logger) (*service.PlatformDefaultEgressService, server.Stepper, error) {
 	guard := network.GetPlatformDefaultVpcEgress()
 	if guard == nil {
 		return nil, nil, nil
@@ -31,5 +33,6 @@ func wireDefaultVPCEgress(repository *data.Postgres, provider *data.KCProvider, 
 	if err != nil {
 		return nil, nil, err
 	}
+	worker.SetLogger(logger)
 	return service.NewPlatformDefaultEgressService(usecase), worker, nil
 }

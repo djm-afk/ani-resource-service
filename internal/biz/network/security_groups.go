@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type SecurityGroupPortRange struct{ Min, Max int32 }
@@ -289,11 +292,15 @@ type SecurityGroupWorker struct {
 	provider   SecurityGroupProvider
 	owner      string
 	policy     WorkerPolicy
+	logger     *slog.Logger
 }
 
 func NewSecurityGroupWorker(r SecurityGroupWorkRepository, p SecurityGroupProvider, owner string, policy WorkerPolicy) *SecurityGroupWorker {
-	return &SecurityGroupWorker{r, p, owner, policy}
+	return &SecurityGroupWorker{r, p, owner, policy, nil}
 }
+
+// SetLogger attaches the structured logger for telemetry-context events.
+func (w *SecurityGroupWorker) SetLogger(logger *slog.Logger) { w.logger = logger }
 func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 	step, cancelStep := context.WithTimeout(ctx, w.policy.Lease)
 	defer cancelStep()
@@ -301,6 +308,10 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 	if err != nil || !found {
 		return found, err
 	}
+	// Resume the claimed operation's trace and open this pass's own span.
+	step, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(step, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, "network.security_group")
+	defer runSpan.End()
+	logTelemetryEvent(step, w.logger, telemetryEvent, []any{"resource_type", work.TargetType, "resource_id", work.TargetID, "tenant_id", work.TenantID, "operation_id", work.Operation.ID}, telemetryErr)
 	call, cancel := context.WithTimeout(step, w.policy.RequestTimeout)
 	result, applyErr := w.provider.ApplySecurityGroup(call, work)
 	cancel()

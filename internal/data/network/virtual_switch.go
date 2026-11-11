@@ -83,7 +83,7 @@ func (p *Postgres) CreateVirtualSwitch(ctx context.Context, i biz.VirtualSwitchI
 	if err != nil {
 		return biz.VirtualSwitch{}, switchAdmissionFailure(err)
 	}
-	if err = q.InsertVirtualSwitchOperation(ctx, sqlcgen.InsertVirtualSwitchOperationParams{ResourceID: id, OperationID: op, Kind: "create_virtual_switch", State: "succeeded", CreatedAt: now, CompletedAt: &now}); err != nil {
+	if err = q.InsertVirtualSwitchOperation(ctx, sqlcgen.InsertVirtualSwitchOperationParams{ResourceID: id, OperationID: op, Kind: "create_virtual_switch", State: "succeeded", CreatedAt: now, CompletedAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.VirtualSwitch{}, databaseFailure(err)
 	}
 	v, err := switchSnapshot(r)
@@ -172,7 +172,7 @@ func (p *Postgres) DeleteVirtualSwitch(ctx context.Context, id string, a biz.Att
 		state, bindingState, opState = "deleted", "cleaned", "succeeded"
 		completed = &now
 	}
-	if err = q.InsertVirtualSwitchOperation(ctx, sqlcgen.InsertVirtualSwitchOperationParams{ResourceID: id, OperationID: op, Kind: "delete_virtual_switch", State: opState, CreatedAt: now, CompletedAt: completed}); err != nil {
+	if err = q.InsertVirtualSwitchOperation(ctx, sqlcgen.InsertVirtualSwitchOperationParams{ResourceID: id, OperationID: op, Kind: "delete_virtual_switch", State: opState, CreatedAt: now, CompletedAt: completed, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.VirtualSwitch{}, databaseFailure(err)
 	}
 	r, err = q.DeleteVirtualSwitchMetadata(ctx, sqlcgen.DeleteVirtualSwitchMetadataParams{ResourceID: id, Version: r.Version, OperationID: op, State: state, BindingState: bindingState})

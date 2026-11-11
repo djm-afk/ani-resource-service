@@ -118,7 +118,7 @@ func sgReplay(ctx context.Context, q *db.Queries, i biz.SecurityGroupIntent) (bi
 	return v, true, databaseFailure(e)
 }
 func sgAccept(ctx context.Context, q *db.Queries, i biz.SecurityGroupIntent, v biz.SecurityGroupMutation, a biz.Attribution) error {
-	if e := q.InsertSecurityGroupOperation(ctx, db.InsertSecurityGroupOperationParams{TenantID: i.TenantID, OperationID: v.Operation.ID, Payload: sgJSON(v.Operation), ActorRef: a.Actor, CallerRef: a.DirectCaller, Intent: sgJSON(i)}); e != nil {
+	if e := q.InsertSecurityGroupOperation(ctx, db.InsertSecurityGroupOperationParams{TenantID: i.TenantID, OperationID: v.Operation.ID, Payload: sgJSON(v.Operation), ActorRef: a.Actor, CallerRef: a.DirectCaller, Intent: sgJSON(i), TelemetryContext: telemetryJSON(ctx)}); e != nil {
 		return e
 	}
 	return q.InsertSecurityGroupReplay(ctx, db.InsertSecurityGroupReplayParams{TenantID: i.TenantID, Action: i.Action, IdempotencyKey: i.IdempotencyKey, Fingerprint: contentHash(i), Response: sgJSON(v)})
@@ -133,12 +133,12 @@ func sgSupersede(ctx context.Context, q *db.Queries, tenant, id string, now time
 	if id == "" {
 		return nil
 	}
-	body, e := q.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: tenant, OperationID: id})
+	row, e := q.GetSecurityGroupOperation(ctx, db.GetSecurityGroupOperationParams{TenantID: tenant, OperationID: id})
 	if e != nil {
 		return databaseFailure(e)
 	}
 	var op biz.Operation
-	if e = json.Unmarshal(body, &op); e != nil {
+	if e = json.Unmarshal(row.Payload, &op); e != nil {
 		return databaseFailure(e)
 	}
 	if op.CompletedAt != nil {

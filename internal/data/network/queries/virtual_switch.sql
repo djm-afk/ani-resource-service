@@ -9,8 +9,8 @@ INSERT INTO network_virtual_switches(resource_id,name,created_at,updated_at,last
  VALUES(sqlc.arg(resource_id),sqlc.arg(name),sqlc.arg(created_at),sqlc.arg(created_at),sqlc.arg(operation_id)) RETURNING *;
 
 -- name: InsertVirtualSwitchOperation :exec
-INSERT INTO network_virtual_switch_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at)
- VALUES(sqlc.arg(operation_id),sqlc.arg(resource_id),sqlc.arg(kind),sqlc.arg(state),sqlc.arg(created_at),sqlc.arg(created_at),sqlc.narg(completed_at));
+INSERT INTO network_virtual_switch_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at,telemetry_context)
+ VALUES(sqlc.arg(operation_id),sqlc.arg(resource_id),sqlc.arg(kind),sqlc.arg(state),sqlc.arg(created_at),sqlc.arg(created_at),sqlc.narg(completed_at),sqlc.narg(telemetry_context));
 
 -- name: InsertVirtualSwitchReplay :exec
 INSERT INTO network_virtual_switch_idempotency(operation_kind,idempotency_key,fingerprint,resource_id,operation_id,response,created_at)
@@ -64,7 +64,10 @@ UPDATE network_virtual_switches SET state=sqlc.arg(state),binding_state=sqlc.arg
  WHERE resource_id=sqlc.arg(resource_id) AND version=sqlc.arg(version) AND state NOT IN ('deleting','deleted') RETURNING *;
 
 -- name: ClaimVirtualSwitch :one
-SELECT s.* FROM network_virtual_switches s JOIN network_virtual_switch_reconciliations r USING(resource_id)
+SELECT sqlc.embed(s),
+ (SELECT o.operation_id FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id) AS operation_id,
+ (SELECT o.telemetry_context FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id) AS operation_telemetry_context
+FROM network_virtual_switches s JOIN network_virtual_switch_reconciliations r USING(resource_id)
  WHERE r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
  AND s.state<>'deleted' ORDER BY r.next_run_at,s.resource_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED;
 

@@ -191,21 +191,26 @@ func (w *Worker) SetLogger(logger *slog.Logger) { w.logger = logger }
 // logTelemetryUnavailable reports a missing/malformed persisted trace once. The
 // caller continues on the run span it just opened.
 func (w *Worker) logTelemetryUnavailable(ctx context.Context, work Work, event string, err error) {
-	if w.logger == nil {
+	logTelemetryEvent(ctx, w.logger, event, []any{"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID, "tenant_id", work.Resource.TenantID, "operation_id", work.Operation.ID}, err)
+}
+
+// logTelemetryEvent is the shared reporter for every network lane. Callers pass
+// the identity fields they actually hold; empty ones are dropped so no lane
+// invents an ID. A nil logger simply skips the record.
+func logTelemetryEvent(ctx context.Context, logger *slog.Logger, event string, identity []any, err error) {
+	if logger == nil || event == "" {
 		return
 	}
 	kv := []any{"event", event}
-	if work.Resource.Kind != "" {
-		kv = append(kv, "resource_type", work.Resource.Kind)
-	}
-	if work.Resource.ID != "" {
-		kv = append(kv, "resource_id", work.Resource.ID)
-	}
-	if work.Resource.TenantID != "" {
-		kv = append(kv, "tenant_id", work.Resource.TenantID)
-	}
-	if work.Operation.ID != "" {
-		kv = append(kv, "operation_id", work.Operation.ID)
+	for i := 0; i+1 < len(identity); i += 2 {
+		key, ok := identity[i].(string)
+		if !ok {
+			continue
+		}
+		if value, ok := identity[i+1].(string); ok && value == "" {
+			continue
+		}
+		kv = append(kv, key, identity[i+1])
 	}
 	if event == "telemetry.context_invalid" {
 		kv = append(kv, "reason", "TELEMETRY_CONTEXT_INVALID")
@@ -215,7 +220,7 @@ func (w *Worker) logTelemetryUnavailable(ctx context.Context, work Work, event s
 	} else {
 		kv = append(kv, "reason", "TELEMETRY_CONTEXT_MISSING")
 	}
-	w.logger.ErrorContext(ctx, "network telemetry context unavailable", kv...)
+	logger.ErrorContext(ctx, "network telemetry context unavailable", kv...)
 }
 
 // Step advances at most one durable resource. Callers may stop forever after

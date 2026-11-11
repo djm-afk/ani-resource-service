@@ -3,8 +3,12 @@ package biz
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
+	"log/slog"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type VirtualSwitchWorker struct {
@@ -13,6 +17,7 @@ type VirtualSwitchWorker struct {
 	owner      string
 	policy     WorkerPolicy
 	observer   func(context.Context, VirtualSwitchWork, VirtualSwitchProgress, error)
+	logger     *slog.Logger
 }
 
 // VirtualSwitchProgress describes one attempt without treating retained healthy
@@ -40,6 +45,9 @@ func NewVirtualSwitchWorker(r VirtualSwitchWorkRepository, p VirtualSwitchGroupP
 	return w, nil
 }
 
+// SetLogger attaches the structured logger for telemetry-context events.
+func (w *VirtualSwitchWorker) SetLogger(logger *slog.Logger) { w.logger = logger }
+
 func (w *VirtualSwitchWorker) Step(ctx context.Context) (worked bool, err error) {
 	defer func() {
 		if errors.Is(err, ErrLeaseLost) {
@@ -52,6 +60,10 @@ func (w *VirtualSwitchWorker) Step(ctx context.Context) (worked bool, err error)
 	if err != nil || !found {
 		return found, err
 	}
+	// Resume the active operation's trace and open this pass's own span.
+	ctx, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(ctx, work.TelemetryContext, work.TelemetryContextError, "network.virtual_switch")
+	defer runSpan.End()
+	logTelemetryEvent(ctx, w.logger, telemetryEvent, []any{"resource_type", "virtual_switch", "resource_id", work.Switch.ID, "cluster_id", work.Switch.ClusterID}, telemetryErr)
 	sw := work.Switch
 	sw.Nodes = append([]VirtualSwitchNode(nil), sw.Nodes...)
 	deleting := sw.State == Deleting
