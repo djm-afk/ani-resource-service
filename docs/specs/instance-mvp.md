@@ -30,6 +30,8 @@ Gov 首先检查原始幂等记录，然后解析规格和默认值，一次持�
 
 规格 CPU/内存采用精确整数，分别转换为 `<cpu_millis>m` 与 `<memory_mib>Mi`，requests=limits。内存值必须可表达为合法 Kubernetes Quantity，超出 int64 字节上限拒绝。实例独立保存规格 ID/名称/编码、两维类型、CPU/内存、GPU 展示引用、唯一执行快照、镜像/环境和实际调度。修改、禁用或删除规格不影响已受理重试、静态展示、启停及清理。
 
+Pod 准入补齐的 `ephemeral-storage` requests/limits 不属于冻结的算力规格，不影响 CPU/GPU 实例就绪；CPU、内存及冻结 GPU 资源仍须等值匹配，额外设备或扩展资源请求仍拒绝。
+
 GPU 运行参数只来自 ACC 的 `GpuExecution`。Resource 保存一次执行快照及完整业务规格；RuntimeClass 不再由本服务配置或回退。完整释放使用 `ReportResourceReleased`，不接收、保存或回传 Gov 的额度类型、数量和账目明细。新命令使用单一 context/spec；旧附件、Plan、百分比字段和签名格式不能进入新执行链。
 
 原始 CreateInstanceData.scheduling 可缺失；出现时拒绝空对象、非法枚举或空优先级。FrozenSpec.scheduling 必须存在且 placement 明确，按用户值 > 本次合法默认 > NONE，priority 无来源保持缺失。接收端再次校验原始明确值与实际值相等，正确摘要不能免除这项检查。原始哈希只包含原始意图；业务摘要覆盖完整冻结对象。

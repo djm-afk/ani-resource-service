@@ -1818,3 +1818,11 @@ API 独立提交为 `4052512d6a5112784248bb87690da2aab7fb8aaa`；正式锁定 AC
 测试使用独占本地容器 `ani-accelerator-v11-res-pg`，结束后删除容器与临时 DSN 文件。一次性工具和维护顺序见[运行手册](../runbooks/instance-mvp-fedora.md#gpu-v11-离线切换)。这些是 PG/边界验证，不是实机设备计算或66环境业务闭环。
 
 完整 `make verify`、`go test ./...`、全量 race 和页面 E2E 按用户要求未执行。66 的原账闭合、正式清单、备份、迁移、配置与联合部署由本批主任务继续推进；本节不将尚未执行的部署或硬件项记为通过。前端 P6 与其他 GPU Owner P7 仍为后续范围。
+
+### PR #74 两项局部修正 — 2026-11-11
+
+以 PR 原 head `927a2a9112ec1a6bf0466ac100e03377447c672c` 为基线，在本机 WSL Ubuntu 修正 Pod 对合法 `ephemeral-storage` 默认值的拒绝，同时保留冻结 CPU/memory/GPU 等值及额外设备资源检查。离线预设转换增加旧、新业务身份及规格比较，拒绝同一 Profile 下 1 卡误填 2 卡；只补齐新合同字段和摘要，不增加在线 ACC 查询。
+
+定向验证 **pass**：`go test ./internal/data/instance ./scripts/ops/gpu-contract-v11 -run '^(TestPodDefaultEphemeralStorageKeepsRuntimeReady|TestPodStorageDefaultPreservesComputeResourceGuards|TestPresetConversionPreservesOriginalBusinessValues|TestPodQuantityNormalizationKeepsFrozenContract|TestCPUNotebookProjectionAndPodBinding)$' -count=1`。独占本地 PostgreSQL 17.11 的 `TestPGPresetConversionRejectsDeviceDriftWithoutChangingOriginal`、`TestPGStaticReferenceUpgradeAndCPUOriginalReplay` **pass**：2 卡转换被拒且原行完全不变，保持 1 卡的转换及旧 CPU 重放通过；临时容器与凭据已清理。
+
+主程序与离线工具 `go build ./cmd/ani-resource-service ./scripts/ops/gpu-contract-v11`、`./scripts/verify-boundaries`、`git diff --check` **pass**。本轮未运行完整门禁、未修改四条已豁免 CI；本段为本机软件和数据库结果，不代表 47 集群部署或设备验收通过。

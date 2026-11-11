@@ -71,3 +71,5 @@ INFERENCE 解析不需要模型、引擎、Namespace 或拓扑；未来消费者
 GPU reference 同步保存新的 allocation/resource/CU/adapter 字段；SQL `002_gpu_business_reference.sql` 替换旧 NVIDIA 专属约束。海光整卡允许 memory/core/CU 为0；固定片使用已登记的计量 MiB/CU。CPU 的 `gpu:null`、canonical 字段顺序、schema_version=1 和原 selection 摘要保持不变。已接受实例不重新读取预设，不重算原额度。
 
 升级前通过受管 ACC 静态目录为每条旧 GPU 预设准备明确转换，保留可确定的 preset/profile/version/cluster/pool 身份。转换使用现有公共摘要与校验，不由 SQL 猜 resource_key 或容量。缺来源条目只能在清单中显式清理后重建；不保留旧 GPU 运行解码。一次性工具与执行顺序见[实例运行手册](../runbooks/instance-mvp-fedora.md#gpu-v11-离线切换)。
+
+转换写入前除核对原数据库行未变，还须保持旧 GPU 引用的 profile/version、devices_per_instance、cluster/pool、mode/model、单设备显存和 core；已有新合同的 allocation/resource/CU/adapter 也保持。升级仅补齐新合同字段及摘要，不能在同一预设身份下把 1 卡改成 2 卡。

@@ -38,11 +38,29 @@ type presetTarget struct {
 }
 
 func validatePresetSnapshot(item presetTarget) error {
+	var original struct {
+		GPU *compute.GPUReference `json:"gpu"`
+	}
+	if err := json.Unmarshal(item.Row, &original); err != nil || original.GPU == nil || item.GPU == nil {
+		return fmt.Errorf("original GPU reference is required for conversion")
+	}
+	old, g := original.GPU, item.GPU
+	// A contract upgrade fills new fields and replaces the digest, but must
+	// not change the meaning of an existing preset under its stable identity.
+	if old.ProfileID != g.ProfileID || old.ProfileVersion != g.ProfileVersion ||
+		old.DevicesPerInstance != g.DevicesPerInstance || old.ClusterID != g.ClusterID || old.PoolID != g.PoolID ||
+		old.Mode != g.Mode || old.ModelKey != g.ModelKey || old.MemoryMiBPerDevice != g.MemoryMiBPerDevice ||
+		old.CoreLimitPercent != g.CoreLimitPercent {
+		return fmt.Errorf("conversion changes original GPU identity or specification")
+	}
+	if old.AdapterID != "" && (old.AdapterID != g.AdapterID || old.AllocationType != g.AllocationType ||
+		old.ResourceKey != g.ResourceKey || old.ComputeUnitsPerDevice != g.ComputeUnitsPerDevice) {
+		return fmt.Errorf("conversion changes existing GPU allocation fields")
+	}
 	profile := new(acc.GpuProfile)
 	if err := protojson.Unmarshal(item.Profile, profile); err != nil {
 		return fmt.Errorf("new Profile JSON: %w", err)
 	}
-	g := item.GPU
 	s := profile.Spec
 	if s == nil || !compute.UUID(profile.BaselineId) || profile.ProfileId != g.ProfileID || profile.ProfileVersion != g.ProfileVersion {
 		return fmt.Errorf("new Profile identity differs from managed reference")

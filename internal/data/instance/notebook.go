@@ -406,13 +406,11 @@ func verifyPod(p *unstructured.Unstructured, i biz.Instance) error {
 			}
 		}
 		for key := range resources {
-			if key != "cpu" && key != "memory" && i.Spec.GPU.Limits[key] == "" {
+			// LimitRange may default local storage independently of the frozen
+			// compute contract. Unknown device resources remain forbidden.
+			if key != "cpu" && key != "memory" && key != "ephemeral-storage" && i.Spec.GPU.Limits[key] == "" {
 				return biz.ErrOwnership
 			}
-		}
-
-		if i.Spec.ComputeType == biz.TypeCPU && len(resources) != 2 {
-			return biz.ErrOwnership
 		}
 	}
 	// The exec UID guard and workspace target must survive the controller's
