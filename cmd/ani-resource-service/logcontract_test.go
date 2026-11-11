@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -118,5 +119,22 @@ func TestRuntimeLoggerOmitsEmptyTraceFields(t *testing.T) {
 	}
 	if rec["service.name"] != Name {
 		t.Fatalf("service identity lost: %v", rec["service.name"])
+	}
+}
+
+// TestRuntimeLoggerDropsEmptyReason covers the network reconciliation call,
+// which passes reason explicitly. The contract rejects empty strings, so the
+// handler must drop them before the encoder sees the record.
+func TestRuntimeLoggerDropsEmptyReason(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newRuntimeLoggerAtLevel(&buf, slog.LevelInfo)
+	logger.InfoContext(context.Background(), "network reconciliation", "reason", "", "result", "observed")
+
+	rec := decodeRecord(t, &buf)
+	if _, ok := rec["reason"]; ok {
+		t.Fatalf("empty reason must be dropped, got %v", rec["reason"])
+	}
+	if rec["result"] != "observed" {
+		t.Fatalf("non-empty result must survive: %v", rec["result"])
 	}
 }

@@ -258,7 +258,7 @@ func contractReplaceAttr(groups []string, a slog.Attr) slog.Attr {
 	// The tracing extractor appends trace_id/span_id unconditionally; outside a
 	// span they are empty strings. The schema requires minLength 1 for every
 	// string field, so drop empty values at the encoder boundary.
-	if a.Value.Kind() == slog.KindString && a.Value.String() == "" {
+	if isEmptyString(a.Value) {
 		return slog.Attr{}
 	}
 	switch a.Key {

@@ -105,12 +105,12 @@ func TestVirtualSwitchDiagnosticsLogNodeCauseWithoutClaimingObservation(t *testi
 	work := biz.VirtualSwitchWork{Switch: biz.VirtualSwitch{EgressMetadata: biz.EgressMetadata{ID: "switch-id", LastOperationID: "operation-id"}, BindingID: "binding-id", BindingState: "configured"}}
 	progress := biz.VirtualSwitchProgress{BindingState: "configured", ObservationError: biz.ProviderUnavailable, Action: "inspect", NodeName: "node-a", NodeUID: "node-uid", ProviderError: &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("node GET timed out")}}
 	o.ObserveVirtualSwitchWork(context.Background(), logger, work, progress, nil)
-	for _, want := range []string{"node GET timed out", "switch-id", "binding-id", "operation-id", "node-a", "node-uid", `"action":"inspect"`, `"observed":false`, `"result":"read_error"`} {
+	for _, want := range []string{"node GET timed out", "switch-id", "binding-id", "operation-id", "node-a", "node-uid", `"action":"inspect"`, `"observed":false`, `"attempt_result":"read_error"`} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing diagnostic %q: %s", want, output.String())
 		}
 	}
-	if strings.Contains(output.String(), `"result":"observed"`) {
+	if strings.Contains(output.String(), `"attempt_result":"observed"`) {
 		t.Fatalf("temporary failure reported successful observation: %s", output.String())
 	}
 }

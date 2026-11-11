@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"strings"
 )
 
@@ -91,7 +92,7 @@ func filterAttrs(attrs []slog.Attr) ([]slog.Attr, bool) {
 // filterAttr recursively removes empty string attributes, including inside
 // groups, so the encoder never emits a value the schema rejects.
 func filterAttr(a slog.Attr) (slog.Attr, bool) {
-	if a.Value.Kind() == slog.KindString && a.Value.String() == "" {
+	if isEmptyString(a.Value) {
 		return a, false
 	}
 	if a.Value.Kind() != slog.KindGroup {
@@ -134,4 +135,21 @@ func fallbackMessage(event string, attrs []slog.Attr) string {
 		return event
 	}
 	return "framework log"
+}
+
+// isEmptyString reports whether v is a string (including named string types
+// carried as KindAny) with no characters. The schema gives every string field
+// minLength 1, so such values must never reach the encoder.
+func isEmptyString(v slog.Value) bool {
+	v = v.Resolve()
+	if v.Kind() == slog.KindString {
+		return v.String() == ""
+	}
+	if v.Kind() == slog.KindAny {
+		rv := reflect.ValueOf(v.Any())
+		if rv.IsValid() && rv.Kind() == reflect.String {
+			return rv.Len() == 0
+		}
+	}
+	return false
 }
