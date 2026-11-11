@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
@@ -67,6 +68,26 @@ func OpenPostgres(ctx context.Context, dsn string) (*Postgres, error) {
 	if e != nil || got != want {
 		p.Close()
 		return nil, fmt.Errorf("VM observation schema unavailable or checksum differs")
+	}
+	for _, m := range []struct {
+		version int
+		file    string
+		label   string
+	}{
+		{4, "004_image_management.sql", "VM image management"},
+		{5, "005_clone_source.sql", "VM clone source"},
+	} {
+		body, e = migrations.Files.ReadFile(m.file)
+		if e != nil {
+			p.Close()
+			return nil, fmt.Errorf("%s schema unavailable", m.label)
+		}
+		h := sha256.Sum256(body)
+		want = hex.EncodeToString(h[:])
+		if e = p.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=$1", m.version).Scan(&got); e != nil || got != want {
+			p.Close()
+			return nil, fmt.Errorf("%s schema unavailable or checksum differs", m.label)
+		}
 	}
 	return &Postgres{pool: p}, nil
 }
@@ -184,8 +205,24 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	if e != nil {
 		return e
 	}
-	// Version 5 belongs to the clone-source migration on the clone lane; this
-	// branch carries no 005 so the shared database keeps that checksum intact.
+	body, e = migrations.Files.ReadFile("005_clone_source.sql")
+	if e != nil {
+		return e
+	}
+	h = sha256.Sum256(body)
+	checksum = hex.EncodeToString(h[:])
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=5").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if _, e = tx.Exec(ctx, string(body)); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(5,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM clone source migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
 	body, e = migrations.Files.ReadFile("006_image_initialization.sql")
 	if e != nil {
 		return e
@@ -249,6 +286,9 @@ func Migrate(ctx context.Context, dsn, role string) error {
 		return e
 	}
 	if _, e = tx.Exec(ctx, "GRANT SELECT,INSERT,UPDATE,DELETE ON vm.images,vm.image_requests,vm.image_source_references TO "+pgx.Identifier{role}.Sanitize()); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(ctx, "GRANT SELECT,INSERT,UPDATE ON vm.clone_source_references TO "+pgx.Identifier{role}.Sanitize()); e != nil {
 		return e
 	}
 	return tx.Commit(ctx)
@@ -361,7 +401,9 @@ func (p *Postgres) AcceptCreate(ctx context.Context, a biz.Acceptance) (biz.Oper
 	if e = biz.InitializeMedia(&v); e != nil {
 		return biz.Operation{}, e
 	}
-	if a.Spec.StartAfterCreate {
+	// A clone target stays stopped until registration releases the source. The
+	// original start_after_create intent stays in the frozen spec.
+	if a.Spec.StartAfterCreate && a.Spec.CloneSource == nil {
 		v.Desired = "Running"
 	}
 	v.Native = biz.ObjectRef{Kind: "VirtualMachine", Namespace: a.Spec.Namespace, Name: "vm-" + a.VMID}
@@ -379,10 +421,61 @@ func (p *Postgres) AcceptCreate(ctx context.Context, a biz.Acceptance) (biz.Oper
 	if e = saveDisks(ctx, tx, v); e != nil {
 		return biz.Operation{}, e
 	}
+	if c := a.Spec.CloneSource; c != nil {
+		if e = admitCloneSource(ctx, tx, a.TenantID, a.VMID, a.OperationID, c); e != nil {
+			return biz.Operation{}, e
+		}
+	}
 	if e = p.pinImageSources(ctx, tx, v); e != nil {
 		return biz.Operation{}, e
 	}
 	return o, tx.Commit(ctx)
+}
+
+// admitCloneSource re-checks the source business row inside the acceptance
+// transaction and takes the single HELD reference. No Kubernetes call happens
+// while the row lock is held.
+func admitCloneSource(ctx context.Context, tx pgx.Tx, tenant, targetID, operationID string, c *biz.CloneSource) error {
+	if !biz.UUID(c.SourceVMID) || c.SourceVersion < 1 || c.Native.UID == "" || c.Native.Name == "" {
+		return biz.ErrInvalid
+	}
+	src, e := readVM(ctx, tx, tenant, c.SourceVMID, true)
+	if e != nil {
+		return e
+	}
+	if src.Version != c.SourceVersion || src.Closing || src.Native.UID != c.Native.UID || src.Native.Name != c.Native.Name {
+		return biz.ErrVersion
+	}
+	var busy bool
+	// Busy is the same business non-terminal rule as an ordinary command: a source
+	// change is still active while its operation is accepted, running or unknown.
+	// A worker lease only schedules execution and never proves the change ended:
+	// Save releases the SQL lease at the end of every tick while the operation is
+	// still running, and Claim takes such rows again, so a lease-based rule would
+	// let a clone take HELD between two ordinary ticks of an unfinished change.
+	if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM vm.operations WHERE tenant_id=$1 AND vm_id=$2 AND state IN ('accepted','running','unknown'))", tenant, c.SourceVMID).Scan(&busy); e != nil {
+		return e
+	}
+	if busy {
+		return biz.ErrBusy
+	}
+	_, e = tx.Exec(ctx, `INSERT INTO vm.clone_source_references(tenant_id,source_vm_id,target_vm_id,create_operation_id,source_version,source_native_uid,state) VALUES($1,$2,$3,$4,$5,$6,'HELD')`, tenant, c.SourceVMID, targetID, operationID, c.SourceVersion, c.Native.UID)
+	if e != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(e, &pgErr) && pgErr.Code == "23505" {
+			return biz.ErrBusy
+		}
+		return e
+	}
+	return nil
+}
+
+// activeCloneSourceHELD reports whether a clone still holds this VM as source.
+// Inspection by source_vm_id keeps a target's own delete outside the fence.
+func activeCloneSourceHELD(ctx context.Context, tx pgx.Tx, tenant, vmID string) (bool, error) {
+	var held bool
+	e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM vm.clone_source_references WHERE tenant_id=$1 AND source_vm_id=$2 AND state='HELD')", tenant, vmID).Scan(&held)
+	return held, e
 }
 func (p *Postgres) AcceptDelete(ctx context.Context, a biz.Acceptance) (biz.Operation, error) {
 	if !validAcceptance(a) || !biz.UUID(a.CreateOperationID) || a.ExpectedVersion < 1 {
@@ -414,6 +507,14 @@ func (p *Postgres) accept(ctx context.Context, c biz.Command, id, createID strin
 	}
 	if v.Version != c.ExpectedVersion {
 		return biz.Operation{}, biz.ErrVersion
+	}
+	// A managed source cannot be changed, closed, rebuilt or have disks mutated
+	// while a clone still holds it. A target's own delete is not fenced because
+	// the HELD reference names this VM as source, not as target.
+	if held, e := activeCloneSourceHELD(ctx, tx, c.TenantID, c.VMID); e != nil {
+		return biz.Operation{}, e
+	} else if held {
+		return biz.Operation{}, biz.ErrBusy
 	}
 	if c.Action == biz.DeleteAction {
 		if v.CreateOperationID != createID {
@@ -453,9 +554,12 @@ func (p *Postgres) accept(ctx context.Context, c biz.Command, id, createID strin
 	v.Version++
 	v.LastOperationID = id
 	o := biz.Operation{TenantID: c.TenantID, ID: id, VMID: c.VMID, Action: c.Action, Key: c.Key, RequestDigest: c.RequestDigest, Intent: c.Intent, IntentVersion: v.Version, State: "accepted"}
-	if c.Action == biz.DeleteAction && v.Network.AttachmentID == "" && v.Network.NADUID != "" {
+	if c.Action == biz.DeleteAction && ((v.Network.AttachmentID == "" && v.Network.NADUID != "") || v.Spec.CloneSource != nil) {
 		// A completed first-round save alone has sent no Attachment. Carry only
 		// the existing second-round send checkpoint into Delete recovery.
+		// A clone create additionally carries its own submission intent: an empty
+		// clone UID never proves nothing was sent, so Delete must be able to adopt
+		// the fixed-name clone and cancel it normally.
 		var raw []byte
 		if e = tx.QueryRow(ctx, "SELECT record FROM vm.operations WHERE tenant_id=$1 AND vm_id=$2 AND id=$3", v.TenantID, v.ID, v.CreateOperationID).Scan(&raw); e != nil {
 			return biz.Operation{}, e
@@ -464,8 +568,17 @@ func (p *Postgres) accept(ctx context.Context, c biz.Command, id, createID strin
 		if err != nil {
 			return biz.Operation{}, err
 		}
-		if create.Pending != nil && create.Pending.Action == "prepare-network" && create.Pending.Submitted {
-			o.Pending = create.Pending
+		if create.Pending != nil && create.Pending.Submitted {
+			switch create.Pending.Action {
+			case "clone-submit":
+				if v.Spec.CloneSource != nil {
+					o.Pending = create.Pending
+				}
+			case "prepare-network":
+				if v.Network.AttachmentID == "" && v.Network.NADUID != "" {
+					o.Pending = create.Pending
+				}
+			}
 		}
 	}
 	if e = biz.ApplyAcceptedMedia(&v, &o); e != nil {
@@ -500,7 +613,8 @@ func (p *Postgres) pinImageSources(ctx context.Context, tx pgx.Tx, v biz.VM) err
 	// Only a DISK_IMAGE is cloned into the system disk; an INSTALL_ISO boots from the
 	// media copy and its system disk stays blank, so pinning that disk would leave a
 	// reference whose release condition can never be met and an ISO stuck in use.
-	if v.Spec.Media.Kind == "DISK_IMAGE" && strings.HasPrefix(v.Spec.Media.Key, biz.ImageMediaKeyPrefix) {
+	// A VM_CLONE target copies a volume, not an image, so it pins no image source.
+	if v.Spec.CloneSource == nil && v.Spec.Media.Kind == "DISK_IMAGE" && strings.HasPrefix(v.Spec.Media.Key, biz.ImageMediaKeyPrefix) {
 		for _, disk := range v.Disks {
 			if disk.Role != "system" || disk.Tombstone || accounted["SYSTEM_DISK/"+disk.ID] {
 				continue

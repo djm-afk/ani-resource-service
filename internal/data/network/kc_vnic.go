@@ -296,6 +296,13 @@ func (p *KCProvider) lockVNicSGSelection(ctx context.Context, tx pgx.Tx, v biz.V
 }
 
 func (p *KCProvider) syncVNicSecurityGroups(ctx context.Context, tenant, id, kind, consumer string, ids []string) (biz.VNic, error) {
+	// No selection and an empty selection are the same VNIC fact. A caller may
+	// pass a nil slice (a VM whose stored configuration has no security groups),
+	// and the column below is NOT NULL, so an absent selection must never be
+	// written as SQL NULL.
+	if ids == nil {
+		ids = []string{}
+	}
 	v, e := p.repository.GetVNic(ctx, tenant, id)
 	if e != nil {
 		return v, e

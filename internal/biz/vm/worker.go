@@ -32,7 +32,7 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		o.Reason = e.Error()
 		if errors.Is(e, ErrUnknown) {
 			o.State = "unknown"
-		} else if errors.Is(e, ErrOwnership) || errors.Is(e, ErrInvalid) || errors.Is(e, ErrChanged) || errors.Is(e, ErrStartFailed) {
+		} else if errors.Is(e, ErrOwnership) || errors.Is(e, ErrInvalid) || errors.Is(e, ErrChanged) || errors.Is(e, ErrStartFailed) || errors.Is(e, ErrCloneSourceUnavailable) {
 			o.State = "failed"
 		} else {
 			o.State = "running"
@@ -73,6 +73,9 @@ func (w *Worker) advance(ctx context.Context, o *Operation, v *VM) error {
 		return ErrBusy
 	}
 	if o.Action == CreateAction {
+		if v.Spec.CloneSource != nil {
+			return w.clone(ctx, o, v)
+		}
 		return w.create(ctx, o, v)
 	}
 	switch o.Action {
@@ -365,6 +368,17 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 func (w *Worker) remove(ctx context.Context, o *Operation, v *VM) error {
 	if !v.Closing {
 		return ErrBusy
+	}
+	// A clone target cancelled before registration keeps its native producer and
+	// the source HELD until that producer has terminated.
+	if v.CloneProgress != nil {
+		done, e := w.cancelClone(ctx, o, v)
+		if e != nil {
+			return e
+		}
+		if !done {
+			return nil
+		}
 	}
 	if v.Network.AttachmentID == "" && v.Network.NADUID != "" && o.Pending != nil && o.Pending.Action == "prepare-network" && o.Pending.Submitted {
 		// The second prepare may have committed its Attachment before its VM

@@ -37,6 +37,37 @@ func (c *NetworkConsumerState) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
+// NetworkCloseFinalization is the stable finalization identity of one VM's
+// consumer. It is derived only from the business identity so every writer
+// (observation, rollback) computes the same value without coordination.
+func NetworkCloseFinalization(vmID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-close/"+vmID)).String()
+}
+
+// CloseNetworkSubmission records the consumer of a never-started target as
+// closed so its Attachment may be released. A clone target has no launcher to
+// wait for, and Network's release contract requires a persisted closed consumer
+// first. The write is idempotent and only advances the current revision.
+func CloseNetworkSubmission(v *VM, now time.Time) bool {
+	if v.Network.AttachmentID == "" || v.Network.SubmissionID == "" || v.Network.SnapshotRevision < 1 {
+		return false
+	}
+	if v.Network.Consumer != nil && v.Network.Consumer.State == "closed" {
+		return false
+	}
+	closed := now.UTC()
+	current := &NetworkConsumerState{State: "closed", DesiredRunState: "deleted", FinalizationID: NetworkCloseFinalization(v.ID), ClosedAt: &closed}
+	if v.Network.Consumer != nil && v.Network.Consumer.ClosedAt != nil {
+		current.ClosedAt = v.Network.Consumer.ClosedAt
+	}
+	if reflect.DeepEqual(v.Network.Consumer, current) {
+		return false
+	}
+	v.Network.Consumer = current
+	v.Network.SnapshotRevision++
+	return true
+}
+
 // ReconcileNetworkSubmission maps the VM owner's successful observation to its
 // current consumer record. It never reads Network, Kubernetes or KCN.
 func ReconcileNetworkSubmission(v *VM, observed Observation) bool {
@@ -54,7 +85,7 @@ func ReconcileNetworkSubmission(v *VM, observed Observation) bool {
 	}
 	if v.Closing {
 		current.State, current.DesiredRunState = "closing", "deleted"
-		current.FinalizationID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("ani-vm-close/"+v.ID)).String()
+		current.FinalizationID = NetworkCloseFinalization(v.ID)
 		if observed.Deleted || (v.Network.Consumer != nil && v.Network.Consumer.State == "closed") {
 			current.State = "closed"
 			current.CurrentVMI, current.CurrentLauncher = nil, nil

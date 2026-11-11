@@ -100,10 +100,17 @@ func rpcError(e error) error {
 		code = codes.FailedPrecondition
 	case errors.Is(e, biz.ErrLogTarget):
 		code = codes.FailedPrecondition
+	case errors.Is(e, biz.ErrCloneSourceUnavailable):
+		code = codes.FailedPrecondition
 	case errors.Is(e, biz.ErrLogLimit):
 		code = codes.ResourceExhausted
 	}
 	if code == codes.Unavailable {
+		// A not-ready clone source keeps its stable reason so the caller can tell
+		// "retry later" from "cannot clone"; ordinary dependencies stay generic.
+		if errors.Is(e, biz.ErrCloneSourceNotReady) {
+			return status.Error(code, e.Error())
+		}
 		return status.Error(code, "VM_DEPENDENCY_NOT_READY")
 	}
 	return status.Error(code, e.Error())
@@ -119,6 +126,9 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 		return nil, rpcError(biz.ErrInvalid)
 	}
 	intent := proto.Clone(r.Data).(*pb.CreateVMData)
+	if intent.SourceKind == "VM_CLONE" {
+		return s.resolveCloneCreateSpec(ctx, r, intent)
+	}
 	intent.Dns, _ = pb.NormalizeDNSSelection(intent.Dns)
 	dns, e := s.resolveDNS(intent.Dns)
 	if e != nil {
@@ -181,6 +191,160 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 	}
 	return &pb.ResolveCreateSpecResponse{CreateSpec: spec, VmContractVersion: pb.ContractVersion, SelectionDigest: selection.SelectionDigest, VmCreateDigest: digest}, nil
 }
+
+// cloneSourceHeld reports whether another clone still holds this source. A
+// repository without the read-only port cannot answer, which keeps resolve
+// working for owner implementations that predate the clone table.
+func cloneSourceHeld(ctx context.Context, r biz.Repository, tenant, source string) (bool, error) {
+	sources, ok := r.(biz.CloneSourceHeldPort)
+	if !ok {
+		return false, nil
+	}
+	return sources.SourceHeld(ctx, tenant, source)
+}
+
+// resolveCloneCreateSpec freezes the accepted source business record for a
+// VM_CLONE create. It never queries the current preset catalog, an image, a
+// driver source or today's default DNS.
+func (s *Service) resolveCloneCreateSpec(ctx context.Context, r *pb.ResolveCreateSpecRequest, intent *pb.CreateVMData) (*pb.ResolveCreateSpecResponse, error) {
+	if intent.CloneSource == nil {
+		return nil, rpcError(biz.ErrInvalid)
+	}
+	src, e := s.repo.Get(ctx, r.TenantId, intent.CloneSource.SourceVmId)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	if src.Closing || src.Version != intent.CloneSource.ExpectedSourceVersion {
+		return nil, rpcError(biz.ErrVersion)
+	}
+	// A source another clone still holds is refused here, before the caller
+	// accepts and accounts for the request. The owner re-checks the same fact
+	// inside acceptance; this read only keeps the common case from being
+	// accepted and then stalling without a landed target.
+	if held, e := cloneSourceHeld(ctx, s.repo, r.TenantId, intent.CloneSource.SourceVmId); e != nil {
+		return nil, rpcError(e)
+	} else if held {
+		return nil, rpcError(biz.ErrBusy)
+	}
+	sourceSpec, e := pb.DecodeCreateSpec(src.Spec.Canonical)
+	if e != nil {
+		return nil, rpcError(biz.ErrChanged)
+	}
+	if sourceSpec.Compute == nil || sourceSpec.Compute.CpuMillis != src.Spec.CPUMillis || sourceSpec.Compute.MemoryMib != src.Spec.MemoryMiB {
+		return nil, rpcError(biz.ErrChanged)
+	}
+	ns, e := s.environment.ResolveNamespace(ctx, r.TenantId, r.Namespace)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	if r.NamespaceUid != "" && r.NamespaceUid != ns.UID {
+		return nil, rpcError(biz.ErrChanged)
+	}
+	if ns.Name != src.Spec.Namespace || (src.Spec.NamespaceUID != "" && ns.UID != src.Spec.NamespaceUID) {
+		return nil, rpcError(biz.ErrChanged)
+	}
+	storage := &pb.StoragePolicy{StorageClass: src.Spec.StorageClass, StorageClassUid: src.Spec.StorageClassUID, VolumeMode: "Block", AccessModes: []string{"ReadWriteOnce"}, BackendStorageClass: src.Spec.BackendStorageClass, MediaStorageClass: src.Spec.MediaStorageClass}
+	if e = s.environment.ValidateStorage(ctx, storage.StorageClass, storage.StorageClassUid); e != nil {
+		return nil, rpcError(e)
+	}
+	sourceNetwork := biz.NetworkSelection{VPCID: src.Spec.Network.VPCID, SubnetID: src.Spec.Network.SubnetID}
+	if sourceNetwork.VPCID == "" || sourceNetwork.SubnetID == "" {
+		return nil, rpcError(biz.ErrChanged)
+	}
+	selectionNetwork, e := s.environment.ValidateNetwork(ctx, r.TenantId, s.config.ClusterID, ns.Name, sourceNetwork)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	if len(src.SecurityGroupIDs) > 0 {
+		if s.securityGroups == nil {
+			return nil, rpcError(biz.ErrDependency)
+		}
+		if _, e = s.securityGroups.ResolveSecurityGroups(ctx, r.TenantId, selectionNetwork.VPCID, ns.Name, src.SecurityGroupIDs); e != nil {
+			return nil, rpcError(e)
+		}
+	}
+	serviceAccount := selectionNetwork.ServiceAccount
+	if serviceAccount == "" {
+		serviceAccount = s.config.ServiceAccount
+	}
+	plan := make([]*pb.VMCloneDisk, 0, len(src.Disks))
+	for _, d := range src.Disks {
+		if d.Tombstone || !d.Attached {
+			continue
+		}
+		if d.Role != "system" && d.Role != "data" {
+			return nil, rpcError(biz.ErrChanged)
+		}
+		if d.PVC.Name == "" || d.PVC.UID == "" {
+			return nil, rpcError(biz.ErrDependency)
+		}
+		plan = append(plan, &pb.VMCloneDisk{SourceDiskId: d.ID, VolumeName: d.VolumeName, Role: d.Role, Name: d.Name, SizeGb: d.SizeGB})
+	}
+	if len(plan) == 0 {
+		return nil, rpcError(biz.ErrChanged)
+	}
+	var dns *pb.FrozenDNS
+	if src.Spec.DNS != nil {
+		dns = &pb.FrozenDNS{Mode: src.Spec.DNS.Mode, Nameservers: append([]string(nil), src.Spec.DNS.Nameservers...)}
+	}
+	media := &pb.MediaReference{OsFamily: src.Spec.Media.OSFamily, OsVersion: src.Spec.Media.OSVersion, Architecture: src.Spec.Media.Architecture, Firmware: src.Spec.Media.Firmware, RootBus: src.Spec.Media.RootBus, DataBus: src.Spec.Media.DataBus, NicModel: src.Spec.Media.NICModel, PersistentTpm: src.Spec.Media.PersistentTPM, PersistentUefi: src.Spec.Media.PersistentUEFI}
+	sockets := sourceSpec.Sockets
+	if sockets == 0 {
+		sockets = 1
+	}
+	threads := sourceSpec.Threads
+	if threads == 0 {
+		threads = 1
+	}
+	cores := src.Spec.Cores
+	if cores == 0 {
+		cores = uint32((sourceSpec.Compute.CpuMillis + 999) / 1000)
+	}
+	spec := &pb.CreateSpec{
+		SecurityGroupIds: append([]string(nil), src.SecurityGroupIDs...),
+		Intent:           intent,
+		Compute:          sourceSpec.Compute,
+		ClusterId:        s.config.ClusterID,
+		Namespace:        ns.Name,
+		NamespaceUid:     ns.UID,
+		ServiceAccount:   serviceAccount,
+		Storage:          storage,
+		Media:            media,
+		Network:          &pb.FrozenNetwork{VpcId: selectionNetwork.VPCID, SubnetId: selectionNetwork.SubnetID, NadName: selectionNetwork.NADName, NadUid: selectionNetwork.NADUID, NadConfigDigest: selectionNetwork.NADDigest},
+		Sockets:          sockets,
+		Cores:            cores,
+		Threads:          threads,
+		BootDevice:       "SYSTEM_DISK",
+		Dns:              dns,
+		CloneSource:      &pb.FrozenVMCloneSource{SourceVmId: src.ID, SourceName: src.Name, SourceVersion: src.Version, SourceNativeName: src.Native.Name, SourceNativeUid: src.Native.UID, Disks: plan},
+	}
+	eligibilitySource := biz.VM{Spec: biz.Spec{Namespace: ns.Name, CloneSource: &biz.CloneSource{SourceVMID: src.ID, SourceVersion: src.Version, Native: src.Native}}}
+	for _, d := range plan {
+		eligibilitySource.Spec.CloneSource.Disks = append(eligibilitySource.Spec.CloneSource.Disks, biz.CloneDisk{SourceDiskID: d.SourceDiskId, VolumeName: d.VolumeName, Role: d.Role, Name: d.Name, SizeGB: d.SizeGb})
+	}
+	eligibility, ok := s.native.(biz.CloneNativePort)
+	if !ok {
+		return nil, rpcError(biz.ErrDependency)
+	}
+	result, e := eligibility.ObserveSourceCloneEligibility(ctx, eligibilitySource, src)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	// Structural rejection is a stable failed precondition; a dependency that is
+	// simply not observed yet stays retryable.
+	if len(result.Unsupported) > 0 {
+		return nil, rpcError(result.UnsupportedError())
+	}
+	if len(result.NotReady) > 0 {
+		return nil, rpcError(result.NotReadyError())
+	}
+	digest, e := pb.CreateSpecDigest(spec)
+	if e != nil {
+		return nil, rpcError(e)
+	}
+	return &pb.ResolveCreateSpecResponse{CreateSpec: spec, VmContractVersion: pb.ContractVersion, SelectionDigest: sourceSpec.Compute.SelectionDigest, VmCreateDigest: digest}, nil
+}
+
 func domainSource(m *pb.MediaReference) biz.Source {
 	if m == nil {
 		return biz.Source{}
@@ -210,6 +374,25 @@ func domainSpec(vmid string, p *pb.CreateSpec) (biz.Spec, error) {
 	}
 	if g := p.Intent.GuestInitialization; g != nil {
 		s.GuestInitialization = &biz.GuestInitialization{Method: g.Method, Username: g.Username, SSHPublicKey: g.SshPublicKey, PasswordSet: g.PasswordSet, CredentialIntentDigest: g.CredentialIntentDigest}
+	}
+	if p.Intent.SourceKind == "VM_CLONE" {
+		if p.CloneSource == nil {
+			return biz.Spec{}, pb.ErrInvalidRequest
+		}
+		clone := &biz.CloneSource{SourceVMID: p.CloneSource.SourceVmId, SourceName: p.CloneSource.SourceName, SourceVersion: p.CloneSource.SourceVersion, Native: biz.ObjectRef{Kind: "VirtualMachine", Namespace: p.Namespace, Name: p.CloneSource.SourceNativeName, UID: p.CloneSource.SourceNativeUid}}
+		for _, d := range p.CloneSource.Disks {
+			clone.Disks = append(clone.Disks, biz.CloneDisk{SourceDiskID: d.SourceDiskId, VolumeName: d.VolumeName, Role: d.Role, Name: d.Name, SizeGB: d.SizeGb})
+		}
+		s.CloneSource = clone
+		// The target disks come from the frozen source plan, never from the empty
+		// user size inputs, and never with a planned DataVolume name.
+		s.InitialDisks = make([]biz.Disk, 0, len(clone.Disks))
+		for _, d := range clone.Disks {
+			disk := biz.NewCloneTargetDisk(vmid, d)
+			disk.DV.Namespace = p.Namespace
+			s.InitialDisks = append(s.InitialDisks, disk)
+		}
+		return s, nil
 	}
 	s.InitialDisks = []biz.Disk{biz.NewInitialDisk(vmid, "system", "system", "system", p.Intent.SystemDiskSizeGb)}
 	for _, d := range p.Intent.DataDisks {
