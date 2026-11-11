@@ -1,4 +1,4 @@
--- 010: independent logging metadata for the instance lane.
+-- 011: independent logging metadata for the instance lane.
 -- Adds one nullable JSONB column to each existing record that a background
 -- worker claims. These carry the persisted W3C trace snapshot used to correlate
 -- an accepted action with its worker pass.
