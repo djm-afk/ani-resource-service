@@ -7,6 +7,7 @@ import (
 	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 type SandboxWorkerServer struct {
@@ -52,7 +53,7 @@ func (s *SandboxWorkerServer) runLane(ctx context.Context, worker Stepper) {
 		}
 		delay := time.Second
 		if err != nil {
-			s.logger.Warn("sandbox worker attempt failed", "error", err)
+			s.logger.Warn("sandbox worker attempt failed", logfields.ErrorFields(err)...)
 			delay = 5 * time.Second
 		} else if worked {
 			delay = time.Millisecond

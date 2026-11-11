@@ -14,6 +14,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/service/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // Explicit read composition: the real repository and use case, with no KC,
@@ -49,7 +50,7 @@ func runVPCRead(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	defer func() {
 		if err := obs.Shutdown(context.Background()); err != nil {
-			logger.Error("observability shutdown", "error", err)
+			logger.Error("observability shutdown", logfields.ErrorFields(err)...)
 		}
 	}()
 	middlewares := obs.ServerMiddleware(logger)

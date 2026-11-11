@@ -22,6 +22,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	networkService "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // Explicit governance composition: full worker so tenant writes are executed,
@@ -106,7 +107,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	defer func() {
 		if err := observability.Shutdown(context.Background()); err != nil {
-			logger.Error("observability shutdown", "error", err)
+			logger.Error("observability shutdown", logfields.ErrorFields(err)...)
 		}
 	}()
 	if err = observability.RegisterObservation(observation); err != nil {
