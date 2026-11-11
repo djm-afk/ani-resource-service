@@ -52,13 +52,13 @@ func gpuReference(g *pb.GpuPresetReference) *biz.GPUReference {
 	if g == nil {
 		return nil
 	}
-	return &biz.GPUReference{ProfileID: g.ProfileId, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerInstance: g.DevicesPerInstance, ClusterID: g.ClusterId, PoolID: g.PoolId, Mode: g.Mode.String(), ModelKey: g.ModelKey, MemoryMiBPerDevice: g.MemoryMibPerDevice, CoreLimitPercent: g.CoreLimitPercent}
+	return &biz.GPUReference{ProfileID: g.ProfileId, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerInstance: g.DevicesPerInstance, ClusterID: g.ClusterId, PoolID: g.PoolId, Mode: g.Mode.String(), ModelKey: g.ModelKey, MemoryMiBPerDevice: g.MemoryMibPerDevice, CoreLimitPercent: g.CoreLimitPercent, AllocationType: g.AllocationType.String(), ResourceKey: g.ResourceKey, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, AdapterID: g.AdapterId}
 }
 func wireReference(g *biz.GPUReference) *pb.GpuPresetReference {
 	if g == nil {
 		return nil
 	}
-	return &pb.GpuPresetReference{ProfileId: g.ProfileID, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerInstance: g.DevicesPerInstance, ClusterId: g.ClusterID, PoolId: g.PoolID, Mode: acc.SupplyMode(acc.SupplyMode_value[g.Mode]), ModelKey: g.ModelKey, MemoryMibPerDevice: g.MemoryMiBPerDevice, CoreLimitPercent: g.CoreLimitPercent}
+	return &pb.GpuPresetReference{ProfileId: g.ProfileID, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerInstance: g.DevicesPerInstance, ClusterId: g.ClusterID, PoolId: g.PoolID, Mode: acc.SupplyMode(acc.SupplyMode_value[g.Mode]), ModelKey: g.ModelKey, MemoryMibPerDevice: g.MemoryMiBPerDevice, CoreLimitPercent: g.CoreLimitPercent, AllocationType: acc.AllocationType(acc.AllocationType_value[g.AllocationType]), ResourceKey: g.ResourceKey, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, AdapterId: g.AdapterID}
 }
 func presetData(d *pb.PresetData) biz.Preset {
 	return biz.Preset{Code: d.Code, Name: d.Name, Description: d.Description, ComputeType: d.ComputeType, CPUMillis: d.CpuMillis, MemoryMiB: d.MemoryMib, Enabled: d.GetEnabled(), GPU: gpuReference(d.Gpu)}
@@ -71,7 +71,7 @@ func wirePreset(p biz.Preset) *pb.Preset {
 	return &pb.Preset{Selectable: p.Enabled, UnavailableReason: reason, Id: p.ID, Code: p.Code, Name: p.Name, Description: p.Description, ComputeType: p.ComputeType, CpuMillis: p.CPUMillis, MemoryMib: p.MemoryMiB, Enabled: p.Enabled, Gpu: wireReference(p.GPU), CreatedAt: timestamppb.New(p.CreatedAt), UpdatedAt: timestamppb.New(p.UpdatedAt)}
 }
 func (s *Service) checkedPresetData(d *pb.PresetData) error {
-	if d == nil {
+	if d == nil || len(d.ProtoReflect().GetUnknown()) != 0 || (d.Gpu != nil && len(d.Gpu.ProtoReflect().GetUnknown()) != 0) {
 		return biz.ErrInvalid
 	}
 	if d.Gpu != nil && d.Gpu.ClusterId != s.clusterID {
@@ -88,7 +88,7 @@ func (s *Service) ListPresets(ctx context.Context, r *pb.ListPresetsRequest) (*p
 	}
 	f := biz.PresetFilter{Page: r.Page, PageSize: r.PageSize, Name: r.Name, Code: r.Code, ComputeType: r.ComputeType, GPUMode: r.GpuMode, Tenant: true}
 	for _, g := range r.AllowedGpuProfiles {
-		if g == nil || g.ClusterId != s.clusterID || !biz.UUID(g.ProfileId) || !biz.UUID(g.PoolId) || g.ProfileVersion == 0 || len(g.SpecDigest) != 64 || strings.ToLower(g.SpecDigest) != g.SpecDigest {
+		if g == nil || len(g.ProtoReflect().GetUnknown()) != 0 || g.ClusterId != s.clusterID || !biz.UUID(g.ProfileId) || !biz.UUID(g.PoolId) || g.ProfileVersion == 0 || len(g.SpecDigest) != 64 || strings.ToLower(g.SpecDigest) != g.SpecDigest {
 			return nil, rpcError(biz.ErrInvalid)
 		}
 		if _, e := hex.DecodeString(g.SpecDigest); e != nil {
@@ -206,7 +206,7 @@ func (s *Service) ResolveComputePreset(ctx context.Context, r *pb.ResolveCompute
 	}
 	out := &pb.ComputeSelection{SchemaVersion: pb.SelectionSchemaVersion, PresetId: v.PresetID, Code: v.Code, Name: v.Name, ComputeType: v.ComputeType, CpuMillis: v.CPUMillis, MemoryMib: v.MemoryMiB}
 	if g := v.GPU; g != nil {
-		out.Gpu = &pb.GpuSelection{ProfileId: g.ProfileID, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerUnit: g.DevicesPerInstance, ClusterId: g.ClusterID, PoolId: g.PoolID, Mode: acc.SupplyMode(acc.SupplyMode_value[g.Mode]), ModelKey: g.ModelKey, MemoryMibPerDevice: g.MemoryMiBPerDevice, CoreLimitPercent: g.CoreLimitPercent}
+		out.Gpu = &pb.GpuSelection{ProfileId: g.ProfileID, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerUnit: g.DevicesPerInstance, ClusterId: g.ClusterID, PoolId: g.PoolID, Mode: acc.SupplyMode(acc.SupplyMode_value[g.Mode]), ModelKey: g.ModelKey, MemoryMibPerDevice: g.MemoryMiBPerDevice, CoreLimitPercent: g.CoreLimitPercent, AllocationType: acc.AllocationType(acc.AllocationType_value[g.AllocationType]), ResourceKey: g.ResourceKey, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, AdapterId: g.AdapterID}
 	}
 	out.SelectionDigest, e = pb.SelectionDigest(out)
 	if e != nil {

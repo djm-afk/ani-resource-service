@@ -13,7 +13,7 @@ import (
 const getInstance = `-- name: GetInstance :one
 SELECT snapshot,version,desired,created_at,updated_at,current_mounts,mounts_initialized,applied_mount_version,runtime_desired,recovery_fence
 FROM instance.instances
-WHERE tenant_id=$1 AND instance_id=$2
+WHERE archived_at IS NULL AND tenant_id=$1 AND instance_id=$2
 `
 
 type GetInstanceParams struct {

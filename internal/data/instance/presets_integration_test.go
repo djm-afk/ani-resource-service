@@ -38,27 +38,27 @@ func TestComputePresetTransactionsAndIsolation(t *testing.T) {
 	if _, e = f.presets.CreatePreset(tenantCtx, p); !errors.Is(e, compute.ErrDenied) {
 		t.Fatal("tenant wrote platform catalog", e)
 	}
-	g := &compute.GPUReference{ProfileID: uuid.NewString(), ProfileVersion: 1, SpecDigest: strings.Repeat("a", 64), DevicesPerInstance: 2, ClusterID: uuid.NewString(), PoolID: uuid.NewString(), Mode: "WHOLE_EXCLUSIVE", ModelKey: "A100", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
+	g := &compute.GPUReference{AllocationType: "PHYSICAL", ResourceKey: "volcano.sh/vgpu-number", AdapterID: "volcano-hami-mib-v1", ProfileID: uuid.NewString(), ProfileVersion: 1, SpecDigest: strings.Repeat("a", 64), DevicesPerInstance: 2, ClusterID: uuid.NewString(), PoolID: uuid.NewString(), Mode: "WHOLE_EXCLUSIVE", ModelKey: "A100", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
 	gpu, e := f.presets.UpdatePreset(ctx, p.ID, compute.Preset{ComputeType: biz.TypeGPU, GPU: g}, []string{"compute_type", "gpu"})
 	if e != nil {
 		t.Fatal(e)
 	}
 	t.Run("whole quantity SQL range", func(t *testing.T) {
-		for _, n := range []uint32{4, math.MaxUint32} {
+		for _, n := range []uint32{4, math.MaxInt32} {
 			if _, e := f.runtime.Exec(ctx, "UPDATE compute.presets SET gpu=jsonb_set(gpu,'{devices_per_instance}',$2::jsonb) WHERE id=$1", gpu.ID, fmt.Sprint(n)); e != nil {
-				t.Fatal("positive uint32 SQL quantity rejected", n, e)
+				t.Fatal("positive NVIDIA provider quantity rejected", n, e)
 			}
 			row, e := f.presets.GetPreset(ctx, gpu.ID)
 			if e != nil || row.GPU == nil || row.GPU.DevicesPerInstance != n {
-				t.Fatal("uint32 quantity not preserved", n, row.GPU, e)
+				t.Fatal("NVIDIA provider quantity not preserved", n, row.GPU, e)
 			}
 		}
-		for _, raw := range []string{"0", "-1", "1.5", "4.0", "4294967296", `"4"`, "null"} {
+		for _, raw := range []string{"0", "-1", "1.5", "4.0", "2147483648", "4294967295", "4294967296", `"4"`, "null"} {
 			if _, e := f.runtime.Exec(ctx, "UPDATE compute.presets SET gpu=jsonb_set(gpu,'{devices_per_instance}',$2::jsonb) WHERE id=$1", gpu.ID, raw); e == nil {
 				t.Fatal("non-positive/non-integer/out-of-range quantity accepted", raw)
 			}
 			row, e := f.presets.GetPreset(ctx, gpu.ID)
-			if e != nil || row.GPU == nil || row.GPU.DevicesPerInstance != math.MaxUint32 {
+			if e != nil || row.GPU == nil || row.GPU.DevicesPerInstance != math.MaxInt32 {
 				t.Fatal("rejected quantity mutated preset", raw, row.GPU, e)
 			}
 		}
@@ -121,7 +121,7 @@ func TestComputePresetAuthorizedPages(t *testing.T) {
 	for n := 0; n < 9; n++ {
 		p := compute.Preset{Code: fmt.Sprintf("preset-%d", n), Name: "literal%_Name", ComputeType: biz.TypeCPU, CPUMillis: 1000, MemoryMiB: 1024, Enabled: true}
 		if n >= 5 {
-			g := compute.GPUReference{ProfileID: uuid.NewString(), ProfileVersion: 2, SpecDigest: strings.Repeat("b", 64), DevicesPerInstance: 1, ClusterID: uuid.NewString(), PoolID: uuid.NewString(), Mode: "WHOLE_EXCLUSIVE", ModelKey: "A100", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
+			g := compute.GPUReference{AllocationType: "PHYSICAL", ResourceKey: "volcano.sh/vgpu-number", AdapterID: "volcano-hami-mib-v1", ProfileID: uuid.NewString(), ProfileVersion: 2, SpecDigest: strings.Repeat("b", 64), DevicesPerInstance: 1, ClusterID: uuid.NewString(), PoolID: uuid.NewString(), Mode: "WHOLE_EXCLUSIVE", ModelKey: "A100", MemoryMiBPerDevice: 15360, CoreLimitPercent: 100}
 			p.ComputeType = biz.TypeGPU
 			p.GPU = &g
 			if n%2 == 0 {

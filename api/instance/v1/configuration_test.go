@@ -42,7 +42,8 @@ func TestCommandCoversConfigurationAndEnvOrder(t *testing.T) {
 func TestCurrentNestedCanonicalFieldProjection(t *testing.T) {
 	spec := currentBusiness()
 	spec.GpuExecution = &acc.GpuExecution{}
-	spec.GpuDisplay = &acc.GpuDisplay{Mode: acc.SupplyMode_SHARED_FIXED, ProfileVersion: 2}
+	spec.ComputeType = "gpu"
+	spec.GpuBusinessSpec = &acc.GpuBusinessSpec{Mode: acc.SupplyMode_SHARED_FIXED, ProfileVersion: 2}
 	spec.GpuSelection = &GpuPresetReference{Mode: acc.SupplyMode_WHOLE_EXCLUSIVE, ProfileVersion: 3}
 	raw, err := CanonicalBusinessPayload(spec)
 	if err != nil {
@@ -53,10 +54,10 @@ func TestCurrentNestedCanonicalFieldProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden := map[string]string{
-		"gpu_execution": `{"execution_digest":"","node_selector":{},"pod_annotations":{},"queue_name":"","resources":{},"runtime_class_name":"","scheduler_name":""}`,
-		"gpu_display":   `{"mode":"SHARED_FIXED","model_key":"","profile_id":"","profile_name":"","profile_version":"2"}`,
-		"gpu_selection": `{"cluster_id":"","core_limit_percent":0,"devices_per_instance":0,"memory_mib_per_device":"0","mode":"WHOLE_EXCLUSIVE","model_key":"","pool_id":"","profile_id":"","profile_version":"3","spec_digest":""}`,
-		"scheduling":    `{"pod_placement":"NONE"}`,
+		"gpu_execution":     `{"execution_digest":"","node_selector":{},"pod_annotations":{},"queue_name":"","resources":{},"runtime_class_name":"","scheduler_name":""}`,
+		"gpu_business_spec": `{"adapter_id":"","allocation_type":"ALLOCATION_TYPE_UNSPECIFIED","compute_units_per_device":0,"core_limit_percent":0,"devices_per_replica":0,"memory_mib_per_device":"0","mode":"SHARED_FIXED","model_key":"","profile_id":"","profile_name":"","profile_version":"2","resource_key":"","spec_digest":""}`,
+		"gpu_selection":     `{"adapter_id":"","allocation_type":"ALLOCATION_TYPE_UNSPECIFIED","cluster_id":"","compute_units_per_device":0,"core_limit_percent":0,"devices_per_instance":0,"memory_mib_per_device":"0","mode":"WHOLE_EXCLUSIVE","model_key":"","pool_id":"","profile_id":"","profile_version":"3","resource_key":"","spec_digest":""}`,
+		"scheduling":        `{"pod_placement":"NONE"}`,
 	}
 	for field, want := range golden {
 		if string(fields[field]) != want {

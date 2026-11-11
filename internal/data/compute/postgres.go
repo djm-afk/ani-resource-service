@@ -28,8 +28,9 @@ func OpenPostgres(ctx context.Context, dsn string) (*Postgres, error) {
 }
 func (p *Postgres) Close() { p.pool.Close() }
 
-func migrationChecksum() (string, error) {
-	body, err := migrations.Files.ReadFile("001_presets.sql")
+func migrationChecksum() (string, error) { return computeFileChecksum("001_presets.sql") }
+func computeFileChecksum(name string) (string, error) {
+	body, err := migrations.Files.ReadFile(name)
 	if err != nil {
 		return "", err
 	}
@@ -51,9 +52,13 @@ func checkReady(ctx context.Context, db schemaReader) error {
 	if err != nil {
 		return err
 	}
+	second, err := computeFileChecksum("002_gpu_business_reference.sql")
+	if err != nil {
+		return err
+	}
 	var ready bool
 	err = db.QueryRow(ctx, `SELECT
-  (SELECT count(*)=1 AND bool_and(version=1 AND checksum=$1) FROM compute.schema_version)
+  (SELECT count(*)=2 AND bool_and((version=1 AND checksum=$1) OR (version=2 AND checksum=$2)) FROM compute.schema_version)
   AND EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='compute' AND c.relname='presets' AND c.relkind='r')
   AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='instance' AND c.relname='compute_presets')
   AND (SELECT count(*)=13 FROM pg_attribute WHERE attrelid='compute.presets'::regclass AND attnum>0 AND NOT attisdropped)
@@ -61,14 +66,14 @@ func checkReady(ctx context.Context, db schemaReader) error {
   AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='compute.presets'::regclass AND conname='presets_pkey' AND contype='p')
   AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='compute.presets'::regclass AND conname='presets_code_key' AND contype='u')
   AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='compute.presets'::regclass AND conname='presets_check' AND contype='c')
-  AND to_regclass('compute.presets_listing') IS NOT NULL`, checksum).Scan(&ready)
+  AND to_regclass('compute.presets_listing') IS NOT NULL`, checksum, second).Scan(&ready)
 	if err != nil || !ready {
 		return fmt.Errorf("compute schema not migrated or target structure/checksum differs")
 	}
 	return nil
 }
 
-var historyFiles = []string{"001_instance.sql", "002_compute_presets.sql", "003_whole_gpu_quantity.sql", "004_gpu_execution.sql", "005_instance_configuration.sql", "006_instance_network_submissions.sql", "007_owner_cleanup_release.sql", "008_restart_pvc.sql", "009_unversioned_configuration.sql"}
+var historyFiles = []string{"001_instance.sql", "002_compute_presets.sql", "003_whole_gpu_quantity.sql", "004_gpu_execution.sql", "005_instance_configuration.sql", "006_instance_network_submissions.sql", "007_owner_cleanup_release.sql", "008_restart_pvc.sql", "009_unversioned_configuration.sql", "010_gpu_contract_archive.sql"}
 
 // Migrate is explicit; it never executes historical instance SQL.
 func Migrate(ctx context.Context, dsn, runtimeRole string) error {
@@ -129,10 +134,27 @@ func migrate(ctx context.Context, dsn, role string, restore bool) error {
 		if oldTable || !newTable {
 			return fmt.Errorf("compute target conflict")
 		}
-		var known bool
-		if err = tx.QueryRow(ctx, `SELECT count(*)=1 AND bool_and(version=1 AND checksum=$1) FROM compute.schema_version`, checksum).Scan(&known); err != nil || !known {
-			return fmt.Errorf("compute migration checksum differs")
+		var versions int
+		if err = tx.QueryRow(ctx, "SELECT count(*) FROM compute.schema_version").Scan(&versions); err != nil || versions < 1 || versions > 2 {
+			return fmt.Errorf("unknown compute migration history")
 		}
+		for version, name := range []string{"001_presets.sql", "002_gpu_business_reference.sql"} {
+			if version >= versions {
+				break
+			}
+			expected, e := computeFileChecksum(name)
+			if e != nil {
+				return e
+			}
+			var actual string
+			if e = tx.QueryRow(ctx, "SELECT checksum FROM compute.schema_version WHERE version=$1", version+1).Scan(&actual); e != nil || actual != expected {
+				return fmt.Errorf("compute migration %s checksum differs", name)
+			}
+		}
+		if restore && versions > 1 {
+			return fmt.Errorf("GPU v1.1 rollback requires the matching database backup and binary set")
+		}
+
 		if err = tx.QueryRow(ctx, `SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='compute'`).Scan(&valid); err != nil || !valid {
 			return fmt.Errorf("compute schema belongs to another owner")
 		}
@@ -171,6 +193,29 @@ func migrate(ctx context.Context, dsn, role string, restore bool) error {
 			}
 		}
 	}
+	if !restore {
+		var installed bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM compute.schema_version WHERE version=2)").Scan(&installed); err != nil {
+			return err
+		}
+		if !installed {
+			body, e := migrations.Files.ReadFile("002_gpu_business_reference.sql")
+			if e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, string(body)); e != nil {
+				return e
+			}
+			digest, e := computeFileChecksum("002_gpu_business_reference.sql")
+			if e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "INSERT INTO compute.schema_version(version,checksum) VALUES(2,$1)", digest); e != nil {
+				return e
+			}
+		}
+	}
+
 	quoted := pgx.Identifier{role}.Sanitize()
 	if restore {
 		_, err = tx.Exec(ctx, `GRANT USAGE ON SCHEMA instance TO `+quoted+`; GRANT SELECT,INSERT,UPDATE,DELETE ON instance.compute_presets TO `+quoted)

@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	gp "github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
 	quotapb "github.com/zhangzhe-ctrl/ani-governance/api/quota/gen/go/quota/service/v1"
 	terminal "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/terminal/v1"
 	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
@@ -111,14 +112,18 @@ func database(t *testing.T) *fixture {
 }
 func create() biz.Create {
 	tenant, id, op := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	return biz.Create{TenantID: tenant, ID: id, OperationID: op, RequestHash: strings.Repeat("a", 64), BusinessDigest: strings.Repeat("b", 64), Spec: biz.Spec{WorkspaceMountPath: "/workspace", InstanceKind: biz.KindContainer, ComputeType: biz.TypeGPU, Scheduling: biz.Scheduling{PodPlacement: "NONE"}, Name: "workspace", ImageID: uuid.NewString(), ImageScope: "platform", ImageReference: "registry.invalid/platform/workspace@sha256:" + strings.Repeat("c", 64), ImageDigest: "sha256:" + strings.Repeat("c", 64), PresetID: "shared", CPU: "1", Memory: "2Gi", UID: 1000, GID: 1000, Shell: "/bin/bash", ServiceAccount: "workload", StorageClass: "ani-block", WorkspaceSize: "1Gi", ClusterID: uuid.NewString(), Namespace: "tenant-" + tenant, NotebookName: "instance-" + id, PVCName: "workspace-" + id, GPU: biz.GPU{Scheduler: "volcano", RuntimeClass: "nvidia", Queue: "default", Digest: strings.Repeat("d", 64), NodeLabels: map[string]string{"accelerator.ani.io/supply-group": "test"}, Annotations: map[string]string{"volcano.sh/vgpu-mode": "hami-core"}, Limits: map[string]string{"volcano.sh/vgpu-number": "1", "volcano.sh/vgpu-memory": "6144", "volcano.sh/vgpu-cores": "25"}}}}
+	c := biz.Create{TenantID: tenant, ID: id, OperationID: op, RequestHash: strings.Repeat("a", 64), BusinessDigest: strings.Repeat("b", 64), Spec: biz.Spec{WorkspaceMountPath: "/workspace", InstanceKind: biz.KindContainer, ComputeType: biz.TypeGPU, Scheduling: biz.Scheduling{PodPlacement: "NONE"}, Name: "workspace", ImageID: uuid.NewString(), ImageScope: "platform", ImageReference: "registry.invalid/platform/workspace@sha256:" + strings.Repeat("c", 64), ImageDigest: "sha256:" + strings.Repeat("c", 64), PresetID: "shared", CPU: "1", Memory: "2Gi", UID: 1000, GID: 1000, Shell: "/bin/bash", ServiceAccount: "workload", StorageClass: "ani-block", WorkspaceSize: "1Gi", ClusterID: uuid.NewString(), Namespace: "tenant-" + tenant, NotebookName: "instance-" + id, PVCName: "workspace-" + id, GPU: biz.GPU{Scheduler: "volcano", RuntimeClass: "nvidia", Queue: "default", Digest: strings.Repeat("d", 64), NodeLabels: map[string]string{"accelerator.ani.io/supply-group": "test"}, Annotations: map[string]string{"volcano.sh/vgpu-mode": "hami-core"}, Limits: map[string]string{"volcano.sh/vgpu-number": "1", "volcano.sh/vgpu-memory": "6144", "volcano.sh/vgpu-cores": "25"}}}}
+	c.Spec.GPU.NodeLabels = map[string]string{gp.GroupLabel: c.ID, gp.ModelLabel: "t4", gp.BaselineLabel: c.ID}
+	c.Spec.GPU.Digest, _ = gp.HashExecutionFields(&gp.ExecutionFields{SchedulerName: c.Spec.GPU.Scheduler, QueueName: c.Spec.GPU.Queue, RuntimeClassName: c.Spec.GPU.RuntimeClass, NodeSelector: c.Spec.GPU.NodeLabels, PodAnnotations: c.Spec.GPU.Annotations, Resources: c.Spec.GPU.Limits})
+	c.Spec.GPUSummary = &biz.GPUSummary{ProfileID: c.ID, ProfileVersion: 1, ProfileName: "T4", ModelKey: "t4", Mode: "SHARED_FIXED", AllocationType: "DYNAMIC_SHARED", DevicesPerReplica: 1, MemoryMiBPerDevice: 6144, CoreLimitPercent: 25, ResourceKey: gp.NvidiaNumberResource, AdapterID: gp.NvidiaAdapterID, SpecDigest: strings.Repeat("a", 64)}
+	return c
 }
-
 func cpuCreate() biz.Create {
 	c := create()
 	c.Spec.ComputeType = biz.TypeCPU
 	c.Spec.PresetID = "cpu-small"
 	c.Spec.GPU = biz.GPU{}
+	c.Spec.GPUSummary = nil
 	return c
 }
 

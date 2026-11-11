@@ -165,7 +165,6 @@ func TestLifecycleStopIgnoresRuntimeEligibilityButPreservesOwnership(t *testing.
 	n, i, client, _, _ := stoppedLifecycleFixture(t)
 	i.CurrentMounts = []biz.VolumeMount{{ClusterID: i.Spec.ClusterID, Namespace: i.Spec.Namespace, PVCName: "missing", PVCUID: "missing-uid", MountPath: "/data", Ownership: "borrowed"}}
 	i.Spec.ComputeType = biz.TypeGPU
-	n.signingKey = nil
 	client.ClearActions()
 	if out, err := n.ObserveIdentity(context.Background(), i); err != nil || !out.SafeStopped {
 		t.Fatal("PVC/GPU eligibility prevented owner proof", out, err)

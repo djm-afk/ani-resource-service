@@ -1798,3 +1798,31 @@ On the real cluster an isolated image-only Resource harness, using actual image 
 2026-11-02 用户明确统一 Namespace 由 Sandbox 的租户开通流程负责：先读取 `tenant-<完整 UUID>`，已存在且身份合法时复用，否则仅在不存在时以持久写前日志创建；其余业务复用共享名称计算，不添加业务前后缀。Namespace 尚未 Active 时先保存创建 UID 回执并等待；并发 AlreadyExists 先记录未发送回执再读取核验，响应丢失继续保留 unknown 栅栏。共享合同见 [租户 Namespace](../contracts/tenant-namespace.md)。
 
 本机回退输入合并源码树 `81cecf745aeba8674becafbc9fb9adc145c38f48`：`GOWORK=off GOMAXPROCS=2 GOMEMLIMIT=1600MiB GOFLAGS=-p=2 make verify` **pass**；独占 PostgreSQL `go test -tags=sandboxintegration -count=1 -timeout=20m -v ./internal/data/sandbox` **pass**（113 个顶层测试）。首次 PG 测试的两条生命周期夹具因未提供主线要求的 Namespace 失败；修正夹具后完整重跑通过，失败与重跑日志均保留。测试容器已清理。指定远端配置不存在，本轮按允许规则回退本机；Gov 单仓正式 Resource SDK 依赖尚未更新，跨仓 workspace 验证不能代替正式依赖。合并候选未部署、未执行现场迁移或真实集群验收。
+
+
+## Accelerator adaptation v1.1 — 2026-11-10
+
+Res 已完成 compute/instance 的新 BusinessSpec 合同、canonical/领域/SQL/显式映射、GPU requests/limits 渲染与完整冻结 summary；Binding 专用签名及旧 release 配置退出。CPU 原 canonical 字节与摘要保持，旧 CPU 重试不重新解析目录。静态预设不以实时库存或设备利用率决定有效性。
+
+API 独立提交为 `4052512d6a5112784248bb87690da2aab7fb8aaa`；正式锁定 ACC `v1.6.1-0.20261110145729-1825ddeb2a79`，没有本机 replace。后续实现提交在同一 `codex/accelerator-adaptation-v11-20261110` 分支。API 生成使用现有 pinned `scripts/generate-instance-api`，SQL 使用 sqlc v1.31.1；生成前后对应产物 SHA-256 一致。
+
+已在本任务 WSL 开发环境执行必要定向检查：两 API、compute/instance biz 与 service 包；Notebook/RuntimeClass admission/生命周期/诊断相关单测；实例退役配置拒绝与主程序编译；边界检查、go mod tidy -diff、git diff --check。
+
+独占 PostgreSQL 17.11（任务镜像 `ani-accelerator-v11-postgres:17.11`）验证通过：
+
+- NVIDIA 整卡/共享 F1/F10、海光整卡/固定片的预设→Resolve→冻结→持久受理/重试→渲染→目录删除后展示→DELETE 合同链。
+- 原 ACK 保留、owner 尚未接纳的删除/取消、原退额 outbox 重试与回执保护；CPU 预设变更/删除后重放。
+- v1 静态预设约束到002的确定性升级与真实受限 runtime 角色的 Hygon 零 memory/core、固定 CU 字段读写。
+- 旧 GPU 原退款未ACK时拒绝归档；闭合后保留原 snapshot/hash/ACK/outbox/FK，仅退出活跃读取和调度。混合活跃 CPU（GPU 值对象非null但全空）不归档、不改原数据或工作行；历史窄 metric scope 不解旧 GPU。
+
+测试使用独占本地容器 `ani-accelerator-v11-res-pg`，结束后删除容器与临时 DSN 文件。一次性工具和维护顺序见[运行手册](../runbooks/instance-mvp-fedora.md#gpu-v11-离线切换)。这些是 PG/边界验证，不是实机设备计算或66环境业务闭环。
+
+完整 `make verify`、`go test ./...`、全量 race 和页面 E2E 按用户要求未执行。66 的原账闭合、正式清单、备份、迁移、配置与联合部署由本批主任务继续推进；本节不将尚未执行的部署或硬件项记为通过。前端 P6 与其他 GPU Owner P7 仍为后续范围。
+
+### PR #74 两项局部修正 — 2026-11-11
+
+以 PR 原 head `927a2a9112ec1a6bf0466ac100e03377447c672c` 为基线，在本机 WSL Ubuntu 修正 Pod 对合法 `ephemeral-storage` 默认值的拒绝，同时保留冻结 CPU/memory/GPU 等值及额外设备资源检查。离线预设转换增加旧、新业务身份及规格比较，拒绝同一 Profile 下 1 卡误填 2 卡；只补齐新合同字段和摘要，不增加在线 ACC 查询。
+
+定向验证 **pass**：`go test ./internal/data/instance ./scripts/ops/gpu-contract-v11 -run '^(TestPodDefaultEphemeralStorageKeepsRuntimeReady|TestPodStorageDefaultPreservesComputeResourceGuards|TestPresetConversionPreservesOriginalBusinessValues|TestPodQuantityNormalizationKeepsFrozenContract|TestCPUNotebookProjectionAndPodBinding)$' -count=1`。独占本地 PostgreSQL 17.11 的 `TestPGPresetConversionRejectsDeviceDriftWithoutChangingOriginal`、`TestPGStaticReferenceUpgradeAndCPUOriginalReplay` **pass**：2 卡转换被拒且原行完全不变，保持 1 卡的转换及旧 CPU 重放通过；临时容器与凭据已清理。
+
+主程序与离线工具 `go build ./cmd/ani-resource-service ./scripts/ops/gpu-contract-v11`、`./scripts/verify-boundaries`、`git diff --check` **pass**。本轮未运行完整门禁、未修改四条已豁免 CI；本段为本机软件和数据库结果，不代表 47 集群部署或设备验收通过。

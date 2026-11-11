@@ -251,8 +251,8 @@ func (s *Service) AcceptCreate(ctx context.Context, r *pb.AcceptCreateRequest) (
 	}
 	if g := f.GpuExecution; g != nil {
 		spec.GPU = biz.GPU{Scheduler: g.SchedulerName, Queue: g.QueueName, RuntimeClass: g.RuntimeClassName, Digest: g.ExecutionDigest, NodeLabels: g.NodeSelector, Annotations: g.PodAnnotations, Limits: g.Resources}
-		d := f.GpuDisplay
-		spec.GPUSummary = &biz.GPUSummary{ProfileID: d.ProfileId, ProfileVersion: d.ProfileVersion, ProfileName: d.ProfileName, Mode: d.Mode.String(), ModelKey: d.ModelKey}
+		d := f.GpuBusinessSpec
+		spec.GPUSummary = &biz.GPUSummary{ProfileID: d.ProfileId, ProfileVersion: d.ProfileVersion, ProfileName: d.ProfileName, Mode: d.Mode.String(), ModelKey: d.ModelKey, AllocationType: d.AllocationType.String(), ResourceKey: d.ResourceKey, AdapterID: d.AdapterId, SpecDigest: d.SpecDigest, DevicesPerReplica: d.DevicesPerReplica, MemoryMiBPerDevice: d.MemoryMibPerDevice, CoreLimitPercent: d.CoreLimitPercent, ComputeUnitsPerDevice: d.ComputeUnitsPerDevice}
 	}
 	accepted, e := s.repo.AcceptCreate(ctx, biz.Create{TenantID: c.TenantId, ID: c.ResourceId, OperationID: c.OperationId, RequestHash: c.RequestDigest, BusinessDigest: digest, Spec: spec})
 	return ack(accepted), rpcError(e)
@@ -288,7 +288,7 @@ func (s *Service) Stop(ctx context.Context, r *pb.ChangeInstanceRequest) (*pb.Op
 	return s.change(ctx, r, "stop")
 }
 func wire(i biz.Instance) *pb.Instance {
-	out := &pb.Instance{InstanceKind: i.Spec.InstanceKind, ComputeType: i.Spec.ComputeType, Id: i.ID, Name: i.Spec.Name, Version: i.Version, DesiredState: i.Desired, ObservedState: i.Observed, Reason: i.Reason, ImageId: i.Spec.ImageID, ImageDigest: i.Spec.ImageDigest, PresetId: i.Spec.PresetID, CreateOperationId: i.CreateOperationID, LastOperationId: i.LastOperationID, ComputeCleaned: i.ComputeCleaned, WorkspaceCleaned: i.WorkspaceCleaned, QuotaReturned: i.QuotaReturned, Cpu: i.Spec.CPU, Memory: i.Spec.Memory, CreatedAt: timestamppb.New(i.CreatedAt), WorkspaceSize: i.Spec.WorkspaceSize, PresetName: i.Spec.PresetName, PresetCode: i.Spec.PresetCode, GpuSummary: wireSummary(i.Spec.GPUSummary, i.Spec.GPU), Scheduling: wireScheduling(i.Spec.Scheduling)}
+	out := &pb.Instance{InstanceKind: i.Spec.InstanceKind, ComputeType: i.Spec.ComputeType, Id: i.ID, Name: i.Spec.Name, Version: i.Version, DesiredState: i.Desired, ObservedState: i.Observed, Reason: i.Reason, ImageId: i.Spec.ImageID, ImageDigest: i.Spec.ImageDigest, PresetId: i.Spec.PresetID, CreateOperationId: i.CreateOperationID, LastOperationId: i.LastOperationID, ComputeCleaned: i.ComputeCleaned, WorkspaceCleaned: i.WorkspaceCleaned, QuotaReturned: i.QuotaReturned, Cpu: i.Spec.CPU, Memory: i.Spec.Memory, CreatedAt: timestamppb.New(i.CreatedAt), WorkspaceSize: i.Spec.WorkspaceSize, PresetName: i.Spec.PresetName, PresetCode: i.Spec.PresetCode, GpuSummary: wireSummary(i.Spec.GPUSummary), Scheduling: wireScheduling(i.Spec.Scheduling)}
 	out.ExecutionRunState = i.RuntimeDesired
 	out.AppliedMountVersion = i.AppliedMountVersion
 	if i.ActiveOperation != nil && !biz.TerminalOperation(i.ActiveOperation.State) {

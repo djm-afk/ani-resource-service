@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	gp "github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
+	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -169,9 +172,13 @@ type Scheduling struct {
 	PriorityClassName *string
 }
 type GPUSummary struct {
-	ProfileID                   string
-	ProfileVersion              uint64
-	ProfileName, Mode, ModelKey string
+	AllocationType, ResourceKey, AdapterID, SpecDigest string
+	DevicesPerReplica                                  uint32
+	MemoryMiBPerDevice                                 int64
+	CoreLimitPercent, ComputeUnitsPerDevice            uint32
+	ProfileID                                          string
+	ProfileVersion                                     uint64
+	ProfileName, Mode, ModelKey                        string
 }
 
 type Create struct {
@@ -317,7 +324,9 @@ type Progress struct {
 	// Stored cleanup flags alone are insufficient after a failed observation.
 	CleanupComplete bool
 }
+type MetricScope struct{ TenantID, ID, CreateOperationID, ClusterID, Namespace string }
 type Repository interface {
+	ReadMetricScope(context.Context, string, string) (MetricScope, error)
 	AcceptCreate(context.Context, Create) (ACK, error)
 	AcceptDelete(context.Context, Delete) (ACK, error)
 	AcceptCommand(context.Context, Command) (ACK, error)
@@ -375,7 +384,7 @@ func ValidateCreate(c Create) error {
 	if s.ComputeType == TypeCPU && (s.GPUSummary != nil) {
 		return ErrInvalid
 	}
-	if err := validateResources(s.ComputeType, s.GPU); err != nil {
+	if err := ValidateFrozenGPU(s.ComputeType, s.GPU, s.GPUSummary); err != nil {
 		return err
 	}
 	if s.ComputeType == TypeGPU && (s.GPU.Scheduler != "volcano" || s.GPU.Queue == "" || len(s.GPU.Limits) == 0 || len(s.GPU.NodeLabels) == 0) {
@@ -397,20 +406,31 @@ func ValidateDelete(d Delete) error {
 	return nil
 }
 
-func validateResources(kind string, gpu GPU) error {
+func ValidateFrozenGPU(kind string, gpu GPU, summary *GPUSummary) error {
 	switch kind {
 	case TypeCPU:
-		if !gpu.Empty() {
+		if !gpu.Empty() || summary != nil {
 			return ErrInvalid
 		}
+		return nil
 	case TypeGPU:
-		if len(gpu.Digest) != 64 || gpu.Scheduler != "volcano" || gpu.Queue == "" || gpu.RuntimeClass == "" || len(gpu.Limits) != 3 {
+		fields := summary.BusinessFields()
+		if err := gp.ValidateExecutionForBusinessSpecFields(&gp.ExecutionFields{SchedulerName: gpu.Scheduler, QueueName: gpu.Queue, RuntimeClassName: gpu.RuntimeClass, NodeSelector: gpu.NodeLabels, PodAnnotations: gpu.Annotations, Resources: gpu.Limits, ExecutionDigest: gpu.Digest}, fields); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		if fields.MemoryMiBPerDevice > 0 && fields.MemoryMiBPerDevice > math.MaxInt64/int64(fields.DevicesPerReplica) {
 			return ErrInvalid
 		}
+		return nil
 	default:
 		return ErrInvalid
 	}
-	return nil
+}
+func (s *GPUSummary) BusinessFields() *gp.BusinessSpecFields {
+	if s == nil {
+		return nil
+	}
+	return &gp.BusinessSpecFields{ProfileID: s.ProfileID, ProfileVersion: s.ProfileVersion, ProfileName: s.ProfileName, ModelKey: s.ModelKey, Mode: compute.ModeNumber(s.Mode), AllocationType: compute.AllocationNumber(s.AllocationType), DevicesPerReplica: s.DevicesPerReplica, MemoryMiBPerDevice: s.MemoryMiBPerDevice, CoreLimitPercent: s.CoreLimitPercent, ComputeUnitsPerDevice: s.ComputeUnitsPerDevice, ResourceKey: s.ResourceKey, AdapterID: s.AdapterID, SpecDigest: s.SpecDigest}
 }
 
 type ListFilter struct {

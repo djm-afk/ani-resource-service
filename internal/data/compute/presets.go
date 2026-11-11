@@ -1,10 +1,12 @@
 package compute
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/google/uuid"
@@ -28,9 +30,17 @@ func scanPreset(row scanner) (biz.Preset, error) {
 		return p, e
 	}
 	if len(gpu) != 0 {
-		if e = json.Unmarshal(gpu, &p.GPU); e != nil {
+		decoder := json.NewDecoder(bytes.NewReader(gpu))
+		decoder.DisallowUnknownFields()
+		if e = decoder.Decode(&p.GPU); e != nil {
 			return p, e
 		}
+		if decoder.Decode(new(any)) != io.EOF {
+			return p, biz.ErrInvalid
+		}
+	}
+	if e = biz.ValidatePreset(p); e != nil {
+		return p, e
 	}
 	return p, nil
 }

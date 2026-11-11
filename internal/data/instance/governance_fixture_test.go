@@ -211,7 +211,7 @@ func TestInstanceGovernanceFixture(t *testing.T) {
 		preset.Code = "shared"
 		preset.Name = "shared"
 		preset.ComputeType = biz.TypeGPU
-		preset.GPU = &compute.GPUReference{ProfileID: ref.ProfileId, ProfileVersion: ref.ProfileVersion, SpecDigest: ref.SpecDigest, DevicesPerInstance: ref.DevicesPerInstance, ClusterID: ref.ClusterId, PoolID: ref.PoolId, Mode: ref.Mode.String(), ModelKey: ref.ModelKey, MemoryMiBPerDevice: ref.MemoryMibPerDevice, CoreLimitPercent: ref.CoreLimitPercent}
+		preset.GPU = &compute.GPUReference{AllocationType: "DYNAMIC_SHARED", ResourceKey: "volcano.sh/vgpu-number", AdapterID: "volcano-hami-mib-v1", ProfileID: ref.ProfileId, ProfileVersion: ref.ProfileVersion, SpecDigest: ref.SpecDigest, DevicesPerInstance: ref.DevicesPerInstance, ClusterID: ref.ClusterId, PoolID: ref.PoolId, Mode: ref.Mode.String(), ModelKey: ref.ModelKey, MemoryMiBPerDevice: ref.MemoryMibPerDevice, CoreLimitPercent: ref.CoreLimitPercent}
 	}
 	preset, e := f.presets.CreatePreset(adminCtx, preset)
 	if e != nil {

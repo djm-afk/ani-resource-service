@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	accelerator "github.com/zhangzhe-ctrl/ani-accelerator-service/api/gen/go/accelerator/v1"
+	gp "github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
 )
 
 const SelectionSchemaVersion uint32 = 1
@@ -34,16 +35,20 @@ func selectionDigestValue(s string) bool {
 // Field declaration order is the versioned canonical JSON order. CPU encodes
 // gpu=null; usage, enabled, audit data and the digest itself are excluded.
 type canonicalGPU struct {
-	ProfileID          string `json:"profile_id"`
-	ProfileVersion     uint64 `json:"profile_version"`
-	SpecDigest         string `json:"spec_digest"`
-	DevicesPerUnit     uint32 `json:"devices_per_unit"`
-	ClusterID          string `json:"cluster_id"`
-	PoolID             string `json:"pool_id"`
-	Mode               string `json:"mode"`
-	ModelKey           string `json:"model_key"`
-	MemoryMiBPerDevice int64  `json:"memory_mib_per_device"`
-	CoreLimitPercent   uint32 `json:"core_limit_percent"`
+	ProfileID             string `json:"profile_id"`
+	ProfileVersion        uint64 `json:"profile_version"`
+	SpecDigest            string `json:"spec_digest"`
+	DevicesPerUnit        uint32 `json:"devices_per_unit"`
+	ClusterID             string `json:"cluster_id"`
+	PoolID                string `json:"pool_id"`
+	Mode                  string `json:"mode"`
+	ModelKey              string `json:"model_key"`
+	MemoryMiBPerDevice    int64  `json:"memory_mib_per_device"`
+	CoreLimitPercent      uint32 `json:"core_limit_percent"`
+	AllocationType        string `json:"allocation_type"`
+	ResourceKey           string `json:"resource_key"`
+	ComputeUnitsPerDevice uint32 `json:"compute_units_per_device"`
+	AdapterID             string `json:"adapter_id"`
 }
 type canonicalSelection struct {
 	SchemaVersion uint32        `json:"schema_version"`
@@ -68,22 +73,13 @@ func CanonicalSelection(s *ComputeSelection) ([]byte, error) {
 		}
 	case "gpu":
 		g := s.Gpu
-		if g == nil || len(g.ProtoReflect().GetUnknown()) != 0 || !selectionUUID(g.ProfileId) || g.ProfileVersion == 0 || !selectionDigestValue(g.SpecDigest) || !selectionUUID(g.ClusterId) || !selectionUUID(g.PoolId) || strings.TrimSpace(g.ModelKey) == "" || g.MemoryMibPerDevice <= 0 {
+		if g == nil || len(g.ProtoReflect().GetUnknown()) != 0 || !selectionUUID(g.ClusterId) || !selectionUUID(g.PoolId) {
 			return nil, ErrInvalidSelection
 		}
-		switch g.Mode {
-		case accelerator.SupplyMode_WHOLE_EXCLUSIVE:
-			if g.DevicesPerUnit == 0 || g.CoreLimitPercent != 100 {
-				return nil, ErrInvalidSelection
-			}
-		case accelerator.SupplyMode_SHARED_FIXED:
-			if g.DevicesPerUnit != 1 || g.CoreLimitPercent < 1 || g.CoreLimitPercent > 99 {
-				return nil, ErrInvalidSelection
-			}
-		default:
+		if err := gp.ValidateGpuBusinessSpec(&accelerator.GpuBusinessSpec{ProfileId: g.ProfileId, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, ModelKey: g.ModelKey, Mode: g.Mode, AllocationType: g.AllocationType, DevicesPerReplica: g.DevicesPerUnit, MemoryMibPerDevice: g.MemoryMibPerDevice, CoreLimitPercent: g.CoreLimitPercent, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, ResourceKey: g.ResourceKey, AdapterId: g.AdapterId}); err != nil {
 			return nil, ErrInvalidSelection
 		}
-		c.GPU = &canonicalGPU{ProfileID: g.ProfileId, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerUnit: g.DevicesPerUnit, ClusterID: g.ClusterId, PoolID: g.PoolId, Mode: g.Mode.String(), ModelKey: g.ModelKey, MemoryMiBPerDevice: g.MemoryMibPerDevice, CoreLimitPercent: g.CoreLimitPercent}
+		c.GPU = &canonicalGPU{ProfileID: g.ProfileId, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, DevicesPerUnit: g.DevicesPerUnit, ClusterID: g.ClusterId, PoolID: g.PoolId, Mode: g.Mode.String(), ModelKey: g.ModelKey, MemoryMiBPerDevice: g.MemoryMibPerDevice, CoreLimitPercent: g.CoreLimitPercent, AllocationType: g.AllocationType.String(), ResourceKey: g.ResourceKey, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, AdapterID: g.AdapterId}
 	default:
 		return nil, ErrInvalidSelection
 	}

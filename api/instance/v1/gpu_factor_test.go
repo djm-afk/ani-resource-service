@@ -40,7 +40,10 @@ func TestFrozenGpuMemoryFactorPayloadReplay(t *testing.T) {
 			spec := currentBusiness()
 			spec.ComputeType = "gpu"
 			spec.GpuExecution = execution
-			spec.GpuDisplay = &acc.GpuDisplay{ProfileId: spec.PresetId, ProfileVersion: 1, ProfileName: "T4", Mode: acc.SupplyMode_SHARED_FIXED, ModelKey: "t4"}
+			spec.GpuBusinessSpec = fixtureBusinessSpec(spec.PresetId, 8192)
+			if factor != "" {
+				spec.GpuBusinessSpec.MemoryMibPerDevice = 3840
+			}
 			frozen, err := CanonicalBusinessPayload(spec)
 			if err != nil {
 				t.Fatal(err)

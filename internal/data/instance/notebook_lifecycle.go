@@ -247,17 +247,6 @@ func (n *Notebook) VerifyRuntime(ctx context.Context, i biz.Instance, previous b
 	if err != nil {
 		return out, err
 	}
-	if i.Spec.ComputeType == biz.TypeGPU {
-		if len(n.signingKey) == 0 {
-			return out, biz.ErrState
-		}
-		call, cancel := context.WithTimeout(ctx, 15*time.Second)
-		err = n.signPod(call, pod, i)
-		cancel()
-		if err != nil {
-			return out, err
-		}
-	}
 	if i.SecurityGroupsInitialized && pod.GetAnnotations()[biz.SecurityGroupsAnnotation] != strings.Join(i.SecurityGroupNames, ",") {
 		return out, biz.ErrNetworkConflict
 	}

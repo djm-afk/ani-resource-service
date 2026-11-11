@@ -6,10 +6,9 @@ import (
 	"testing"
 )
 
-func TestInstanceReleaseSettingsAreOptionalAndIgnored(t *testing.T) {
+func TestInstanceRetiredSettingsRejectedAndQuotaMTLSRequired(t *testing.T) {
 	cfg := instanceSettings{
 		DatabaseDSNFile: "/managed/instance-runtime.dsn",
-		SigningKeyFile:  "/managed/instance-ed25519.key",
 		QuotaAddress:    "governance.internal:9445",
 		QuotaCAFile:     "/managed/quota-ca.pem",
 		QuotaCertFile:   "/managed/resource-client.pem",
@@ -22,17 +21,14 @@ func TestInstanceReleaseSettingsAreOptionalAndIgnored(t *testing.T) {
 	legacy := []byte(`{"ReleaseAddress":"unavailable.invalid:1","ReleaseCAFile":"missing-ca","ReleaseCertFile":"missing-cert","ReleaseKeyFile":"missing-key","ReleaseServerName":"*"}`)
 	decoder := json.NewDecoder(bytes.NewReader(legacy))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cfg); err != nil {
-		t.Fatalf("legacy release configuration rejected: %v", err)
+	if err := decoder.Decode(&cfg); err == nil {
+		t.Fatal("retired release settings accepted")
 	}
-	if err := validateInstanceSettings(cfg); err != nil {
-		t.Fatalf("unused ACC release settings affected owner refund configuration: %v", err)
-	}
+
 	for _, tc := range []struct {
 		name   string
 		change func(*instanceSettings)
 	}{
-		{"missing owner signing key", func(c *instanceSettings) { c.SigningKeyFile = "" }},
 		{"missing quota CA", func(c *instanceSettings) { c.QuotaCAFile = "" }},
 		{"missing quota client identity", func(c *instanceSettings) { c.QuotaCertFile = "" }},
 		{"missing quota private key", func(c *instanceSettings) { c.QuotaKeyFile = "" }},

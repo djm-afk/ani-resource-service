@@ -19,10 +19,11 @@ import (
 
 func TestGpuExecutionPersistenceAndDeletedCatalogReplay(t *testing.T) {
 	for _, testcase := range []struct {
-		name   string
-		mode   acc.SupplyMode
-		factor string
-	}{{"shared_f1", acc.SupplyMode_SHARED_FIXED, ""}, {"whole_f1", acc.SupplyMode_WHOLE_EXCLUSIVE, ""}, {"shared_f10", acc.SupplyMode_SHARED_FIXED, "10"}} {
+		name         string
+		mode         acc.SupplyMode
+		factor       string
+		hygon, fixed bool
+	}{{"shared_f1", acc.SupplyMode_SHARED_FIXED, "", false, false}, {"whole_f1", acc.SupplyMode_WHOLE_EXCLUSIVE, "", false, false}, {"shared_f10", acc.SupplyMode_SHARED_FIXED, "10", false, false}, {"hygon_whole", acc.SupplyMode_WHOLE_EXCLUSIVE, "", true, false}, {"hygon_fixed", acc.SupplyMode_SHARED_FIXED, "", true, true}} {
 		t.Run(testcase.name, func(t *testing.T) {
 			mode := testcase.mode
 			f := database(t)
@@ -36,7 +37,25 @@ func TestGpuExecutionPersistenceAndDeletedCatalogReplay(t *testing.T) {
 			if testcase.factor != "" {
 				memory = 3840
 			}
-			ref := &compute.GPUReference{ProfileID: uuid.NewString(), ProfileVersion: 1, SpecDigest: strings.Repeat("c", 64), DevicesPerInstance: 1, ClusterID: cluster, PoolID: uuid.NewString(), Mode: mode.String(), ModelKey: "t4", MemoryMiBPerDevice: memory, CoreLimitPercent: cores}
+			allocation, adapter, key, model, cu := "DYNAMIC_SHARED", "volcano-hami-mib-v1", "volcano.sh/vgpu-number", "t4", uint32(0)
+			if mode == acc.SupplyMode_WHOLE_EXCLUSIVE {
+				allocation = "PHYSICAL"
+			}
+			if testcase.hygon {
+				adapter = "hygon-hcu-v1"
+				key = "hygon.com/hcu"
+				model = "hcu"
+				memory = 0
+				cores = 0
+				if testcase.fixed {
+					allocation = "FIXED_PARTITION"
+					key = "hygon.com/hcu-share-4c-16g"
+					memory = 16385
+					cu = 4
+				}
+			}
+
+			ref := &compute.GPUReference{AllocationType: allocation, ResourceKey: key, AdapterID: adapter, ComputeUnitsPerDevice: cu, ProfileID: uuid.NewString(), ProfileVersion: 1, SpecDigest: strings.Repeat("c", 64), DevicesPerInstance: 1, ClusterID: cluster, PoolID: uuid.NewString(), Mode: mode.String(), ModelKey: model, MemoryMiBPerDevice: memory, CoreLimitPercent: cores}
 			preset, e := f.presets.CreatePreset(admin, compute.Preset{Code: "gpu", Name: "GPU", ComputeType: biz.TypeGPU, CPUMillis: 4000, MemoryMiB: 8192, Enabled: true, GPU: ref})
 			if e != nil {
 				t.Fatal(e)
@@ -58,10 +77,16 @@ func TestGpuExecutionPersistenceAndDeletedCatalogReplay(t *testing.T) {
 				g.Resources["volcano.sh/vgpu-memory"] = "384"
 				g.PodAnnotations["accelerator.ani.io/memory-block-mib"] = testcase.factor
 			}
+			if testcase.hygon {
+				g.RuntimeClassName = ""
+				g.NodeSelector["accelerator.ani.io/model-key"] = model
+				g.PodAnnotations = nil
+				g.Resources = map[string]string{key: "1"}
+			}
 			g.ExecutionDigest, _ = pb.ExecutionDigest(g)
 			spec.GpuSelection = nil
 			spec.GpuExecution = g
-			spec.GpuDisplay = &acc.GpuDisplay{ProfileId: ref.ProfileID, ProfileVersion: 1, ProfileName: "T4", ModelKey: "t4", Mode: mode}
+			spec.GpuBusinessSpec = &acc.GpuBusinessSpec{ProfileId: ref.ProfileID, ProfileVersion: 1, ProfileName: "GPU", ModelKey: model, Mode: mode, AllocationType: acc.AllocationType(acc.AllocationType_value[allocation]), DevicesPerReplica: 1, MemoryMibPerDevice: memory, CoreLimitPercent: cores, ComputeUnitsPerDevice: cu, ResourceKey: key, AdapterId: adapter, SpecDigest: ref.SpecDigest}
 			request := &pb.AcceptCreateRequest{Context: &pb.CommandContext{TenantId: tenant, ResourceId: id, OperationId: operation}, Spec: spec}
 			request.Context.RequestDigest, e = pb.CommandDigest(request.Context, spec)
 			if e != nil {
@@ -98,7 +123,11 @@ func TestGpuExecutionPersistenceAndDeletedCatalogReplay(t *testing.T) {
 				t.Fatal(e)
 			}
 			runtime, _, _ := unstructured.NestedString(notebook.Object, "spec", "template", "spec", "runtimeClassName")
-			if runtime != "nvidia" {
+			expectedRuntime := "nvidia"
+			if testcase.hygon {
+				expectedRuntime = ""
+			}
+			if runtime != expectedRuntime {
 				t.Fatal("runtime changed", runtime)
 			}
 			containers, _, _ := unstructured.NestedSlice(notebook.Object, "spec", "template", "spec", "containers")

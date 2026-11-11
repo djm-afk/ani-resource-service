@@ -29,7 +29,6 @@ Resource 使用 `ANI_NETWORK_MODE=governance`，保留现有业务 mTLS listener
 ```json
 {
   "DatabaseDSNFile": "/managed/instance-runtime.dsn",
-  "SigningKeyFile": "/managed/instance-ed25519.key",
   "QuotaAddress": "governance.internal:9445",
   "QuotaCAFile": "/managed/quota-ca.pem",
   "QuotaCertFile": "/managed/resource-client.pem",
@@ -48,13 +47,13 @@ Resource 使用 `ANI_NETWORK_MODE=governance`，保留现有业务 mTLS listener
 }
 ```
 
-示例中的 UUID、地址与私有路径必须替换；未配置默认拒绝。NamespacePrefix 始终从当前 Network 配置读入，不由该 JSON 改写。SigningKeyFile 为 64 字节原始 Ed25519 私钥，不放入源码、普通归档或日志。
+示例中的 UUID、地址与私有路径必须替换；未配置默认拒绝。NamespacePrefix 始终从当前 Network 配置读入，不由该 JSON 改写。GPU 不再需要 Binding 专用私钥；Gov Quota mTLS 私钥仍只保存在受管私有文件中。
 
 显式 VPC 创建使用实际装配的 Network adapter，不再有单独的网络配置写入开关；adapter 未装配时 ResolveCreateSpec 返回 `INSTANCE_NETWORK_NOT_ENABLED`。私有配置严格拒绝未知字段，切换前必须移除原 `Service.NetworkV2Writes` 键。Network Consumer 协议 v2 仍保持原合同。
 
 三个能力闸门 `ANI_INSTANCE_NEW_INTENTS_ENABLED`、`ANI_INSTANCE_RESTART_ENABLED`、`ANI_INSTANCE_PVC_MUTATIONS_ENABLED` 均默认 `false`，仅精确值 `true` 启用；以[实际装配](../../cmd/ani-resource-service/instance.go)为准，不在私有 JSON 中另设来源。维护闸门关闭时拒绝新 CREATE、Start/Stop/Restart/PVC 命令和新 Storage 删除 ticket；当前授权后的原键重放、查询、已受理恢复及合法 `AcceptDelete` 不被这三个开关阻断。Storage 删除缺少 guard 不回退直删；[恢复 worker](../../internal/server/storage_worker.go)未就绪或其数据库健康失败时，应保持新入口关闭，不能只看普通服务健康就开放挂卸。
 
-Resource 不再建立 ACC release 连接或调用 `ObserveRelease`。旧私有配置中的 `ReleaseAddress/ReleaseCAFile/ReleaseCertFile/ReleaseKeyFile/ReleaseServerName` 仅为过渡解码兼容保留，不读取文件、不校验或连接地址；新配置应移除它们。`SigningKeyFile` 和 Pod owner 签名仍用于实际运行投影，必须保留；Gov Quota mTLS 继续校验受管 CA、客户端身份、TLS 1.3 和精确 DNS SAN。
+Resource 不再建立 ACC release 连接或调用 `ObserveRelease`。私有配置必须移除 `ReleaseAddress/ReleaseCAFile/ReleaseCertFile/ReleaseKeyFile/ReleaseServerName` 和 `SigningKeyFile`；严格解码拒绝这些退役键。移除专用 secret 挂载，不影响正常 owner UID/ownerReference 校验；Gov Quota mTLS 继续校验受管 CA、客户端身份、TLS 1.3 和精确 DNS SAN。
 
 创建 Notebook 的外部调用前，同一实例/lease 事务先持久 `ExternalComputeStarted` 与完整已见 Pod 历史；进程重启、Stop/Start 和并发删除均保留原 UID。普通 Notebook 删除采用 UID/RV 条件和 Foreground GC，不强制删除 Pod。明确 DELETE 后依次清理 Notebook/StatefulSet/Pod、专属 PVC/原 PV、网络和借用引用，再在同一事务中保存最终 owner 清理事实和稳定 outbox。未知 CREATE 保持阻塞；借用卷仅解除引用，原数据保留。
 
@@ -151,3 +150,23 @@ A36 外部 PVC 删除旁路保护由用户暂缓，记为 `DEFERRED_USER_SCOPE`�
 - 出现问题先关闭新意图，保留兼容新状态的 worker 向前恢复。已经写入新 execution、改变 `CurrentMounts` 或存在 guard ticket 时，不直接部署旧二进制，不把 `Spec` 覆盖回当前配置或删除新字段。保留实例账本、待定动作、guard、引用和退额 outbox；不得删除共享 Namespace、租户 Image pull secret 或其他任务对象。
 
 本任务快照、测试二进制、私有运行配置与文件哈希按当前状态记录的远端目录保留。临时 fixture PG/Redis 由标签核对后自动清理；隔离实验的持久 PG/Redis、卷和角色密钥保留用于恢复。CPU 基础设施探针已按原 UID 回收，资源清单记录留存；真实 GPU 产品对象必须通过产品删除并核对 compute、专属 PVC 与账本，再清理对应任务 SA/Namespace。共享平台组件缺失时记录准确断点和最小接入条件，不安装设备插件或重建集群来扩展本任务。
+
+## GPU v1.1 离线切换
+
+使用本批匹配的四后端及数据库备份。先关闭本批 GPU 新受理，通过原 owner 删除/取消并按原 charge 退款，确认没有待投递命令、待回执、应退未退 outbox 或本任务在途写入。维护窗口停止旧写入后备份，再用显式 instance migration 追加010（不改001..009）。启动不会自动迁移。
+
+一次性工具在本任务开发环境编译为 `gpu-contract-v11` 后传到已确认部署目标执行，不在部署主机构建。参数仅接受私有 DSN 文件和私有清单：
+
+```sh
+./gpu-contract-v11 -mode prepare -dsn-file <owner-dsn-file> -runtime-role <existing-runtime-role> -backup-file <pre-cutover-backup>
+./gpu-contract-v11 -mode inspect -dsn-file <owner-dsn-file> -manifest <new-private-manifest.json>
+# 根据 ACC 受管目录填写每条 preset 的 new_gpu_reference 与 new_profile（对应新 ACC GpuProfile 的 protobuf JSON）；不可转换条目显式 remove_unconvertible=true。
+./gpu-contract-v11 -mode apply -dsn-file <owner-dsn-file> -manifest <reviewed-private-manifest.json> -backup-file <pre-cutover-backup>
+./gpu-contract-v11 -mode finalize -dsn-file <owner-dsn-file> -runtime-role <existing-runtime-role> -backup-file <pre-cutover-backup>
+```
+
+工具使用公共 ProfileSpecDigest 复核 new_profile，并逐项核对其业务字段及设备上限与新引用一致。清单包含原 GPU 行、原 operation/ACK 和 release outbox，用0600文件保存，不提交仓库或输出到日志。apply 会在一次维护事务中核对对象集合及原行未漂移，拒绝未闭合 owner/退款/引用或仍租用的工作；只给闭合旧行设置 archived_at 并移除其 work 行，不删除父行或任何原 ACK/outbox。全部必要外键继续引用原身份。没有对象时保留空数组清单，不制造数据。
+
+prepare 仅复用 Instance.Migrate 追加010；主程序原有 -instance-migrate 会连带执行 compute，不能用于本次分段切换。预设转换完成后 finalize 复用 Compute.Migrate 显式追加 compute 002，安装匹配新版本并移除旧签名/release配置；新 GPU 无旧 JSON 解码。compute readiness 要求已知的001、002 checksum。可确定升级的 preset ID 与启停状态不变。回退恢复本次备份和对应整组旧二进制；不调用旧 metadata-only restore 把 v1.1 库在线变回旧语义。
+
+迁移与真实账务闭合、部署和设备验收分别记录；工具通过不表示硬件计算或66业务链已经验证。

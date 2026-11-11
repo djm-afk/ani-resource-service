@@ -2,10 +2,15 @@ package instancev1
 
 import (
 	acc "github.com/zhangzhe-ctrl/ani-accelerator-service/api/gen/go/accelerator/v1"
+	"github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
 	"google.golang.org/protobuf/proto"
+	"strings"
 	"testing"
 )
 
+func fixtureBusinessSpec(profile string, memory int64) *acc.GpuBusinessSpec {
+	return &acc.GpuBusinessSpec{ProfileId: profile, ProfileVersion: 1, ProfileName: "T4", ModelKey: "t4", Mode: acc.SupplyMode_SHARED_FIXED, AllocationType: acc.AllocationType_DYNAMIC_SHARED, DevicesPerReplica: 1, MemoryMibPerDevice: memory, CoreLimitPercent: 25, ResourceKey: "volcano.sh/vgpu-number", AdapterId: "volcano-hami-mib-v1", SpecDigest: strings.Repeat("a", 64)}
+}
 func executionFixture() *acc.GpuExecution {
 	g := &acc.GpuExecution{SchedulerName: "volcano", QueueName: "default", RuntimeClassName: "nvidia", NodeSelector: map[string]string{"accelerator.ani.io/supply-group": "group", "accelerator.ani.io/model-key": "t4", "accelerator.ani.io/baseline-id": "config"}, PodAnnotations: map[string]string{"volcano.sh/vgpu-mode": "hami-core"}, Resources: map[string]string{"volcano.sh/vgpu-number": "1", "volcano.sh/vgpu-memory": "8192", "volcano.sh/vgpu-cores": "25"}}
 	g.ExecutionDigest, _ = ExecutionDigest(g)
@@ -24,7 +29,7 @@ func TestExecutionAbsoluteMemoryAndWhitelist(t *testing.T) {
 			v := proto.Clone(g).(*acc.GpuExecution)
 			change(v)
 			v.ExecutionDigest, _ = ExecutionDigest(v)
-			if ValidateGpuExecution(v) == nil {
+			if gpuprotocol.ValidateGpuExecutionForBusinessSpec(v, fixtureBusinessSpec("11111111-1111-4111-8111-111111111111", 8192)) == nil {
 				t.Fatal("unsafe execution accepted")
 			}
 		})

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zhangzhe-ctrl/ani-accelerator-service/pkg/gpuprotocol"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -55,7 +56,21 @@ func CanonicalBusinessPayload(m proto.Message) ([]byte, error) {
 		if e := validateSpecConfiguration(v); e != nil {
 			return nil, e
 		}
-		value = map[string]any{"name": v.Name, "image_id": v.ImageId, "image_scope": v.ImageScope, "preset_id": v.PresetId, "image_reference": v.ImageReference, "cpu": v.Cpu, "memory": v.Memory, "cluster_id": v.ClusterId, "namespace": v.Namespace, "service_account": v.ServiceAccount, "storage_class": v.StorageClass, "workspace_size": v.WorkspaceSize, "shell": v.Shell, "uid": strconv.FormatInt(v.Uid, 10), "gid": strconv.FormatInt(v.Gid, 10), "instance_kind": v.InstanceKind, "compute_type": v.ComputeType, "scheduling": wireJSON(v.Scheduling), "preset_name": v.PresetName, "preset_code": v.PresetCode, "gpu_execution": wireJSON(v.GpuExecution), "gpu_display": wireJSON(v.GpuDisplay), "gpu_selection": wireJSON(v.GpuSelection)}
+		value = map[string]any{"name": v.Name, "image_id": v.ImageId, "image_scope": v.ImageScope, "preset_id": v.PresetId, "image_reference": v.ImageReference, "cpu": v.Cpu, "memory": v.Memory, "cluster_id": v.ClusterId, "namespace": v.Namespace, "service_account": v.ServiceAccount, "storage_class": v.StorageClass, "workspace_size": v.WorkspaceSize, "shell": v.Shell, "uid": strconv.FormatInt(v.Uid, 10), "gid": strconv.FormatInt(v.Gid, 10), "instance_kind": v.InstanceKind, "compute_type": v.ComputeType, "scheduling": wireJSON(v.Scheduling), "preset_name": v.PresetName, "preset_code": v.PresetCode, "gpu_execution": nil, "gpu_display": nil, "gpu_selection": nil}
+		switch v.ComputeType {
+		case "cpu":
+			if v.GpuExecution != nil || v.GpuBusinessSpec != nil || v.GpuSelection != nil {
+				return nil, ErrInvalidBusiness
+			}
+		case "gpu":
+			delete(value, "gpu_display")
+			value["gpu_execution"] = wireJSON(v.GpuExecution)
+			value["gpu_business_spec"] = wireJSON(v.GpuBusinessSpec)
+			value["gpu_selection"] = wireJSON(v.GpuSelection)
+		default:
+			return nil, ErrInvalidBusiness
+		}
+
 		value["workspace_mount_path"] = v.WorkspaceMountPath
 		mounts := []any{}
 		for _, x := range sortedFrozenMounts(v.VolumeMounts) {
@@ -100,10 +115,10 @@ func wireJSON(m proto.Message) any {
 		return out
 	case *acc.GpuExecution:
 		return map[string]any{"scheduler_name": v.SchedulerName, "queue_name": v.QueueName, "runtime_class_name": v.RuntimeClassName, "node_selector": nonNilMap(v.NodeSelector), "pod_annotations": nonNilMap(v.PodAnnotations), "resources": nonNilMap(v.Resources), "execution_digest": v.ExecutionDigest}
-	case *acc.GpuDisplay:
-		return map[string]any{"profile_id": v.ProfileId, "profile_version": strconv.FormatUint(v.ProfileVersion, 10), "profile_name": v.ProfileName, "model_key": v.ModelKey, "mode": supplyModeJSON(int32(v.Mode))}
+	case *acc.GpuBusinessSpec:
+		return map[string]any{"profile_id": v.ProfileId, "profile_version": strconv.FormatUint(v.ProfileVersion, 10), "profile_name": v.ProfileName, "model_key": v.ModelKey, "mode": supplyModeJSON(int32(v.Mode)), "allocation_type": allocationJSON(int32(v.AllocationType)), "devices_per_replica": v.DevicesPerReplica, "memory_mib_per_device": strconv.FormatInt(v.MemoryMibPerDevice, 10), "core_limit_percent": v.CoreLimitPercent, "compute_units_per_device": v.ComputeUnitsPerDevice, "resource_key": v.ResourceKey, "adapter_id": v.AdapterId, "spec_digest": v.SpecDigest}
 	case *GpuPresetReference:
-		return map[string]any{"profile_id": v.ProfileId, "profile_version": strconv.FormatUint(v.ProfileVersion, 10), "spec_digest": v.SpecDigest, "devices_per_instance": v.DevicesPerInstance, "cluster_id": v.ClusterId, "pool_id": v.PoolId, "mode": supplyModeJSON(int32(v.Mode)), "model_key": v.ModelKey, "memory_mib_per_device": strconv.FormatInt(v.MemoryMibPerDevice, 10), "core_limit_percent": v.CoreLimitPercent}
+		return map[string]any{"profile_id": v.ProfileId, "profile_version": strconv.FormatUint(v.ProfileVersion, 10), "spec_digest": v.SpecDigest, "devices_per_instance": v.DevicesPerInstance, "cluster_id": v.ClusterId, "pool_id": v.PoolId, "mode": supplyModeJSON(int32(v.Mode)), "model_key": v.ModelKey, "memory_mib_per_device": strconv.FormatInt(v.MemoryMibPerDevice, 10), "core_limit_percent": v.CoreLimitPercent, "allocation_type": allocationJSON(int32(v.AllocationType)), "resource_key": v.ResourceKey, "compute_units_per_device": v.ComputeUnitsPerDevice, "adapter_id": v.AdapterId}
 	case *VolumeMount:
 		return map[string]any{"pvc_name": v.PvcName, "mount_path": v.MountPath, "read_only": v.ReadOnly}
 	case *FrozenVolumeMount:
@@ -124,6 +139,9 @@ func fixedEnum(number int32, names map[int32]string) any {
 }
 func supplyModeJSON(number int32) any {
 	return fixedEnum(number, map[int32]string{int32(acc.SupplyMode_SUPPLY_MODE_UNSPECIFIED): "SUPPLY_MODE_UNSPECIFIED", int32(acc.SupplyMode_WHOLE_EXCLUSIVE): "WHOLE_EXCLUSIVE", int32(acc.SupplyMode_SHARED_FIXED): "SHARED_FIXED"})
+}
+func allocationJSON(number int32) any {
+	return fixedEnum(number, map[int32]string{0: "ALLOCATION_TYPE_UNSPECIFIED", 1: "PHYSICAL", 2: "DYNAMIC_SHARED", 3: "FIXED_PARTITION"})
 }
 func nonNilMap(m map[string]string) map[string]string {
 	if m == nil {
@@ -147,22 +165,56 @@ func BusinessPayloadDigest(m proto.Message) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 func DecodeBusinessPayload(raw []byte) (*CreateSpec, error) {
-	b := new(CreateSpec)
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return nil, err
 	}
+	var kind string
+	if err := json.Unmarshal(fields["compute_type"], &kind); err != nil {
+		return nil, ErrInvalidBusiness
+	}
+	switch kind {
+	case "cpu":
+		if _, present := fields["gpu_business_spec"]; present {
+			return nil, ErrInvalidBusiness
+		}
+		for _, key := range []string{"gpu_display", "gpu_execution", "gpu_selection"} {
+			value, present := fields[key]
+			if !present || !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return nil, ErrInvalidBusiness
+			}
+		}
+		delete(fields, "gpu_display")
+	case "gpu":
+		if _, present := fields["gpu_display"]; present {
+			return nil, ErrInvalidBusiness
+		}
+	default:
+		return nil, ErrInvalidBusiness
+	}
+	b := new(CreateSpec)
 	descriptor := b.ProtoReflect().Descriptor().Fields()
 	for name := range fields {
 		if descriptor.ByName(protoreflect.Name(name)) == nil && descriptor.ByJSONName(name) == nil {
 			return nil, ErrInvalidBusiness
 		}
 	}
-	if e := protojson.Unmarshal(raw, b); e != nil {
-		return nil, e
+	current, err := json.Marshal(fields)
+	if err != nil {
+		return nil, err
 	}
-	if e := ValidateCreateSpec(b, b.GpuExecution != nil); e != nil {
-		return nil, e
+	if err = protojson.Unmarshal(current, b); err != nil {
+		return nil, err
+	}
+	if err = ValidateCreateSpec(b, b.GpuExecution != nil); err != nil {
+		return nil, err
+	}
+	canonical, err := CanonicalBusinessPayload(b)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(raw, canonical) {
+		return nil, ErrInvalidBusiness
 	}
 	return b, nil
 }
@@ -262,39 +314,25 @@ func ValidateCreateSpec(s *CreateSpec, accepted bool) error {
 		return err
 	}
 	if s.ComputeType == "cpu" {
-		if s.GpuExecution != nil || s.GpuDisplay != nil || s.GpuSelection != nil {
+		if s.GpuExecution != nil || s.GpuBusinessSpec != nil || s.GpuSelection != nil {
 			return ErrInvalidBusiness
 		}
 		return nil
 	}
 	if !accepted {
-		if s.GpuSelection == nil {
+		if s.GpuSelection == nil || s.GpuExecution != nil || s.GpuBusinessSpec != nil || s.GpuSelection.ClusterId != s.ClusterId {
 			return ErrInvalidBusiness
+		}
+		if err := gpuprotocol.ValidateGpuBusinessSpec(referenceBusinessSpec(s.GpuSelection)); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidBusiness, err)
 		}
 		return nil
 	}
-	if s.GpuSelection != nil || s.GpuDisplay == nil || s.GpuDisplay.ProfileId == "" || s.GpuDisplay.ProfileVersion == 0 {
+	if s.GpuSelection != nil || s.GpuExecution == nil || s.GpuBusinessSpec == nil {
 		return ErrInvalidBusiness
 	}
-	if err := ValidateGpuExecution(s.GpuExecution); err != nil {
-		return err
-	}
-	g, d := s.GpuExecution, s.GpuDisplay
-	cores, _ := strconv.ParseInt(g.Resources["volcano.sh/vgpu-cores"], 10, 32)
-	if d.ModelKey != g.NodeSelector["accelerator.ani.io/model-key"] {
-		return ErrInvalidBusiness
-	}
-	switch d.Mode {
-	case acc.SupplyMode_SHARED_FIXED:
-		if g.Resources["volcano.sh/vgpu-number"] != "1" || cores >= 100 {
-			return ErrInvalidBusiness
-		}
-	case acc.SupplyMode_WHOLE_EXCLUSIVE:
-		if cores != 100 {
-			return ErrInvalidBusiness
-		}
-	default:
-		return ErrInvalidBusiness
+	if err := gpuprotocol.ValidateGpuExecutionForBusinessSpec(s.GpuExecution, s.GpuBusinessSpec); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidBusiness, err)
 	}
 	return nil
 }
@@ -312,7 +350,7 @@ func CommandDigest(c *CommandContext, s *CreateSpec) (string, error) {
 	if s.GpuExecution != nil {
 		execution = s.GpuExecution.ExecutionDigest
 	}
-	var scheduling, display any
+	var scheduling any
 	if p := s.Scheduling; p != nil {
 		var placement, priority any
 		if p.PodPlacement != nil {
@@ -323,10 +361,19 @@ func CommandDigest(c *CommandContext, s *CreateSpec) (string, error) {
 		}
 		scheduling = map[string]any{"pod_placement": placement, "priority_class_name": priority}
 	}
-	if d := s.GpuDisplay; d != nil {
-		display = map[string]any{"profile_id": d.ProfileId, "profile_version": fmt.Sprint(d.ProfileVersion), "profile_name": d.ProfileName, "model_key": d.ModelKey, "mode": fmt.Sprint(int32(d.Mode))}
+	value := map[string]any{"tenant_id": c.TenantId, "resource_id": c.ResourceId, "operation_id": c.OperationId, "name": s.Name, "image_id": s.ImageId, "image_scope": s.ImageScope, "preset_id": s.PresetId, "image_reference": s.ImageReference, "cpu": s.Cpu, "memory": s.Memory, "cluster_id": s.ClusterId, "namespace": s.Namespace, "service_account": s.ServiceAccount, "storage_class": s.StorageClass, "workspace_size": s.WorkspaceSize, "shell": s.Shell, "uid": fmt.Sprint(s.Uid), "gid": fmt.Sprint(s.Gid), "instance_kind": s.InstanceKind, "compute_type": s.ComputeType, "scheduling": scheduling, "preset_name": s.PresetName, "preset_code": s.PresetCode, "gpu_display": nil, "execution_digest": execution}
+	switch s.ComputeType {
+	case "cpu":
+		if s.GpuBusinessSpec != nil || s.GpuExecution != nil || s.GpuSelection != nil {
+			return "", ErrInvalidBusiness
+		}
+	case "gpu":
+		delete(value, "gpu_display")
+		value["gpu_business_spec"] = wireJSON(s.GpuBusinessSpec)
+	default:
+		return "", ErrInvalidBusiness
 	}
-	value := map[string]any{"tenant_id": c.TenantId, "resource_id": c.ResourceId, "operation_id": c.OperationId, "name": s.Name, "image_id": s.ImageId, "image_scope": s.ImageScope, "preset_id": s.PresetId, "image_reference": s.ImageReference, "cpu": s.Cpu, "memory": s.Memory, "cluster_id": s.ClusterId, "namespace": s.Namespace, "service_account": s.ServiceAccount, "storage_class": s.StorageClass, "workspace_size": s.WorkspaceSize, "shell": s.Shell, "uid": fmt.Sprint(s.Uid), "gid": fmt.Sprint(s.Gid), "instance_kind": s.InstanceKind, "compute_type": s.ComputeType, "scheduling": scheduling, "preset_name": s.PresetName, "preset_code": s.PresetCode, "gpu_display": display, "execution_digest": execution}
+
 	domain := "resource-create\n"
 	value["workspace_mount_path"] = s.WorkspaceMountPath
 	mounts := []any{}
@@ -389,4 +436,11 @@ func hasUnknown(m protoreflect.Message) bool {
 		return !unknown
 	})
 	return unknown
+}
+
+func referenceBusinessSpec(g *GpuPresetReference) *acc.GpuBusinessSpec {
+	if g == nil {
+		return nil
+	}
+	return &acc.GpuBusinessSpec{ProfileId: g.ProfileId, ProfileVersion: g.ProfileVersion, SpecDigest: g.SpecDigest, ModelKey: g.ModelKey, Mode: g.Mode, AllocationType: g.AllocationType, DevicesPerReplica: g.DevicesPerInstance, MemoryMibPerDevice: g.MemoryMibPerDevice, CoreLimitPercent: g.CoreLimitPercent, ComputeUnitsPerDevice: g.ComputeUnitsPerDevice, ResourceKey: g.ResourceKey, AdapterId: g.AdapterId}
 }
