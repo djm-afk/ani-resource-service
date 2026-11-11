@@ -252,9 +252,18 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	return kratos.New(kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(servers...),
-		kratos.AfterStart(func(context.Context) error { readiness.Set(true); return nil }),
-		kratos.BeforeStop(func(context.Context) error { readiness.Set(false); return nil }),
+		kratos.AfterStart(func(context.Context) error {
+			readiness.Set(true)
+			logger.Info("service ready", "event", "process.ready")
+			return nil
+		}),
+		kratos.BeforeStop(func(context.Context) error {
+			readiness.Set(false)
+			logger.Info("service stopping", "event", "process.stopping")
+			return nil
+		}),
 		kratos.AfterStop(func(ctx context.Context) error {
+			logger.Info("service stopped", "event", "process.stopped")
 			repository.Close()
 			return nil
 		}),

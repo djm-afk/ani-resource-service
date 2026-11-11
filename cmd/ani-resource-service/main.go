@@ -17,7 +17,9 @@ import (
 	"github.com/go-kratos/kratos/v3/config/env"
 	"github.com/go-kratos/kratos/v3/config/file"
 	"github.com/go-kratos/kratos/v3/log"
+	"github.com/go-logr/logr"
 	"go.uber.org/automaxprocs/maxprocs"
+	"k8s.io/klog/v2"
 
 	conf "github.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
@@ -61,6 +63,9 @@ func main() {
 	logger := newRuntimeLoggerAtLevel(logOutput, level)
 	log.SetDefault(logger)
 	slog.SetDefault(logger)
+	// Route client-go/klog through the same JSON handler; otherwise its
+	// warnings are printed as plain text and break the stdout contract.
+	klog.SetLogger(logr.FromSlogHandler(logger.Handler()))
 	if levelErr != nil {
 		attrs := append([]any{"event", "process.start_failed", "step", "logger", "log_format", "json"},
 			logfields.ErrorFields(levelErr)...)
@@ -137,6 +142,10 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	logger.Info("service starting",
+		"event", "process.starting",
+		"log_format", "json",
+		"log_level", resLevelName(runtimeLevel(os.Getenv("ANI_LOG_LEVEL"))))
 	undoMaxProcs, err := maxprocs.Set(maxprocs.Logger(func(format string, args ...interface{}) {
 		log.Info("runtime CPU quota", "detail", fmt.Sprintf(format, args...))
 	}))
@@ -216,7 +225,7 @@ func parseRuntimeLevel(raw string) (slog.Level, error) {
 }
 
 func newRuntimeLoggerAtLevel(writer io.Writer, level slog.Level) *slog.Logger {
-	handler := log.NewHandler(
+	handler := newContractHandler(log.NewHandler(
 		log.WithWriter(writer),
 		log.WithFormat(log.FormatJSON),
 		log.WithLevel(level),
@@ -234,7 +243,7 @@ func newRuntimeLoggerAtLevel(writer io.Writer, level slog.Level) *slog.Logger {
 			"set-cookie",
 			"token",
 		)),
-	)
+	))
 	return slog.New(handler).With(
 		slog.String("service.name", Name),
 		slog.String("service.version", Version),
