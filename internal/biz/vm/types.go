@@ -28,6 +28,12 @@ var (
 	ErrLease                  = errors.New("VM_LEASE_LOST")
 	ErrConsole                = errors.New("VM_CONSOLE_TARGET_CHANGED")
 	ErrNetworkAdmissionClosed = errors.New("NETWORK_NEW_ADMISSION_CLOSED")
+	// ErrCloneSourceUnavailable reports a source that cannot be cloned under the
+	// first-phase contract. It keeps the native reason and volume name.
+	ErrCloneSourceUnavailable = errors.New("VM_CLONE_SOURCE_UNAVAILABLE")
+	// ErrCloneSourceNotReady reports a source dependency that is not observed
+	// yet. It stays retryable and must never be treated as "cannot clone".
+	ErrCloneSourceNotReady = errors.New("VM_CLONE_SOURCE_NOT_READY")
 )
 
 // NativeNotSubmittedError confirms that a native command did not reach its
@@ -120,10 +126,12 @@ type Spec struct {
 	Driver                                                                            *Source
 	Network                                                                           NetworkSelection
 	DNS                                                                               *DNS
-	BootDevice                                                                        string
+	BootDevice                                                                         string
 	StartAfterCreate                                                                  bool
 	InitialDisks                                                                      []Disk
 	GuestInitialization                                                               *GuestInitialization
+	// CloneSource is set only for VM_CLONE creates. It is part of the frozen spec.
+	CloneSource *CloneSource
 }
 type VM struct {
 	NetworkInterfaces                          []NetworkInterface
@@ -149,6 +157,9 @@ type VM struct {
 	Desired, Observed, Reason, LastOperationID string
 	Addresses                                  []Address
 	ObservedAt                                 time.Time
+	// CloneProgress advances only for a VM_CLONE target. It lives on the VM so
+	// registration and deletion intent survive one operation.
+	CloneProgress *CloneProgress
 	// CreatedAt comes from the row column; it is not part of the stored payload.
 	CreatedAt time.Time `json:"-"`
 }

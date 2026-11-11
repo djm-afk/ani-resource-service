@@ -196,13 +196,29 @@ func hasUnknown(m protoreflect.Message) bool {
 }
 
 func ValidateUserIntent(d *CreateVMData) error {
-	if d == nil || hasUnknown(d.ProtoReflect()) || strings.TrimSpace(d.Name) == "" || utf8.RuneCountInString(d.Name) > 128 || !validUUID(d.PresetId) || d.MediaKey == "" || !validSize(d.SystemDiskSizeGb) || d.StartAfterCreate == nil || d.Network == nil || !vpcIDPattern.MatchString(d.Network.VpcId) || !subnetIDPattern.MatchString(d.Network.SubnetId) {
+	if d == nil || hasUnknown(d.ProtoReflect()) || strings.TrimSpace(d.Name) == "" || utf8.RuneCountInString(d.Name) > 128 {
+		return ErrInvalidRequest
+	}
+	switch d.SourceKind {
+	case "DISK_IMAGE", "INSTALL_ISO":
+		if d.CloneSource != nil {
+			return ErrInvalidRequest
+		}
+		return validateImageCreateIntent(d)
+	case "VM_CLONE":
+		return validateCloneCreateIntent(d)
+	default:
+		return ErrInvalidRequest
+	}
+}
+
+// validateImageCreateIntent keeps every rule of the image/ISO create contract.
+// Clone fields never widen it.
+func validateImageCreateIntent(d *CreateVMData) error {
+	if !validUUID(d.PresetId) || d.MediaKey == "" || !validSize(d.SystemDiskSizeGb) || d.StartAfterCreate == nil || d.Network == nil || !vpcIDPattern.MatchString(d.Network.VpcId) || !subnetIDPattern.MatchString(d.Network.SubnetId) {
 		return ErrInvalidRequest
 	}
 	if ValidateSecurityGroupIDs(d.SecurityGroupIds) != nil {
-		return ErrInvalidRequest
-	}
-	if d.SourceKind != "DISK_IMAGE" && d.SourceKind != "INSTALL_ISO" {
 		return ErrInvalidRequest
 	}
 	if validateGuestInitialization(d.GuestInitialization) != nil || (d.GuestInitialization != nil && d.SourceKind != "DISK_IMAGE") {
@@ -217,6 +233,27 @@ func ValidateUserIntent(d *CreateVMData) error {
 			return ErrInvalidRequest
 		}
 		seen[disk.ClientDiskKey] = true
+	}
+	return nil
+}
+
+// validateCloneCreateIntent enforces the exclusive clone selector. Overrides the
+// source already owns (preset, media, size, disks, network, DNS, initialization)
+// are rejected instead of being silently inherited or ignored, and an empty
+// message is not accepted as an inheritance instruction.
+func validateCloneCreateIntent(d *CreateVMData) error {
+	c := d.CloneSource
+	if c == nil || !validUUID(c.SourceVmId) || c.ExpectedSourceVersion < 1 {
+		return ErrInvalidRequest
+	}
+	if d.PresetId != "" || d.MediaKey != "" || d.SystemDiskSizeGb != 0 {
+		return ErrInvalidRequest
+	}
+	if len(d.DataDisks) != 0 || len(d.SecurityGroupIds) != 0 {
+		return ErrInvalidRequest
+	}
+	if d.Network != nil || d.Dns != nil || d.GuestInitialization != nil {
+		return ErrInvalidRequest
 	}
 	return nil
 }
@@ -256,7 +293,16 @@ func validateMedia(m *MediaReference) error {
 }
 
 func ValidateCreateSpec(s *CreateSpec) error {
-	if s == nil || hasUnknown(s.ProtoReflect()) || ValidateUserIntent(s.Intent) != nil || compute.ValidateSelection(s.Compute) != nil || !validUUID(s.ClusterId) || !validName(s.Namespace) || s.NamespaceUid == "" || !validName(s.ServiceAccount) || s.Storage == nil || s.Network == nil || validateMedia(s.Media) != nil {
+	if s == nil || hasUnknown(s.ProtoReflect()) || ValidateUserIntent(s.Intent) != nil || compute.ValidateSelection(s.Compute) != nil || !validUUID(s.ClusterId) || !validName(s.Namespace) || s.NamespaceUid == "" || !validName(s.ServiceAccount) || s.Storage == nil || s.Network == nil {
+		return ErrInvalidRequest
+	}
+	if s.Intent.SourceKind == "VM_CLONE" {
+		return validateCloneCreateSpec(s)
+	}
+	if s.CloneSource != nil {
+		return ErrInvalidRequest
+	}
+	if validateMedia(s.Media) != nil {
 		return ErrInvalidRequest
 	}
 	if ValidateSecurityGroupIDs(s.SecurityGroupIds) != nil || !slices.Equal(s.SecurityGroupIds, s.Intent.SecurityGroupIds) {
@@ -298,8 +344,101 @@ func ValidateCreateSpec(s *CreateSpec) error {
 	return nil
 }
 
-// Version 1 has a closed field projection. Never add a new field to this list
-// when evolving descriptors: an accepted payload must retain its original bytes.
+// validateCloneCreateSpec keeps every trusted-contract rule that still applies
+// and replaces only the "user input equals frozen value" equations. Machine
+// description comes from the source profile, while the source identity itself is
+// carried by CloneSource.
+func validateCloneCreateSpec(s *CreateSpec) error {
+	if s.CloneSource == nil || s.Intent.CloneSource == nil {
+		return ErrInvalidRequest
+	}
+	c, in := s.CloneSource, s.Intent.CloneSource
+	if !validUUID(c.SourceVmId) || c.SourceVmId != in.SourceVmId || c.SourceVersion != in.ExpectedSourceVersion || c.SourceVersion < 1 {
+		return ErrInvalidRequest
+	}
+	if c.SourceName == "" || !validName(c.SourceNativeName) || c.SourceNativeUid == "" {
+		return ErrInvalidRequest
+	}
+	if len(c.Disks) == 0 {
+		return ErrInvalidRequest
+	}
+	seenID, seenVolume, systems := map[string]bool{}, map[string]bool{}, 0
+	for _, d := range c.Disks {
+		if d == nil || !validUUID(d.SourceDiskId) || seenID[d.SourceDiskId] || !validName(d.VolumeName) || seenVolume[d.VolumeName] || strings.TrimSpace(d.Name) == "" || !validSize(d.SizeGb) {
+			return ErrInvalidRequest
+		}
+		if d.Role != "system" && d.Role != "data" {
+			return ErrInvalidRequest
+		}
+		if d.Role == "system" {
+			systems++
+		}
+		seenID[d.SourceDiskId], seenVolume[d.VolumeName] = true, true
+	}
+	if systems != 1 {
+		return ErrInvalidRequest
+	}
+	// Media is a machine-only projection; no historical image, PVC or driver
+	// identity may travel through it.
+	m := s.Media
+	if m == nil || m.MediaKey != "" || m.Name != "" || m.Kind != "" || m.ClusterId != "" || m.Namespace != "" || m.PvcName != "" || m.PvcUid != "" || m.Checksum != "" || m.VolumeMode != "" || m.ContentType != "" || m.VirtualCapacityBytes != 0 || m.RequestedBytes != 0 || m.DriverMediaKey != "" || m.InitializationCapability != "" {
+		return ErrInvalidRequest
+	}
+	if (m.OsFamily != "linux" && m.OsFamily != "windows") || m.OsVersion == "" || m.Architecture != "amd64" {
+		return ErrInvalidRequest
+	}
+	if m.Firmware != "bios" && m.Firmware != "uefi" {
+		return ErrInvalidRequest
+	}
+	if m.RootBus != "virtio" && m.RootBus != "scsi" && m.RootBus != "sata" {
+		return ErrInvalidRequest
+	}
+	if m.DataBus != "scsi" || (m.NicModel != "virtio" && m.NicModel != "e1000" && m.NicModel != "e1000e") {
+		return ErrInvalidRequest
+	}
+	if s.DriverMedia != nil || s.BootDevice != "SYSTEM_DISK" {
+		return ErrInvalidRequest
+	}
+	if len(s.Intent.SecurityGroupIds) != 0 || ValidateSecurityGroupIDs(s.SecurityGroupIds) != nil {
+		return ErrInvalidRequest
+	}
+	p := s.Storage
+	if !validName(p.StorageClass) || p.StorageClassUid == "" || p.VolumeMode != "Block" || len(p.AccessModes) != 1 || p.AccessModes[0] != "ReadWriteOnce" {
+		return ErrInvalidRequest
+	}
+	if s.Sockets != 1 || s.Threads != 1 || s.Compute.CpuMillis > int64(math.MaxUint32)*1000 || s.Cores != uint32((s.Compute.CpuMillis+999)/1000) {
+		return ErrInvalidRequest
+	}
+	n := s.Network
+	if !vpcIDPattern.MatchString(n.VpcId) || !subnetIDPattern.MatchString(n.SubnetId) || !validName(n.NadName) || !digestPattern.MatchString(n.NadConfigDigest) {
+		return ErrInvalidRequest
+	}
+	if e := validateFrozenCloneDNS(s); e != nil {
+		return e
+	}
+	if (m.PersistentTpm || m.PersistentUefi) && (!validName(p.BackendStorageClass) || m.Firmware != "uefi") {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
+// validateFrozenCloneDNS checks the inherited resolver configuration on its own
+// terms. A clone has no DNS input to compare against, so an inherited CUSTOM or
+// PLATFORM_DEFAULT value is accepted, and a source without frozen DNS stays nil.
+func validateFrozenCloneDNS(s *CreateSpec) error {
+	if s.Dns == nil {
+		return nil
+	}
+	servers, e := NormalizeDNSServers(s.Dns.Nameservers)
+	if e != nil || !slices.Equal(servers, s.Dns.Nameservers) {
+		return ErrInvalidRequest
+	}
+	if s.Dns.Mode != DNSPlatformDefault && s.Dns.Mode != DNSCustom {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
 var canonicalFields = map[protoreflect.FullName][]string{
 	"vm.v1.CreateVMData":        {"name", "preset_id", "source_kind", "media_key", "system_disk_size_gb", "data_disks", "network", "start_after_create"},
 	"vm.v1.InitialDataDisk":     {"client_disk_key", "name", "size_gb"},
@@ -311,13 +450,16 @@ var canonicalFields = map[protoreflect.FullName][]string{
 	"vm.v1.GuestInitialization": {"method", "username", "ssh_public_key", "password_set", "credential_intent_digest"},
 	"vm.v1.DNSSelection":        {"mode", "nameservers"},
 	"vm.v1.FrozenDNS":           {"mode", "nameservers"},
+	"vm.v1.VMCloneSource":       {"source_vm_id", "expected_source_version"},
+	"vm.v1.VMCloneDisk":         {"source_disk_id", "volume_name", "role", "name", "size_gb"},
+	"vm.v1.FrozenVMCloneSource": {"source_vm_id", "source_name", "source_version", "source_native_name", "source_native_uid", "disks"},
 }
 
 // Optional extensions are omitted at their default value, preserving accepted
 // v1 bytes for payloads which predate guest initialization or DNS selection.
 var canonicalOptionalFields = map[protoreflect.FullName][]string{
-	"vm.v1.CreateVMData":   {"guest_initialization", "dns", "security_group_ids"},
-	"vm.v1.CreateSpec":     {"dns", "security_group_ids"},
+	"vm.v1.CreateVMData":   {"guest_initialization", "dns", "security_group_ids", "clone_source"},
+	"vm.v1.CreateSpec":     {"dns", "security_group_ids", "clone_source"},
 	"vm.v1.MediaReference": {"initialization_capability"},
 }
 

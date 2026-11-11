@@ -44,7 +44,7 @@ func init() {
 func main() {
 	flag.Parse()
 	logOutput := os.Stdout
-	if imageAdminAction != "" {
+	if imageAdminAction != "" || vmCloneReleaseMode {
 		// Keep the operator's single JSON result readable on stdout.
 		logOutput = os.Stderr
 	}
@@ -52,6 +52,12 @@ func main() {
 	log.SetDefault(logger)
 	slog.SetDefault(logger)
 	execute := func() error {
+		if vmCloneReleaseMode {
+			if sandboxReviewMode || flagVMMigrate || flagComputeRestore || flagInstanceMigrate || flagSandboxMigrate || flagMigrate || flagImageMigrate || imageAdminAction != "" || baseConnectivityAction != "" {
+				return fmt.Errorf("clone release is exclusive with other command modes")
+			}
+			return runVMCloneRelease()
+		}
 		if sandboxReviewMode {
 			if flagVMMigrate || flagComputeRestore || flagInstanceMigrate || flagSandboxMigrate || flagMigrate || flagImageMigrate || imageAdminAction != "" || baseConnectivityAction != "" {
 				return fmt.Errorf("sandbox diagnostic is exclusive with other command modes")

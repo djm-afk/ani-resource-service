@@ -69,6 +69,38 @@ func TestManualVNicPGSecurityGroupVersionFence(t *testing.T) {
 	}
 }
 
+// A consumer snapshot without security groups arrives as a nil slice. An absent
+// selection is the same fact as an empty one, and network_vnics.security_group_ids
+// is NOT NULL, so the nil must never reach SQL as NULL and trap the caller in
+// an endless retry of a permanently failing statement.
+func TestManualVNicSGNilSelectionStaysEmptyNotNULL(t *testing.T) {
+	f := newAttachmentFixture(t)
+	ctx := context.Background()
+	v := manualVNic(t, f, "sg-nil")
+	consumer := "vm-without-policy"
+	if _, e := f.n.ReserveVNic(ctx, biz.VNicReservation{TenantID: v.TenantID, VNicID: v.ID, ConsumerKind: "vm", ConsumerID: consumer, Slot: "primary", OperationID: uuid.NewString(), SubnetID: v.SubnetID, Revision: 1}); e != nil {
+		t.Fatal(e)
+	}
+	var groups []string
+	got, e := f.n.SyncVNicSecurityGroups(ctx, v.TenantID, v.ID, "vm", consumer, groups)
+	if e != nil {
+		t.Fatal("nil selection was rejected instead of stored as empty", e)
+	}
+	if len(got.SecurityGroupIDs) != 0 || len(got.SecurityGroupNames) != 0 {
+		t.Fatal("empty selection produced groups", got)
+	}
+	var columnNull, payloadNull bool
+	if e = f.owner.QueryRow(ctx, `SELECT security_group_ids IS NULL FROM network_vnics WHERE tenant_id=$1 AND vnic_id=$2`, v.TenantID, v.ID).Scan(&columnNull); e != nil {
+		t.Fatal(e)
+	}
+	if e = f.owner.QueryRow(ctx, `SELECT payload->'SecurityGroupIDs' = 'null'::jsonb FROM network_security_group_targets WHERE tenant_id=$1 AND target_type='vnic' AND target_id=$2`, v.TenantID, v.ID).Scan(&payloadNull); e != nil {
+		t.Fatal(e)
+	}
+	if columnNull || payloadNull {
+		t.Fatal("empty selection was stored as NULL", columnNull, payloadNull)
+	}
+}
+
 // Configuration confirmation is local; application is projected later from
 // the single current VNic's native appliedSecurityGroups field.
 func TestManualVNicSGConfigurationAndNativeApplicationAreSeparate(t *testing.T) {
