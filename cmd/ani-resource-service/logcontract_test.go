@@ -98,3 +98,25 @@ func TestContractHandlerFiltersGroupAttributes(t *testing.T) {
 		t.Fatal("empty group attribute must be dropped")
 	}
 }
+
+// TestRuntimeLoggerOmitsEmptyTraceFields exercises the real runtime logger,
+// including the tracing extractor that appends trace_id/span_id even when no
+// span is active. Those empty strings must be dropped at the encoder boundary.
+func TestRuntimeLoggerOmitsEmptyTraceFields(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newRuntimeLoggerAtLevel(&buf, slog.LevelInfo)
+	logger.Info("no span")
+
+	rec := decodeRecord(t, &buf)
+	for _, key := range []string{"trace_id", "span_id"} {
+		if _, ok := rec[key]; ok {
+			t.Fatalf("%s must be omitted outside a span, got %v", key, rec[key])
+		}
+	}
+	if rec["event"] != runtimeEvent {
+		t.Fatalf("framework record must carry event=%s, got %v", runtimeEvent, rec["event"])
+	}
+	if rec["service.name"] != Name {
+		t.Fatalf("service identity lost: %v", rec["service.name"])
+	}
+}
