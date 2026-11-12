@@ -44,6 +44,7 @@ func (w *Worker) logSandboxStepFailed(ctx context.Context, work *Work, step stri
 	attrs = append(attrs, logfields.ErrorFields(err)...)
 	attrs = append(attrs, sandboxTarget(work.Sandbox).KV()...)
 	w.logger.ErrorContext(ctx, "sandbox step failed", attrs...)
+	w.logSandboxRetryScheduled(ctx, work, "PROVIDER_FAILED")
 }
 
 // logSandboxPersistFailed records a failed Finish, separate from the provider
@@ -56,6 +57,20 @@ func (w *Worker) logSandboxPersistFailed(ctx context.Context, work *Work, step s
 	attrs = append(attrs, sandboxIdentity(work)...)
 	attrs = append(attrs, logfields.ErrorFields(err)...)
 	w.logger.ErrorContext(ctx, "sandbox state save failed", attrs...)
+	w.logSandboxRetryScheduled(ctx, work, "STATE_PERSIST_FAILED")
+}
+
+// logSandboxRetryScheduled records that the failed attempt will be retried,
+// separately from the original error (contract: one ERROR plus one WARN).
+func (w *Worker) logSandboxRetryScheduled(ctx context.Context, work *Work, reason string) {
+	if w.logger == nil {
+		return
+	}
+	attrs := []any{"event", "worker.retry_scheduled", "worker", "sandbox", "reason", reason, "result", "waiting"}
+	if work != nil {
+		attrs = append(attrs, sandboxIdentity(work)...)
+	}
+	w.logger.WarnContext(ctx, "sandbox retry scheduled", attrs...)
 }
 
 // logSandboxTelemetry records a missing/malformed persisted trace; the business

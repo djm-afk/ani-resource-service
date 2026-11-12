@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 type Worker struct {
@@ -28,8 +29,17 @@ func NewWorker(repo WorkerRepository, provider Provider, owner string, lease tim
 }
 func (w *Worker) Step(ctx context.Context) (bool, error) {
 	work, err := w.repo.Claim(ctx, w.owner, w.lease)
-	if err != nil || work == nil {
+	if err != nil {
+		claimCtx, claimSpan := telemetry.StartRun(ctx, "sandbox.claim")
+		attrs := []any{"event", "dependency.failed", "dependency", "postgresql", "action", "sandbox.claim", "result", "failed"}
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+		w.logger.ErrorContext(claimCtx, "sandbox claim failed", attrs...)
+		w.logSandboxRetryScheduled(claimCtx, nil, "SANDBOX_CLAIM_FAILED")
+		claimSpan.End()
 		return false, err
+	}
+	if work == nil {
+		return false, nil
 	}
 	// Restore the claimed record's trace; missing/invalid is recorded and work continues.
 	restored, telemetryEvent, telemetryErr := w.restoreSandboxContext(ctx, work)
@@ -126,6 +136,7 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 			retry.Attempt++
 			retry.PreviousUncertain = true
 			if err = w.repo.PrepareMutation(callCtx, *work, retry); err != nil {
+				w.logSandboxPersistFailed(ctx, work, "prepare_mutation", err)
 				return true, err
 			}
 			p.Sandbox.Pending = &retry
