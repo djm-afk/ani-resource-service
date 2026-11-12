@@ -110,7 +110,7 @@ func (q *Queries) CheckVirtualSwitchLease(ctx context.Context, arg CheckVirtualS
 }
 
 const claimVirtualSwitch = `-- name: ClaimVirtualSwitch :one
-SELECT s.resource_id, s.name, s.state, s.reason, s.version, s.created_at, s.updated_at, s.last_operation_id, s.cluster_id, s.binding_id, s.binding_version, s.binding_state, s.membership_fingerprint, s.nodes, o.operation_id AS operation_id, o.telemetry_context AS operation_telemetry_context
+SELECT s.resource_id, s.name, s.state, s.reason, s.version, s.created_at, s.updated_at, s.last_operation_id, s.cluster_id, s.binding_id, s.binding_version, s.binding_state, s.membership_fingerprint, s.nodes, o.operation_id AS operation_id, o.telemetry_context AS operation_telemetry_context, coalesce(o.kind,'')::text AS operation_kind
 FROM network_virtual_switches s
 JOIN network_virtual_switch_reconciliations r USING(resource_id)
 LEFT JOIN network_virtual_switch_operations o ON o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id AND o.completed_at IS NULL
@@ -122,6 +122,7 @@ type ClaimVirtualSwitchRow struct {
 	NetworkVirtualSwitch      NetworkVirtualSwitch
 	OperationID               *string
 	OperationTelemetryContext []byte
+	OperationKind             string
 }
 
 func (q *Queries) ClaimVirtualSwitch(ctx context.Context) (ClaimVirtualSwitchRow, error) {
@@ -144,6 +145,7 @@ func (q *Queries) ClaimVirtualSwitch(ctx context.Context) (ClaimVirtualSwitchRow
 		&i.NetworkVirtualSwitch.Nodes,
 		&i.OperationID,
 		&i.OperationTelemetryContext,
+		&i.OperationKind,
 	)
 	return i, err
 }

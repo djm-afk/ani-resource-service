@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
@@ -152,5 +153,47 @@ func TestAdminFilter404Warn(t *testing.T) {
 	done := recs[len(recs)-1]
 	if done["level"] != "WARN" || done["result"] != "rejected" {
 		t.Errorf("404 completion = %v", done)
+	}
+}
+
+// TestNetworkRejectionRecordsOnlyWriteFailures is NG06's unit half: a WARN-level
+// business rejection on a write is recorded as operation.rejected with the typed
+// reason, while pure queries and dependency faults are left to their own events.
+func TestNetworkRejectionRecordsOnlyWriteFailures(t *testing.T) {
+	withInfo := func(code codes.Code, reason string) error {
+		st := status.New(code, "rejected")
+		detailed, err := st.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: "network.ani.io"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return detailed.Err()
+	}
+	cases := []struct {
+		name   string
+		method string
+		err    error
+		want   string
+	}{
+		{"write invalid argument", "/network.v1.NetworkService/CreateVPC", withInfo(codes.InvalidArgument, "INVALID_ARGUMENT"), "INVALID_ARGUMENT"},
+		{"write already exists", "/network.v1.NetworkService/CreateSubnet", withInfo(codes.AlreadyExists, "IDEMPOTENCY_CONFLICT"), "IDEMPOTENCY_CONFLICT"},
+		{"query not found is not a rejection", "/network.v1.NetworkService/GetVPC", withInfo(codes.NotFound, "RESOURCE_NOT_FOUND"), ""},
+		{"list is a query", "/network.v1.NetworkService/ListVPCs", withInfo(codes.InvalidArgument, "INVALID_CURSOR"), ""},
+		{"dependency fault is not a rejection", "/network.v1.NetworkService/CreateVPC", withInfo(codes.Unavailable, "PROVIDER_UNAVAILABLE"), ""},
+		{"internal is not a rejection", "/network.v1.NetworkService/CreateVPC", withInfo(codes.Internal, "INTERNAL"), ""},
+		{"unrelated domain is ignored", "/network.v1.NetworkService/CreateVPC", status.Error(codes.InvalidArgument, "plain"), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, ok := networkRejection(tc.method, tc.err)
+			if tc.want == "" {
+				if ok {
+					t.Fatalf("unexpected rejection reason %q", reason)
+				}
+				return
+			}
+			if !ok || reason != tc.want {
+				t.Fatalf("rejection = %q/%v, want %q", reason, ok, tc.want)
+			}
+		})
 	}
 }

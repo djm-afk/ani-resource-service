@@ -103,6 +103,9 @@ func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attr
 	q := p.queries.WithTx(tx)
 	var replay biz.EIP
 	if found, err := egressReplay(ctx, q, i, &replay); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "eip", resourceID: replay.ID, tenantID: replay.TenantID, operationID: replay.LastOperationID, replayed: true})
+		}
 		return replay, err
 	}
 	if len(i.SecurityGroupIDs) > 0 {
@@ -174,6 +177,7 @@ func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attr
 	if err = tx.Commit(ctx); err != nil {
 		return biz.EIP{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "eip", resourceID: v.ID, tenantID: v.TenantID, operationID: v.LastOperationID})
 	return v, nil
 }
 func eipBindingTarget(kind, id, state, vpcID string) *biz.EIPBindingTarget {
@@ -248,6 +252,9 @@ func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Att
 	q := p.queries.WithTx(tx)
 	var replay biz.VPCSnatBinding
 	if found, err := egressReplay(ctx, q, i, &replay); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "snat", resourceID: replay.ID, tenantID: replay.TenantID, operationID: replay.LastOperationID, replayed: true})
+		}
 		return replay, err
 	}
 	var prior sqlcgen.NetworkSnatBinding
@@ -358,6 +365,7 @@ func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Att
 	if err = tx.Commit(ctx); err != nil {
 		return biz.VPCSnatBinding{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "snat", resourceID: v.ID, tenantID: v.TenantID, operationID: v.LastOperationID})
 	return v, nil
 }
 func completedOperation(ctx context.Context, q *sqlcgen.Queries, tenant, id string) error {
@@ -400,7 +408,9 @@ func (p *Postgres) DeleteEIP(ctx context.Context, tenant, id string, a biz.Attri
 		return biz.EIP{}, err
 	}
 	if row.State == "deleting" || row.State == "deleted" {
-		return eipResource(row), nil
+		value := eipResource(row)
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_eip", resourceType: "eip", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	count, err := q.BlockingSnatForEIP(ctx, sqlcgen.BlockingSnatForEIPParams{TenantID: tenant, EipID: id})
 	if err != nil {
@@ -427,7 +437,9 @@ func (p *Postgres) DeleteEIP(ctx context.Context, tenant, id string, a biz.Attri
 	if err = tx.Commit(ctx); err != nil {
 		return biz.EIP{}, databaseFailure(err)
 	}
-	return eipResource(row), nil
+	value := eipResource(row)
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_eip", resourceType: "eip", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
+	return value, nil
 }
 func (p *Postgres) DeleteSnat(ctx context.Context, tenant, id string, a biz.Attribution) (biz.VPCSnatBinding, error) {
 	tx, err := p.pool.Begin(ctx)
@@ -458,7 +470,9 @@ func (p *Postgres) DeleteSnat(ctx context.Context, tenant, id string, a biz.Attr
 		return biz.VPCSnatBinding{}, databaseFailure(err)
 	}
 	if row.State == "deleting" || row.State == "deleted" {
-		return snatResource(row, eip.Address), nil
+		value := snatResource(row, eip.Address)
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_snat", resourceType: "snat", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	if row.VpcID != ref.VpcID || row.EipID != ref.EipID {
 		return biz.VPCSnatBinding{}, biz.Fail(biz.ResourceBusy, "binding parents changed")
@@ -481,7 +495,9 @@ func (p *Postgres) DeleteSnat(ctx context.Context, tenant, id string, a biz.Attr
 	if err = tx.Commit(ctx); err != nil {
 		return biz.VPCSnatBinding{}, databaseFailure(err)
 	}
-	return snatResource(row, eip.Address), nil
+	value := snatResource(row, eip.Address)
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_snat", resourceType: "snat", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
+	return value, nil
 }
 
 func publicEgress(payload []byte) (*biz.VPCPublicEgress, error) {

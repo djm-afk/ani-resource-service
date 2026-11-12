@@ -21,7 +21,7 @@ func (p *Postgres) acceptManagedGateway(ctx context.Context, q *sqlcgen.Queries,
 	if err = q.InsertEgressGateway(ctx, sqlcgen.InsertEgressGatewayParams{ResourceID: id, ClusterID: owner.ClusterID}); err != nil {
 		return "", databaseFailure(err)
 	}
-	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: "create_egress_gateway", State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now}); err != nil {
+	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: "create_egress_gateway", State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return "", databaseFailure(err)
 	}
 	if err = q.InsertPlatformReconciliation(ctx, sqlcgen.InsertPlatformReconciliationParams{ResourceID: id, NextRunAt: now}); err != nil {
@@ -67,7 +67,7 @@ func (p *Postgres) finishManagedPoolCleanup(ctx context.Context, q *sqlcgen.Quer
 		if _, err = q.SetPlatformIntent(ctx, sqlcgen.SetPlatformIntentParams{ClusterID: gateway.ClusterID, ResourceID: gateway.ResourceID, Version: gateway.Version, State: string(biz.Deleting), OperationID: op}); err != nil {
 			return progress, databaseFailure(err)
 		}
-		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: gateway.ResourceID, OperationID: op, Kind: "delete_egress_gateway", State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now}); err != nil {
+		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: gateway.ResourceID, OperationID: op, Kind: "delete_egress_gateway", State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 			return progress, databaseFailure(err)
 		}
 		if err = affected(q.SchedulePlatform(ctx, sqlcgen.SchedulePlatformParams{ResourceID: gateway.ResourceID})); err != nil {

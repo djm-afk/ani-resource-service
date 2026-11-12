@@ -246,8 +246,14 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	ctx, cancelStep := context.WithTimeout(ctx, w.policy.Lease)
 	defer cancelStep()
 	work, found, err := w.repository.Claim(ctx, w.owner, w.policy.Lease)
-	if err != nil || !found {
+	if err != nil {
+		// found=false can still carry a driver error; runLane only reports a
+		// fixed reason, so the real cause is recorded here.
+		dependencyFailed(ctx, w.logger, WorkerMain, "postgresql", "claim", nil, k8sTarget{}, err)
 		return found, err
+	}
+	if !found {
+		return false, nil
 	}
 	// An active operation resumes the trace captured when it was accepted; this
 	// pass still gets its own span. A missing/invalid value is reported on that
@@ -260,14 +266,44 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	}
 	ctx, runSpan, telemetryEvent, telemetryErr := startNetworkRun(ctx, work, runName)
 	defer runSpan.End()
+	identity := work.eventIdentity()
+	runStarted(ctx, w.logger, WorkerMain, identity)
+	startedAt := time.Now()
+	defer func() {
+		if stepErr == nil {
+			runCompleted(ctx, w.logger, WorkerMain, identity, time.Since(startedAt))
+		}
+	}()
 	if telemetryEvent != "" {
 		w.logTelemetryUnavailable(ctx, work, telemetryEvent, telemetryErr)
 	}
+	if work.ActiveOperation {
+		networkEvent(ctx, w.logger, slog.LevelInfo, EventOperationStarted,
+			append([]any{"operation_id", work.Operation.ID, "action", work.Operation.Kind,
+				"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
+				"tenant_id", work.Resource.TenantID}, identity...)...)
+	}
 	if work.PlatformNetwork != nil {
-		return true, w.stepPlatformNetwork(ctx, work)
+		stepStarted(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity)
+		err := w.stepPlatformNetwork(ctx, work)
+		if err != nil {
+			stepFailed(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity, k8sTarget{clusterID: work.PlatformNetwork.ClusterID, kind: work.PlatformNetwork.Kind, namespace: work.PlatformNetwork.Namespace, name: work.PlatformNetwork.Name, uid: work.PlatformNetwork.UID}, err, ReasonOf(err))
+			return true, err
+		}
+		stepSucceeded(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity)
+		return true, nil
 	}
 	if work.Resource.Kind == "load_balancer" {
-		return true, w.stepLoadBalancer(ctx, work)
+		stepStarted(ctx, w.logger, WorkerMain, StepLoadBalancer, identity)
+		err := w.stepLoadBalancer(ctx, work)
+		if err != nil && !errors.Is(err, ErrLeaseLost) {
+			stepFailed(ctx, w.logger, WorkerMain, StepLoadBalancer, identity, k8sTarget{}, err, ReasonOf(err))
+			return true, err
+		}
+		if err == nil {
+			stepSucceeded(ctx, w.logger, WorkerMain, StepLoadBalancer, identity)
+		}
+		return true, err
 	}
 	progress := Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity, NextDelay: w.policy.ObserveEvery}
 	defer func() {
@@ -298,9 +334,12 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 		SubnetOptions: work.Resource.SubnetOptions,
 	}
 	callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
+	stepStarted(ctx, w.logger, WorkerMain, StepObserveProvider, identity)
 	observation, observeErr := w.provider.Observe(callCtx, target)
 	cancel()
+	observeTarget := k8sTarget{kind: work.Resource.Kind, uid: work.KnownIdentity}
 	if observeErr != nil {
+		dependencyFailed(ctx, w.logger, WorkerMain, "kubernetes", "observe", identity, observeTarget, observeErr)
 		progress.ProviderError = observeErr
 		progress.OperationReason = observationReason(observeErr)
 		if providerKind(observeErr) == ProviderConflict {
@@ -309,6 +348,7 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 			if work.ActiveOperation {
 				progress.OperationState = Blocked
 			}
+			operationConflict(ctx, w.logger, WorkerMain, StepObserveProvider, identity, ProviderOwnership, nil)
 		} else {
 			progress.ObservationError = observationReason(observeErr)
 		}
@@ -320,7 +360,9 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 			progress.OperationState = Blocked
 		}
 		progress.Backoff = true
+		operationConflict(ctx, w.logger, WorkerMain, StepObserveProvider, identity, ProviderOwnership, nil)
 	} else {
+		stepSucceeded(ctx, w.logger, WorkerMain, StepObserveProvider, identity)
 		progress = observedProgress(progress, observation)
 		if observation.Exists && work.PendingAction == "create" {
 			progress.ClearPending = true
@@ -334,6 +376,10 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	if progress.Backoff {
 		progress.NextDelay = w.retryDelay(work.Attempt)
 	}
+	if work.ActiveOperation && progress.Backoff {
+		networkEvent(ctx, w.logger, slog.LevelWarn, EventOperationRetry,
+			append([]any{"operation_id", work.Operation.ID, "reason", string(progress.OperationReason)}, identity...)...)
+	}
 	if err == nil {
 		err = w.finish(ctx, work, progress)
 	}
@@ -341,10 +387,12 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 		if preparer, ok := w.provider.(VMNetworkPreparer); ok {
 			// NAD is a declaration owned by Res. Its result is persisted by
 			// that adapter and does not replace the Subnet's native status.
+			stepStarted(ctx, w.logger, WorkerMain, StepPrepareVMNetwork, identity)
 			prepareCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 			prepareErr := preparer.PrepareVMNetwork(prepareCtx, target)
 			cancel()
 			if prepareErr != nil {
+				dependencyFailed(ctx, w.logger, WorkerMain, "kubernetes", work.Operation.Kind, identity, k8sTarget{kind: "NetworkAttachmentDefinition"}, prepareErr)
 				if retry, ok := w.repository.(VMNetworkPreparationRepository); ok {
 					retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.policy.RequestTimeout)
 					err = retry.RetryVMNetworkPreparation(retryCtx, work, w.retryDelay(work.Attempt))
@@ -352,18 +400,38 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 				} else {
 					err = prepareErr
 				}
+			} else {
+				stepSucceeded(ctx, w.logger, WorkerMain, StepPrepareVMNetwork, identity)
 			}
 		}
+	}
+	if err != nil && work.ActiveOperation {
+		operationFailed(ctx, w.logger, WorkerMain, identity, work.Operation.ID, progress.OperationReason, err)
 	}
 	return true, err
 }
 
 // Completion still uses the original resource version and execution lease even
 // when service shutdown cancelled the provider call.
-func (w *Worker) finish(ctx context.Context, work Work, progress Progress) error {
+func (w *Worker) finish(ctx context.Context, work Work, progress Progress) (finishErr error) {
 	completionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.policy.RequestTimeout)
 	defer cancel()
+	defer func() { w.reportFinish(ctx, work, finishErr) }()
 	return w.repository.Finish(completionCtx, work, progress)
+}
+
+// reportFinish records the persistence outcome without altering the return
+// value: a lost lease is a concurrency outcome, a real driver error is a state
+// persistence failure.
+func (w *Worker) reportFinish(ctx context.Context, work Work, err error) {
+	if err == nil {
+		return
+	}
+	if errors.Is(err, ErrLeaseLost) {
+		operationLeaseLost(ctx, w.logger, WorkerMain, StepPersistProgress, work.eventIdentity())
+		return
+	}
+	persistFailed(ctx, w.logger, WorkerMain, "finish", StepPersistProgress, work.eventIdentity(), err)
 }
 
 func observedProgress(progress Progress, observed ProviderObservation) Progress {
@@ -399,6 +467,9 @@ func (w *Worker) ensure(ctx context.Context, work Work, target ProviderTarget, o
 		if err := w.repository.BeginMutation(ctx, work, "create", ""); err != nil {
 			return progress, err
 		}
+		identity := work.eventIdentity()
+		createStep := ensureStepForKind(target.Kind)
+		stepStarted(ctx, w.logger, WorkerMain, createStep, identity)
 		callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 		var value ProviderObservation
 		var err error
@@ -416,6 +487,11 @@ func (w *Worker) ensure(ctx context.Context, work Work, target ProviderTarget, o
 			value, err = w.provider.EnsureVPC(callCtx, target)
 		}
 		cancel()
+		if err == nil {
+			stepSucceeded(ctx, w.logger, WorkerMain, createStep, identity)
+		} else if providerKind(err) == ProviderConflict || providerKind(err) == ProviderInUse {
+			operationConflict(ctx, w.logger, WorkerMain, createStep, identity, providerReason(err), nil)
+		}
 		if err != nil {
 			progress.ProviderError = err
 			progress.OperationReason = providerReason(err)
@@ -455,6 +531,12 @@ func (w *Worker) ensure(ctx context.Context, work Work, target ProviderTarget, o
 				return progress, err
 			}
 			target.KnownIdentity = observed.Identity
+			identity := work.eventIdentity()
+			updateStep := StepUpdateEgress
+			if manualCreate {
+				updateStep = StepEnsureVPC
+			}
+			stepStarted(ctx, w.logger, WorkerMain, updateStep, identity)
 			callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 			var value ProviderObservation
 			var err error
@@ -468,6 +550,11 @@ func (w *Worker) ensure(ctx context.Context, work Work, target ProviderTarget, o
 				value, err = w.mutateEgress(callCtx, target, true)
 			}
 			cancel()
+			if err == nil {
+				stepSucceeded(ctx, w.logger, WorkerMain, updateStep, identity)
+			} else if providerKind(err) == ProviderConflict || providerKind(err) == ProviderInUse {
+				operationConflict(ctx, w.logger, WorkerMain, updateStep, identity, providerReason(err), nil)
+			}
 			if err != nil {
 				progress.ProviderError = err
 				progress.OperationReason = providerReason(err)
@@ -546,9 +633,16 @@ func (w *Worker) delete(ctx context.Context, work Work, target ProviderTarget, o
 	if err := w.repository.BeginMutation(ctx, work, "delete", observed.Identity); err != nil {
 		return progress, err
 	}
+	identity := work.eventIdentity()
+	stepStarted(ctx, w.logger, WorkerMain, StepDeleteProvider, identity)
 	callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 	err := w.provider.Delete(callCtx, target)
 	cancel()
+	if err == nil {
+		stepSucceeded(ctx, w.logger, WorkerMain, StepDeleteProvider, identity)
+	} else if providerKind(err) == ProviderConflict || providerKind(err) == ProviderInUse {
+		operationConflict(ctx, w.logger, WorkerMain, StepDeleteProvider, identity, providerReason(err), nil)
+	}
 	progress.ClearPending = false
 	if err != nil {
 		progress.ProviderError = err
@@ -567,6 +661,19 @@ func (w *Worker) delete(ctx context.Context, work Work, target ProviderTarget, o
 	// again, letting its controller finish its normal finalizers.
 	progress.Reason, progress.OperationReason = CleanupPending, CleanupPending
 	return progress, nil
+}
+
+// ensureStepForKind names the provider mutation stage for a resource kind. The
+// step vocabulary is fixed; unknown kinds fall back to the VPC create stage.
+func ensureStepForKind(kind string) string {
+	switch kind {
+	case "subnet":
+		return StepEnsureSubnet
+	case "eip", "snat":
+		return StepEnsureEgress
+	default:
+		return StepEnsureVPC
+	}
 }
 
 func providerKind(err error) ProviderFailure {

@@ -566,17 +566,18 @@ type NetworkPlatformNetworkObservation struct {
 }
 
 type NetworkPlatformOperation struct {
-	OperationID    string
-	ResourceID     string
-	Kind           string
-	State          string
-	Reason         string
-	Attempt        int32
-	ExecutionEpoch int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	CompletedAt    *time.Time
-	NextAttemptAt  *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	Reason           string
+	Attempt          int32
+	ExecutionEpoch   int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	NextAttemptAt    *time.Time
+	TelemetryContext []byte
 }
 
 type NetworkPlatformReconciliation struct {

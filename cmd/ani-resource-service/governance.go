@@ -59,6 +59,9 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	defer sandboxes.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	repository, err := data.OpenPostgres(ctx, bc.Network.DatabaseDsn, data.Placement{ClusterID: bc.Network.ClusterId, NamespacePrefix: "tenant-"})
+	if err == nil {
+		repository.SetLogger(logger)
+	}
 	cancel()
 	if err != nil {
 		return err
@@ -147,7 +150,11 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	attachments.UseConsumerDirectory(networkConsumerDirectory(instances, vms))
 	defer vms.Close()
 	observability.SetAttachmentLogger(logger)
+	biz.SetConsumerLogger(consumer, logger)
 	attachmentWorker, err := biz.NewAttachmentWorker(repository, consumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
+	if err == nil {
+		attachmentWorker.SetLogger(logger)
+	}
 	if err != nil {
 		return err
 	}

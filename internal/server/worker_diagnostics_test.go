@@ -105,12 +105,16 @@ func TestVirtualSwitchDiagnosticsLogNodeCauseWithoutClaimingObservation(t *testi
 	work := biz.VirtualSwitchWork{Switch: biz.VirtualSwitch{EgressMetadata: biz.EgressMetadata{ID: "switch-id", LastOperationID: "operation-id"}, BindingID: "binding-id", BindingState: "configured"}}
 	progress := biz.VirtualSwitchProgress{BindingState: "configured", ObservationError: biz.ProviderUnavailable, Action: "inspect", NodeName: "node-a", NodeUID: "node-uid", ProviderError: &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("node GET timed out")}}
 	o.ObserveVirtualSwitchWork(context.Background(), logger, work, progress, nil)
-	for _, want := range []string{"node GET timed out", "switch-id", "binding-id", "operation-id", "node-a", "node-uid", `"action":"inspect"`, `"observed":false`, `"attempt_result":"read_error"`} {
+	// Removed non-contract fields (observed/attempt_result/binding_state) must be
+	// gone; the node identity is a contract target and the step names the stage.
+	for _, want := range []string{"node GET timed out", "switch-id", "binding-id", "operation-id", "node-uid", `"name":"node-a"`, `"kind":"Node"`, `"action":"inspect"`, `"step":"observe_switch"`, `"reason":""`} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing diagnostic %q: %s", want, output.String())
 		}
 	}
-	if strings.Contains(output.String(), `"attempt_result":"observed"`) {
-		t.Fatalf("temporary failure reported successful observation: %s", output.String())
+	for _, removed := range []string{`"attempt_result"`, `"binding_state"`, `"node_name"`, `"provider_failure"`, `"observed":`} {
+		if strings.Contains(output.String(), removed) {
+			t.Fatalf("non-contract field %q still emitted: %s", removed, output.String())
+		}
 	}
 }

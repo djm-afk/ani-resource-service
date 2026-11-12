@@ -3,11 +3,13 @@ package instance
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
 	networkbiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // InstanceNetwork calls Network's use cases in process. It neither reads
@@ -155,6 +157,7 @@ func instanceNetworkError(err error) error {
 type InstanceNetworkConsumer struct {
 	reader   biz.InstanceReader
 	fallback networkbiz.InstanceConsumer
+	logger   *slog.Logger
 }
 
 func NewInstanceNetworkConsumer(reader biz.InstanceReader, fallback networkbiz.InstanceConsumer) (*InstanceNetworkConsumer, error) {
@@ -163,6 +166,12 @@ func NewInstanceNetworkConsumer(reader biz.InstanceReader, fallback networkbiz.I
 	}
 	return &InstanceNetworkConsumer{reader: reader, fallback: fallback}, nil
 }
+
+// SetLogger attaches the logger used when the in-process read fails. The error
+// is recorded before it is converted to a fixed reason, so the real cause
+// survives; this branch never produces rpc.client.completed.
+func (c *InstanceNetworkConsumer) SetLogger(logger *slog.Logger) { c.logger = logger }
+
 func (c *InstanceNetworkConsumer) GetSubmission(ctx context.Context, a networkbiz.Attachment) (networkbiz.ConsumerSubmission, error) {
 	if a.WorkloadMode != "controller_managed" {
 		if a.WorkloadMode != "" && a.WorkloadMode != "single_pod" {
@@ -175,12 +184,14 @@ func (c *InstanceNetworkConsumer) GetSubmission(ctx context.Context, a networkbi
 	}
 	i, err := c.reader.Get(ctx, a.TenantID, a.InstanceID)
 	if err != nil {
+		c.logReadFailure(ctx, a, err)
 		return networkbiz.ConsumerSubmission{}, biz.ErrNetworkUnavailable
 	}
 	if i.Network == nil || i.Network.AttachmentID == "" {
 		return networkbiz.ConsumerSubmission{}, biz.ErrNetworkUnavailable
 	}
 	if !networkAttachmentMatches(i, a) || i.Network.SnapshotRevision < 1 {
+		c.logReadConflict(ctx, a)
 		return networkbiz.ConsumerSubmission{}, biz.ErrNetworkConflict
 	}
 	n := i.Network
@@ -204,6 +215,29 @@ func (c *InstanceNetworkConsumer) GetSubmission(ctx context.Context, a networkbi
 }
 func networkWorkload(r biz.WorkloadReference) networkbiz.WorkloadReference {
 	return networkbiz.WorkloadReference{APIVersion: r.APIVersion, Kind: r.Kind, Namespace: r.Namespace, Name: r.Name, UID: r.UID}
+}
+
+// logReadFailure records the in-process read cause before it becomes a fixed
+// reason. error_source=local marks the in-process path; this branch has no
+// operation and no outbound RPC.
+func (c *InstanceNetworkConsumer) logReadFailure(ctx context.Context, a networkbiz.Attachment, cause error) {
+	if c.logger == nil {
+		return
+	}
+	attrs := append([]any{"event", "dependency.failed", "worker", networkbiz.WorkerAttachment,
+		"dependency", "postgresql", "action", "attach", "step", networkbiz.StepGetSubmission,
+		"resource_type", "attachment", "resource_id", a.ID, "attachment_id", a.ID, "tenant_id", a.TenantID},
+		logfields.ErrorFields(cause)...)
+	c.logger.ErrorContext(ctx, "in-process instance network read failed", attrs...)
+}
+
+func (c *InstanceNetworkConsumer) logReadConflict(ctx context.Context, a networkbiz.Attachment) {
+	if c.logger == nil {
+		return
+	}
+	c.logger.WarnContext(ctx, "in-process instance network snapshot conflict",
+		"event", "operation.conflict", "worker", networkbiz.WorkerAttachment, "step", networkbiz.StepGetSubmission,
+		"resource_type", "attachment", "attachment_id", a.ID, "tenant_id", a.TenantID, "reason", "ATTACHMENT_PROTOCOL")
 }
 
 var _ biz.NetworkPort = (*InstanceNetwork)(nil)

@@ -72,6 +72,9 @@ func (p *Postgres) CreateVirtualSwitch(ctx context.Context, i biz.VirtualSwitchI
 		return biz.VirtualSwitch{}, databaseFailure(err)
 	}
 	if v, found, err := switchReplay(ctx, q, i); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: "create_virtual_switch", resourceType: "virtual_switch", resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+		}
 		return v, err
 	}
 	now, err := q.DatabaseTime(ctx)
@@ -100,7 +103,11 @@ func (p *Postgres) CreateVirtualSwitch(ctx context.Context, i biz.VirtualSwitchI
 	if err = q.InsertVirtualSwitchHistory(ctx, sqlcgen.InsertVirtualSwitchHistoryParams{HistoryID: uuid.NewString(), ResourceID: id, OperationID: &op, Event: "created", ActorRef: a.Actor, CallerRef: a.DirectCaller, Detail: []byte(`{}`)}); err != nil {
 		return v, databaseFailure(err)
 	}
-	return v, databaseFailure(tx.Commit(ctx))
+	if err = tx.Commit(ctx); err != nil {
+		return biz.VirtualSwitch{}, databaseFailure(err)
+	}
+	p.logAcceptance(ctx, acceptedEvent{action: "create_virtual_switch", resourceType: "virtual_switch", resourceID: v.ID, operationID: v.LastOperationID})
+	return v, nil
 }
 
 func (p *Postgres) GetVirtualSwitch(ctx context.Context, id string) (biz.VirtualSwitch, error) {
@@ -152,7 +159,12 @@ func (p *Postgres) DeleteVirtualSwitch(ctx context.Context, id string, a biz.Att
 		return biz.VirtualSwitch{}, databaseFailure(err)
 	}
 	if r.State == "deleted" || r.State == "deleting" {
-		return switchSnapshot(r)
+		value, err := switchSnapshot(r)
+		if err != nil {
+			return value, err
+		}
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_virtual_switch", resourceType: "virtual_switch", resourceID: value.ID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	blocked, err := q.VirtualSwitchDependencies(ctx, sqlcgen.VirtualSwitchDependenciesParams{ResourceID: id})
 	if err != nil {
@@ -191,5 +203,9 @@ func (p *Postgres) DeleteVirtualSwitch(ctx context.Context, id string, a biz.Att
 	if err != nil {
 		return v, err
 	}
-	return v, databaseFailure(tx.Commit(ctx))
+	if err = tx.Commit(ctx); err != nil {
+		return biz.VirtualSwitch{}, databaseFailure(err)
+	}
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_virtual_switch", resourceType: "virtual_switch", resourceID: v.ID, operationID: v.LastOperationID})
+	return v, nil
 }

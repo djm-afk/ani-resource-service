@@ -307,7 +307,9 @@ func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, e
 		return biz.VPC{}, databaseFailure(err)
 	}
 	if row.State == string(biz.Deleting) || row.State == string(biz.Deleted) {
-		return vpc(row), nil
+		value := vpc(row)
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	lbCount, err := q.BlockingLBForVPC(ctx, sqlcgen.BlockingLBForVPCParams{TenantID: tenant, VpcID: id})
 	if err != nil {
@@ -368,7 +370,9 @@ func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, e
 	if err := tx.Commit(ctx); err != nil {
 		return biz.VPC{}, databaseFailure(err)
 	}
-	return vpc(row), nil
+	value := vpc(row)
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
+	return value, nil
 }
 
 // Successful reads with no outstanding operation or mutation wait for an

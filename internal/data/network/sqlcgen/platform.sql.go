@@ -452,7 +452,7 @@ func (q *Queries) GetPlatformIdempotency(ctx context.Context, arg GetPlatformIde
 }
 
 const getPlatformOperation = `-- name: GetPlatformOperation :one
-SELECT o.operation_id, o.resource_id, o.kind, o.state, o.reason, o.attempt, o.execution_epoch, o.created_at, o.updated_at, o.completed_at, o.next_attempt_at FROM network_platform_operations o JOIN network_platform_resources r ON r.resource_id=o.resource_id
+SELECT o.operation_id, o.resource_id, o.kind, o.state, o.reason, o.attempt, o.execution_epoch, o.created_at, o.updated_at, o.completed_at, o.next_attempt_at, o.telemetry_context FROM network_platform_operations o JOIN network_platform_resources r ON r.resource_id=o.resource_id
 WHERE r.cluster_id=$1 AND o.operation_id=$2
 `
 
@@ -476,6 +476,7 @@ func (q *Queries) GetPlatformOperation(ctx context.Context, arg GetPlatformOpera
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.NextAttemptAt,
+		&i.TelemetryContext,
 	)
 	return i, err
 }
@@ -652,18 +653,19 @@ func (q *Queries) InsertPlatformIdempotency(ctx context.Context, arg InsertPlatf
 }
 
 const insertPlatformOperation = `-- name: InsertPlatformOperation :exec
-INSERT INTO network_platform_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at,next_attempt_at)
-VALUES($1,$2,$3,$4,$5,$5,$6,$7)
+INSERT INTO network_platform_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at,next_attempt_at,telemetry_context)
+VALUES($1,$2,$3,$4,$5,$5,$6,$7,$8)
 `
 
 type InsertPlatformOperationParams struct {
-	OperationID   string
-	ResourceID    string
-	Kind          string
-	State         string
-	CreatedAt     time.Time
-	CompletedAt   *time.Time
-	NextAttemptAt *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	CreatedAt        time.Time
+	CompletedAt      *time.Time
+	NextAttemptAt    *time.Time
+	TelemetryContext []byte
 }
 
 func (q *Queries) InsertPlatformOperation(ctx context.Context, arg InsertPlatformOperationParams) error {
@@ -675,6 +677,7 @@ func (q *Queries) InsertPlatformOperation(ctx context.Context, arg InsertPlatfor
 		arg.CreatedAt,
 		arg.CompletedAt,
 		arg.NextAttemptAt,
+		arg.TelemetryContext,
 	)
 	return err
 }
@@ -1151,7 +1154,7 @@ func (q *Queries) RetireVlanSlot(ctx context.Context, arg RetireVlanSlotParams) 
 
 const runPlatformOperation = `-- name: RunPlatformOperation :one
 UPDATE network_platform_operations SET state='running',attempt=attempt+1,execution_epoch=$1,updated_at=clock_timestamp()
-WHERE operation_id=$2 AND resource_id=$3 AND completed_at IS NULL RETURNING operation_id, resource_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at
+WHERE operation_id=$2 AND resource_id=$3 AND completed_at IS NULL RETURNING operation_id, resource_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, telemetry_context
 `
 
 type RunPlatformOperationParams struct {
@@ -1175,6 +1178,7 @@ func (q *Queries) RunPlatformOperation(ctx context.Context, arg RunPlatformOpera
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.NextAttemptAt,
+		&i.TelemetryContext,
 	)
 	return i, err
 }

@@ -64,6 +64,9 @@ func (p *DefaultVPCEgressPostgres) replay(ctx context.Context, q *sqlcgen.Querie
 func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i biz.DefaultVPCEgressIntent, a biz.Attribution) (biz.DefaultVPCEgress, error) {
 	// Exact accepted keys replay before current external prerequisites are read.
 	if v, found, err := p.replay(ctx, p.base.queries, i); found || err != nil {
+		if err == nil {
+			p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+		}
 		return v, err
 	}
 
@@ -80,6 +83,9 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
 	}
 	if v, found, err := p.replay(ctx, q, i); found || err != nil {
+		if err == nil {
+			p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+		}
 		return v, err
 	}
 	pool, err := q.LockPublicPool(ctx, sqlcgen.LockPublicPoolParams{ClusterID: p.identity.ClusterID, ResourceID: i.PoolID})
@@ -120,7 +126,11 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 	if err = q.InsertDefaultEgressHistory(ctx, sqlcgen.InsertDefaultEgressHistoryParams{HistoryID: uuid.NewString(), ResourceID: id, OperationID: op, Event: "create_accepted", ActorRef: a.Actor, CallerRef: a.DirectCaller, Detail: body}); err != nil {
 		return v, databaseFailure(err)
 	}
-	return v, databaseFailure(tx.Commit(ctx))
+	if err = tx.Commit(ctx); err != nil {
+		return biz.DefaultVPCEgress{}, databaseFailure(err)
+	}
+	p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID})
+	return v, nil
 }
 func (p *DefaultVPCEgressPostgres) GetDefaultVPCEgress(ctx context.Context, id string) (biz.DefaultVPCEgress, error) {
 	r, err := p.base.queries.GetDefaultEgress(ctx, sqlcgen.GetDefaultEgressParams{ClusterID: p.identity.ClusterID, ResourceID: id})
@@ -157,7 +167,9 @@ func (p *DefaultVPCEgressPostgres) DeleteDefaultVPCEgress(ctx context.Context, i
 	}
 	row := r.NetworkDefaultVpcEgress
 	if row.State == "deleted" || row.State == "deleting" {
-		return defaultEgressSnapshot(row, r.OperationState), nil
+		value := defaultEgressSnapshot(row, r.OperationState)
+		p.base.logAcceptance(ctx, acceptedEvent{action: "delete_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: value.ID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	now, err := q.DatabaseTime(ctx)
 	if err != nil {
@@ -181,7 +193,12 @@ func (p *DefaultVPCEgressPostgres) DeleteDefaultVPCEgress(ctx context.Context, i
 	if err != nil {
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
 	}
-	return defaultEgressSnapshot(v.NetworkDefaultVpcEgress, v.OperationState), databaseFailure(tx.Commit(ctx))
+	if err = tx.Commit(ctx); err != nil {
+		return biz.DefaultVPCEgress{}, databaseFailure(err)
+	}
+	value := defaultEgressSnapshot(v.NetworkDefaultVpcEgress, v.OperationState)
+	p.base.logAcceptance(ctx, acceptedEvent{action: "delete_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: value.ID, operationID: value.LastOperationID})
+	return value, nil
 }
 
 func (p *DefaultVPCEgressPostgres) ClaimDefaultVPCEgress(ctx context.Context, owner string, duration time.Duration) (biz.DefaultEgressWork, bool, error) {
@@ -206,7 +223,10 @@ func (p *DefaultVPCEgressPostgres) ClaimDefaultVPCEgress(ctx context.Context, ow
 	if err != nil {
 		return biz.DefaultEgressWork{}, false, databaseFailure(err)
 	}
-	x := biz.DefaultEgressWork{Egress: defaultEgressSnapshot(r.NetworkDefaultVpcEgress, r.OperationState), Owner: owner, Epoch: epoch.LeaseEpoch, ClaimedGeneration: epoch.RequestedGeneration, PoolRevision: r.NetworkDefaultVpcEgress.PoolRevision, EIPBindingID: r.NetworkDefaultVpcEgress.EipBindingID, SnatBindingID: r.NetworkDefaultVpcEgress.SnatBindingID, Now: now}
+	x := biz.DefaultEgressWork{Egress: defaultEgressSnapshot(r.NetworkDefaultVpcEgress, r.OperationState), Owner: owner, Epoch: epoch.LeaseEpoch, ClaimedGeneration: epoch.RequestedGeneration, PoolRevision: r.NetworkDefaultVpcEgress.PoolRevision, EIPBindingID: r.NetworkDefaultVpcEgress.EipBindingID, SnatBindingID: r.NetworkDefaultVpcEgress.SnatBindingID, Now: now, OperationKind: r.OperationKind}
+	// An unfinished operation row is the durable signal that this pass may resume
+	// the accepted trace; a completed one is an independent observation.
+	x.ActiveOperation = r.OperationCompletedAt == nil
 	// Logging metadata decodes independently of the business claim.
 	if tc, te := telemetry.Decode(r.OperationTelemetryContext); te != nil {
 		x.TelemetryContextError = te

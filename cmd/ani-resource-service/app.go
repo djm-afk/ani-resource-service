@@ -35,6 +35,9 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	repository, err := data.OpenPostgres(ctx, bc.Network.DatabaseDsn, data.Placement{ClusterID: bc.Network.ClusterId, NamespacePrefix: "tenant-"})
+	if err == nil {
+		repository.SetLogger(logger)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +148,11 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		}
 	}()
 	observability.SetAttachmentLogger(logger)
+	biz.SetConsumerLogger(routedConsumer, logger)
 	attachmentWorker, err := biz.NewAttachmentWorker(repository, routedConsumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
+	if err == nil {
+		attachmentWorker.SetLogger(logger)
+	}
 	if err != nil {
 		consumer.Close()
 		_ = observability.Shutdown(ctx)

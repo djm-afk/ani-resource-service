@@ -64,13 +64,12 @@ UPDATE network_virtual_switches SET state=sqlc.arg(state),binding_state=sqlc.arg
  WHERE resource_id=sqlc.arg(resource_id) AND version=sqlc.arg(version) AND state NOT IN ('deleting','deleted') RETURNING *;
 
 -- name: ClaimVirtualSwitch :one
-SELECT sqlc.embed(s),
- (SELECT o.operation_id FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id) AS operation_id,
- (SELECT o.telemetry_context FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id) AS operation_telemetry_context
-FROM network_virtual_switches s JOIN network_virtual_switch_reconciliations r USING(resource_id)
+SELECT sqlc.embed(s), o.operation_id AS operation_id, o.telemetry_context AS operation_telemetry_context, coalesce(o.kind,'')::text AS operation_kind
+FROM network_virtual_switches s
+JOIN network_virtual_switch_reconciliations r USING(resource_id)
+LEFT JOIN network_virtual_switch_operations o ON o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id AND o.completed_at IS NULL
  WHERE r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
  AND s.state<>'deleted' ORDER BY r.next_run_at,s.resource_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED;
-
 -- name: LeaseVirtualSwitch :one
 UPDATE network_virtual_switch_reconciliations SET lease_owner=sqlc.arg(owner)::uuid,lease_until=clock_timestamp()+sqlc.arg(lease_micros)::bigint*interval '1 microsecond',lease_epoch=lease_epoch+1
  WHERE resource_id=sqlc.arg(resource_id) AND (lease_until IS NULL OR lease_until<=clock_timestamp()) RETURNING *;

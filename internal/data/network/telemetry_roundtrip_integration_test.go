@@ -147,6 +147,7 @@ func TestLaneOperationTelemetryColumns(t *testing.T) {
 		"network_virtual_switch_operations",
 		"network_security_group_operations",
 		"network_default_vpc_egress_operations",
+		"network_platform_operations",
 	} {
 		var dataType, nullable string
 		if err := db.Owner.QueryRow(ctx, `SELECT data_type, is_nullable FROM information_schema.columns
@@ -171,5 +172,88 @@ func TestLaneOperationTelemetryColumns(t *testing.T) {
 		if badErr == nil || bad.Valid() {
 			t.Errorf("%s malformed metadata must decode to an isolated error, got %+v / %v", table, bad, badErr)
 		}
+	}
+}
+
+// TestAllFiveOperationTablesCarryTelemetry is NG30's table count: the four
+// network_operations plus the four lane tables, and the platform table added by
+// 0036, must all expose the independent nullable column.
+func TestAllFiveOperationTablesCarryTelemetry(t *testing.T) {
+	db := testenv.NewDatabase(t)
+	ctx := context.Background()
+	tables := []string{
+		"network_operations",
+		"network_virtual_switch_operations",
+		"network_security_group_operations",
+		"network_default_vpc_egress_operations",
+		"network_platform_operations",
+	}
+	for _, table := range tables {
+		var dataType, nullable string
+		if err := db.Owner.QueryRow(ctx, `SELECT data_type, is_nullable FROM information_schema.columns
+			WHERE table_schema='public' AND table_name=$1 AND column_name='telemetry_context'`, table).Scan(&dataType, &nullable); err != nil {
+			t.Fatalf("%s.telemetry_context missing: %v", table, err)
+		}
+		if dataType != "jsonb" || nullable != "YES" {
+			t.Errorf("%s.telemetry_context = %s nullable=%s, want jsonb/YES", table, dataType, nullable)
+		}
+	}
+}
+
+// TestPlatformOperationTelemetryRoundTrip proves the platform lane persists and
+// reads back the snapshot through the real claim path, and that a corrupt value
+// stays isolated to logging while the operation still claims.
+func TestPlatformOperationTelemetryRoundTrip(t *testing.T) {
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	db := testenv.NewDatabase(t)
+	ctx := context.Background()
+
+	traceID, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanID, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled})
+	raw, err := json.Marshal(telemetry.Capture(trace.ContextWithSpanContext(ctx, sc)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resID, opID := "egw_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "11111111-1111-4111-8111-111111111111"
+	// The resource -> operation FK is DEFERRABLE, so both rows commit together.
+	tx, err := db.Owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO network_platform_resources(resource_id,kind,cluster_id,name,description,state,created_at,updated_at,last_operation_id,provider_name,binding_id)
+		VALUES($1,'egress_gateway','test-cluster','telemetry','','provisioning',now(),now(),$2,'telemetry','22222222-2222-4222-8222-222222222222')`, resID, opID); err != nil {
+		t.Fatalf("insert platform resource: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO network_platform_operations(operation_id,resource_id,kind,state,created_at,updated_at,next_attempt_at,telemetry_context)
+		VALUES($1,$2,'create_egress_gateway','queued',now(),now(),now(),$3)`, opID, resID, raw); err != nil {
+		t.Fatalf("insert platform operation: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO network_platform_reconciliations(resource_id,next_run_at) VALUES($1,now())`, resID); err != nil {
+		t.Fatalf("insert platform reconciliation: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit platform fixture: %v", err)
+	}
+	op, err := db.Repository.GetPlatformOperation(ctx, opID)
+	if err != nil {
+		t.Fatalf("GetPlatformOperation: %v", err)
+	}
+	if op.TelemetryContext.OriginTraceID != traceID.String() {
+		t.Errorf("platform origin trace = %q, want %q", op.TelemetryContext.OriginTraceID, traceID)
+	}
+	if op.TelemetryContextError != nil {
+		t.Errorf("healthy platform metadata decode error: %v", op.TelemetryContextError)
+	}
+	// Corrupt the logging column only: the business read must still succeed.
+	if _, err := db.Owner.Exec(ctx, `UPDATE network_platform_operations SET telemetry_context='"bad"'::jsonb WHERE operation_id=$1`, opID); err != nil {
+		t.Fatal(err)
+	}
+	broken, err := db.Repository.GetPlatformOperation(ctx, opID)
+	if err != nil {
+		t.Fatalf("bad platform metadata failed business read: %v", err)
+	}
+	if broken.Kind != "create_egress_gateway" {
+		t.Errorf("platform business fields lost: %+v", broken)
 	}
 }

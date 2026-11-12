@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"net/netip"
 	"strings"
 	"time"
@@ -171,7 +172,14 @@ func (p *Postgres) GetPlatformOperation(ctx context.Context, id string) (biz.Ope
 		}
 		return biz.Operation{ID: s.OperationID, ResourceID: s.ResourceID, ResourceType: "virtual_switch", Kind: s.Kind, State: biz.OperationState(s.State), Reason: biz.Reason(s.Reason), CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt, CompletedAt: s.CompletedAt}, nil
 	}
-	return biz.Operation{ID: r.OperationID, ResourceID: r.ResourceID, ResourceType: platformOperationResourceKind(r.Kind), Kind: r.Kind, State: biz.OperationState(r.State), Reason: biz.Reason(r.Reason), CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, CompletedAt: r.CompletedAt, NextAttemptAt: r.NextAttemptAt}, databaseFailure(err)
+	op := biz.Operation{ID: r.OperationID, ResourceID: r.ResourceID, ResourceType: platformOperationResourceKind(r.Kind), Kind: r.Kind, State: biz.OperationState(r.State), Reason: biz.Reason(r.Reason), CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, CompletedAt: r.CompletedAt, NextAttemptAt: r.NextAttemptAt}
+	// Logging metadata decodes independently of the business fields.
+	if tc, te := telemetry.Decode(r.TelemetryContext); te != nil {
+		op.TelemetryContextError = te
+	} else {
+		op.TelemetryContext = tc
+	}
+	return op, databaseFailure(err)
 }
 func platformReplay(ctx context.Context, q *sqlcgen.Queries, cluster string, i biz.PlatformIntent) (biz.PlatformResource, bool, error) {
 	prior, err := q.GetPlatformIdempotency(ctx, sqlcgen.GetPlatformIdempotencyParams{ClusterID: cluster, OperationKind: i.Kind, IdempotencyKey: i.IdempotencyKey})
@@ -210,6 +218,9 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	// Replay is checked before dynamic infrastructure. Slow provider calls occur
 	// before the write transaction, then admission rechecks the key and parents.
 	if v, found, err := platformReplay(ctx, p.queries, p.placement.ClusterID, i); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+		}
 		return v, err
 	}
 	if i.Kind == "create_vlan" && i.FingerprintVersion() == 2 {
@@ -229,6 +240,9 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if v, found, err := platformReplay(ctx, q, p.placement.ClusterID, i); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+		}
 		return v, err
 	}
 	// Match VPC admission's lock order: rollout, then platform cluster/pool.
@@ -329,7 +343,7 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
-	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: i.Kind, State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now}); err != nil {
+	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: i.Kind, State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if err = q.InsertPlatformReconciliation(ctx, sqlcgen.InsertPlatformReconciliationParams{ResourceID: id, NextRunAt: now}); err != nil {
@@ -346,6 +360,7 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	if err = tx.Commit(ctx); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: value.Kind, resourceID: value.ID, operationID: value.LastOperationID})
 	return value, nil
 }
 func savePlatformAcceptance(ctx context.Context, q *sqlcgen.Queries, i biz.PlatformIntent, a biz.Attribution, v biz.PlatformResource, now time.Time, state string) error {
@@ -405,7 +420,7 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 			return v, err
 		}
 		archiveID := uuid.NewString()
-		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: v.ID, OperationID: archiveID, Kind: i.Kind, State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now}); err != nil {
+		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: v.ID, OperationID: archiveID, Kind: i.Kind, State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 			return v, databaseFailure(err)
 		}
 		if err = q.InsertPlatformIdempotency(ctx, sqlcgen.InsertPlatformIdempotencyParams{ClusterID: v.ClusterID, OperationKind: i.Kind, IdempotencyKey: i.IdempotencyKey, Fingerprint: i.VersionedFingerprint(), FingerprintVersion: i.FingerprintVersion(), ResourceID: v.ID, OperationID: archiveID, Response: body, CreatedAt: now}); err != nil {
@@ -493,7 +508,7 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
-	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: i.ID, OperationID: opID, Kind: i.Kind, State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now}); err != nil {
+	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: i.ID, OperationID: opID, Kind: i.Kind, State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if err = affected(q.SchedulePlatform(ctx, sqlcgen.SchedulePlatformParams{ResourceID: i.ID})); err != nil {
@@ -509,6 +524,7 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 	if err = tx.Commit(ctx); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID})
 	return v, nil
 }
 
@@ -547,7 +563,12 @@ func (p *Postgres) DeletePlatform(ctx context.Context, kind, id string, a biz.At
 		return biz.PlatformResource{}, biz.Fail(biz.ResourceNotFound, "platform resource not found")
 	}
 	if row.State == "deleted" || row.State == "deleting" {
-		return platformSnapshot(ctx, q, row)
+		value, err := platformSnapshot(ctx, q, row)
+		if err != nil {
+			return value, err
+		}
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_" + kind, resourceType: value.Kind, resourceID: value.ID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	op, err := q.GetPlatformOperation(ctx, sqlcgen.GetPlatformOperationParams{ClusterID: p.placement.ClusterID, OperationID: row.LastOperationID})
 	if err != nil {
@@ -599,7 +620,7 @@ func (p *Postgres) DeletePlatform(ctx context.Context, kind, id string, a biz.At
 	if err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
-	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: opID, Kind: "delete_" + kind, State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now}); err != nil {
+	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: opID, Kind: "delete_" + kind, State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if err = affected(q.SchedulePlatform(ctx, sqlcgen.SchedulePlatformParams{ResourceID: id})); err != nil {
@@ -615,6 +636,7 @@ func (p *Postgres) DeletePlatform(ctx context.Context, kind, id string, a biz.At
 	if err = tx.Commit(ctx); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_" + kind, resourceType: value.Kind, resourceID: value.ID, operationID: value.LastOperationID})
 	return value, nil
 }
 

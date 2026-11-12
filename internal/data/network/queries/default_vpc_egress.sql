@@ -39,7 +39,7 @@ UPDATE network_default_vpc_egresses SET state='deleting',phase='delete_snat',rea
 SELECT count(*)::bigint FROM network_default_vpc_egresses WHERE cluster_id=$1 AND pool_id=$2 AND retired_at IS NULL;
 
 -- name: DueDefaultEgress :one
-SELECT sqlc.embed(r),o.state AS operation_state,o.operation_id AS operation_id,o.telemetry_context AS operation_telemetry_context FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
+SELECT sqlc.embed(r),o.state AS operation_state,o.operation_id AS operation_id,o.telemetry_context AS operation_telemetry_context,o.kind AS operation_kind,o.completed_at AS operation_completed_at FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
 WHERE r.cluster_id=$1 AND r.retired_at IS NULL AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp()) ORDER BY r.next_run_at,r.resource_id FOR UPDATE OF r SKIP LOCKED LIMIT 1;
 
 -- name: ClaimDefaultEgressLease :one

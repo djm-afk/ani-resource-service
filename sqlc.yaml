@@ -55,6 +55,7 @@ sql:
       - migrations/0033_platform_base_networks.sql
       - migrations/0034_logging_telemetry.sql
       - migrations/0035_logging_telemetry_lanes.sql
+      - migrations/0036_logging_telemetry_platform.sql
     queries: internal/data/network/queries
     gen:
       go:

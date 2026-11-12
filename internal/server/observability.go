@@ -7,6 +7,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"go.opentelemetry.io/otel/attribute"
 	"log/slog"
+	"strings"
 
 	kratosmetrics "github.com/go-kratos/kratos/contrib/otel/v3/metrics"
 	kratostracing "github.com/go-kratos/kratos/contrib/otel/v3/tracing"
@@ -172,9 +173,10 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 
 func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, work biz.Work, progress biz.Progress, err error) {
 	if progress.ProviderError != nil {
-		// Real provider failures are ERROR with the unwrapped cause. A genuine
-		// concurrent/lease conflict is the only class that stays WARN; the level
-		// is decided from the typed kind, never from a string.
+		// The worker already reported the same cause at its origin; this record
+		// keeps the existing failure identity and adds the required step. A
+		// genuine concurrent/lease conflict is the only class that stays WARN;
+		// the level is decided from the typed kind, never from a string.
 		cause := progress.ProviderError
 		kind := biz.ProviderFailure("")
 		var failure *biz.ProviderError
@@ -188,9 +190,10 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
 			level = slog.LevelWarn
 		}
-		attrs := []any{"event", "step.failed", "dependency", "kubernetes",
+		attrs := []any{"event", biz.EventStepFailed, "worker", biz.WorkerMain,
+			"step", providerFailureStep(work), "dependency", "kubernetes",
 			"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
-			"reason", progress.Reason, "epoch", int(work.Epoch)}
+			"reason", string(progress.Reason), "epoch", int(work.Epoch)}
 		if work.Operation.ID != "" {
 			attrs = append(attrs, "operation_id", work.Operation.ID)
 		}
@@ -223,8 +226,50 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", work.Resource.Kind)))
 	}
 	o.workerAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result), attribute.String("kind", work.Resource.Kind)))
-	if work.ActiveOperation || err != nil || work.Resource.State != progress.State || work.Resource.Reason != progress.Reason {
-		logger.InfoContext(ctx, "network reconciliation", "tenant_id", work.Resource.TenantID, "resource_type", work.Resource.Kind, "resource_id", work.Resource.ID, "operation_id", work.Operation.ID, "epoch", work.Epoch, "resource_state", progress.State, "attempt_result", result, "reason", progress.Reason)
+	if !work.ActiveOperation && err == nil && work.Resource.State == progress.State && work.Resource.Reason == progress.Reason {
+		return
+	}
+	// The reconciliation record uses the contract's step/operation vocabulary;
+	// the removed resource_state/attempt_result had no schema entry.
+	event, level, failingStep := biz.EventStepSucceeded, slog.LevelInfo, biz.StepPersistProgress
+	switch {
+	case err != nil:
+		event, level = biz.EventStepFailed, slog.LevelError
+	case progress.OperationState == biz.OpFailed:
+		event, level = biz.EventOperationFailed, slog.LevelError
+	case progress.OperationState == biz.Succeeded:
+		event, level = biz.EventOperationSuccess, slog.LevelInfo
+	case progress.Backoff || progress.OperationState == biz.Blocked:
+		event, level = biz.EventStepWaiting, slog.LevelInfo
+	}
+	attrs := []any{"event", event, "worker", biz.WorkerMain, "step", failingStep,
+		"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
+		"operation_id", work.Operation.ID, "tenant_id", work.Resource.TenantID,
+		"action", work.Operation.Kind, "epoch", int(work.Epoch), "attempt", int(work.Attempt)}
+	if event == biz.EventOperationSuccess || event == biz.EventStepSucceeded {
+		attrs = append(attrs, "result", "succeeded")
+	}
+	if progress.Reason != "" {
+		attrs = append(attrs, "reason", string(progress.Reason))
+	}
+	if err != nil {
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+	}
+	logger.Log(ctx, level, "network reconciliation", attrs...)
+}
+
+// providerFailureStep names the stage a provider failure belongs to. It is
+// derived from the durable operation kind only, so it never invents a step.
+func providerFailureStep(work biz.Work) string {
+	switch kind := work.Operation.Kind; {
+	case strings.HasPrefix(kind, "create_"), kind == "bind_snat":
+		return biz.StepEnsureVPC
+	case kind == "set_snat_enabled":
+		return biz.StepUpdateEgress
+	case strings.HasPrefix(kind, "delete_"):
+		return biz.StepDeleteProvider
+	default:
+		return biz.StepObserveProvider
 	}
 }
 
@@ -268,15 +313,20 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
 			level = slog.LevelWarn
 		}
-		attrs := []any{"event", "step.failed", "dependency", "kubernetes", "action", progress.Action,
+		// Node identity is a real Kubernetes coordinate; the removed
+		// node_name/node_uid/binding_state/provider_failure fields have no schema.
+		attrs := []any{"event", biz.EventStepFailed, "worker", biz.WorkerVirtualSwitch,
+			"step", switchStep(progress.Action), "dependency", "kubernetes", "action", progress.Action,
 			"resource_type", "virtual_switch", "resource_id", work.Switch.ID,
-			"reason", progress.Reason, "provider_failure", string(kind),
-			"node_name", progress.NodeName, "node_uid", progress.NodeUID, "binding_state", progress.BindingState}
+			"reason", string(progress.Reason), "cluster_id", work.Switch.ClusterID}
 		if work.Switch.LastOperationID != "" {
 			attrs = append(attrs, "operation_id", work.Switch.LastOperationID)
 		}
 		if work.Switch.BindingID != "" {
 			attrs = append(attrs, "binding_id", work.Switch.BindingID)
+		}
+		if progress.NodeName != "" || progress.NodeUID != "" {
+			attrs = append(attrs, telemetry.Target{ClusterID: work.Switch.ClusterID, Kind: "Node", Name: progress.NodeName, UID: progress.NodeUID}.KV()...)
 		}
 		attrs = append(attrs, logfields.ErrorFields(cause)...)
 		logger.Log(ctx, level, "virtual switch provider request failed", attrs...)
@@ -303,9 +353,35 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 		}
 		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", "virtual_switch")))
 	}
-	if err != nil || progress.ProviderError != nil || work.Switch.BindingState != progress.BindingState || work.Switch.Reason != progress.Reason {
-		logger.InfoContext(ctx, "virtual switch reconciliation", "resource_id", work.Switch.ID, "operation_id", work.Switch.LastOperationID, "binding_id", work.Switch.BindingID, "epoch", work.Epoch, "binding_state", progress.BindingState, "observed", progress.Observed, "attempt_result", result, "reason", progress.Reason)
+	if err == nil && work.Switch.BindingState == progress.BindingState && work.Switch.Reason == progress.Reason {
+		return
 	}
+	event, level := biz.EventStepSucceeded, slog.LevelInfo
+	if err != nil {
+		event, level = biz.EventStepFailed, slog.LevelError
+	} else if progress.ProviderError != nil {
+		event, level = biz.EventStepWaiting, slog.LevelInfo
+	}
+	attrs := []any{"event", event, "worker", biz.WorkerVirtualSwitch, "step", switchStep(progress.Action),
+		"resource_type", "virtual_switch", "resource_id", work.Switch.ID,
+		"operation_id", work.Switch.LastOperationID, "binding_id", work.Switch.BindingID,
+		"cluster_id", work.Switch.ClusterID, "action", progress.Action,
+		"epoch", int(work.Epoch), "reason", string(progress.Reason)}
+	if event == biz.EventStepSucceeded {
+		attrs = append(attrs, "result", "succeeded")
+	}
+	if err != nil {
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+	}
+	logger.Log(ctx, level, "virtual switch reconciliation", attrs...)
+}
+
+// switchStep maps the persisted switch action to the fixed step vocabulary.
+func switchStep(action string) string {
+	if action == "patch" {
+		return biz.StepApplySwitch
+	}
+	return biz.StepObserveSwitch
 }
 
 // logAttachmentFailure records a real attachment provider/read failure with the
@@ -316,7 +392,7 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 	if logger == nil {
 		return
 	}
-	identity := []any{"resource_type", "attachment", "resource_id", work.Attachment.ID}
+	identity := []any{"worker", biz.WorkerAttachment, "resource_type", "attachment", "resource_id", work.Attachment.ID}
 	if work.Attachment.ID != "" {
 		identity = append(identity, "attachment_id", work.Attachment.ID)
 	}
@@ -343,7 +419,11 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 		if cause == nil && p.ObservationError != "" {
 			cause = errors.New(string(p.ObservationError))
 		}
-		attrs := append([]any{"event", "step.failed", "dependency", "kubernetes", "action", "attach"}, identity...)
+		step := biz.StepGetSubmission
+		if p.Addresses != nil || p.Observed {
+			step = biz.StepObserveAttachment
+		}
+		attrs := append([]any{"event", biz.EventStepFailed, "step", step, "dependency", "kubernetes", "action", "attach"}, identity...)
 		if p.Reason != "" {
 			attrs = append(attrs, "reason", string(p.Reason))
 		}
@@ -358,10 +438,15 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 	}
 	// The Finish write failure is a separate cause and must keep its own
 	// SQLSTATE instead of being replaced by the provider error above. A lost
-	// lease is a concurrency outcome, not a persistence failure.
-	if err != nil && !errors.Is(err, biz.ErrLeaseLost) {
-		attrs := append([]any{"event", "state.persist_failed", "dependency", "postgresql",
-			"action", "finish_attachment", "step", "persist_attachment"}, identity...)
+	// lease is a concurrency outcome, not a persistence failure, and this lane
+	// has no operation, so it is operation.conflict rather than lease_lost.
+	if errors.Is(err, biz.ErrLeaseLost) {
+		attrs := append([]any{"event", biz.EventOperationConflict, "step", biz.StepPersistAttachment,
+			"reason", string(biz.LeaseLost)}, identity...)
+		logger.WarnContext(ctx, "attachment lease lost", attrs...)
+	} else if err != nil {
+		attrs := append([]any{"event", biz.EventPersistFailed, "dependency", "postgresql",
+			"action", "finish_attachment", "step", biz.StepPersistAttachment}, identity...)
 		attrs = append(attrs, logfields.ErrorFields(err)...)
 		logger.ErrorContext(ctx, "attachment state save failed", attrs...)
 	}

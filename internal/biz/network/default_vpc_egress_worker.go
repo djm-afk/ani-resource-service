@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
@@ -84,30 +84,52 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 	ctx, cancel := context.WithTimeout(ctx, w.policy.Lease)
 	defer cancel()
 	x, found, err := w.repository.ClaimDefaultVPCEgress(ctx, w.owner, w.policy.Lease)
-	if err != nil || !found {
+	if err != nil {
+		dependencyFailed(ctx, w.logger, WorkerDefaultEgress, "postgresql", "claim", nil, k8sTarget{}, err)
 		return found, err
 	}
-	// Resume the active operation's trace and open this pass's own span. The
-	// default egress is platform-scoped, so no tenant_id is invented.
-	ctx, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(ctx, x.TelemetryContext, x.TelemetryContextError, "network.default_egress")
-	defer runSpan.End()
-	logTelemetryEvent(ctx, w.logger, telemetryEvent, []any{"resource_type", "default_vpc_egress", "resource_id", x.Egress.ID, "cluster_id", x.Egress.Identity.ClusterID}, telemetryErr)
+	if !found {
+		return false, nil
+	}
 	e := x.Egress
 	active := e.OperationState != "succeeded" && e.OperationState != "failed"
+	// The active decision precedes trace restoration: a terminal record is an
+	// independent observation, so it must not inherit the finished operation's
+	// trace and must not report absent metadata. The platform scope invents no
+	// tenant.
+	ctx, runSpan, telemetryEvent, telemetryErr := activeRun(ctx, x.ActiveOperation, x.TelemetryContext, x.TelemetryContextError, "network.default_egress")
+	defer runSpan.End()
+	identity := x.eventIdentity()
+	startedAt := time.Now()
+	runStarted(ctx, w.logger, WorkerDefaultEgress, identity)
+	if telemetryEvent != "" {
+		logTelemetryEvent(ctx, w.logger, telemetryEvent, []any{"resource_type", "default_vpc_egress", "resource_id", e.ID, "cluster_id", e.Identity.ClusterID}, telemetryErr)
+	}
 	p := DefaultEgressProgress{State: e.State, Phase: e.Phase, Reason: e.Reason, PendingUnknown: e.PendingUnknown, Delay: w.policy.ObserveEvery}
 	if active {
 		p.OperationState = Retrying
+		networkEvent(ctx, w.logger, slog.LevelInfo, EventOperationStarted,
+			"operation_id", e.LastOperationID, "action", x.OperationKind,
+			"resource_type", "default_vpc_egress", "resource_id", e.ID, "cluster_id", e.Identity.ClusterID)
 	}
 	finish := func() (bool, error) {
 		call, stop := context.WithTimeout(context.WithoutCancel(ctx), w.policy.RequestTimeout)
 		defer stop()
+		stepStarted(ctx, w.logger, WorkerDefaultEgress, StepPersistDefaultEG, identity)
 		err := w.repository.FinishDefaultVPCEgress(call, x, p)
-		if err != nil {
+		switch {
+		case errors.Is(err, ErrLeaseLost):
+			operationLeaseLost(ctx, w.logger, WorkerDefaultEgress, StepPersistDefaultEG, identity)
+		case err != nil:
 			w.logPersistFailed(ctx, x, err)
+		default:
+			stepSucceeded(ctx, w.logger, WorkerDefaultEgress, StepPersistDefaultEG, identity)
 		}
+		runCompleted(ctx, w.logger, WorkerDefaultEgress, identity, time.Since(startedAt))
 		return true, err
 	}
 	call, stop := context.WithTimeout(ctx, w.policy.RequestTimeout)
+	stepStarted(ctx, w.logger, WorkerDefaultEgress, StepObserveDefaultEG, identity)
 	o, readErr := w.provider.ObserveDefaultVPCEgress(call, x)
 	stop()
 	if readErr != nil {
@@ -119,13 +141,20 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 		}
 		if active && providerKind(readErr) == ProviderConflict {
 			p.OperationState = Blocked
+			operationConflict(ctx, w.logger, WorkerDefaultEgress, StepObserveDefaultEG, identity, observationReason(readErr), nil)
 		}
 		p.Backoff, p.Delay = true, w.policy.RetryMin
+		if active {
+			networkEvent(ctx, w.logger, slog.LevelWarn, EventOperationRetry,
+				"operation_id", e.LastOperationID, "reason", string(p.OperationReason))
+		}
 		return finish()
 	}
+	stepSucceeded(ctx, w.logger, WorkerDefaultEgress, StepObserveDefaultEG, identity)
 	p.Observation, p.Observed = o, true
 	// Persist a recovered create UID before dispatching another command.
 	if (o.EIPExists && e.EIPProviderUID == "") || (o.SnatExists && e.SnatProviderUID == "") {
+		stepWaiting(ctx, w.logger, WorkerDefaultEgress, StepApplyDefaultEG, identity, ProviderNotReady)
 		p.ClearPending, p.PendingUnknown, p.Delay = true, false, w.policy.RetryMin
 		return finish()
 	}
@@ -137,6 +166,7 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 			return true, err
 		}
 		call, stop := context.WithTimeout(ctx, w.policy.RequestTimeout)
+		stepStarted(ctx, w.logger, WorkerDefaultEgress, StepApplyDefaultEG, identity)
 		mutationErr := w.provider.MutateDefaultVPCEgress(call, x, action)
 		stop()
 		p.ClearPending, p.PendingUnknown, p.Delay = false, mutationErr != nil, w.policy.RetryMin
@@ -148,13 +178,19 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 			if providerKind(mutationErr) != ProviderUncertain {
 				p.ClearPending, p.PendingUnknown = true, false
 			}
+			if providerKind(mutationErr) == ProviderConflict {
+				operationConflict(ctx, w.logger, WorkerDefaultEgress, StepApplyDefaultEG, identity, providerReason(mutationErr), nil)
+			}
 			if active && providerKind(mutationErr) == ProviderReject {
 				if e.State == Deleting {
 					p.OperationState = Blocked
 				} else {
 					p.OperationState = OpFailed
+					operationFailed(ctx, w.logger, WorkerDefaultEgress, identity, e.LastOperationID, p.OperationReason, mutationErr)
 				}
 			}
+		} else {
+			stepSucceeded(ctx, w.logger, WorkerDefaultEgress, StepApplyDefaultEG, identity)
 		}
 		return finish()
 	}

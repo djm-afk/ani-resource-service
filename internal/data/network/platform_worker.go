@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"time"
 )
 
@@ -47,7 +48,15 @@ func (p *Postgres) claimPlatform(ctx context.Context, tx pgx.Tx, q *sqlcgen.Quer
 	if err != nil {
 		return biz.Work{}, false, databaseFailure(err)
 	}
-	work := biz.Work{Resource: biz.ResourceWork{ID: r.ResourceID, Kind: r.Kind, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, ObservedAt: r.ObservedAt, UpdatedAt: r.UpdatedAt, LastOperationID: r.LastOperationID, Egress: &biz.EgressWorkSpec{Platform: &value}}, Operation: biz.Operation{ID: op.OperationID, ResourceID: r.ResourceID, ResourceType: r.Kind, Kind: op.Kind, State: biz.OperationState(op.State), Reason: biz.Reason(op.Reason)}, ActiveOperation: active, BindingID: r.BindingID, KnownIdentity: r.ProviderUid, PendingAction: r.PendingAction, Owner: owner, Epoch: lease.LeaseEpoch, Attempt: op.Attempt, Now: now, ClaimedGeneration: lease.RequestedGeneration}
+	operation := biz.Operation{ID: op.OperationID, ResourceID: r.ResourceID, ResourceType: r.Kind, Kind: op.Kind, State: biz.OperationState(op.State), Reason: biz.Reason(op.Reason)}
+	// Logging metadata decodes independently: a malformed value must not fail the
+	// business claim, so the cause rides along to the worker.
+	if tc, te := telemetry.Decode(op.TelemetryContext); te != nil {
+		operation.TelemetryContextError = te
+	} else {
+		operation.TelemetryContext = tc
+	}
+	work := biz.Work{Resource: biz.ResourceWork{ID: r.ResourceID, Kind: r.Kind, State: biz.ResourceState(r.State), Reason: biz.Reason(r.Reason), Version: r.Version, ObservedAt: r.ObservedAt, UpdatedAt: r.UpdatedAt, LastOperationID: r.LastOperationID, Egress: &biz.EgressWorkSpec{Platform: &value}}, Operation: operation, ActiveOperation: active, BindingID: r.BindingID, KnownIdentity: r.ProviderUid, PendingAction: r.PendingAction, Owner: owner, Epoch: lease.LeaseEpoch, Attempt: op.Attempt, Now: now, ClaimedGeneration: lease.RequestedGeneration}
 	if err = tx.Commit(ctx); err != nil {
 		return biz.Work{}, false, databaseFailure(err)
 	}

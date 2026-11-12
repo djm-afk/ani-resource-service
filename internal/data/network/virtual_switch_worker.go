@@ -43,6 +43,12 @@ func (p *Postgres) ClaimVirtualSwitch(ctx context.Context, owner string, duratio
 		return biz.VirtualSwitchWork{}, false, databaseFailure(err)
 	}
 	w := biz.VirtualSwitchWork{Switch: v, Owner: owner, Epoch: l.LeaseEpoch, ClaimedGeneration: l.RequestedGeneration, Now: now}
+	// A NULL operation projection means the last operation already completed, so
+	// this pass is an independent observation and must not reuse its trace.
+	if r.OperationID != nil {
+		w.ActiveOperation = true
+		w.OperationKind = r.OperationKind
+	}
 	// Logging metadata decodes independently of the business claim.
 	if tc, te := telemetry.Decode(r.OperationTelemetryContext); te != nil {
 		w.TelemetryContextError = te

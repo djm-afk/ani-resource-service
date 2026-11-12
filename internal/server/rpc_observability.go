@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
@@ -72,6 +74,45 @@ func (h *rpcServerStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats)
 		attrs = append(attrs, logfields.ErrorFields(end.Error)...)
 	}
 	h.logAt(ctx, level, "inbound rpc completed", attrs...)
+
+	// Business rejections happen before an acceptance transaction commits, so the
+	// data layer cannot record them. This is the single place that sees both the
+	// write intent and the typed Network reason; recording it here covers every
+	// RPC without touching the 110 rpcError call sites.
+	if reason, ok := networkRejection(method, end.Error); ok {
+		reject := []any{"event", "operation.rejected", "rpc.method", method,
+			"reason", reason, "result", "rejected"}
+		h.logAt(ctx, slog.LevelWarn, "network operation rejected", reject...)
+	}
+}
+
+// networkRejection reports the typed reason when an inbound write concluded with
+// a Network business rejection. Only a WARN-level gRPC code counts: dependency
+// faults and Internal stay with dependency.failed/rpc.server.completed, and a
+// pure query's NotFound is not a rejected operation.
+func networkRejection(method string, err error) (string, bool) {
+	if err == nil || isQueryMethod(method) {
+		return "", false
+	}
+	st := status.Convert(err)
+	switch st.Code() {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists,
+		codes.FailedPrecondition, codes.PermissionDenied:
+	default:
+		return "", false
+	}
+	for _, detail := range st.Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok && info.GetDomain() == "network.ani.io" && info.GetReason() != "" {
+			return info.GetReason(), true
+		}
+	}
+	return "", false
+}
+
+// isQueryMethod identifies pure reads by the Network method-name convention.
+func isQueryMethod(method string) bool {
+	name := method[strings.LastIndex(method, "/")+1:]
+	return strings.HasPrefix(name, "Get") || strings.HasPrefix(name, "List")
 }
 
 func (h *rpcServerStatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {

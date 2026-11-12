@@ -17,6 +17,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
@@ -86,7 +88,14 @@ func (p *KCProvider) EnableObservation(requestTimeout time.Duration) (*KCObserva
 		}
 		if err = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
 			observer.watchErrors.Add(1)
-			slog.Warn("network object watch failed", append([]any{"resource", gvr.String()}, logfields.ErrorFields(err)...)...)
+			// A watch failure is a real dependency fault (403/429/5xx included).
+			// Informer reconnect does not make it WARN; the contract forbids
+			// downgrading a genuine dependency failure.
+			attrs := []any{"event", "dependency.failed", "worker", biz.WorkerObservation,
+				"dependency", "kubernetes", "action", "watch", "step", biz.StepWatchSource,
+				"resource_type", "watch", "resource_id", gvr.String(), "cluster_id", observer.provider.repository.placement.ClusterID}
+			attrs = append(attrs, logfields.ErrorFields(err)...)
+			slog.Error("network object watch failed", attrs...)
 		}); err != nil {
 			observer.queue.ShutDown()
 			return nil, err
@@ -176,12 +185,23 @@ func (o *KCObservation) processNextNotification(ctx context.Context) bool {
 		return false
 	}
 	defer o.queue.Done(key)
+	// Each notification is its own observation pass with an independent trace;
+	// the chain has no business operation, so no operation_id is invented.
+	ctx, span := telemetry.StartRun(ctx, "network.observation")
+	defer span.End()
+	identity := []any{"resource_type", key.GVR.Resource, "resource_id", key.Name, "cluster_id", o.provider.repository.placement.ClusterID}
 	request, cancel := context.WithTimeout(ctx, o.requestTimeout)
 	err := o.provider.repository.NotifyObservedObject(request, key.GVR, key.Namespace, key.Name)
 	cancel()
 	if err != nil {
 		o.retries.Add(1)
+		attrs := append([]any{"event", "dependency.failed", "worker", biz.WorkerObservation,
+			"dependency", "postgresql", "action", "notify", "step", biz.StepNotifyObserved}, identity...)
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+		slog.ErrorContext(ctx, "network observation notification failed", attrs...)
 		o.queue.AddRateLimited(key)
+		slog.WarnContext(ctx, "network observation retry scheduled", "event", "worker.retry_scheduled",
+			"worker", biz.WorkerObservation, "reason", "notify_observed_object", "resource_id", key.Name)
 		return true
 	}
 	o.notifications.Add(1)

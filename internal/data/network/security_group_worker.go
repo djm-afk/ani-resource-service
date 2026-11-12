@@ -50,6 +50,9 @@ func (p *Postgres) SetEIPSecurityGroups(ctx context.Context, i biz.SecurityGroup
 		return biz.SecurityGroupMutation{}, e
 	}
 	if v, found, e := sgReplay(ctx, q, i); e != nil || found {
+		if e == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: v.Operation.Kind, resourceType: v.Operation.ResourceType, resourceID: v.Operation.ResourceID, tenantID: v.Operation.TenantID, operationID: v.Operation.ID, replayed: true})
+		}
 		return v, e
 	}
 	// The EIP row lock serializes lifecycle acceptance and SG changes.
@@ -110,7 +113,11 @@ func (p *Postgres) SetEIPSecurityGroups(ctx context.Context, i biz.SecurityGroup
 	if e = q.ScheduleSecurityGroup(ctx, db.ScheduleSecurityGroupParams{TenantID: i.TenantID, TargetType: "eip", TargetID: i.ID, RequestedVersion: v.Version}); e != nil {
 		return result, databaseFailure(e)
 	}
-	return result, databaseFailure(tx.Commit(ctx))
+	if e = tx.Commit(ctx); e != nil {
+		return biz.SecurityGroupMutation{}, databaseFailure(e)
+	}
+	p.logAcceptance(ctx, acceptedEvent{action: op.Kind, resourceType: op.ResourceType, resourceID: op.ResourceID, tenantID: op.TenantID, operationID: op.ID})
+	return result, nil
 }
 func (p *Postgres) ClaimSecurityGroup(ctx context.Context, owner string, duration time.Duration) (biz.SecurityGroupWork, bool, error) {
 	tx, e := p.pool.Begin(ctx)
@@ -161,6 +168,9 @@ func (p *Postgres) ClaimSecurityGroup(ctx context.Context, owner string, duratio
 		if err = json.Unmarshal(row.Payload, &w.Operation); err != nil {
 			return w, false, databaseFailure(err)
 		}
+		// An unfinished operation is the durable signal for resuming its trace;
+		// a completed one makes this pass an independent observation.
+		w.ActiveOperation = w.Operation.CompletedAt == nil
 		// Logging metadata decodes independently: a malformed value must not fail
 		// the business claim, so the cause rides along to the worker.
 		if tc, te := telemetry.Decode(row.TelemetryContext); te != nil {

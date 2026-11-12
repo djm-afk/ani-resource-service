@@ -242,6 +242,9 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	q := p.queries.WithTx(tx)
 	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
 	if result, found, err := lbReplay(ctx, q, i); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "load_balancer", resourceID: result.LoadBalancer.ID, tenantID: result.LoadBalancer.TenantID, operationID: result.Operation.ID, replayed: true})
+		}
 		return result, err
 	}
 	creating := i.Kind == "create_load_balancer"
@@ -557,6 +560,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	if err = tx.Commit(ctx); err != nil {
 		return biz.LoadBalancerResult{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "load_balancer", resourceID: result.LoadBalancer.ID, tenantID: result.LoadBalancer.TenantID, operationID: result.Operation.ID})
 	return result, nil
 }
 func lastAddress(cidr netip.Prefix) netip.Addr {
@@ -690,6 +694,7 @@ func (p *Postgres) DeleteLoadBalancer(ctx context.Context, tenant, id string, a 
 	if err = tx.Commit(ctx); err != nil {
 		return biz.LoadBalancerResult{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_load_balancer", resourceType: "load_balancer", resourceID: result.LoadBalancer.ID, tenantID: result.LoadBalancer.TenantID, operationID: result.Operation.ID})
 	return result, nil
 }
 

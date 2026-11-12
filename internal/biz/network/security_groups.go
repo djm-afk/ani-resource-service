@@ -9,8 +9,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type SecurityGroupPortRange struct{ Min, Max int32 }
@@ -268,6 +266,9 @@ type SecurityGroupWork struct {
 	TenantID, TargetType, TargetID, Owner string
 	Version, Epoch                        int64
 	ClaimedGeneration                     int64
+	// ActiveOperation reports that the claimed operation has not completed, so
+	// only this pass may resume its accepted trace.
+	ActiveOperation bool
 }
 type SecurityGroupResult struct {
 	ProviderUID, State, Reason string
@@ -305,18 +306,35 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 	step, cancelStep := context.WithTimeout(ctx, w.policy.Lease)
 	defer cancelStep()
 	work, found, err := w.repository.ClaimSecurityGroup(step, w.owner, w.policy.Lease)
-	if err != nil || !found {
+	if err != nil {
+		dependencyFailed(step, w.logger, WorkerSecurityGroup, "postgresql", "claim", nil, k8sTarget{}, err)
 		return found, err
 	}
-	// Resume the claimed operation's trace and open this pass's own span.
-	step, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(step, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, "network.security_group")
+	if !found {
+		return false, nil
+	}
+	// Resume the claimed operation's trace only while it is unfinished; a
+	// terminal record is an independent observation with its own trace.
+	step, runSpan, telemetryEvent, telemetryErr := activeRun(step, work.ActiveOperation, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, "network.security_group")
 	defer runSpan.End()
-	logTelemetryEvent(step, w.logger, telemetryEvent, []any{"resource_type", work.TargetType, "resource_id", work.TargetID, "tenant_id", work.TenantID, "operation_id", work.Operation.ID}, telemetryErr)
+	identity := work.eventIdentity()
+	startedAt := time.Now()
+	runStarted(step, w.logger, WorkerSecurityGroup, identity)
+	if telemetryEvent != "" {
+		logTelemetryEvent(step, w.logger, telemetryEvent, []any{"resource_type", work.TargetType, "resource_id", work.TargetID, "tenant_id", work.TenantID, "operation_id", work.Operation.ID}, telemetryErr)
+	}
+	if work.ActiveOperation {
+		networkEvent(step, w.logger, slog.LevelInfo, EventOperationStarted,
+			append([]any{"operation_id", work.Operation.ID, "action", work.Operation.Kind,
+				"resource_type", work.TargetType, "resource_id", work.TargetID, "tenant_id", work.TenantID}, identity...)...)
+	}
 	call, cancel := context.WithTimeout(step, w.policy.RequestTimeout)
+	stepStarted(step, w.logger, WorkerSecurityGroup, StepApplySecurityGrp, identity)
 	result, applyErr := w.provider.ApplySecurityGroup(call, work)
 	cancel()
 	result.NextDelay = w.policy.ObserveEvery
 	if applyErr != nil {
+		dependencyFailed(step, w.logger, WorkerSecurityGroup, "kubernetes", work.Operation.Kind, identity, k8sTarget{}, applyErr)
 		result.ProviderError = applyErr
 		if result.OperationReason == "" {
 			result.OperationReason = providerReason(applyErr)
@@ -326,6 +344,16 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 		if providerKind(applyErr) == ProviderReject && result.ObservationError == "" && work.Group.State != Deleting {
 			result.Backoff = false
 		}
+		if providerKind(applyErr) == ProviderConflict {
+			operationConflict(step, w.logger, WorkerSecurityGroup, StepApplySecurityGrp, identity, providerReason(applyErr), nil)
+		}
+		if work.ActiveOperation && providerKind(applyErr) == ProviderReject {
+			// An accepted create that Kubernetes rejected reaches failed; keep
+			// the original cause on the operation record.
+			operationFailed(step, w.logger, WorkerSecurityGroup, identity, work.Operation.ID, result.OperationReason, applyErr)
+		}
+	} else {
+		stepSucceeded(step, w.logger, WorkerSecurityGroup, StepApplySecurityGrp, identity)
 	}
 	if applyErr == nil && !result.Complete && result.OperationReason == "" {
 		result.OperationReason = Reason(result.Reason)
@@ -335,10 +363,19 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 	}
 	finish, cancelFinish := context.WithTimeout(context.WithoutCancel(step), w.policy.RequestTimeout)
 	defer cancelFinish()
+	stepStarted(step, w.logger, WorkerSecurityGroup, StepPersistSecGrp, identity)
 	err = w.repository.FinishSecurityGroup(finish, work, result, applyErr)
-	if errors.Is(err, ErrLeaseLost) {
+	switch {
+	case errors.Is(err, ErrLeaseLost):
+		operationLeaseLost(step, w.logger, WorkerSecurityGroup, StepPersistSecGrp, identity)
+		runCompleted(step, w.logger, WorkerSecurityGroup, identity, time.Since(startedAt))
 		return true, nil
+	case err != nil:
+		persistFailed(step, w.logger, WorkerSecurityGroup, "finish_security_group", StepPersistSecGrp, identity, err)
+	default:
+		stepSucceeded(step, w.logger, WorkerSecurityGroup, StepPersistSecGrp, identity)
 	}
+	runCompleted(step, w.logger, WorkerSecurityGroup, identity, time.Since(startedAt))
 	return true, err
 }
 

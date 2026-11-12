@@ -40,6 +40,9 @@ func subnetReplay(ctx context.Context, q *sqlcgen.Queries, intent biz.SubnetInte
 func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, attribution biz.Attribution) (biz.Subnet, error) {
 	// The durable replay is checked before any dynamic parent or address rule.
 	if value, found, err := subnetReplay(ctx, p.queries, intent); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		}
 		return value, err
 	}
 	if err := p.rejectPlatformManagement(ctx, intent.VPCID); err != nil {
@@ -62,6 +65,9 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 		return biz.Subnet{}, databaseFailure(err)
 	}
 	if value, found, err := subnetReplay(ctx, q, intent); found || err != nil {
+		if err == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		}
 		return value, err
 	}
 	intent.NamespaceIdentity, err = p.tenantNamespaceIdentity(ctx, intent.TenantID)
@@ -126,6 +132,7 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 	if err := tx.Commit(ctx); err != nil {
 		return biz.Subnet{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
 	return value, nil
 }
 func (p *Postgres) GetSubnet(ctx context.Context, tenant, id string) (biz.Subnet, error) {
@@ -187,7 +194,9 @@ func (p *Postgres) DeleteSubnet(ctx context.Context, tenant, id string) (biz.Sub
 		return biz.Subnet{}, databaseFailure(err)
 	}
 	if row.State == string(biz.Deleting) || row.State == string(biz.Deleted) {
-		return subnet(row), nil
+		value := subnet(row)
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		return value, nil
 	}
 	var manualCount int64
 	if err = tx.QueryRow(ctx, `SELECT count(*) FROM network_vnics WHERE tenant_id=$1 AND subnet_id=$2 AND state<>'deleted'`, tenant, id).Scan(&manualCount); err != nil {
@@ -238,7 +247,9 @@ func (p *Postgres) DeleteSubnet(ctx context.Context, tenant, id string) (biz.Sub
 	if err := tx.Commit(ctx); err != nil {
 		return biz.Subnet{}, databaseFailure(err)
 	}
-	return subnet(row), nil
+	value := subnet(row)
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
+	return value, nil
 }
 func subnet(row sqlcgen.NetworkSubnet) biz.Subnet {
 	value := biz.Subnet{OwnerScope: biz.OwnerScopeTenant, CanManage: networkManagementOpen(row.State, row.Reason), CanUse: networkManagementOpen(row.State, row.Reason), ID: row.SubnetID, TenantID: row.TenantID, VPCID: row.VpcID, Name: row.Name, Description: row.Description, CIDR: row.Cidr, Gateway: row.Gateway, State: biz.ResourceState(row.State), Reason: biz.Reason(row.Reason), Version: row.Version, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ObservedAt: row.ObservedAt, LastOperationID: row.LastOperationID}

@@ -97,6 +97,11 @@ type DefaultEgressWork struct {
 	Owner, EIPBindingID, SnatBindingID     string
 	Epoch, PoolRevision, ClaimedGeneration int64
 	Now                                    time.Time
+	// ActiveOperation reports that the claimed operation is still running; only
+	// then may this pass resume the accepted trace.
+	ActiveOperation bool
+	// OperationKind is the claimed operation kind, when one is active.
+	OperationKind string
 	// TelemetryContext is the active operation's persisted trace. Logging
 	// metadata only; it never enters fingerprints or the resource snapshot.
 	TelemetryContext telemetry.TelemetryContext

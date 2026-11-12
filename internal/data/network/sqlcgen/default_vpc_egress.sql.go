@@ -141,7 +141,7 @@ func (q *Queries) CountDefaultEgressPoolReferences(ctx context.Context, arg Coun
 }
 
 const dueDefaultEgress = `-- name: DueDefaultEgress :one
-SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,o.state AS operation_state,o.operation_id AS operation_id,o.telemetry_context AS operation_telemetry_context FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
+SELECT r.resource_id, r.cluster_id, r.cluster_uid, r.default_vpc_namespace, r.default_vpc_name, r.default_vpc_uid, r.name, r.pool_id, r.pool_revision, r.state, r.phase, r.reason, r.version, r.last_operation_id, r.eip_provider_name, r.eip_provider_uid, r.eip_binding_id, r.snat_provider_name, r.snat_provider_uid, r.snat_binding_id, r.address, r.applied_enabled, r.pending_action, r.pending_unknown, r.pending_since, r.lease_owner, r.lease_until, r.lease_epoch, r.next_run_at, r.created_at, r.updated_at, r.observed_at, r.retired_at, r.eip_id, r.observation_error, r.requested_generation, r.processed_generation, r.retry_not_before,o.state AS operation_state,o.operation_id AS operation_id,o.telemetry_context AS operation_telemetry_context,o.kind AS operation_kind,o.completed_at AS operation_completed_at FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
 WHERE r.cluster_id=$1 AND r.retired_at IS NULL AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp()) ORDER BY r.next_run_at,r.resource_id FOR UPDATE OF r SKIP LOCKED LIMIT 1
 `
 
@@ -154,6 +154,8 @@ type DueDefaultEgressRow struct {
 	OperationState            string
 	OperationID               string
 	OperationTelemetryContext []byte
+	OperationKind             string
+	OperationCompletedAt      *time.Time
 }
 
 func (q *Queries) DueDefaultEgress(ctx context.Context, arg DueDefaultEgressParams) (DueDefaultEgressRow, error) {
@@ -201,6 +203,8 @@ func (q *Queries) DueDefaultEgress(ctx context.Context, arg DueDefaultEgressPara
 		&i.OperationState,
 		&i.OperationID,
 		&i.OperationTelemetryContext,
+		&i.OperationKind,
+		&i.OperationCompletedAt,
 	)
 	return i, err
 }

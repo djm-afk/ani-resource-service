@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 type DatabaseReadiness interface{ CheckReady(context.Context) error }
@@ -97,9 +98,18 @@ func (s *WorkerServer) SetConcurrency(n int) error {
 	return nil
 }
 func (s *WorkerServer) runLane(ctx context.Context, stepper Stepper) (err error) {
+	startedAt := time.Now()
+	worker := LaneName(stepper)
 	defer func() {
-		if recover() != nil {
-			err = fmt.Errorf("network worker terminated unexpectedly")
+		// Capture the real panic value: the previous code discarded it and left
+		// only a fixed sentence, so run_failed could not report the cause.
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("network worker terminated unexpectedly: %v", recovered)
+		}
+		if err != nil {
+			attrs := append([]any{"event", biz.EventRunFailed, "worker", worker,
+				"duration_ms", float64(time.Since(startedAt).Microseconds()) / 1000.0}, logfields.ErrorFields(err)...)
+			s.logger.Error("network worker lane exited", attrs...)
 		}
 	}()
 	timer := time.NewTimer(0)
@@ -127,6 +137,28 @@ func (s *WorkerServer) runLane(ctx context.Context, stepper Stepper) (err error)
 		}
 		timer.Reset(delay)
 	}
+}
+
+// laneNames maps each registered lane to its contract worker identity.
+var laneNames = map[string]string{
+	"*biz.Worker":                 biz.WorkerMain,
+	"*biz.AttachmentWorker":       biz.WorkerAttachment,
+	"*biz.VirtualSwitchWorker":    biz.WorkerVirtualSwitch,
+	"*biz.SecurityGroupWorker":    biz.WorkerSecurityGroup,
+	"*biz.DefaultVPCEgressWorker": biz.WorkerDefaultEgress,
+}
+
+// LaneName resolves a lane's fixed worker name; an unknown lane keeps the main
+// identity rather than inventing a new one.
+func LaneName(stepper Stepper) string {
+	if stepper == nil {
+		return biz.WorkerMain
+	}
+	name := fmt.Sprintf("%T", stepper)
+	if mapped, ok := laneNames[name]; ok {
+		return mapped
+	}
+	return biz.WorkerMain
 }
 
 func (s *WorkerServer) monitorDatabase(ctx context.Context) {

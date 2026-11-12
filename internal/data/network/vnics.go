@@ -47,6 +47,9 @@ func vnicReplay(ctx context.Context, tx interface {
 }
 func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, error) {
 	if v, found, e := vnicReplay(ctx, p.pool, r); found || e != nil {
+		if e == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: "create_vnic", resourceType: "vnic", resourceID: v.ID, tenantID: v.TenantID, operationID: v.LastOperationID, replayed: true})
+		}
 		return v, e
 	}
 	// Identify the immutable FK branch, then preserve the private lock order.
@@ -164,7 +167,11 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 	if e = q.InsertHistory(ctx, sqlcgen.InsertHistoryParams{TenantID: r.TenantID, VnicID: id, HistoryID: uuid.NewString(), OperationID: &op, Event: "create_accepted", ResourceState: "provisioning", OperationState: "queued", ActorRef: r.Attribution.Actor, CallerRef: r.Attribution.DirectCaller, CorrelationID: r.Attribution.CorrelationID, CreatedAt: now}); e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
-	return v, databaseFailure(tx.Commit(ctx))
+	if e = tx.Commit(ctx); e != nil {
+		return biz.VNic{}, databaseFailure(e)
+	}
+	p.logAcceptance(ctx, acceptedEvent{action: "create_vnic", resourceType: "vnic", resourceID: v.ID, tenantID: v.TenantID, operationID: v.LastOperationID})
+	return v, nil
 }
 func (p *Postgres) GetVNic(ctx context.Context, tenant, id string) (biz.VNic, error) {
 	row, e := p.queries.GetVNic(ctx, sqlcgen.GetVNicParams{TenantID: tenant, VnicID: id})
@@ -324,7 +331,12 @@ func (p *Postgres) DeleteVNic(ctx context.Context, tenant, id string) (biz.VNic,
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
-	return vnicRow(row), databaseFailure(tx.Commit(ctx))
+	if e = tx.Commit(ctx); e != nil {
+		return biz.VNic{}, databaseFailure(e)
+	}
+	value := vnicRow(row)
+	p.logAcceptance(ctx, acceptedEvent{action: "delete_vnic", resourceType: "vnic", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
+	return value, nil
 }
 func (p *Postgres) ReserveVNic(ctx context.Context, r biz.VNicReservation) (biz.VNic, error) {
 	resultCtx := ctx

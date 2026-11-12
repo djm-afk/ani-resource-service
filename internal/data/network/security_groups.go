@@ -188,6 +188,9 @@ func (p *Postgres) MutateSecurityGroup(ctx context.Context, i biz.SecurityGroupI
 		i.IdempotencyKey = i.ID + ":" + i.RuleID
 	}
 	if v, found, e := sgReplay(ctx, q, i); e != nil || found {
+		if e == nil {
+			p.logAcceptance(ctx, acceptedEvent{action: v.Operation.Kind, resourceType: v.Operation.ResourceType, resourceID: v.Operation.ResourceID, tenantID: v.Operation.TenantID, operationID: v.Operation.ID, replayed: true})
+		}
 		return v, e
 	}
 	now, e := q.DatabaseTime(ctx)
@@ -318,7 +321,11 @@ func (p *Postgres) MutateSecurityGroup(ctx context.Context, i biz.SecurityGroupI
 	if e = q.ScheduleSecurityGroup(ctx, db.ScheduleSecurityGroupParams{TenantID: i.TenantID, TargetType: "security_group", TargetID: v.ID, RequestedVersion: v.Version}); e != nil {
 		return result, databaseFailure(e)
 	}
-	return result, databaseFailure(tx.Commit(ctx))
+	if e = tx.Commit(ctx); e != nil {
+		return biz.SecurityGroupMutation{}, databaseFailure(e)
+	}
+	p.logAcceptance(ctx, acceptedEvent{action: op.Kind, resourceType: op.ResourceType, resourceID: op.ResourceID, tenantID: op.TenantID, operationID: op.ID})
+	return result, nil
 }
 
 func (p *Postgres) ResolveSecurityGroups(ctx context.Context, tenant, vpcID, namespace string, ids []string) ([]string, error) {

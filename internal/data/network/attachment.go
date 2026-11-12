@@ -51,6 +51,9 @@ func attachmentHistory(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.Netw
 }
 func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachment) (biz.Attachment, error) {
 	if a, found, e := attachmentReplay(ctx, p.queries, p.pool, r); found || e != nil {
+		if e == nil {
+			p.logResourceMutation(ctx, true, "prepare_attachment", a.ID, a.TenantID)
+		}
 		return a, e
 	}
 	selection := biz.NetworkSelection{TenantID: r.TenantID, VPCID: r.VPCID, SubnetID: r.SubnetID, ClusterID: r.ClusterID, Namespace: r.Namespace, NamespaceUID: r.NamespaceUID, Reference: r.AcceptedReference}
@@ -91,6 +94,9 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 		return biz.Attachment{}, databaseFailure(e)
 	}
 	if a, found, e := attachmentReplay(ctx, q, tx, r); found || e != nil {
+		if e == nil {
+			p.logResourceMutation(ctx, true, "prepare_attachment", a.ID, a.TenantID)
+		}
 		return a, e
 	}
 	occupied, e := q.HasAttachmentSlot(ctx, sqlcgen.HasAttachmentSlotParams{TenantID: r.TenantID, InstanceID: r.InstanceID, Slot: r.Slot})
@@ -154,7 +160,11 @@ func (p *Postgres) PrepareAttachment(ctx context.Context, r biz.PrepareAttachmen
 	if e = tx.Commit(ctx); e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	return managedAttachment(ctx, p.pool, row)
+	value, e := managedAttachment(ctx, p.pool, row)
+	if e == nil {
+		p.logResourceMutation(ctx, false, "prepare_attachment", value.ID, value.TenantID)
+	}
+	return value, e
 }
 func (p *Postgres) GetAttachment(ctx context.Context, tenant, id string) (biz.Attachment, error) {
 	row, err := p.queries.GetAttachment(ctx, sqlcgen.GetAttachmentParams{TenantID: tenant, AttachmentID: id})
@@ -202,7 +212,11 @@ func (p *Postgres) ConfirmAttachment(ctx context.Context, r biz.ConfirmAttachmen
 	// Immutable identity replay precedes mutable version and state checks, also
 	// when the worker recovered the same Pod before Confirm arrived.
 	if row.PodUid == r.PodUID && row.PodName == r.PodName {
-		return attachment(row)
+		value, e := attachment(row)
+		if e == nil {
+			p.logResourceMutation(ctx, true, "confirm_attachment", value.ID, value.TenantID)
+		}
+		return value, e
 	}
 	if row.PodUid != "" || row.ConfirmUid != "" {
 		return biz.Attachment{}, biz.Fail(biz.AttachmentConflict, "attachment already registered another Pod")
@@ -223,7 +237,11 @@ func (p *Postgres) ConfirmAttachment(ctx context.Context, r biz.ConfirmAttachmen
 	if e = tx.Commit(ctx); e != nil {
 		return biz.Attachment{}, databaseFailure(e)
 	}
-	return attachment(row)
+	value, e := attachment(row)
+	if e == nil {
+		p.logResourceMutation(ctx, false, "confirm_attachment", value.ID, value.TenantID)
+	}
+	return value, e
 }
 func (p *Postgres) ReleaseAttachment(ctx context.Context, r biz.ReleaseAttachment) (biz.Attachment, error) {
 	tx, err := p.pool.Begin(ctx)
@@ -263,5 +281,9 @@ func (p *Postgres) ReleaseAttachment(ctx context.Context, r biz.ReleaseAttachmen
 	if err = tx.Commit(ctx); err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
-	return managedAttachment(ctx, p.pool, row)
+	value, err := managedAttachment(ctx, p.pool, row)
+	if err == nil {
+		p.logResourceMutation(ctx, false, "release_attachment", value.ID, value.TenantID)
+	}
+	return value, err
 }

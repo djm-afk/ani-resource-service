@@ -88,8 +88,8 @@ INSERT INTO network_default_public_pools(cluster_id,pool_id) VALUES($1,$2)
 ON CONFLICT(cluster_id) DO UPDATE SET pool_id=excluded.pool_id,version=network_default_public_pools.version+1;
 
 -- name: InsertPlatformOperation :exec
-INSERT INTO network_platform_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at,next_attempt_at)
-VALUES(sqlc.arg(operation_id),sqlc.arg(resource_id),sqlc.arg(kind),sqlc.arg(state),sqlc.arg(created_at),sqlc.arg(created_at),sqlc.narg(completed_at),sqlc.narg(next_attempt_at));
+INSERT INTO network_platform_operations(operation_id,resource_id,kind,state,created_at,updated_at,completed_at,next_attempt_at,telemetry_context)
+VALUES(sqlc.arg(operation_id),sqlc.arg(resource_id),sqlc.arg(kind),sqlc.arg(state),sqlc.arg(created_at),sqlc.arg(created_at),sqlc.narg(completed_at),sqlc.narg(next_attempt_at),sqlc.narg(telemetry_context));
 
 -- name: GetPlatformOperation :one
 SELECT o.* FROM network_platform_operations o JOIN network_platform_resources r ON r.resource_id=o.resource_id

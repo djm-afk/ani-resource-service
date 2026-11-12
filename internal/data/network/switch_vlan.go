@@ -110,7 +110,7 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 		if err = q.InsertSwitchDevice(ctx, sqlcgen.InsertSwitchDeviceParams{ResourceID: id, ClusterID: p.placement.ClusterID, DeviceName: i.Vlan.DeviceName, InventoryFingerprint: membership.Inventory.Fingerprint, NodeInventory: nodes, VirtualSwitchID: &s.ResourceID, SwitchBindingID: s.BindingID}); err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
-		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: "adopt_device", State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now}); err != nil {
+		if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: "adopt_device", State: string(biz.Succeeded), CreatedAt: now, CompletedAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 			return biz.PlatformResource{}, databaseFailure(err)
 		}
 		if err = affected(q.RegisterSwitchDevice(ctx, sqlcgen.RegisterSwitchDeviceParams{ResourceID: id})); err != nil {
@@ -129,7 +129,7 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 	if err = q.InsertSwitchVlan(ctx, sqlcgen.InsertSwitchVlanParams{ResourceID: id, ClusterID: p.placement.ClusterID, DeviceID: device.ResourceID, VlanID: i.Vlan.VlanID, VirtualSwitchID: &s.ResourceID}); err != nil {
 		return biz.PlatformResource{}, switchAdmissionFailure(err)
 	}
-	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: i.Kind, State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now}); err != nil {
+	if err = q.InsertPlatformOperation(ctx, sqlcgen.InsertPlatformOperationParams{ResourceID: id, OperationID: op, Kind: i.Kind, State: string(biz.Queued), CreatedAt: now, NextAttemptAt: &now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if err = q.InsertPlatformReconciliation(ctx, sqlcgen.InsertPlatformReconciliationParams{ResourceID: id, NextRunAt: now}); err != nil {

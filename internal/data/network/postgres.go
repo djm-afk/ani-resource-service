@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
 	"io/fs"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -37,6 +38,7 @@ type Postgres struct {
 	attachmentTurn              atomic.Uint64
 	virtualSwitchInfrastructure biz.VirtualSwitchInfrastructure
 	lbCapabilityReader          LoadBalancerCapabilityReader
+	logger                      *slog.Logger
 	pool                        *pgxpool.Pool
 	queries                     *sqlcgen.Queries
 	placement                   Placement
@@ -158,6 +160,7 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 		}
 		value.OwnerScope = biz.OwnerScopeTenant
 		value.CanManage, value.CanUse = networkManagementOpen(string(value.State), string(value.Reason)), networkManagementOpen(string(value.State), string(value.Reason))
+		p.logAcceptance(ctx, acceptedEvent{action: "create_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
 		return value, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -244,6 +247,7 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 	if err := tx.Commit(ctx); err != nil {
 		return biz.VPC{}, databaseFailure(err)
 	}
+	p.logAcceptance(ctx, acceptedEvent{action: "create_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID})
 	return value, nil
 }
 

@@ -137,6 +137,11 @@ type VirtualSwitchWork struct {
 	Owner                    string
 	Epoch, ClaimedGeneration int64
 	Now                      time.Time
+	// ActiveOperation reports that last_operation_id is still unfinished, so
+	// only this pass may resume the accepted trace.
+	ActiveOperation bool
+	// OperationKind is the kind of the claimed operation, when one is active.
+	OperationKind string
 	// TelemetryContext is the active operation's persisted trace. It is logging
 	// metadata only and never enters fingerprints or the resource snapshot.
 	TelemetryContext telemetry.TelemetryContext
