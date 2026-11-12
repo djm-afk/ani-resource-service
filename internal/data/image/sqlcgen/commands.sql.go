@@ -498,6 +498,27 @@ func (q *Queries) ScrubExpiredDeliverySecrets(ctx context.Context, arg ScrubExpi
 	return result.RowsAffected(), nil
 }
 
+const scrubExpiredSpaceDeliverySecrets = `-- name: ScrubExpiredSpaceDeliverySecrets :execrows
+UPDATE image.commands SET secret_ciphertext=NULL,secret_key_id=NULL,updated_at=clock_timestamp(),version=version+1
+WHERE owner_scope='platform' AND tenant_id IS NULL AND space_id=$1
+ AND kind IN ('issue_publisher','reset_publisher')
+ AND state='succeeded' AND secret_ciphertext IS NOT NULL
+ AND secret_replay_until IS NOT NULL AND secret_replay_until<=$2
+`
+
+type ScrubExpiredSpaceDeliverySecretsParams struct {
+	SpaceID string
+	NowAt   *time.Time
+}
+
+func (q *Queries) ScrubExpiredSpaceDeliverySecrets(ctx context.Context, arg ScrubExpiredSpaceDeliverySecretsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, scrubExpiredSpaceDeliverySecrets, arg.SpaceID, arg.NowAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updatePlatformCommandPhase = `-- name: UpdatePlatformCommandPhase :one
 UPDATE image.commands SET phase=$1,candidate=$2,state=$3,reason=$4,
  secret_ciphertext=$5,secret_key_id=$6,version=version+1,updated_at=clock_timestamp()

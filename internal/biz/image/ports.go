@@ -22,13 +22,19 @@ type SpaceRepository interface {
 }
 type CatalogRepository interface {
 	FindTenantRegistration(context.Context, string, string) (Registration, error)
+	// FindTenantRegistrationOwned reads only the tenant-scoped registration row
+	// and never joins or reads image.spaces, so local metadata edits and
+	// unregister stay available while the space binding is unreadable.
+	FindTenantRegistrationOwned(context.Context, string, string) (Registration, error)
 	FindPlatformRegistration(context.Context, string) (Registration, error)
 	PageTenantRegistrations(context.Context, string, Filter, *PageKey) ([]Registration, int64, error)
 	PagePlatformRegistrations(context.Context, Filter, *PageKey) ([]Registration, int64, error)
+	OffsetTenantRegistrations(context.Context, string, ManagementFilter, int64, int32) ([]Registration, int64, error)
 	FindTenantRegistrationsByReference(context.Context, string, ReferenceLookup) ([]Registration, error)
 	FindPlatformRegistrationsByReference(context.Context, ReferenceLookup) ([]Registration, error)
 	ApplyTenantRegistration(context.Context, Command, Registration) (Registration, error)
 	ApplyTenantMetadata(context.Context, Command, UpdateImage) (Registration, error)
+	ApplyTenantRegistrationPatch(context.Context, Command, PatchImage) (Registration, error)
 	ApplyTenantUnregister(context.Context, Command, UnregisterImage) (Registration, error)
 }
 
@@ -105,6 +111,8 @@ type LifecycleRepository interface {
 	InspectSpaceForOperator(context.Context, string) (Space, error)
 	OpenTenantExternalCommand(context.Context, string, string) (Command, error)
 	RecoverTenantProject(context.Context, Space, Command, int64, string) (Space, error)
+	GetTenantCandidateRecovery(context.Context, string, string, string) (Command, CredentialInfo, error)
+	FailExpiredTenantCandidate(context.Context, Command, CandidateExpiryRecoveryRecord) (Command, CredentialInfo, error)
 	PurgeExpiredDeliverySecrets(context.Context, time.Time) (int64, error)
 }
 
@@ -120,11 +128,17 @@ type PlatformRepository interface {
 	CompletePlatformEnable(context.Context, Space, Command) (Space, Command, error)
 	GetPlatformPublisher(context.Context, string) (CredentialInfo, error)
 	BeginPlatformCredentialCommand(context.Context, Command, int64) (Command, error)
+	CompletePlatformDisable(context.Context, Command) (Command, error)
 	PreparePlatformCandidate(context.Context, Command) (Command, error)
 	ActivatePlatformCandidate(context.Context, Space, Command) (Space, Command, error)
 	OpenPlatformExternalCommand(context.Context, string) (Command, error)
 	RecoverPlatformProject(context.Context, Space, Command, int64, string) (Space, error)
+	FindPlatformRegistration(context.Context, string) (Registration, error)
+	OffsetPlatformRegistrations(context.Context, ManagementFilter, int64, int32) ([]Registration, int64, error)
 	ApplyPlatformRegistration(context.Context, Command, Registration) (Registration, error)
 	ApplyPlatformMetadata(context.Context, Command, UpdateImage) (Registration, error)
+	ApplyPlatformRegistrationPatch(context.Context, Command, PatchImage) (Registration, error)
 	ApplyPlatformUnregister(context.Context, Command, UnregisterImage) (Registration, error)
+	GetPlatformCandidateRecovery(context.Context, string, string) (Command, CredentialInfo, error)
+	FailExpiredPlatformCandidate(context.Context, Command, CandidateExpiryRecoveryRecord) (Command, CredentialInfo, error)
 }

@@ -265,6 +265,45 @@ func (q *Queries) GetTenantRegistration(ctx context.Context, arg GetTenantRegist
 	return i, err
 }
 
+const getTenantRegistrationOwned = `-- name: GetTenantRegistrationOwned :one
+SELECT image_id, space_id, owner_scope, tenant_id, display_name, description, repository, source_reference, digest, media_type, platforms, purposes, accelerator, version, created_by, updated_by, created_at, updated_at, unregistered_at FROM image.registrations
+WHERE owner_scope='tenant' AND tenant_id=$1 AND image_id=$2
+`
+
+type GetTenantRegistrationOwnedParams struct {
+	TenantID *string
+	ImageID  string
+}
+
+// Reads only the registration row: no join to image.spaces, so a mismatched or
+// missing space record cannot block local metadata changes or unregister.
+func (q *Queries) GetTenantRegistrationOwned(ctx context.Context, arg GetTenantRegistrationOwnedParams) (ImageRegistration, error) {
+	row := q.db.QueryRow(ctx, getTenantRegistrationOwned, arg.TenantID, arg.ImageID)
+	var i ImageRegistration
+	err := row.Scan(
+		&i.ImageID,
+		&i.SpaceID,
+		&i.OwnerScope,
+		&i.TenantID,
+		&i.DisplayName,
+		&i.Description,
+		&i.Repository,
+		&i.SourceReference,
+		&i.Digest,
+		&i.MediaType,
+		&i.Platforms,
+		&i.Purposes,
+		&i.Accelerator,
+		&i.Version,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnregisteredAt,
+	)
+	return i, err
+}
+
 const insertPlatformRegistration = `-- name: InsertPlatformRegistration :one
 INSERT INTO image.registrations(image_id,space_id,owner_scope,tenant_id,display_name,description,repository,source_reference,digest,media_type,platforms,purposes,accelerator,created_by,updated_by)
 VALUES($1,$2,'platform',NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
@@ -531,6 +570,81 @@ func (q *Queries) ListTenantRegistrations(ctx context.Context, arg ListTenantReg
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockPlatformRegistration = `-- name: LockPlatformRegistration :one
+SELECT image_id, space_id, owner_scope, tenant_id, display_name, description, repository, source_reference, digest, media_type, platforms, purposes, accelerator, version, created_by, updated_by, created_at, updated_at, unregistered_at FROM image.registrations
+WHERE owner_scope='platform' AND tenant_id IS NULL AND image_id=$1
+FOR UPDATE
+`
+
+type LockPlatformRegistrationParams struct {
+	ImageID string
+}
+
+func (q *Queries) LockPlatformRegistration(ctx context.Context, arg LockPlatformRegistrationParams) (ImageRegistration, error) {
+	row := q.db.QueryRow(ctx, lockPlatformRegistration, arg.ImageID)
+	var i ImageRegistration
+	err := row.Scan(
+		&i.ImageID,
+		&i.SpaceID,
+		&i.OwnerScope,
+		&i.TenantID,
+		&i.DisplayName,
+		&i.Description,
+		&i.Repository,
+		&i.SourceReference,
+		&i.Digest,
+		&i.MediaType,
+		&i.Platforms,
+		&i.Purposes,
+		&i.Accelerator,
+		&i.Version,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnregisteredAt,
+	)
+	return i, err
+}
+
+const lockTenantRegistration = `-- name: LockTenantRegistration :one
+SELECT image_id, space_id, owner_scope, tenant_id, display_name, description, repository, source_reference, digest, media_type, platforms, purposes, accelerator, version, created_by, updated_by, created_at, updated_at, unregistered_at FROM image.registrations
+WHERE owner_scope='tenant' AND tenant_id=$1 AND image_id=$2
+FOR UPDATE
+`
+
+type LockTenantRegistrationParams struct {
+	TenantID *string
+	ImageID  string
+}
+
+func (q *Queries) LockTenantRegistration(ctx context.Context, arg LockTenantRegistrationParams) (ImageRegistration, error) {
+	row := q.db.QueryRow(ctx, lockTenantRegistration, arg.TenantID, arg.ImageID)
+	var i ImageRegistration
+	err := row.Scan(
+		&i.ImageID,
+		&i.SpaceID,
+		&i.OwnerScope,
+		&i.TenantID,
+		&i.DisplayName,
+		&i.Description,
+		&i.Repository,
+		&i.SourceReference,
+		&i.Digest,
+		&i.MediaType,
+		&i.Platforms,
+		&i.Purposes,
+		&i.Accelerator,
+		&i.Version,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnregisteredAt,
+	)
+	return i, err
 }
 
 const unregisterPlatformRegistration = `-- name: UnregisterPlatformRegistration :one

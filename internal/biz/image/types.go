@@ -70,10 +70,36 @@ type Filter struct {
 	Accelerator string
 	Limit       int
 }
+
+// ManagementFilter is the offset-page filter. Unlike Filter it carries no
+// limit: the page size is a separate field so the same value feeds both the
+// count and the page query.
+type ManagementFilter struct {
+	Search      string
+	Purposes    []string
+	Accelerator string
+}
+
+// PageRequest is an already validated 1-based page request.
+type PageRequest struct {
+	Page, PageSize uint32
+}
+
+// PageKey is the descending cursor position of the legacy tenant list.
 type PageKey struct {
 	CreatedAt time.Time
 	ImageID   string
 }
+
+// PlatformSpaceView is the read-only platform binding projection. Space is nil
+// only when no platform space has ever been reserved.
+type PlatformSpaceView struct {
+	Space                       *Space
+	ConfiguredProject           string
+	ConfiguredRegistryAuthority string
+	BindingStatus               string
+}
+
 type RegistrationPage struct {
 	Total      int64
 	Items      []Registration
@@ -113,6 +139,53 @@ type UpdateImage struct {
 type UnregisterImage struct {
 	TenantID, ImageID, IdempotencyKey string
 	ExpectedVersion                   int64
+}
+
+// PatchMetadata carries only requested presence: a nil field means "absent from
+// the request", which is distinct from an explicitly empty value.
+type PatchMetadata struct {
+	DisplayName *string
+	Description *string
+	Purposes    *[]string
+	Accelerator *string
+}
+
+// PatchImage is the management PATCH input. Mask lists the canonical snake_case
+// paths that may change; TenantID is empty on the platform surface.
+type PatchImage struct {
+	TenantID, ImageID string
+	Patch             PatchMetadata
+	Mask              []string
+	ExpectedVersion   int64
+	IdempotencyKey    string
+}
+
+// ExpiredCandidateRecoveryInput is the local operator recovery input. It never
+// carries a scope or tenant: the real scope is read from the stored space.
+type ExpiredCandidateRecoveryInput struct {
+	SpaceID, CommandID                                                  string
+	ExpectedCommandVersion, ExpectedCredentialVersion, CandidateRobotID int64
+	EvidenceSHA256                                                      string
+}
+
+// CandidateExpiryRecoveryRecord is the bounded operator evidence appended to a
+// terminated candidate command.
+type CandidateExpiryRecoveryRecord struct {
+	Operator, EvidenceSHA256                          string
+	ExpectedCommandVersion, ExpectedCredentialVersion int64
+	CandidateRobotID, PreviousRobotID                 int64
+	PreviousCredentialDisposition                     string
+	ObservedAt                                        time.Time
+}
+
+// CandidateRecoveryResult is the recovery outcome. It never contains a secret.
+type CandidateRecoveryResult struct {
+	CommandID, SpaceID string
+	Scope              ImageScope
+	State, Phase       string
+	Reason             Reason
+	CommandVersion     int64
+	Recovery           CandidateExpiryRecoveryRecord
 }
 
 // Secret redacts all generic formatting and encoding. Explicit transport adapters
@@ -163,6 +236,9 @@ type Candidate struct {
 	RecoveryEvidence                        string
 	RobotName, Username, Ownership, Purpose string
 	ExpiresAt                               *time.Time
+	// ExpiryRecovery is present only on a candidate terminated by the local
+	// operator recovery. Older rows decode with a nil value.
+	ExpiryRecovery *CandidateExpiryRecoveryRecord
 }
 type CommandResult struct {
 	Space        *Space          `json:",omitempty"`

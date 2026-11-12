@@ -259,6 +259,9 @@ type pullSecretCatalog struct{ f *pullSecretFakes }
 func (pullSecretCatalog) FindTenantRegistration(context.Context, string, string) (Registration, error) {
 	return Registration{}, Fail(ImageNotFound, "not used")
 }
+func (pullSecretCatalog) FindTenantRegistrationOwned(context.Context, string, string) (Registration, error) {
+	return Registration{}, Fail(ImageNotFound, "not used")
+}
 func (pullSecretCatalog) FindPlatformRegistration(context.Context, string) (Registration, error) {
 	return Registration{}, Fail(ImageNotFound, "not used")
 }
@@ -266,6 +269,9 @@ func (pullSecretCatalog) PageTenantRegistrations(context.Context, string, Filter
 	return nil, 0, nil
 }
 func (pullSecretCatalog) PagePlatformRegistrations(context.Context, Filter, *PageKey) ([]Registration, int64, error) {
+	return nil, 0, nil
+}
+func (pullSecretCatalog) OffsetTenantRegistrations(context.Context, string, ManagementFilter, int64, int32) ([]Registration, int64, error) {
 	return nil, 0, nil
 }
 func (pullSecretCatalog) FindTenantRegistrationsByReference(context.Context, string, ReferenceLookup) ([]Registration, error) {
@@ -278,6 +284,9 @@ func (pullSecretCatalog) ApplyTenantRegistration(context.Context, Command, Regis
 	return Registration{}, Fail(InternalError, "not used")
 }
 func (pullSecretCatalog) ApplyTenantMetadata(context.Context, Command, UpdateImage) (Registration, error) {
+	return Registration{}, Fail(InternalError, "not used")
+}
+func (pullSecretCatalog) ApplyTenantRegistrationPatch(context.Context, Command, PatchImage) (Registration, error) {
 	return Registration{}, Fail(InternalError, "not used")
 }
 func (pullSecretCatalog) ApplyTenantUnregister(context.Context, Command, UnregisterImage) (Registration, error) {

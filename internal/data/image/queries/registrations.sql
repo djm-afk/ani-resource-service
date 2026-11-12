@@ -66,6 +66,22 @@ WHERE owner_scope='platform' AND tenant_id IS NULL AND image_id=sqlc.arg(image_i
  AND unregistered_at IS NULL AND version=sqlc.arg(expected_version)
 RETURNING *;
 
+-- name: LockTenantRegistration :one
+SELECT * FROM image.registrations
+WHERE owner_scope='tenant' AND tenant_id=sqlc.arg(tenant_id) AND image_id=sqlc.arg(image_id)
+FOR UPDATE;
+
+-- name: LockPlatformRegistration :one
+SELECT * FROM image.registrations
+WHERE owner_scope='platform' AND tenant_id IS NULL AND image_id=sqlc.arg(image_id)
+FOR UPDATE;
+
+-- name: GetTenantRegistrationOwned :one
+-- Reads only the registration row: no join to image.spaces, so a mismatched or
+-- missing space record cannot block local metadata changes or unregister.
+SELECT * FROM image.registrations
+WHERE owner_scope='tenant' AND tenant_id=sqlc.arg(tenant_id) AND image_id=sqlc.arg(image_id);
+
 -- name: UnregisterTenantRegistration :one
 UPDATE image.registrations SET unregistered_at=clock_timestamp(),updated_at=clock_timestamp(),updated_by=sqlc.arg(actor),version=version+1
 WHERE owner_scope='tenant' AND tenant_id=sqlc.arg(tenant_id) AND image_id=sqlc.arg(image_id)

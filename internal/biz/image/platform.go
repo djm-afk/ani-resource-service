@@ -127,6 +127,9 @@ func (p *Platform) IssuePlatformPublisher(ctx context.Context, in IssuePlatformC
 			delivery, e = p.engine.replayDelivery(ctx, s, c)
 			return e
 		}
+		if e = recoveredCandidate(c); e != nil {
+			return e
+		}
 		if _, e = p.engine.platform(ctx); e != nil {
 			return e
 		}
@@ -269,6 +272,191 @@ func (p *Platform) UnregisterPlatformImage(ctx context.Context, in UnregisterIma
 }
 func (p *Platform) InspectSpace(ctx context.Context, id string) (Space, error) {
 	return p.engine.InspectSpace(ctx, id)
+}
+
+// GetPlatformSpace is a pure read: it never initializes the space, never probes
+// the registry and never writes. A missing record is reported as uninitialized
+// with the configured binding, and a stored mismatch is reported explicitly
+// while still carrying the real stored space.
+func (p *Platform) GetPlatformSpace(ctx context.Context) (PlatformSpaceView, error) {
+	if _, err := RequirePlatform(ctx); err != nil {
+		return PlatformSpaceView{}, err
+	}
+	cfg := p.engine.cfg
+	view := PlatformSpaceView{ConfiguredProject: cfg.PlatformProject, ConfiguredRegistryAuthority: cfg.RegistryAuthority}
+	s, err := p.repo.FindPlatformSpace(ctx)
+	if err != nil {
+		if ReasonOf(err) == SpaceNotFound {
+			view.BindingStatus = "uninitialized"
+			return view, nil
+		}
+		return PlatformSpaceView{}, err
+	}
+	view.Space = &s
+	if p.checkSpace(s) != nil {
+		view.BindingStatus = "configuration_mismatch"
+		return view, nil
+	}
+	switch s.State {
+	case "available":
+		view.BindingStatus = "ready"
+	case "provisioning":
+		view.BindingStatus = "provisioning"
+	case "blocked":
+		view.BindingStatus = "blocked"
+	default:
+		return PlatformSpaceView{}, Fail(InternalError, "invalid platform space state")
+	}
+	return view, nil
+}
+
+// GetPlatformPublisherCredential reuses the stored-space check and the
+// not_issued semantics. It never reads a historical secret.
+func (p *Platform) GetPlatformPublisherCredential(ctx context.Context) (CredentialInfo, error) {
+	if _, err := RequirePlatform(ctx); err != nil {
+		return CredentialInfo{}, err
+	}
+	s, err := p.repo.FindPlatformSpace(ctx)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	if err = p.checkSpace(s); err != nil {
+		return CredentialInfo{}, err
+	}
+	return p.repo.GetPlatformPublisher(ctx, s.ID)
+}
+
+// DisablePlatformPublisher mirrors the tenant disable entry point but reads and
+// writes only platform rows. It shares the disable process with the tenant lane.
+func (p *Platform) DisablePlatformPublisher(ctx context.Context, in DisableCredential) (CredentialInfo, error) {
+	caller, err := RequirePlatform(ctx)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	if in.TenantID != "" || in.ExpectedVersion < 0 {
+		return CredentialInfo{}, Fail(InvalidArgument, "invalid platform disable request")
+	}
+	s, err := p.repo.FindPlatformSpace(ctx)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	if err = p.checkSpace(s); err != nil {
+		return CredentialInfo{}, err
+	}
+	c, err := platformCommand(caller, s.ID, "disable_publisher", in.IdempotencyKey, in)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	var result CredentialInfo
+	err = p.engine.repo.WithSpaceWriteLock(ctx, s.ID, func(ctx context.Context) error {
+		var e error
+		c, e = p.repo.BeginPlatformCredentialCommand(ctx, c, in.ExpectedVersion)
+		if e != nil {
+			return e
+		}
+		if c.State == "succeeded" {
+			if c.Result.Credential == nil {
+				return Fail(InternalError, "missing disable result")
+			}
+			result = *c.Result.Credential
+			return nil
+		}
+		result, e = p.engine.runPublisherDisable(ctx, s, c)
+		return e
+	})
+	return result, err
+}
+
+// ListPlatformImagesPage is the offset-page platform catalog. An uninitialized
+// space yields an empty page; every other failure is propagated.
+func (p *Platform) ListPlatformImagesPage(ctx context.Context, f ManagementFilter, page PageRequest) (RegistrationPage, error) {
+	if _, err := RequirePlatform(ctx); err != nil {
+		return RegistrationPage{}, err
+	}
+	f, err := NormalizeManagementFilter(f)
+	if err != nil {
+		return RegistrationPage{}, err
+	}
+	page, err = NormalizePageRequest(page)
+	if err != nil {
+		return RegistrationPage{}, err
+	}
+	if _, err = p.repo.FindPlatformSpace(ctx); err != nil {
+		if ReasonOf(err) == SpaceNotFound {
+			return RegistrationPage{Items: []Registration{}}, nil
+		}
+		return RegistrationPage{}, err
+	}
+	rows, total, err := p.repo.OffsetPlatformRegistrations(ctx, f, page.Offset(), int32(page.PageSize))
+	if err != nil {
+		return RegistrationPage{}, err
+	}
+	for _, r := range rows {
+		if err = validateRegistrationOwner(r, "", PlatformImages); err != nil {
+			return RegistrationPage{}, err
+		}
+	}
+	if rows == nil {
+		rows = []Registration{}
+	}
+	return RegistrationPage{Items: rows, Total: total}, nil
+}
+
+// GetPlatformImage reads one platform registration without borrowing a fake
+// tenant UUID.
+func (p *Platform) GetPlatformImage(ctx context.Context, imageID string) (Registration, error) {
+	if _, err := RequirePlatform(ctx); err != nil {
+		return Registration{}, err
+	}
+	if _, err := ParseImageID(imageID); err != nil {
+		return Registration{}, err
+	}
+	if _, err := p.repo.FindPlatformSpace(ctx); err != nil {
+		if ReasonOf(err) == SpaceNotFound {
+			return Registration{}, Fail(ImageNotFound, "image not found")
+		}
+		return Registration{}, err
+	}
+	r, err := p.repo.FindPlatformRegistration(ctx, imageID)
+	if err != nil {
+		return Registration{}, err
+	}
+	if r.ID != imageID {
+		return Registration{}, Fail(InternalError, "stored image ID mismatch")
+	}
+	if err = validateRegistrationOwner(r, "", PlatformImages); err != nil {
+		return Registration{}, err
+	}
+	return r, nil
+}
+
+// PatchPlatformImage applies a field-mask patch to platform metadata.
+func (p *Platform) PatchPlatformImage(ctx context.Context, in PatchImage) (Registration, error) {
+	caller, err := RequirePlatform(ctx)
+	if err != nil {
+		return Registration{}, err
+	}
+	if in.TenantID != "" {
+		return Registration{}, Fail(InvalidArgument, "platform request cannot carry tenant")
+	}
+	in, err = NormalizePatch(in)
+	if err != nil {
+		return Registration{}, err
+	}
+	s, err := p.repo.FindPlatformSpace(ctx)
+	if err != nil {
+		return Registration{}, err
+	}
+	if err = p.checkSpace(s); err != nil {
+		return Registration{}, err
+	}
+	c, err := platformCommand(caller, s.ID, "update_image", in.IdempotencyKey, patchFingerprint("platform", in))
+	if err != nil {
+		return Registration{}, err
+	}
+	return p.repo.ApplyPlatformRegistrationPatch(ctx, c, in)
 }
 func (p *Platform) PurgeExpiredDeliverySecrets(ctx context.Context) (int64, error) {
 	return p.engine.PurgeExpiredDeliverySecrets(ctx)

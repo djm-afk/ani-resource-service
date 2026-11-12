@@ -28,7 +28,7 @@ func init() {
 }
 func validImageAdminAction(action string) bool {
 	switch action {
-	case "init-platform", "issue-platform-publisher", "register-platform", "update-platform", "unregister-platform", "inspect-space", "recover-project", "purge-expired-secrets":
+	case "init-platform", "issue-platform-publisher", "register-platform", "update-platform", "unregister-platform", "inspect-space", "recover-project", "purge-expired-secrets", "terminate-expired-candidate":
 		return true
 	}
 	return false
@@ -148,6 +148,17 @@ type imageAdminRecovery struct {
 	EvidenceSHA256 string `json:"evidence_sha256"`
 }
 
+// imageAdminTerminateCandidate mirrors ExpiredCandidateRecoveryInput. It has no
+// scope, tenant or force field: the stored space decides the scope.
+type imageAdminTerminateCandidate struct {
+	SpaceID                   string `json:"space_id"`
+	CommandID                 string `json:"command_id"`
+	ExpectedCommandVersion    int64  `json:"expected_command_version"`
+	ExpectedCredentialVersion int64  `json:"expected_credential_version"`
+	CandidateRobotID          int64  `json:"candidate_robot_id"`
+	EvidenceSHA256            string `json:"evidence_sha256"`
+}
+
 // Parse before connecting to any dependency. No free-form SQL/HTTP/scope fields.
 func imageAdminRequest(action string, body []byte) (any, error) {
 	var request any
@@ -166,6 +177,8 @@ func imageAdminRequest(action string, body []byte) (any, error) {
 		request = &imageAdminSpace{}
 	case "recover-project":
 		request = &imageAdminRecovery{}
+	case "terminate-expired-candidate":
+		request = &imageAdminTerminateCandidate{}
 	case "purge-expired-secrets":
 		request = &struct{}{}
 	default:
@@ -329,6 +342,10 @@ func executeImageAdmin(ctx context.Context, p *biz.Platform, request any, output
 		return p.InspectSpace(ctx, v.SpaceID)
 	case *imageAdminRecovery:
 		return p.RecoverProjectBinding(ctx, v.SpaceID, v.ProjectID, v.EvidenceSHA256)
+	case *imageAdminTerminateCandidate:
+		// Platform scope must go through the Platform wrapper so the engine holds
+		// the platform repository; the tenant scope dispatches inside the engine.
+		return p.TerminateExpiredCandidate(ctx, biz.ExpiredCandidateRecoveryInput{SpaceID: v.SpaceID, CommandID: v.CommandID, ExpectedCommandVersion: v.ExpectedCommandVersion, ExpectedCredentialVersion: v.ExpectedCredentialVersion, CandidateRobotID: v.CandidateRobotID, EvidenceSHA256: v.EvidenceSHA256})
 	case *struct{}:
 		n, err := p.PurgeExpiredDeliverySecrets(ctx)
 		return struct {

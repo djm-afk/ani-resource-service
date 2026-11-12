@@ -187,3 +187,153 @@ func NormalizeFilter(f Filter) (Filter, error) {
 	}
 	return f, nil
 }
+
+// ImageBindingConfig is the deployment binding a tenant space must still match
+// before a new registration is allowed to reach the registry.
+type ImageBindingConfig struct {
+	InstallationID, RegistryAuthority, PlatformProject string
+}
+
+// ValidateTenantOwnership compares one stored registration with the requested
+// identity. Update, PATCH and unregister use only this check, so an unreadable
+// space record cannot lock local metadata changes.
+func ValidateTenantOwnership(scope ImageScope, tenant, requested string) error {
+	if scope != TenantImages || tenant != requested {
+		return Fail(ImageNotFound, "image not found")
+	}
+	return nil
+}
+
+// ValidateTenantCatalogBinding verifies that the stored tenant space still
+// belongs to this installation, registry and a tenant project. It never
+// substitutes a new slug: the project name is immutable once reserved. A space
+// that is merely not ready is reported by the caller as SPACE_NOT_READY, so the
+// unbound project ID is not part of this check.
+func ValidateTenantCatalogBinding(s Space, cfg ImageBindingConfig, tenant string) error {
+	if s.Scope != TenantImages || s.TenantID != tenant {
+		return Fail(ImageSpaceBindingMismatch, "image space binding mismatch")
+	}
+	if s.InstallationID != cfg.InstallationID || s.RegistryAuthority != cfg.RegistryAuthority || s.ProjectName == cfg.PlatformProject {
+		return Fail(ImageSpaceBindingMismatch, "image space binding mismatch")
+	}
+	return nil
+}
+
+// NormalizeManagementFilter validates the offset-page filter. It shares the
+// search, purpose and accelerator rules with the legacy cursor list, but the
+// page size lives in PageRequest instead of the filter.
+func NormalizeManagementFilter(f ManagementFilter) (ManagementFilter, error) {
+	legacy, err := NormalizeFilter(Filter{Search: f.Search, Purposes: f.Purposes, Accelerator: f.Accelerator, Limit: 20})
+	if err != nil {
+		return ManagementFilter{}, err
+	}
+	return ManagementFilter{Search: legacy.Search, Purposes: legacy.Purposes, Accelerator: legacy.Accelerator}, nil
+}
+
+// NormalizePageRequest accepts only an already explicit 1-based page. The HTTP
+// and gRPC boundaries apply the 1/20 defaults and the 100 page-size ceiling.
+func NormalizePageRequest(p PageRequest) (PageRequest, error) {
+	if p.Page < 1 || p.PageSize < 1 || p.PageSize > 100 {
+		return PageRequest{}, Fail(InvalidArgument, "invalid page request")
+	}
+	return p, nil
+}
+
+// Offset is computed in int64 so a maximum page cannot overflow.
+func (p PageRequest) Offset() int64 { return (int64(p.Page) - 1) * int64(p.PageSize) }
+
+var patchPaths = map[string]bool{"display_name": true, "description": true, "purposes": true, "accelerator": true}
+
+// NormalizePatch validates the mask and the presence of every patched value.
+// It returns the canonical mask order and the normalized patch. Only requested
+// presence is inspected, so "absent" and "explicitly empty" stay distinct.
+func NormalizePatch(p PatchImage) (PatchImage, error) {
+	if _, err := ParseImageID(p.ImageID); err != nil {
+		return PatchImage{}, err
+	}
+	if _, err := ParseIdempotencyKey(p.IdempotencyKey); err != nil {
+		return PatchImage{}, err
+	}
+	if p.ExpectedVersion < 1 {
+		return PatchImage{}, Fail(InvalidArgument, "positive expected version required")
+	}
+	if len(p.Mask) == 0 || len(p.Mask) > len(patchPaths) {
+		return PatchImage{}, Fail(InvalidArgument, "invalid update mask")
+	}
+	seen := map[string]bool{}
+	mask := make([]string, 0, len(p.Mask))
+	for _, path := range p.Mask {
+		if !patchPaths[path] || seen[path] {
+			return PatchImage{}, Fail(InvalidArgument, "invalid update mask")
+		}
+		seen[path] = true
+		mask = append(mask, path)
+	}
+	sort.Strings(mask)
+	out := PatchImage{TenantID: p.TenantID, ImageID: p.ImageID, Mask: mask, ExpectedVersion: p.ExpectedVersion, IdempotencyKey: p.IdempotencyKey}
+	if seen["display_name"] {
+		if p.Patch.DisplayName == nil {
+			return PatchImage{}, Fail(InvalidArgument, "display name required in mask")
+		}
+		name := *p.Patch.DisplayName
+		if strings.TrimSpace(name) == "" {
+			return PatchImage{}, Fail(InvalidArgument, "invalid display name")
+		}
+		out.Patch.DisplayName = &name
+	} else if p.Patch.DisplayName != nil {
+		return PatchImage{}, Fail(InvalidArgument, "field outside update mask")
+	}
+	if seen["description"] {
+		if p.Patch.Description == nil {
+			return PatchImage{}, Fail(InvalidArgument, "description required in mask")
+		}
+		description := *p.Patch.Description
+		out.Patch.Description = &description
+	} else if p.Patch.Description != nil {
+		return PatchImage{}, Fail(InvalidArgument, "field outside update mask")
+	}
+	if seen["purposes"] {
+		if p.Patch.Purposes == nil {
+			return PatchImage{}, Fail(InvalidArgument, "purposes required in mask")
+		}
+		purposes, err := NormalizePurposes(*p.Patch.Purposes, true)
+		if err != nil {
+			return PatchImage{}, err
+		}
+		out.Patch.Purposes = &purposes
+	} else if p.Patch.Purposes != nil {
+		return PatchImage{}, Fail(InvalidArgument, "field outside update mask")
+	}
+	if seen["accelerator"] {
+		if p.Patch.Accelerator == nil {
+			return PatchImage{}, Fail(InvalidArgument, "accelerator required in mask")
+		}
+		accelerator := *p.Patch.Accelerator
+		if !validAccelerator(accelerator) {
+			return PatchImage{}, Fail(InvalidArgument, "invalid accelerator")
+		}
+		out.Patch.Accelerator = &accelerator
+	} else if p.Patch.Accelerator != nil {
+		return PatchImage{}, Fail(InvalidArgument, "field outside update mask")
+	}
+	return out, nil
+}
+
+// ApplyPatch merges the requested fields onto a copy of the current metadata and
+// re-runs the full metadata validation.
+func ApplyPatch(current Metadata, p PatchImage) (Metadata, error) {
+	out := current
+	if p.Patch.DisplayName != nil {
+		out.DisplayName = *p.Patch.DisplayName
+	}
+	if p.Patch.Description != nil {
+		out.Description = *p.Patch.Description
+	}
+	if p.Patch.Purposes != nil {
+		out.Purposes = *p.Patch.Purposes
+	}
+	if p.Patch.Accelerator != nil {
+		out.Accelerator = *p.Patch.Accelerator
+	}
+	return NormalizeMetadata(out)
+}

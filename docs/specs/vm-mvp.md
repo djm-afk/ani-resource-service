@@ -238,6 +238,12 @@ VM operation 删除完成需：目标 VM/VMI/全部相关运行 Pod 已退出，
 
 观察投影区分 desired/observed、operation、reason、observed_at、disk preparation、media effective/pending、snapshot completeness。断开/过期为 Unknown/信息过期；VMI Running 不等于 OS 安装完成或来宾健康。对外查询若 Gov 已受理、Res 尚未持久接收，返回原排队/投递状态，不能误报资源从未存在。
 
+### 已受理配置的查询兼容
+
+列表和详情展示已持久受理的配置，不重新执行新创建准入。历史或较新写入方的扩展字段只在响应投影中忽略，已知字段继续展示；原配置、canonical bytes、摘要、版本和生命周期记录不改写。出现未支持的配置时，保留资源行与原状态；无既有 reason 时标记 VM_STORED_SPEC_COMPATIBILITY。若已知字段类型也不可读，不返回半解码 frozen_spec，保留元数据并标记 VM_STORED_SPEC_UNREADABLE；兼容路径写固定诊断码及资源身份，不记录原始配置或带值的解码错误。
+
+本查询投影不扩展新命令的受理合同，不赋予旧版本实现 VM_CLONE 创建或执行能力；命令的严格字段、来源类型与摘要校验继续独立执行。
+
 ## S12 实施边界与规则变更
 
 正常开发按[计划](../plans/vm-mvp.md)、[本轮完整 Goal](../plans/vm-mvp-complete-goal-20261023.md)与当前用户指令执行。生成、编译、测试、PG、镜像、服务和 API/集群驱动仅使用 ssh fedora，禁止 Ubuntu 或本地重任务回退；本地限阅读、编辑、轻量检查、Git/转运和现有浏览器。Git clone/fetch/pull/push 均用 SSH。使用任务独占目录并保留无关改动；固定实际 host、源码和集群身份。16 卡按依赖连续推进，环境批准只暂停依赖步骤，不逐卡询问继续。

@@ -34,6 +34,9 @@ func rpcError(err error) error {
 		code = codes.Aborted
 	case biz.SpaceNameImmutable, biz.SpaceNotReady, biz.CredentialAlreadyActive, biz.CredentialNotIssued, biz.CredentialDeliveryExpired, biz.UnsupportedArtifact, biz.PlatformMismatch, biz.SpaceOwnershipUnconfirmed:
 		code = codes.FailedPrecondition
+	case biz.ImageSpaceBindingMismatch, biz.CandidateRecoveryCompleted:
+		// 两者都是“状态不允许本次写入”，调用方需要 409 而不是 500 或 503。
+		code = codes.FailedPrecondition
 	case biz.DependencyUnavailable, biz.RequestInProgress:
 		code = codes.Unavailable
 	case biz.DeadlineExceeded:

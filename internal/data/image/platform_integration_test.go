@@ -138,7 +138,7 @@ func TestPlatformLifecycleCatalogAndTenantBoundaries(t *testing.T) {
 		t.Fatal("foreign platform project queried", err)
 	}
 	cursor, _ := biz.NewCursorCodec([]byte(strings.Repeat("c", 32)))
-	catalog, _ := biz.NewCatalog(f.Repo, f.Repo, f.Repo, r, cursor)
+	catalog, _ := biz.NewCatalog(f.Repo, f.Repo, f.Repo, r, cursor, biz.ImageBindingConfig{InstallationID: cfg.InstallationID, RegistryAuthority: cfg.RegistryAuthority, PlatformProject: cfg.PlatformProject})
 	read, err := catalog.GetImage(tenantCtx, biz.ReadImage{TenantID: tenant, Scope: biz.PlatformImages, ImageID: registered.ID})
 	if err != nil || read.Digest != artifact.Digest {
 		t.Fatal("tenant platform read", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -200,7 +201,7 @@ func (p *Postgres) BeginPlatformCredentialCommand(ctx context.Context, c biz.Com
 	if err := platformScope(c.Scope, c.TenantID); err != nil {
 		return biz.Command{}, err
 	}
-	if expected < 0 || (c.Kind != "issue_publisher" && c.Kind != "reset_publisher") {
+	if expected < 0 || (c.Kind != "issue_publisher" && c.Kind != "reset_publisher" && c.Kind != "disable_publisher") {
 		return biz.Command{}, biz.Fail(biz.InvalidArgument, "invalid platform credential request")
 	}
 	var stored biz.Command
@@ -212,6 +213,8 @@ func (p *Postgres) BeginPlatformCredentialCommand(ctx context.Context, c biz.Com
 		if s.SpaceID != c.SpaceID {
 			return biz.Fail(biz.SpaceNotFound, "platform space not found")
 		}
+		// A replay of a finished command wins over every version or state check,
+		// so a retry after a committed write is never reported as a conflict.
 		existing, e := q.GetPlatformCommand(ctx, sqlcgen.GetPlatformCommandParams{SpaceID: c.SpaceID, IdempotencyKey: c.Key})
 		if e == nil {
 			if existing.Kind != c.Kind || existing.Actor != c.Actor || existing.Fingerprint != c.Fingerprint {
@@ -233,17 +236,77 @@ func (p *Postgres) BeginPlatformCredentialCommand(ctx context.Context, c biz.Com
 		if info.Version != expected {
 			return biz.Fail(biz.VersionConflict, "credential version changed")
 		}
-		if c.Kind == "issue_publisher" && info.State == "active" {
-			return biz.Fail(biz.CredentialAlreadyActive, "platform publisher already active")
-		}
-		if c.Kind == "reset_publisher" && info.Generation == 0 {
-			return biz.Fail(biz.InvalidArgument, "publisher has not been issued")
+		switch c.Kind {
+		case "issue_publisher":
+			if info.State == "active" {
+				return biz.Fail(biz.CredentialAlreadyActive, "platform publisher already active")
+			}
+		case "reset_publisher":
+			if info.Generation == 0 {
+				return biz.Fail(biz.InvalidArgument, "publisher has not been issued")
+			}
+		case "disable_publisher":
+			if info.Generation == 0 {
+				return biz.Fail(biz.CredentialNotIssued, "publisher has not been issued")
+			}
 		}
 		stored, e = reservePlatformCommand(ctx, q, c)
 		return e
 	})
 	return stored, err
 }
+
+// CompletePlatformDisable finishes a platform publisher disable in one short
+// transaction: the credential CAS, the expired delivery-secret scrub and the
+// command result share the same commit. The credentials table cannot hold a
+// platform publisher ciphertext (image_publisher_no_longterm_secret), so only
+// the command-side one-time delivery secrets are cleaned here.
+func (p *Postgres) CompletePlatformDisable(ctx context.Context, c biz.Command) (biz.Command, error) {
+	if err := platformScope(c.Scope, c.TenantID); err != nil {
+		return biz.Command{}, err
+	}
+	if c.Kind != "disable_publisher" {
+		return biz.Command{}, biz.Fail(biz.InvalidArgument, "invalid disable command")
+	}
+	var stored biz.Command
+	err := p.platformTransaction(ctx, func(q *sqlcgen.Queries) error {
+		space, e := q.GetPlatformSpace(ctx)
+		if e != nil {
+			return databaseError(e)
+		}
+		if space.SpaceID != c.SpaceID {
+			return biz.Fail(biz.SpaceNotFound, "platform space not found")
+		}
+		info, e := platformPublisher(ctx, q, c.SpaceID)
+		if e != nil {
+			return e
+		}
+		if info.Version != c.Candidate.CredentialVersion || info.Generation != c.Candidate.Generation || info.RobotID != c.Candidate.RobotID {
+			return biz.Fail(biz.VersionConflict, "credential changed")
+		}
+		if info.Generation == 0 {
+			return biz.Fail(biz.CredentialNotIssued, "publisher has not been issued")
+		}
+		if info.State == "active" {
+			row, e := q.DisablePlatformCredential(ctx, sqlcgen.DisablePlatformCredentialParams{SpaceID: c.SpaceID, ExpectedVersion: info.Version, Generation: info.Generation})
+			if e != nil {
+				return databaseError(e)
+			}
+			info = credentialInfo(row)
+		}
+		// Only already expired one-time publisher deliveries are removed; the
+		// replay window of a live delivery is never shortened here.
+		if _, e = q.ScrubExpiredSpaceDeliverySecrets(ctx, sqlcgen.ScrubExpiredSpaceDeliverySecretsParams{SpaceID: c.SpaceID, NowAt: timePtr(time.Now())}); e != nil {
+			return databaseError(e)
+		}
+		c.Result = biz.CommandResult{Credential: &info}
+		c.ReplayUntil = nil
+		stored, e = completePlatformCommand(ctx, q, c)
+		return e
+	})
+	return stored, err
+}
+
 func checkPlatformCandidate(ctx context.Context, q *sqlcgen.Queries, c biz.Command) error {
 	if err := platformScope(c.Scope, c.TenantID); err != nil {
 		return err

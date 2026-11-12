@@ -117,7 +117,7 @@ func startImageContractServer(t *testing.T) (*fixture, *registryFixture, imageCo
 	// The registry boundary supplies one ordinary OCI artifact; registration,
 	// ownership, idempotency and persistence still run through the real Catalog.
 	artifacts := &imageContractRegistry{registryFixture: registry}
-	catalog, err := biz.NewCatalog(f.Repo, f.Repo, f.Repo, artifacts, codec)
+	catalog, err := biz.NewCatalog(f.Repo, f.Repo, f.Repo, artifacts, codec, biz.ImageBindingConfig{InstallationID: cfg.InstallationID, RegistryAuthority: cfg.RegistryAuthority, PlatformProject: cfg.PlatformProject})
 	if err != nil {
 		t.Fatal(err)
 	}

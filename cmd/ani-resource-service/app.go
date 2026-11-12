@@ -227,6 +227,8 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	}
 	if images != nil {
 		imagev1.RegisterTenantImageServiceServer(grpcServer, images.tenant)
+		imagev1.RegisterPlatformImageServiceServer(grpcServer, images.platformService)
+		imagev1.RegisterAdminTenantImageServiceServer(grpcServer, images.adminTenant)
 	}
 	if compute != nil {
 		computev1.RegisterComputePresetServiceServer(grpcServer, compute.service)

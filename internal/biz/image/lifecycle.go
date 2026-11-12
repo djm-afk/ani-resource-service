@@ -148,6 +148,9 @@ func (l *Lifecycle) EnsureImageSpace(ctx context.Context, in EnableSpace) (Space
 		if e = l.checkSpace(s); e != nil {
 			return e
 		}
+		if e = recoveredCandidate(c); e != nil {
+			return e
+		}
 		if _, e = l.platform(ctx); e != nil {
 			return e
 		}
@@ -312,6 +315,9 @@ func (l *Lifecycle) changePublisher(ctx context.Context, in IssueCredential, kin
 			delivery, e = l.replayDelivery(ctx, s, c)
 			return e
 		}
+		if e = recoveredCandidate(c); e != nil {
+			return e
+		}
 		if _, e = l.platform(ctx); e != nil {
 			return e
 		}
@@ -337,6 +343,16 @@ func (l *Lifecycle) changePublisher(ctx context.Context, in IssueCredential, kin
 }
 func (l *Lifecycle) credentialActive(c CredentialInfo) bool {
 	return c.State == "active" && c.Generation > 0 && (c.ExpiresAt == nil || c.ExpiresAt.After(l.now()))
+}
+
+// recoveredCandidate rejects a resume of a command whose expired candidate was
+// already terminated by the local operator recovery. The same idempotency key
+// may never create a second identity after that decision.
+func recoveredCandidate(c Command) error {
+	if c.State == "failed" && c.Reason == CandidateExpiredRecovered {
+		return Fail(CandidateRecoveryCompleted, "expired candidate already recovered")
+	}
+	return nil
 }
 func (l *Lifecycle) candidateAAD(s Space, c Command) SecretAAD {
 	return SecretAAD{InstallationID: s.InstallationID, TenantID: s.TenantID, SpaceID: s.ID, Scope: s.Scope, Purpose: c.Candidate.Purpose, Generation: c.Candidate.Generation, CommandID: c.ID}
@@ -385,7 +401,20 @@ func logicalRobotName(ownership string) string {
 	return "i-" + hex.EncodeToString(digest[:20])
 }
 func (l *Lifecycle) verifyCandidate(r Robot, c Command, want RobotRequest) error {
-	if r.ID != c.Candidate.RobotID || r.Name != c.Candidate.RobotName || r.Username != c.Candidate.Username || r.Description != want.Description || r.DurationDays != want.DurationDays || r.Disabled {
+	if err := l.verifyCandidateIdentity(r, c, want); err != nil {
+		return err
+	}
+	if r.Disabled {
+		return Fail(PermissionDenied, "candidate robot identity mismatch")
+	}
+	return nil
+}
+
+// verifyCandidateIdentity 只校验候选身份、描述、过期时长与权限，不关心是否已
+// 启用。过期候选恢复需要它：上一次恢复可能已停用 robot 但事务随后回滚，重试时
+// 仍要能认出这就是同一条候选，否则这条命令永远无法终结。
+func (l *Lifecycle) verifyCandidateIdentity(r Robot, c Command, want RobotRequest) error {
+	if r.ID != c.Candidate.RobotID || r.Name != c.Candidate.RobotName || r.Username != c.Candidate.Username || r.Description != want.Description || r.DurationDays != want.DurationDays {
 		return Fail(PermissionDenied, "candidate robot identity mismatch")
 	}
 	return ValidateRobotPermissions(r.Permissions, want.Permissions)
@@ -559,6 +588,9 @@ func (l *Lifecycle) DisablePublisherCredential(ctx context.Context, in DisableCr
 	if err != nil {
 		return CredentialInfo{}, err
 	}
+	if in.ExpectedVersion < 0 {
+		return CredentialInfo{}, Fail(InvalidArgument, "invalid expected version")
+	}
 	s, err := l.repo.FindTenantSpace(ctx, in.TenantID)
 	if err != nil {
 		return CredentialInfo{}, err
@@ -575,7 +607,7 @@ func (l *Lifecycle) DisablePublisherCredential(ctx context.Context, in DisableCr
 	var result CredentialInfo
 	err = l.repo.WithSpaceWriteLock(ctx, s.ID, func(ctx context.Context) error {
 		var e error
-		c, e = l.repo.BeginTenantCredentialCommand(ctx, c, in.ExpectedVersion)
+		c, e = l.beginPublisherDisable(ctx, c, in.ExpectedVersion)
 		if e != nil {
 			return e
 		}
@@ -586,42 +618,80 @@ func (l *Lifecycle) DisablePublisherCredential(ctx context.Context, in DisableCr
 			result = *c.Result.Credential
 			return nil
 		}
-		info, e := l.repo.GetTenantPublisher(ctx, s.TenantID, s.ID)
-		if e != nil {
-			return e
-		}
-		if c.Phase == "reserved" {
-			c.Candidate = Candidate{CredentialVersion: info.Version, Generation: info.Generation, RobotID: info.RobotID, Purpose: "publisher"}
-			if e = l.phase(ctx, &c, "disable_prepared"); e != nil {
-				return e
-			}
-		}
-		if info.Version != c.Candidate.CredentialVersion || info.Generation != c.Candidate.Generation || info.RobotID != c.Candidate.RobotID {
-			return Fail(VersionConflict, "credential changed")
-		}
-		if info.State == "active" {
-			robot, e := l.registry.GetRobot(ctx, info.RobotID)
-			if e != nil {
-				return e
-			}
-			perms, e := RobotPermissions(s.ProjectName, l.cfg.PlatformProject, "publisher", TenantImages)
-			if e != nil {
-				return e
-			}
-			if e = l.verifyPrevious(robot, s, info, perms); e != nil {
-				return e
-			}
-			if e = l.registry.SetRobotDisabled(ctx, robot, true); e != nil {
-				return e
-			}
-		}
-		c, e = l.repo.CompleteTenantDisable(ctx, c)
-		if e == nil {
-			result = *c.Result.Credential
-		}
+		result, e = l.runPublisherDisable(ctx, s, c)
 		return e
 	})
 	return result, err
+}
+
+// beginPublisherDisable reserves the disable command through the port that
+// matches the stored space scope. The platform surface supplies its own
+// repository, so a tenant Lifecycle never touches platform rows.
+func (l *Lifecycle) beginPublisherDisable(ctx context.Context, c Command, expected int64) (Command, error) {
+	if c.Scope == TenantImages {
+		return l.repo.BeginTenantCredentialCommand(ctx, c, expected)
+	}
+	if err := l.platformWrite(ctx, c.Scope, c.TenantID); err != nil {
+		return Command{}, err
+	}
+	return l.platformRepo.BeginPlatformCredentialCommand(ctx, c, expected)
+}
+
+// runPublisherDisable disables the current publisher robot and completes the
+// command. It is shared by the tenant and platform entry points and dispatches
+// every read and write through the stored space scope.
+func (l *Lifecycle) runPublisherDisable(ctx context.Context, s Space, c Command) (CredentialInfo, error) {
+	info, err := l.publisher(ctx, s)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	if c.Phase == "reserved" {
+		c.Candidate = Candidate{CredentialVersion: info.Version, Generation: info.Generation, RobotID: info.RobotID, Purpose: "publisher"}
+		if err = l.phase(ctx, &c, "disable_prepared"); err != nil {
+			return CredentialInfo{}, err
+		}
+	}
+	if info.Version != c.Candidate.CredentialVersion || info.Generation != c.Candidate.Generation || info.RobotID != c.Candidate.RobotID {
+		return CredentialInfo{}, Fail(VersionConflict, "credential changed")
+	}
+	// The permission set is derived from the stored scope, never from the
+	// request, so a platform space can only ever verify platform permissions.
+	perms, err := RobotPermissions(s.ProjectName, l.cfg.PlatformProject, "publisher", s.Scope)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	if info.State == "active" {
+		robot, e := l.registry.GetRobot(ctx, info.RobotID)
+		if e != nil {
+			return CredentialInfo{}, e
+		}
+		if e = l.verifyPrevious(robot, s, info, perms); e != nil {
+			return CredentialInfo{}, e
+		}
+		if e = l.registry.SetRobotDisabled(ctx, robot, true); e != nil {
+			return CredentialInfo{}, e
+		}
+	}
+	c, err = l.completePublisherDisable(ctx, s, c)
+	if err != nil {
+		return CredentialInfo{}, err
+	}
+	if c.Result.Credential == nil {
+		return CredentialInfo{}, Fail(InternalError, "missing disable result")
+	}
+	return *c.Result.Credential, nil
+}
+
+// completePublisherDisable finishes the disable command in the scope's own
+// short transaction.
+func (l *Lifecycle) completePublisherDisable(ctx context.Context, s Space, c Command) (Command, error) {
+	if s.Scope == TenantImages {
+		return l.repo.CompleteTenantDisable(ctx, c)
+	}
+	if err := l.platformWrite(ctx, s.Scope, s.TenantID); err != nil {
+		return Command{}, err
+	}
+	return l.platformRepo.CompletePlatformDisable(ctx, c)
 }
 
 // Recovery is a local operator action with an externally reviewed evidence hash.

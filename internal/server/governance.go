@@ -13,6 +13,7 @@ import (
 	instancepb "github.com/zhangzhe-ctrl/ani-resource-service/api/instance/v1"
 	sandboxpb "github.com/zhangzhe-ctrl/ani-resource-service/api/sandbox/v1"
 	computebiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
+	imagebiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/image"
 	instancebiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	sandboxbiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
@@ -312,8 +313,11 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 		_, platformMethod := governancePlatformMethods[info.FullMethod]
 		_, computePlatformMethod := computePlatformMethods[info.FullMethod]
 		_, clusterOpsMethod := clusterOpsPlatformMethods[info.FullMethod]
+		_, imagePlatformMethod := imagePlatformGovernanceMethods[info.FullMethod]
 		platformMethod = platformMethod || computePlatformMethod || clusterOpsMethod
-		if platformMethod != p.Platform {
+		// Image management methods are platform-scoped too, so the exclusive
+		// scope check must consider them before any branch is dispatched.
+		if (platformMethod || imagePlatformMethod) != p.Platform {
 			return nil, status.Error(codes.PermissionDenied, "governance scope does not permit this method")
 		}
 		_, imageMethod := imageGovernanceMethods[info.FullMethod]
@@ -323,7 +327,7 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 		_, vmMethod := vmGovernanceMethods[info.FullMethod]
 		_, vmImageMethod := vmImageGovernanceMethods[info.FullMethod]
 		_, sandboxMethod := sandboxGovernanceMethods[info.FullMethod]
-		if _, ok := governanceReadMethods[info.FullMethod]; !ok && !imageMethod && !platformMethod && !instanceMethod && !computeMethod && !storageMethod && !vmMethod && !vmImageMethod && !sandboxMethod {
+		if _, ok := governanceReadMethods[info.FullMethod]; !ok && !imageMethod && !platformMethod && !imagePlatformMethod && !instanceMethod && !computeMethod && !storageMethod && !vmMethod && !vmImageMethod && !sandboxMethod {
 			return nil, status.Error(codes.PermissionDenied, "governance credential does not permit this method")
 		}
 		r, ok := req.(proto.Message)
@@ -391,6 +395,13 @@ func governanceUnary(readOnly bool) grpc.UnaryServerInterceptor {
 		}
 		if clusterOpsMethod {
 			return next(withClusterOpsCaller(ctx, p), req)
+		}
+		if imagePlatformMethod {
+			// Platform image management keeps the platform operator identity and
+			// never reuses the network EgressCaller. The managed target tenant is
+			// validated by the service facade, not bound here.
+			ctx = imagebiz.WithCaller(ctx, imagebiz.Caller{Kind: imagebiz.PlatformCaller, Subject: p.Workload, Actor: p.Actor})
+			return next(ctx, req)
 		}
 		if platformMethod {
 			ctx = biz.WithEgressCaller(ctx, biz.EgressCaller{PlatformAdministrator: true, Attribution: biz.Attribution{Actor: p.Actor, DirectCaller: p.Workload, CorrelationID: p.RequestID}})

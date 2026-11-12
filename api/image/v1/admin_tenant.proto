@@ -1,0 +1,230 @@
+// Container image management v1.2 (2026-11-11). Platform-side managed tenant
+// surface. Every request names its target tenant explicitly as a canonical UUID
+// supplied by the trusted Governance mapping; the platform operator identity
+// stays in the caller context and is never replaced.
+syntax = "proto3";
+package image.v1;
+option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/image/v1;imagev1";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "image/v1/image.proto";
+import "image/v1/platform.proto";
+
+// AdminTenantImageService is the managed-tenant counterpart of the tenant
+// self-service surface. It exists for platform operators only and must never be
+// mounted on a tenant-scoped listener.
+service AdminTenantImageService {
+  rpc GetTenantImageSpace(GetTenantImageSpaceRequest) returns (GetTenantImageSpaceResponse);
+  rpc EnsureTenantImageSpace(EnsureTenantImageSpaceRequest) returns (EnsureTenantImageSpaceResponse);
+  rpc GetTenantPublisherCredential(GetTenantPublisherCredentialRequest) returns (GetTenantPublisherCredentialResponse);
+  rpc IssueTenantPublisherCredential(IssueTenantPublisherCredentialRequest) returns (IssueTenantPublisherCredentialResponse);
+  rpc ResetTenantPublisherCredential(ResetTenantPublisherCredentialRequest) returns (ResetTenantPublisherCredentialResponse);
+  rpc DisableTenantPublisherCredential(DisableTenantPublisherCredentialRequest) returns (DisableTenantPublisherCredentialResponse);
+  rpc ListTenantImages(ListTenantImagesRequest) returns (ListTenantImagesResponse);
+  rpc GetTenantImage(GetTenantImageRequest) returns (GetTenantImageResponse);
+  rpc RegisterTenantImage(RegisterTenantImageRequest) returns (RegisterTenantImageResponse);
+  rpc UpdateTenantImage(UpdateTenantImageRequest) returns (UpdateTenantImageResponse);
+  rpc UnregisterTenantImage(UnregisterTenantImageRequest) returns (UnregisterTenantImageResponse);
+}
+
+message GetTenantImageSpaceRequest {
+
+  string target_tenant_id = 1;
+
+}
+
+message GetTenantImageSpaceResponse {
+
+  ImageSpace space = 1;
+
+}
+
+message EnsureTenantImageSpaceRequest {
+
+  string target_tenant_id = 1;
+
+  string slug = 2;
+
+  string idempotency_key = 3;
+
+}
+
+message EnsureTenantImageSpaceResponse {
+
+  ImageSpace space = 1;
+
+}
+
+message GetTenantPublisherCredentialRequest {
+
+  string target_tenant_id = 1;
+
+}
+
+message GetTenantPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+}
+
+message IssueTenantPublisherCredentialRequest {
+
+  string target_tenant_id = 1;
+
+  string idempotency_key = 2;
+
+  optional int64 expected_version = 3;
+
+}
+
+message IssueTenantPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+  string secret = 2;
+
+  google.protobuf.Timestamp replay_until = 3;
+
+}
+
+message ResetTenantPublisherCredentialRequest {
+
+  string target_tenant_id = 1;
+
+  string idempotency_key = 2;
+
+  optional int64 expected_version = 3;
+
+}
+
+message ResetTenantPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+  string secret = 2;
+
+  google.protobuf.Timestamp replay_until = 3;
+
+}
+
+message DisableTenantPublisherCredentialRequest {
+
+  string target_tenant_id = 1;
+
+  string idempotency_key = 2;
+
+  optional int64 expected_version = 3;
+
+}
+
+message DisableTenantPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+}
+
+message ListTenantImagesRequest {
+
+  string target_tenant_id = 1;
+
+  string search = 2;
+
+  repeated ImagePurpose purposes = 3;
+
+  AcceleratorKind accelerator = 4;
+
+  optional uint32 page = 5;
+
+  optional uint32 page_size = 6;
+
+}
+
+message ListTenantImagesResponse {
+
+  ManagementImagePage page = 1;
+
+}
+
+message GetTenantImageRequest {
+
+  string target_tenant_id = 1;
+
+  string image_id = 2;
+
+}
+
+message GetTenantImageResponse {
+
+  ImageRegistration image = 1;
+
+}
+
+message RegisterTenantImageRequest {
+
+  string target_tenant_id = 1;
+
+  string image_reference = 2;
+
+  string display_name = 3;
+
+  string description = 4;
+
+  repeated ImagePurpose purposes = 5;
+
+  AcceleratorKind accelerator = 6;
+
+  string idempotency_key = 7;
+
+}
+
+message RegisterTenantImageResponse {
+
+  ImageRegistration image = 1;
+
+}
+
+message UpdateTenantImageRequest {
+
+  string target_tenant_id = 1;
+
+  string image_id = 2;
+
+  optional string display_name = 3;
+
+  optional string description = 4;
+
+  repeated ImagePurpose purposes = 5;
+
+  optional AcceleratorKind accelerator = 6;
+
+  optional int64 expected_version = 7;
+
+  string idempotency_key = 8;
+
+  google.protobuf.FieldMask update_mask = 9;
+
+}
+
+message UpdateTenantImageResponse {
+
+  ImageRegistration image = 1;
+
+}
+
+message UnregisterTenantImageRequest {
+
+  string target_tenant_id = 1;
+
+  string image_id = 2;
+
+  optional int64 expected_version = 3;
+
+  string idempotency_key = 4;
+
+}
+
+message UnregisterTenantImageResponse {
+
+  ImageRegistration image = 1;
+
+}

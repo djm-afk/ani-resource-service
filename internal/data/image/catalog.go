@@ -36,6 +36,47 @@ func (p *Postgres) FindTenantRegistration(ctx context.Context, tenant, id string
 	}
 	return fromRegistration(row, s)
 }
+
+// resolvedFromSource derives the immutable pull reference from the stored source
+// reference, repository and digest. It is the only assembly that works without
+// reading image.spaces, and the source reference is always authority/project/ref.
+func resolvedFromSource(source, repository, digest string) (string, error) {
+	parts := strings.Split(source, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", biz.Fail(biz.InternalError, "invalid stored image reference")
+	}
+	return parts[0] + "/" + parts[1] + "/" + repository + "@" + digest, nil
+}
+
+// fromRegistrationOwned assembles a tenant registration from its own row only,
+// so local metadata edits and unregister never depend on a readable space.
+func fromRegistrationOwned(v sqlcgen.ImageRegistration) (biz.Registration, error) {
+	tenant := textValue(v.TenantID)
+	if v.OwnerScope != string(biz.TenantImages) || tenant == "" {
+		return biz.Registration{}, biz.Fail(biz.InternalError, "invalid stored image ownership")
+	}
+	resolved, err := resolvedFromSource(v.SourceReference, v.Repository, v.Digest)
+	if err != nil {
+		return biz.Registration{}, err
+	}
+	r := biz.Registration{ID: v.ImageID, TenantID: tenant, SpaceID: v.SpaceID, Scope: biz.ImageScope(v.OwnerScope), Repository: v.Repository, SourceReference: v.SourceReference, Digest: v.Digest, ResolvedReference: resolved, MediaType: v.MediaType, Metadata: biz.Metadata{DisplayName: v.DisplayName, Description: v.Description, Purposes: v.Purposes, Accelerator: v.Accelerator}, Version: v.Version, CreatedBy: v.CreatedBy, UpdatedBy: v.UpdatedBy, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, UnregisteredAt: v.UnregisteredAt}
+	if err = decodeTyped(v.Platforms, &r.Platforms); err != nil {
+		return biz.Registration{}, err
+	}
+	return r, nil
+}
+
+func (p *Postgres) FindTenantRegistrationOwned(ctx context.Context, tenant, id string) (biz.Registration, error) {
+	if _, err := biz.ParseTenant(tenant); err != nil {
+		return biz.Registration{}, err
+	}
+	row, err := sqlcgen.New(p.connection(ctx)).GetTenantRegistrationOwned(ctx, sqlcgen.GetTenantRegistrationOwnedParams{TenantID: &tenant, ImageID: id})
+	if err != nil {
+		return biz.Registration{}, databaseError(err)
+	}
+	return fromRegistrationOwned(row)
+}
+
 func (p *Postgres) FindPlatformRegistration(ctx context.Context, id string) (biz.Registration, error) {
 	row, err := sqlcgen.New(p.connection(ctx)).GetPlatformRegistration(ctx, sqlcgen.GetPlatformRegistrationParams{ImageID: id})
 	if err != nil {
@@ -164,6 +205,46 @@ func registrations(rows []sqlcgen.ImageRegistration, s biz.Space) ([]biz.Registr
 	return out, nil
 }
 
+// OffsetTenantRegistrations pages the tenant catalog with a real OFFSET. COUNT,
+// the page and the space reference are read in one REPEATABLE READ snapshot.
+func (p *Postgres) OffsetTenantRegistrations(ctx context.Context, tenant string, f biz.ManagementFilter, offset int64, limit int32) ([]biz.Registration, int64, error) {
+	if _, err := biz.ParseTenant(tenant); err != nil {
+		return nil, 0, err
+	}
+	if offset < 0 || limit < 1 || limit > 100 {
+		return nil, 0, biz.Fail(biz.InvalidArgument, "invalid page request")
+	}
+	tx, err := p.connection(ctx).BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	defer tx.Rollback(ctx)
+	q := sqlcgen.New(tx)
+	stored, err := q.GetTenantSpace(ctx, sqlcgen.GetTenantSpaceParams{TenantID: &tenant})
+	if err != nil {
+		// 未开通镜像空间的租户应当得到空列表，而不是 404。databaseError 会把
+		// ErrNoRows 一律折成 IMAGE_NOT_FOUND，这里必须单独给出 SPACE_NOT_FOUND，
+		// 业务层的空页分支才能命中。
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, 0, biz.Fail(biz.SpaceNotFound, "image space not found")
+		}
+		return nil, 0, databaseError(err)
+	}
+	total, err := q.CountTenantRegistrations(ctx, sqlcgen.CountTenantRegistrationsParams{TenantID: &tenant, SearchText: f.Search, SearchPattern: searchPattern(f.Search), Purposes: f.Purposes, Accelerator: f.Accelerator})
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	rows, err := q.ListTenantRegistrationsOffset(ctx, sqlcgen.ListTenantRegistrationsOffsetParams{TenantID: &tenant, SearchText: f.Search, SearchPattern: searchPattern(f.Search), Purposes: f.Purposes, Accelerator: f.Accelerator, PageLimit: int64(limit), PageOffset: offset})
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	values, err := registrations(rows, fromSpace(stored))
+	if err != nil {
+		return nil, 0, err
+	}
+	return values, total, nil
+}
+
 // The row change and redacted command result commit in one short transaction.
 // A replay precedes version checks. Provider reads happen before this adapter.
 func (p *Postgres) applyTenantCatalog(ctx context.Context, c biz.Command, change func(*sqlcgen.Queries, biz.Space) (biz.Registration, error)) (biz.Registration, error) {
@@ -275,4 +356,80 @@ func tenantCASFailure(ctx context.Context, q *sqlcgen.Queries, tenant, id string
 		return biz.Fail(biz.ImageNotFound, "image is unregistered")
 	}
 	return biz.Fail(biz.VersionConflict, "image version changed")
+}
+
+// ApplyTenantRegistrationPatch applies a management patch in one short
+// transaction. The replay check runs before the version check so an already
+// successful patch keeps returning its original result even when the record has
+// moved on. The space row is never read here.
+func (p *Postgres) ApplyTenantRegistrationPatch(ctx context.Context, c biz.Command, r biz.PatchImage) (biz.Registration, error) {
+	if c.Kind != "update_image" || c.Scope != biz.TenantImages || r.TenantID != c.TenantID || r.ImageID == "" {
+		return biz.Registration{}, biz.Fail(biz.InvalidArgument, "invalid patch ownership")
+	}
+	if _, err := biz.ParseTenant(c.TenantID); err != nil {
+		return biz.Registration{}, err
+	}
+	tx, err := p.connection(ctx).Begin(ctx)
+	if err != nil {
+		return biz.Registration{}, databaseError(err)
+	}
+	defer tx.Rollback(ctx)
+	q := sqlcgen.New(tx)
+	locked, err := q.LockTenantRegistration(ctx, sqlcgen.LockTenantRegistrationParams{TenantID: &c.TenantID, ImageID: r.ImageID})
+	if err != nil {
+		return biz.Registration{}, databaseError(err)
+	}
+	if locked.SpaceID != c.SpaceID {
+		return biz.Registration{}, biz.Fail(biz.ImageNotFound, "image not found")
+	}
+	stored, err := reserveTenantCommand(ctx, q, c)
+	if err != nil {
+		return biz.Registration{}, err
+	}
+	if stored.State == "succeeded" {
+		result := stored.Result.Registration
+		if result == nil || result.TenantID != c.TenantID || result.Scope != biz.TenantImages || result.SpaceID != c.SpaceID || result.ID != r.ImageID {
+			return biz.Registration{}, biz.Fail(biz.InternalError, "invalid stored patch result")
+		}
+		return *result, nil
+	}
+	// 已注销只在“新写入”时拒绝。同 key 重放必须先返回首次结果：PATCH 可能已
+	// 提交但响应丢失，随后管理员注销了该镜像，此时重试不应变成 404。
+	if locked.UnregisteredAt != nil {
+		return biz.Registration{}, biz.Fail(biz.ImageNotFound, "image not found")
+	}
+	if stored.State != "pending" {
+		return biz.Registration{}, biz.Fail(biz.RequestInProgress, "catalog request is not pending")
+	}
+	current, err := fromRegistrationOwned(locked)
+	if err != nil {
+		return biz.Registration{}, err
+	}
+	if current.Version != r.ExpectedVersion {
+		return biz.Registration{}, biz.Fail(biz.VersionConflict, "image version changed")
+	}
+	merged, err := biz.ApplyPatch(current.Metadata, r)
+	if err != nil {
+		return biz.Registration{}, err
+	}
+	actor := c.Actor
+	row, err := q.UpdateTenantMetadata(ctx, sqlcgen.UpdateTenantMetadataParams{TenantID: &c.TenantID, ImageID: r.ImageID, DisplayName: merged.DisplayName, Description: merged.Description, Purposes: merged.Purposes, Accelerator: merged.Accelerator, Actor: actor, ExpectedVersion: r.ExpectedVersion})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return biz.Registration{}, biz.Fail(biz.VersionConflict, "image version changed")
+	}
+	if err != nil {
+		return biz.Registration{}, databaseError(err)
+	}
+	result, err := fromRegistrationOwned(row)
+	if err != nil {
+		return biz.Registration{}, err
+	}
+	stored.Result = biz.CommandResult{Registration: &result}
+	if _, err = completeTenantCommand(ctx, q, stored); err != nil {
+		return biz.Registration{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return biz.Registration{}, databaseError(err)
+	}
+	return result, nil
 }

@@ -1,3 +1,9 @@
+## VM 查询兼容恢复（2026-11-11）
+
+基线为66当前Res927a2a9112ec（保留ACC整改），分支 codex/res-vm-query-compat-20261111。用户选择保留当前数据库和ACC改造、修复VM查询。当前服务无法投影r8持久的clone_source/VM_CLONE，单条记录导致列表503。修复仅涉及查询投影，保留异常行和诊断，不改写已受理配置，不放宽新命令校验；规则见[VM规格S11](../specs/vm-mvp.md#s11-数据与观察)。
+
+本机WSL已先复现新增回归失败，修复后 internal/service/vm、api/vm/v1 定向测试通过；实际构建、部署、HTTP及数据保留结果见[本次记录](records/VM-QUERY-COMPAT-20261111.md)。不把查询恢复写成整机克隆执行已实现。
+
 # Network 执行状态
 
 <a id="vm-image-init-pr71-followup-20261109"></a>

@@ -29,6 +29,17 @@ const (
 	RequestInProgress         Reason = "REQUEST_IN_PROGRESS"
 	DeadlineExceeded          Reason = "DEADLINE_EXCEEDED"
 	InternalError             Reason = "INTERNAL_ERROR"
+
+	// ImageSpaceBindingMismatch reports a stored tenant space whose installation,
+	// registry authority or project no longer matches the deployment binding. It
+	// only blocks new registrations; local metadata and unregister stay available.
+	ImageSpaceBindingMismatch Reason = "IMAGE_SPACE_BINDING_MISMATCH"
+	// CandidateRecoveryCompleted reports a command whose expired candidate was
+	// already terminated by the local operator recovery entry.
+	CandidateRecoveryCompleted Reason = "CANDIDATE_RECOVERY_COMPLETED"
+	// CandidateExpiredRecovered is the terminal command reason written by the
+	// local operator recovery.
+	CandidateExpiredRecovered Reason = "CANDIDATE_EXPIRED_RECOVERED"
 )
 
 type domainError struct {

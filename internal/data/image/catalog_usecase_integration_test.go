@@ -61,7 +61,7 @@ func TestCatalogUseCasesAndRuntimeIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := biz.NewCatalog(f.Repo, f.Repo, f.Repo, r, codec)
+	catalog, err := biz.NewCatalog(f.Repo, f.Repo, f.Repo, r, codec, biz.ImageBindingConfig{InstallationID: cfg.InstallationID, RegistryAuthority: cfg.RegistryAuthority, PlatformProject: cfg.PlatformProject})
 	if err != nil {
 		t.Fatal(err)
 	}

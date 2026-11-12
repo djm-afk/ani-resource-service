@@ -1,0 +1,232 @@
+// Container image management v1.2 (2026-11-11). Platform operator surface.
+// Registered only on the existing authenticated Governance entry and reachable
+// exclusively through the platform scope of that listener.
+syntax = "proto3";
+package image.v1;
+option go_package = "github.com/zhangzhe-ctrl/ani-resource-service/api/image/v1;imagev1";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "image/v1/image.proto";
+
+// PlatformImageService manages the single platform-owned image space, its
+// publisher identity and the platform image catalog. No request carries a
+// tenant: the platform scope is proven by the authenticated caller context.
+service PlatformImageService {
+  rpc GetPlatformSpace(GetPlatformSpaceRequest) returns (GetPlatformSpaceResponse);
+  rpc InitializePlatform(InitializePlatformRequest) returns (InitializePlatformResponse);
+  rpc GetPlatformPublisherCredential(GetPlatformPublisherCredentialRequest) returns (GetPlatformPublisherCredentialResponse);
+  rpc IssuePlatformPublisherCredential(IssuePlatformPublisherCredentialRequest) returns (IssuePlatformPublisherCredentialResponse);
+  rpc ResetPlatformPublisherCredential(ResetPlatformPublisherCredentialRequest) returns (ResetPlatformPublisherCredentialResponse);
+  rpc DisablePlatformPublisherCredential(DisablePlatformPublisherCredentialRequest) returns (DisablePlatformPublisherCredentialResponse);
+  rpc ListPlatformImages(ListPlatformImagesRequest) returns (ListPlatformImagesResponse);
+  rpc GetPlatformImage(GetPlatformImageRequest) returns (GetPlatformImageResponse);
+  rpc RegisterPlatformImage(RegisterPlatformImageRequest) returns (RegisterPlatformImageResponse);
+  rpc UpdatePlatformImage(UpdatePlatformImageRequest) returns (UpdatePlatformImageResponse);
+  rpc UnregisterPlatformImage(UnregisterPlatformImageRequest) returns (UnregisterPlatformImageResponse);
+}
+
+// PlatformSpaceView is the read-only projection of the platform binding. space is
+// absent only when no platform space has ever been reserved.
+message PlatformSpaceView {
+
+  ImageSpace space = 1;
+
+  string configured_project = 2;
+
+  string configured_registry_authority = 3;
+
+  // uninitialized, ready, provisioning, blocked or configuration_mismatch.
+  string binding_status = 4;
+
+}
+
+// ManagementImagePage is the offset page used by both management surfaces; it
+// deliberately has no cursor and no next_cursor.
+message ManagementImagePage {
+
+  repeated ImageRegistration items = 1;
+
+  int64 total = 2;
+
+}
+
+message GetPlatformSpaceRequest {
+
+}
+
+message GetPlatformSpaceResponse {
+
+  PlatformSpaceView view = 1;
+
+}
+
+message InitializePlatformRequest {
+
+  string idempotency_key = 1;
+
+}
+
+message InitializePlatformResponse {
+
+  ImageSpace space = 1;
+
+}
+
+message GetPlatformPublisherCredentialRequest {
+
+}
+
+message GetPlatformPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+}
+
+message IssuePlatformPublisherCredentialRequest {
+
+  string idempotency_key = 1;
+
+  optional int64 expected_version = 2;
+
+}
+
+message IssuePlatformPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+  string secret = 2;
+
+  google.protobuf.Timestamp replay_until = 3;
+
+}
+
+message ResetPlatformPublisherCredentialRequest {
+
+  string idempotency_key = 1;
+
+  optional int64 expected_version = 2;
+
+}
+
+message ResetPlatformPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+  string secret = 2;
+
+  google.protobuf.Timestamp replay_until = 3;
+
+}
+
+message DisablePlatformPublisherCredentialRequest {
+
+  string idempotency_key = 1;
+
+  optional int64 expected_version = 2;
+
+}
+
+message DisablePlatformPublisherCredentialResponse {
+
+  PublisherCredential credential = 1;
+
+}
+
+message ListPlatformImagesRequest {
+
+  string search = 1;
+
+  repeated ImagePurpose purposes = 2;
+
+  AcceleratorKind accelerator = 3;
+
+  optional uint32 page = 4;
+
+  optional uint32 page_size = 5;
+
+}
+
+message ListPlatformImagesResponse {
+
+  ManagementImagePage page = 1;
+
+}
+
+message GetPlatformImageRequest {
+
+  string image_id = 1;
+
+}
+
+message GetPlatformImageResponse {
+
+  ImageRegistration image = 1;
+
+}
+
+message RegisterPlatformImageRequest {
+
+  string image_reference = 1;
+
+  string display_name = 2;
+
+  string description = 3;
+
+  repeated ImagePurpose purposes = 4;
+
+  AcceleratorKind accelerator = 5;
+
+  string idempotency_key = 6;
+
+}
+
+message RegisterPlatformImageResponse {
+
+  ImageRegistration image = 1;
+
+}
+
+// UpdatePlatformImage is a field-mask patch: only the paths listed in
+// update_mask are read from this message, and expected_version/idempotency_key
+// are control fields that never appear in the mask.
+message UpdatePlatformImageRequest {
+
+  string image_id = 1;
+
+  optional string display_name = 2;
+
+  optional string description = 3;
+
+  repeated ImagePurpose purposes = 4;
+
+  optional AcceleratorKind accelerator = 5;
+
+  optional int64 expected_version = 6;
+
+  string idempotency_key = 7;
+
+  google.protobuf.FieldMask update_mask = 8;
+
+}
+
+message UpdatePlatformImageResponse {
+
+  ImageRegistration image = 1;
+
+}
+
+message UnregisterPlatformImageRequest {
+
+  string image_id = 1;
+
+  optional int64 expected_version = 2;
+
+  string idempotency_key = 3;
+
+}
+
+message UnregisterPlatformImageResponse {
+
+  ImageRegistration image = 1;
+
+}

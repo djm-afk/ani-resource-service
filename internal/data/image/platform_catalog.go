@@ -114,3 +114,102 @@ func platformCASFailure(ctx context.Context, q *sqlcgen.Queries, id string) erro
 	}
 	return biz.Fail(biz.VersionConflict, "image version changed")
 }
+
+// OffsetPlatformRegistrations pages the platform catalog. COUNT, the page and
+// the space reference share one REPEATABLE READ snapshot.
+func (p *Postgres) OffsetPlatformRegistrations(ctx context.Context, f biz.ManagementFilter, offset int64, limit int32) ([]biz.Registration, int64, error) {
+	if offset < 0 || limit < 1 || limit > 100 {
+		return nil, 0, biz.Fail(biz.InvalidArgument, "invalid page request")
+	}
+	tx, err := p.connection(ctx).BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	defer tx.Rollback(ctx)
+	q := sqlcgen.New(tx)
+	stored, err := q.GetPlatformSpace(ctx)
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	total, err := q.CountPlatformRegistrations(ctx, sqlcgen.CountPlatformRegistrationsParams{SearchText: f.Search, SearchPattern: searchPattern(f.Search), Purposes: f.Purposes, Accelerator: f.Accelerator})
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	rows, err := q.ListPlatformRegistrationsOffset(ctx, sqlcgen.ListPlatformRegistrationsOffsetParams{SearchText: f.Search, SearchPattern: searchPattern(f.Search), Purposes: f.Purposes, Accelerator: f.Accelerator, PageLimit: int64(limit), PageOffset: offset})
+	if err != nil {
+		return nil, 0, databaseError(err)
+	}
+	values, err := registrations(rows, fromSpace(stored))
+	if err != nil {
+		return nil, 0, err
+	}
+	return values, total, nil
+}
+
+// ApplyPlatformRegistrationPatch applies a management patch to platform
+// metadata in one short transaction, replaying before the version check.
+func (p *Postgres) ApplyPlatformRegistrationPatch(ctx context.Context, c biz.Command, r biz.PatchImage) (biz.Registration, error) {
+	if c.Kind != "update_image" || c.Scope != biz.PlatformImages || c.TenantID != "" || r.TenantID != "" || r.ImageID == "" {
+		return biz.Registration{}, biz.Fail(biz.InvalidArgument, "invalid platform patch ownership")
+	}
+	var result biz.Registration
+	err := p.platformTransaction(ctx, func(q *sqlcgen.Queries) error {
+		space, e := q.GetPlatformSpace(ctx)
+		if e != nil {
+			return databaseError(e)
+		}
+		if space.SpaceID != c.SpaceID {
+			return biz.Fail(biz.ImageNotFound, "platform space not found")
+		}
+		locked, e := q.LockPlatformRegistration(ctx, sqlcgen.LockPlatformRegistrationParams{ImageID: r.ImageID})
+		if e != nil {
+			return databaseError(e)
+		}
+		stored, e := reservePlatformCommand(ctx, q, c)
+		if e != nil {
+			return e
+		}
+		if stored.State == "succeeded" {
+			saved := stored.Result.Registration
+			if saved == nil || saved.Scope != biz.PlatformImages || saved.TenantID != "" || saved.SpaceID != c.SpaceID || saved.ID != r.ImageID {
+				return biz.Fail(biz.InternalError, "invalid stored platform patch result")
+			}
+			result = *saved
+			return nil
+		}
+		// 已注销只拒绝新写入。同 key 重放必须先返回首次结果：PATCH 可能已提交
+		// 但响应丢失，随后镜像被注销，此时重试不应变成 404。
+		if locked.UnregisteredAt != nil {
+			return biz.Fail(biz.ImageNotFound, "image not found")
+		}
+		if stored.State != "pending" {
+			return biz.Fail(biz.RequestInProgress, "catalog request is not pending")
+		}
+		current, e := fromRegistration(locked, fromSpace(space))
+		if e != nil {
+			return e
+		}
+		if current.Version != r.ExpectedVersion {
+			return biz.Fail(biz.VersionConflict, "image version changed")
+		}
+		merged, e := biz.ApplyPatch(current.Metadata, r)
+		if e != nil {
+			return e
+		}
+		row, e := q.UpdatePlatformMetadata(ctx, sqlcgen.UpdatePlatformMetadataParams{ImageID: r.ImageID, DisplayName: merged.DisplayName, Description: merged.Description, Purposes: merged.Purposes, Accelerator: merged.Accelerator, Actor: c.Actor, ExpectedVersion: r.ExpectedVersion})
+		if errors.Is(e, pgx.ErrNoRows) {
+			return biz.Fail(biz.VersionConflict, "image version changed")
+		}
+		if e != nil {
+			return databaseError(e)
+		}
+		result, e = fromRegistration(row, fromSpace(space))
+		if e != nil {
+			return e
+		}
+		stored.Result = biz.CommandResult{Registration: &result}
+		_, e = completePlatformCommand(ctx, q, stored)
+		return e
+	})
+	return result, err
+}

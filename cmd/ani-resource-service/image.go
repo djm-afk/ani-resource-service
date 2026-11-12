@@ -19,12 +19,15 @@ import (
 )
 
 type imageComponents struct {
-	tenant     *imageservice.TenantService
-	lifecycle  *imagebiz.Lifecycle
-	catalog    *imagebiz.Catalog
-	repository *imagedata.Postgres
-	harbor     *imagedata.Harbor
-	runtime    *imagebiz.Runtime
+	tenant          *imageservice.TenantService
+	platform        *imagebiz.Platform
+	platformService *imageservice.PlatformService
+	adminTenant     *imageservice.AdminTenantService
+	lifecycle       *imagebiz.Lifecycle
+	catalog         *imagebiz.Catalog
+	repository      *imagedata.Postgres
+	harbor          *imagedata.Harbor
+	runtime         *imagebiz.Runtime
 }
 
 func (c *imageComponents) Close() {
@@ -151,7 +154,7 @@ func openImage(ctx context.Context, c *conf.Image) (*imageComponents, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := imagebiz.NewCatalog(repo, repo, repo, harbor, cursor)
+	catalog, err := imagebiz.NewCatalog(repo, repo, repo, harbor, cursor, imagebiz.ImageBindingConfig{InstallationID: c.InstallationId, RegistryAuthority: u.Host, PlatformProject: c.PlatformProject})
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +177,14 @@ func openImage(ctx context.Context, c *conf.Image) (*imageComponents, error) {
 			return nil, err
 		}
 	}
+	tenant := imageservice.NewTenantService(lifecycle, catalog)
+	// The platform use case is built from the same Lifecycle value; NewPlatform
+	// copies it and attaches the platform repository, so the shared components
+	// keep a tenant-only engine.
+	platform, err := imagebiz.NewPlatform(repo, lifecycle)
+	if err != nil {
+		return nil, err
+	}
 	ready = true
-	return &imageComponents{tenant: imageservice.NewTenantService(lifecycle, catalog), lifecycle: lifecycle, catalog: catalog, repository: repo, harbor: harbor, runtime: runtime}, nil
+	return &imageComponents{tenant: tenant, platform: platform, platformService: imageservice.NewPlatformService(platform), adminTenant: imageservice.NewAdminTenantService(tenant, catalog), lifecycle: lifecycle, catalog: catalog, repository: repo, harbor: harbor, runtime: runtime}, nil
 }

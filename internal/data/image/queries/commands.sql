@@ -76,3 +76,10 @@ SELECT * FROM image.commands WHERE owner_scope='platform' AND tenant_id IS NULL 
 UPDATE image.commands SET secret_ciphertext=NULL,secret_key_id=NULL,updated_at=clock_timestamp(),version=version+1
 WHERE state='succeeded' AND secret_replay_until IS NOT NULL AND secret_replay_until<=sqlc.arg(now_at)
  AND secret_ciphertext IS NOT NULL;
+
+-- name: ScrubExpiredSpaceDeliverySecrets :execrows
+UPDATE image.commands SET secret_ciphertext=NULL,secret_key_id=NULL,updated_at=clock_timestamp(),version=version+1
+WHERE owner_scope='platform' AND tenant_id IS NULL AND space_id=sqlc.arg(space_id)
+ AND kind IN ('issue_publisher','reset_publisher')
+ AND state='succeeded' AND secret_ciphertext IS NOT NULL
+ AND secret_replay_until IS NOT NULL AND secret_replay_until<=sqlc.arg(now_at);

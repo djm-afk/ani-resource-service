@@ -204,6 +204,10 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	networkv1.RegisterTenantLoadBalancerServiceServer(gs, networkService.NewTenantLoadBalancerService(lbs))
 	if images != nil {
 		imagev1.RegisterTenantImageServiceServer(gs, images.tenant)
+		// 平台镜像管理与受管租户镜像管理同样只在治理监听器上开放：它们的身份
+		// 由 GovernanceUnary 的平台作用域与 x-ani-scope=platform 共同约束。
+		imagev1.RegisterPlatformImageServiceServer(gs, images.platformService)
+		imagev1.RegisterAdminTenantImageServiceServer(gs, images.adminTenant)
 	}
 	if compute != nil {
 		computev1.RegisterComputePresetServiceServer(gs, compute.service)

@@ -14,13 +14,19 @@ type Catalog struct {
 	commands CommandRepository
 	registry Registry
 	cursor   *CursorCodec
+	binding  ImageBindingConfig
 }
 
-func NewCatalog(repo CatalogRepository, spaces SpaceRepository, commands CommandRepository, registry Registry, cursor *CursorCodec) (*Catalog, error) {
+// NewCatalog requires the deployment binding. There is deliberately no zero
+// value fallback: a missing binding must fail composition, not skip the check.
+func NewCatalog(repo CatalogRepository, spaces SpaceRepository, commands CommandRepository, registry Registry, cursor *CursorCodec, binding ImageBindingConfig) (*Catalog, error) {
 	if repo == nil || spaces == nil || commands == nil || registry == nil || cursor == nil {
 		return nil, Fail(InvalidArgument, "catalog dependencies required")
 	}
-	return &Catalog{repo: repo, spaces: spaces, commands: commands, registry: registry, cursor: cursor}, nil
+	if _, err := ParseTenant(binding.InstallationID); err != nil || binding.RegistryAuthority == "" || binding.PlatformProject == "" {
+		return nil, Fail(InvalidArgument, "catalog binding required")
+	}
+	return &Catalog{repo: repo, spaces: spaces, commands: commands, registry: registry, cursor: cursor, binding: binding}, nil
 }
 func (c *Catalog) RegisterImage(ctx context.Context, in RegisterImage) (Registration, error) {
 	caller, err := RequireTenant(ctx, in.TenantID)
@@ -38,7 +44,13 @@ func (c *Catalog) RegisterImage(ctx context.Context, in RegisterImage) (Registra
 	if err != nil {
 		return Registration{}, err
 	}
-	if s.Scope != TenantImages || s.TenantID != in.TenantID || s.State != "available" || s.ProjectID <= 0 {
+	// The binding is checked before any registry call and before the command
+	// lookup, so a mismatched deployment cannot create a registration or replay
+	// one silently.
+	if err = ValidateTenantCatalogBinding(s, c.binding, in.TenantID); err != nil {
+		return Registration{}, err
+	}
+	if s.State != "available" || s.ProjectID <= 0 {
 		return Registration{}, Fail(SpaceNotReady, "image space not ready")
 	}
 	ref, err := ParseImageReference(s.RegistryAuthority, s.ProjectName, in.ImageReference)
@@ -190,11 +202,17 @@ func (c *Catalog) UpdateImage(ctx context.Context, in UpdateImage) (Registration
 	if _, err = ParseIdempotencyKey(in.IdempotencyKey); err != nil {
 		return Registration{}, err
 	}
-	s, err := c.spaces.FindTenantSpace(ctx, in.TenantID)
+	// The space ID comes from the tenant-scoped registration, not from
+	// FindTenantSpace: a mismatched or unreadable space binding must not block a
+	// purely local metadata change.
+	r, err := c.repo.FindTenantRegistrationOwned(ctx, in.TenantID, in.ImageID)
 	if err != nil {
 		return Registration{}, err
 	}
-	command, err := requestCommand(caller, s.ID, "update_image", in.IdempotencyKey, in)
+	if err = ValidateTenantOwnership(r.Scope, r.TenantID, in.TenantID); err != nil {
+		return Registration{}, err
+	}
+	command, err := requestCommand(caller, r.SpaceID, "update_image", in.IdempotencyKey, in)
 	if err != nil {
 		return Registration{}, err
 	}
@@ -214,13 +232,93 @@ func (c *Catalog) UnregisterImage(ctx context.Context, in UnregisterImage) (Regi
 	if _, err = ParseIdempotencyKey(in.IdempotencyKey); err != nil {
 		return Registration{}, err
 	}
-	s, err := c.spaces.FindTenantSpace(ctx, in.TenantID)
+	r, err := c.repo.FindTenantRegistrationOwned(ctx, in.TenantID, in.ImageID)
 	if err != nil {
 		return Registration{}, err
 	}
-	command, err := requestCommand(caller, s.ID, "unregister_image", in.IdempotencyKey, in)
+	if err = ValidateTenantOwnership(r.Scope, r.TenantID, in.TenantID); err != nil {
+		return Registration{}, err
+	}
+	command, err := requestCommand(caller, r.SpaceID, "unregister_image", in.IdempotencyKey, in)
 	if err != nil {
 		return Registration{}, err
 	}
 	return c.repo.ApplyTenantUnregister(ctx, command, in)
+}
+
+// ListTenantImagesPage is the offset-page tenant list. It reports an empty page
+// for a tenant that has no image space at all, and never downgrades a database
+// failure into an empty page.
+func (c *Catalog) ListTenantImagesPage(ctx context.Context, tenant string, f ManagementFilter, p PageRequest) (RegistrationPage, error) {
+	if _, err := RequireTenant(ctx, tenant); err != nil {
+		return RegistrationPage{}, err
+	}
+	f, err := NormalizeManagementFilter(f)
+	if err != nil {
+		return RegistrationPage{}, err
+	}
+	p, err = NormalizePageRequest(p)
+	if err != nil {
+		return RegistrationPage{}, err
+	}
+	rows, total, err := c.repo.OffsetTenantRegistrations(ctx, tenant, f, p.Offset(), int32(p.PageSize))
+	if err != nil {
+		if ReasonOf(err) == SpaceNotFound {
+			return RegistrationPage{Items: []Registration{}}, nil
+		}
+		return RegistrationPage{}, err
+	}
+	for _, r := range rows {
+		if err = validateRegistrationOwner(r, tenant, TenantImages); err != nil {
+			return RegistrationPage{}, err
+		}
+	}
+	if rows == nil {
+		rows = []Registration{}
+	}
+	return RegistrationPage{Items: rows, Total: total}, nil
+}
+
+// PatchTenantImage applies a field-mask patch to tenant-scoped metadata. It
+// deliberately does not read the space: ownership comes from the registration.
+func (c *Catalog) PatchTenantImage(ctx context.Context, in PatchImage) (Registration, error) {
+	caller, err := RequireTenant(ctx, in.TenantID)
+	if err != nil {
+		return Registration{}, err
+	}
+	in, err = NormalizePatch(in)
+	if err != nil {
+		return Registration{}, err
+	}
+	r, err := c.repo.FindTenantRegistrationOwned(ctx, in.TenantID, in.ImageID)
+	if err != nil {
+		return Registration{}, err
+	}
+	if err = ValidateTenantOwnership(r.Scope, r.TenantID, in.TenantID); err != nil {
+		return Registration{}, err
+	}
+	command, err := requestCommand(caller, r.SpaceID, "update_image", in.IdempotencyKey, patchFingerprint("tenant", in))
+	if err != nil {
+		return Registration{}, err
+	}
+	return c.repo.ApplyTenantRegistrationPatch(ctx, command, in)
+}
+
+// patchFingerprint is the idempotency input of a management patch. It binds the
+// requested presence and values only, never the merged current record, and the
+// discriminator keeps it distinct from the legacy full-metadata update.
+type patchFingerprintBody struct {
+	Discriminator   string
+	Scope, Target   string
+	ImageID         string
+	ExpectedVersion int64
+	Mask            []string
+	DisplayName     *string
+	Description     *string
+	Purposes        *[]string
+	Accelerator     *string
+}
+
+func patchFingerprint(scope string, in PatchImage) patchFingerprintBody {
+	return patchFingerprintBody{Discriminator: "image-management-patch/v1", Scope: scope, Target: in.TenantID, ImageID: in.ImageID, ExpectedVersion: in.ExpectedVersion, Mask: in.Mask, DisplayName: in.Patch.DisplayName, Description: in.Patch.Description, Purposes: in.Patch.Purposes, Accelerator: in.Patch.Accelerator}
 }
