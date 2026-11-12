@@ -32,8 +32,31 @@ func TestErrorFieldsKubernetesForbidden(t *testing.T) {
 	if f["error_source"] != "kubernetes" || f["error_code"] != "Forbidden" {
 		t.Errorf("classification = %v/%v", f["error_source"], f["error_code"])
 	}
+	// The numeric HTTP status is a separate contract field and must be present.
+	if f["http.status_code"] != 403 {
+		t.Errorf("missing numeric http.status_code: %v", f["http.status_code"])
+	}
 	if !strings.Contains(f["error"].(string), "cannot get resource") {
 		t.Errorf("actionable message lost: %v", f["error"])
+	}
+}
+
+// TestErrorFieldsKeepWrappedCause is NG17: a ProviderError wrapper renders only a
+// fixed kind, so the driver/API message must come from the unwrapped cause while
+// error_code/error_type still describe the typed status.
+func TestErrorFieldsKeepWrappedCause(t *testing.T) {
+	inner := apierrors.NewForbidden(schema.GroupResource{Resource: "vpcs"}, "vpc-a", errors.New(`User "system:serviceaccount:ani:res" cannot create resource "vpcs" in namespace "tenant-1"`))
+	wrapped := fmt.Errorf("network provider: %s: %w", "temporary", inner)
+	f := fields(wrapped)
+	message, _ := f["error"].(string)
+	if strings.Contains(message, "network provider") == false {
+		t.Errorf("outer action should stay readable: %v", message)
+	}
+	if !strings.Contains(message, "cannot create resource") {
+		t.Errorf("unwrapped cause lost: %v", message)
+	}
+	if f["error_source"] != "kubernetes" || f["error_code"] != "Forbidden" || f["http.status_code"] != 403 {
+		t.Errorf("typed classification lost after unwrap: %v", f)
 	}
 }
 

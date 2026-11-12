@@ -38,6 +38,12 @@ func ErrorFields(err error) []any {
 	if code := errorCode(err); code != "" {
 		out = append(out, "error_code", code)
 	}
+	// The numeric status is a separate contract field: a wrapped Kubernetes
+	// StatusError keeps its Reason in error_code and carries the HTTP status here.
+	var k8sErr *apierrors.StatusError
+	if kerrors.As(err, &k8sErr) && k8sErr.ErrStatus.Code != 0 {
+		out = append(out, "http.status_code", int(k8sErr.ErrStatus.Code))
+	}
 	if truncated {
 		out = append(out, "error_truncated", true, "error_original_bytes", originalBytes)
 	}
@@ -135,7 +141,7 @@ func isGRPCStatus(err error) bool {
 }
 
 func safeErrorMessage(err error) (string, bool, int) {
-	raw := Redact(err.Error())
+	raw := Redact(unwrappedMessage(err))
 	size := len(raw)
 	if size <= errorOutputCap {
 		return raw, false, size
@@ -143,6 +149,32 @@ func safeErrorMessage(err error) (string, bool, int) {
 	head := trimToRuneBoundary(raw[:errorHeadBytes], false)
 	tail := trimToRuneBoundary(raw[size-errorTailBytes:], true)
 	return head + errorTruncatedOn + tail, true, size
+}
+
+// unwrappedMessage joins the outer action with the innermost real cause.
+// Wrapper types such as ProviderError and biz.Error only render a fixed kind or
+// reason, so the driver/API message would otherwise be lost.
+func unwrappedMessage(err error) string {
+	parts := make([]string, 0, 4)
+	for level := 0; err != nil && level < 8; level++ {
+		text := strings.TrimSpace(err.Error())
+		if text != "" && !messageCovered(parts, text) {
+			parts = append(parts, text)
+		}
+		err = kerrors.Unwrap(err)
+	}
+	return strings.Join(parts, ": ")
+}
+
+// messageCovered reports whether text already appears in the joined chain, which
+// prevents a wrapper that only repeats its child from duplicating the message.
+func messageCovered(parts []string, text string) bool {
+	for _, existing := range parts {
+		if existing == text || strings.Contains(existing, text) {
+			return true
+		}
+	}
+	return false
 }
 
 func trimToRuneBoundary(s string, fromStart bool) string {
