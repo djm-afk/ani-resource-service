@@ -187,6 +187,7 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 	}
 	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{
 		TenantID: intent.TenantID, OperationID: operationID, VpcID: vpcID, Kind: "create_vpc", CreatedAt: now,
+		TelemetryContext: telemetryJSON(ctx),
 	}); err != nil {
 		return biz.VPC{}, databaseFailure(err)
 	}

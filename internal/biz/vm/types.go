@@ -38,6 +38,16 @@ var (
 	ErrCloneSourceNotReady = errors.New("VM_CLONE_SOURCE_NOT_READY")
 )
 
+// errWaitingDependency marks an expected wait for an old instance to exit. Its
+// message matches ErrDependency so the durable reason and the retry branch stay
+// unchanged; the worker only uses it to emit step.waiting instead of step.failed.
+var errWaitingDependency = &waitingDependencyError{}
+
+type waitingDependencyError struct{}
+
+func (*waitingDependencyError) Error() string { return ErrDependency.Error() }
+func (*waitingDependencyError) Unwrap() error { return ErrDependency }
+
 // NativeNotSubmittedError confirms that a native command did not reach its
 // submission boundary. It must never describe a lost or rejected PUT response.
 type NativeNotSubmittedError struct{ Err error }

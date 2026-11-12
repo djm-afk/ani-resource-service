@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	quota "github.com/zhangzhe-ctrl/ani-governance/api/quota/gen/go/quota/service/v1"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"google.golang.org/grpc"
 )
 
@@ -131,8 +132,9 @@ func (q *Quota) Report(ctx context.Context, ref biz.Instance) error {
 	var acknowledged bool
 	var completed *time.Time
 	var version *int64
-	err = q.repo.pool.QueryRow(ctx, `SELECT event_id::text,original_create_operation_id::text,reason,acknowledged,cleanup_completed_at,cleanup_version
-		FROM instance.instance_quota_release_outbox WHERE tenant_id=$1 AND instance_id=$2`, i.TenantID, i.ID).Scan(&event, &create, &reason, &acknowledged, &completed, &version)
+	var savedTelemetry []byte
+	err = q.repo.pool.QueryRow(ctx, `SELECT event_id::text,original_create_operation_id::text,reason,acknowledged,cleanup_completed_at,cleanup_version,telemetry_context
+		FROM instance.instance_quota_release_outbox WHERE tenant_id=$1 AND instance_id=$2`, i.TenantID, i.ID).Scan(&event, &create, &reason, &acknowledged, &completed, &version, &savedTelemetry)
 	if err != nil {
 		return err
 	}
@@ -142,6 +144,11 @@ func (q *Quota) Report(ctx context.Context, ref biz.Instance) error {
 	if acknowledged {
 		return nil
 	}
+	// A restart or standalone retry has no request context of its own: restore
+	// the delete's persisted trace and open this pass's span before sending.
+	saved, telemetryErr := telemetry.Decode(savedTelemetry)
+	ctx, runSpan, _, _ := telemetry.Resume(ctx, saved, telemetryErr, "instance.quota_release")
+	defer runSpan.End()
 	call, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	reply, err := q.client.ReportResourceReleased(call, &quota.ReportResourceReleasedRequest{ReleaseEventId: event, CreateOperationId: create, ResourceId: i.ID, Reason: quota.ReleaseReason_RESOURCE_RELEASED})

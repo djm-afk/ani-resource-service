@@ -316,45 +316,53 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 	if logger == nil {
 		return
 	}
-	level := slog.LevelError
-	cause := error(p.ProviderError)
-	kind := biz.ProviderFailure("")
-	var failure *biz.ProviderError
-	if errors.As(p.ProviderError, &failure) {
-		kind = failure.Kind
-		if failure.Cause != nil {
-			cause = failure.Cause
-		}
-		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
-			level = slog.LevelWarn
-		}
-	}
-	if cause == nil && p.ObservationError != "" {
-		cause = errors.New(string(p.ObservationError))
-	}
-	if cause == nil {
-		cause = err
-	}
-	attrs := []any{"event", "step.failed", "dependency", "kubernetes", "action", "attach",
-		"resource_type", "attachment", "resource_id", work.Attachment.ID}
+	identity := []any{"resource_type", "attachment", "resource_id", work.Attachment.ID}
 	if work.Attachment.ID != "" {
-		attrs = append(attrs, "attachment_id", work.Attachment.ID)
+		identity = append(identity, "attachment_id", work.Attachment.ID)
 	}
 	if work.Attachment.SubmissionID != "" {
-		attrs = append(attrs, "submission_id", work.Attachment.SubmissionID)
+		identity = append(identity, "submission_id", work.Attachment.SubmissionID)
 	}
 	if work.Attachment.TenantID != "" {
-		attrs = append(attrs, "tenant_id", work.Attachment.TenantID)
+		identity = append(identity, "tenant_id", work.Attachment.TenantID)
 	}
-	if p.Reason != "" {
-		attrs = append(attrs, "reason", string(p.Reason))
+	if p.ProviderError != nil || p.ObservationError != "" {
+		level := slog.LevelError
+		cause := error(p.ProviderError)
+		kind := biz.ProviderFailure("")
+		var failure *biz.ProviderError
+		if errors.As(p.ProviderError, &failure) {
+			kind = failure.Kind
+			if failure.Cause != nil {
+				cause = failure.Cause
+			}
+			if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
+				level = slog.LevelWarn
+			}
+		}
+		if cause == nil && p.ObservationError != "" {
+			cause = errors.New(string(p.ObservationError))
+		}
+		attrs := append([]any{"event", "step.failed", "dependency", "kubernetes", "action", "attach"}, identity...)
+		if p.Reason != "" {
+			attrs = append(attrs, "reason", string(p.Reason))
+		}
+		if work.Plan.Namespace != "" || p.PodName != "" {
+			attrs = append(attrs, telemetry.Target{Kind: "Pod",
+				Namespace: work.Plan.Namespace, Name: p.PodName, UID: p.PodUID}.KV()...)
+		}
+		if cause != nil {
+			attrs = append(attrs, logfields.ErrorFields(cause)...)
+		}
+		logger.Log(ctx, level, "attachment provider request failed", attrs...)
 	}
-	if work.Plan.Namespace != "" || p.PodName != "" {
-		attrs = append(attrs, telemetry.Target{Kind: "Pod",
-			Namespace: work.Plan.Namespace, Name: p.PodName, UID: p.PodUID}.KV()...)
+	// The Finish write failure is a separate cause and must keep its own
+	// SQLSTATE instead of being replaced by the provider error above. A lost
+	// lease is a concurrency outcome, not a persistence failure.
+	if err != nil && !errors.Is(err, biz.ErrLeaseLost) {
+		attrs := append([]any{"event", "state.persist_failed", "dependency", "postgresql",
+			"action", "finish_attachment", "step", "persist_attachment"}, identity...)
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+		logger.ErrorContext(ctx, "attachment state save failed", attrs...)
 	}
-	if cause != nil {
-		attrs = append(attrs, logfields.ErrorFields(cause)...)
-	}
-	logger.Log(ctx, level, "attachment provider request failed", attrs...)
 }

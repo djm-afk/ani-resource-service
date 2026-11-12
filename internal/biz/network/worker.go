@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
@@ -223,6 +224,17 @@ func logTelemetryEvent(ctx context.Context, logger *slog.Logger, event string, i
 	logger.ErrorContext(ctx, "network telemetry context unavailable", kv...)
 }
 
+// startNetworkRun resumes the accepted operation's trace only while that
+// operation is active. A terminal record is an independent observation and
+// starts a fresh trace so it never inherits the finished operation's.
+func startNetworkRun(ctx context.Context, work Work, runName string) (context.Context, trace.Span, string, error) {
+	if work.ActiveOperation {
+		return telemetry.Resume(ctx, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, runName)
+	}
+	ctx, span := telemetry.StartRun(ctx, runName)
+	return ctx, span, "", nil
+}
+
 // Step advances at most one durable resource. Callers may stop forever after
 // this returns; unfinished work and its due time remain in the repository.
 func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
@@ -239,12 +251,14 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	}
 	// An active operation resumes the trace captured when it was accepted; this
 	// pass still gets its own span. A missing/invalid value is reported on that
-	// new span and the original business work continues.
+	// new span and the original business work continues. A terminal record is an
+	// independent observation, so it starts a fresh trace instead of inheriting
+	// the finished operation's.
 	runName := "network." + work.Resource.Kind
 	if work.Resource.Kind == "" {
 		runName = "network.observe"
 	}
-	ctx, runSpan, telemetryEvent, telemetryErr := telemetry.Resume(ctx, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, runName)
+	ctx, runSpan, telemetryEvent, telemetryErr := startNetworkRun(ctx, work, runName)
 	defer runSpan.End()
 	if telemetryEvent != "" {
 		w.logTelemetryUnavailable(ctx, work, telemetryEvent, telemetryErr)

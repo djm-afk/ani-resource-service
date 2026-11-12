@@ -24,6 +24,7 @@ import (
 	computedata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/compute"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/instance"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -570,10 +571,14 @@ type releaseEndpoint struct {
 	calls, applied   int
 	wrongReceipt     bool
 	immediateReceipt bool
+	traceID          string
 }
 
-func (q *releaseEndpoint) ReportResourceReleased(_ context.Context, r *quotapb.ReportResourceReleasedRequest, _ ...grpc.CallOption) (*quotapb.ReportResourceReleasedResponse, error) {
+func (q *releaseEndpoint) ReportResourceReleased(ctx context.Context, r *quotapb.ReportResourceReleasedRequest, _ ...grpc.CallOption) (*quotapb.ReportResourceReleasedResponse, error) {
 	q.calls++
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		q.traceID = sc.TraceID().String()
+	}
 	if q.request == nil {
 		q.request = proto.Clone(r).(*quotapb.ReportResourceReleasedRequest)
 		q.applied++

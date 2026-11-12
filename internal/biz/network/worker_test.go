@@ -221,8 +221,12 @@ func TestWorkerResumesTraceWithNewSpan(t *testing.T) {
 	saved := telemetry.Capture(trace.ContextWithSpanContext(context.Background(), request))
 
 	work := Work{
-		Operation: Operation{ID: "op-1", TelemetryContext: saved},
-		Resource:  ResourceWork{ID: "res-1", Kind: "vpc", State: Deleted},
+		Operation:       Operation{ID: "op-1", TelemetryContext: saved},
+		Resource:        ResourceWork{ID: "res-1", Kind: "vpc", State: Deleted},
+		ActiveOperation: true,
+		// A never-dispatched declaration finishes locally, so this pass records
+		// trace/span without calling a provider.
+		CancelUnsent: true,
 	}
 	var seen observeCapture
 	w, err := NewWorker(&capturingRepo{work: work}, noProviderCalls{}, uuid.NewString(), DefaultWorkerPolicy(),
@@ -241,5 +245,37 @@ func TestWorkerResumesTraceWithNewSpan(t *testing.T) {
 	}
 	if seen.spanID == "" || seen.spanID == requestSpanID.String() {
 		t.Errorf("run span_id = %q, want a new span distinct from the request span", seen.spanID)
+	}
+}
+
+// A terminal record is an independent observation: it must not inherit the
+// finished operation's trace on later reconciliation passes.
+func TestWorkerTerminalObservationStartsWithFreshTrace(t *testing.T) {
+	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
+	otel.SetTracerProvider(sdkTrace.NewTracerProvider())
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() { otel.SetTracerProvider(previousProvider); otel.SetTextMapPropagator(previousPropagator) }()
+
+	acceptedTrace, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	requestSpanID, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	request := trace.NewSpanContext(trace.SpanContextConfig{TraceID: acceptedTrace, SpanID: requestSpanID, TraceFlags: trace.FlagsSampled})
+	work := Work{
+		Operation: Operation{ID: "op-1", TelemetryContext: telemetry.Capture(trace.ContextWithSpanContext(context.Background(), request))},
+		Resource:  ResourceWork{ID: "res-1", Kind: "vpc", State: Deleted},
+	}
+	var seen observeCapture
+	w, err := NewWorker(&capturingRepo{work: work}, noProviderCalls{}, uuid.NewString(), DefaultWorkerPolicy(),
+		func(ctx context.Context, _ Work, _ Progress, _ error) {
+			sc := trace.SpanContextFromContext(ctx)
+			seen.traceID = sc.TraceID().String()
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if seen.traceID == "" || seen.traceID == acceptedTrace.String() {
+		t.Fatalf("terminal observation inherited the finished operation trace: %q", seen.traceID)
 	}
 }

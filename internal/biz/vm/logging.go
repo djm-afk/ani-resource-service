@@ -2,11 +2,27 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
+
+// operationReason returns a stable business classification for logs. The real
+// error, including any provider text, stays in the redacted error fields.
+func operationReason(err error) string {
+	for _, sentinel := range []error{
+		ErrUnknown, ErrOwnership, ErrInvalid, ErrDenied, ErrNotFound, ErrIdempotency,
+		ErrVersion, ErrBusy, ErrChanged, ErrStartFailed, ErrLease, ErrConsole,
+		ErrNetworkAdmissionClosed, ErrCloneSourceUnavailable, ErrCloneSourceNotReady, ErrDependency,
+	} {
+		if errors.Is(err, sentinel) {
+			return sentinel.Error()
+		}
+	}
+	return "VM_OPERATION_FAILED"
+}
 
 // errorAttrs is the single place a background step turns a Go error into the
 // registered error fields. The business error itself is never rewritten.

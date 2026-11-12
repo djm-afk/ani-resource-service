@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -194,6 +195,29 @@ func TestVMSharedStateHealthyCacheNeedsNoExpiringProof(t *testing.T) {
 	o.mu.Unlock()
 	if x, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrObservationUnavailable) || x.State != "Unknown" {
 		t.Fatal("known disconnected source renewed cached facts", x, err)
+	}
+}
+
+func TestVMUnavailableObservationKeepsWatchCause(t *testing.T) {
+	o, v, _, _ := sharedStateFixture(t)
+	primeSharedState(t, o, v)
+	cause := apierrors.NewForbidden(vmResource.GroupResource(), v.Native.Name, errors.New("watch denied"))
+
+	o.mu.Lock()
+	o.synced = false
+	o.resources[0].valid = false
+	o.resources[0].watchErr = cause
+	o.mu.Unlock()
+	if _, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrObservationUnavailable) || !strings.Contains(err.Error(), "watch denied") {
+		t.Fatalf("unsynced source lost the real watch cause: %v", err)
+	}
+
+	o.mu.Lock()
+	o.synced = true
+	o.resources[0].valid = false
+	o.mu.Unlock()
+	if _, err := o.ObserveState(context.Background(), v); !errors.Is(err, biz.ErrObservationUnavailable) || !strings.Contains(err.Error(), "watch denied") {
+		t.Fatalf("disconnected source lost the real watch cause: %v", err)
 	}
 }
 

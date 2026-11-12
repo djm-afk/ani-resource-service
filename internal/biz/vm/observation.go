@@ -87,6 +87,10 @@ func (o *Observer) Step(ctx context.Context) (bool, error) {
 	if err != nil {
 		return notified, errors.Join(notifyErr, err)
 	}
+	// A claimed observation is an independent pass with no user request behind
+	// it: open its own run span so the read/disk/save records all correlate.
+	ctx, runSpan := telemetry.StartRun(ctx, "vm.observe")
+	defer runSpan.End()
 	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	observed, readErr := o.source.ObserveState(readCtx, v)
 	cancel()

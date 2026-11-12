@@ -43,20 +43,26 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	w.logTelemetryEvent(ctx, o, v, telemetryEvent, telemetryErr)
 	e = w.advance(ctx, &o, &v)
 	if e != nil {
-		// Record the real failure at the point it becomes durable state. A Save
-		// that then succeeds returns nil below, so this is the only evidence.
-		w.logStepFailed(ctx, o, v, stepForAction(o.Action), e)
+		// A known wait is logged as step.waiting where it is detected, never as a
+		// step failure. Record every other real failure at the point it becomes
+		// durable state: a Save that then succeeds returns nil below.
+		if !errors.Is(e, errWaitingDependency) {
+			w.logStepFailed(ctx, o, v, stepForAction(o.Action), e)
+		}
+		// The durable business reason keeps its existing text; logs use a stable
+		// classification and the redacted error fields for the cause.
 		reason := e.Error()
+		logReason := operationReason(e)
 		o.Reason = reason
 		if errors.Is(e, ErrUnknown) {
 			o.State = "unknown"
-			w.logOperationFailed(ctx, o, v, reason, e)
+			w.logOperationFailed(ctx, o, v, logReason, e)
 		} else if errors.Is(e, ErrOwnership) || errors.Is(e, ErrInvalid) || errors.Is(e, ErrChanged) || errors.Is(e, ErrStartFailed) || errors.Is(e, ErrCloneSourceUnavailable) {
 			o.State = "failed"
-			w.logOperationFailed(ctx, o, v, reason, e)
+			w.logOperationFailed(ctx, o, v, logReason, e)
 		} else {
 			o.State = "running"
-			w.logRetryScheduled(ctx, o, v, reason, o.LeaseUntil)
+			w.logRetryScheduled(ctx, o, v, logReason, o.LeaseUntil)
 		}
 	} else {
 		o.Reason = ""
@@ -319,7 +325,8 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 					}
 					return w.native.Stop(ctx, *v, false)
 				}
-				return ErrDependency
+				w.logStepWaiting(ctx, *o, *v, o.Step, "VM_RESTART_WAITING_OLD_INSTANCE")
+				return errWaitingDependency
 			}
 			if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
 				return e
@@ -331,7 +338,12 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	}
 	if (o.Action == "start" || o.Step == "network-starting") && PrimaryNetworkInterface(*v).PendingRestart() {
 		if !x.Stopped || x.VMI != nil || x.Launcher != nil || x.RelatedPodsPresent || len(x.StateChangeRequests) != 0 {
-			return ErrDependency
+			step := o.Step
+			if step == "" {
+				step = "network-starting"
+			}
+			w.logStepWaiting(ctx, *o, *v, step, "VM_START_WAITING_OLD_INSTANCE")
+			return errWaitingDependency
 		}
 		if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
 			return e

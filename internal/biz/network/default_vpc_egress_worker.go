@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // This worker owns one platform aggregate and its durable lease. It uses the
@@ -30,6 +31,50 @@ func NewDefaultVPCEgressWorker(r DefaultEgressWorkRepository, p DefaultEgressPro
 	}
 	return &DefaultVPCEgressWorker{repository: r, provider: p, owner: id.String(), policy: policy}, nil
 }
+
+// logProviderFailure records the real Kubernetes cause before the worker turns
+// it into a durable reason and backoff.
+func (w *DefaultVPCEgressWorker) logProviderFailure(ctx context.Context, x DefaultEgressWork, action string, err error, reason Reason) {
+	if w.logger == nil || err == nil {
+		return
+	}
+	attrs := []any{
+		"event", "dependency.failed",
+		"dependency", "kubernetes",
+		"action", action,
+		"resource_type", "default_vpc_egress",
+		"resource_id", x.Egress.ID,
+		"cluster_id", x.Egress.Identity.ClusterID,
+		"reason", string(reason),
+	}
+	if x.Egress.LastOperationID != "" {
+		attrs = append(attrs, "operation_id", x.Egress.LastOperationID)
+	}
+	attrs = append(attrs, logfields.ErrorFields(err)...)
+	w.logger.ErrorContext(ctx, "default vpc egress provider failed", attrs...)
+}
+
+// logPersistFailed records a failed progress write separately from the provider
+// failure that preceded it.
+func (w *DefaultVPCEgressWorker) logPersistFailed(ctx context.Context, x DefaultEgressWork, err error) {
+	if w.logger == nil || err == nil {
+		return
+	}
+	attrs := []any{
+		"event", "state.persist_failed",
+		"action", "finish_default_vpc_egress",
+		"step", "persist_progress",
+		"resource_type", "default_vpc_egress",
+		"resource_id", x.Egress.ID,
+		"cluster_id", x.Egress.Identity.ClusterID,
+	}
+	if x.Egress.LastOperationID != "" {
+		attrs = append(attrs, "operation_id", x.Egress.LastOperationID)
+	}
+	attrs = append(attrs, logfields.ErrorFields(err)...)
+	w.logger.ErrorContext(ctx, "default vpc egress state save failed", attrs...)
+}
+
 func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err error) {
 	defer func() {
 		if errors.Is(err, ErrLeaseLost) {
@@ -56,12 +101,18 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 	finish := func() (bool, error) {
 		call, stop := context.WithTimeout(context.WithoutCancel(ctx), w.policy.RequestTimeout)
 		defer stop()
-		return true, w.repository.FinishDefaultVPCEgress(call, x, p)
+		err := w.repository.FinishDefaultVPCEgress(call, x, p)
+		if err != nil {
+			w.logPersistFailed(ctx, x, err)
+		}
+		return true, err
 	}
 	call, stop := context.WithTimeout(ctx, w.policy.RequestTimeout)
 	o, readErr := w.provider.ObserveDefaultVPCEgress(call, x)
 	stop()
 	if readErr != nil {
+		// Keep the real provider cause before it is reduced to a reason/backoff.
+		w.logProviderFailure(ctx, x, "observe_default_vpc_egress", readErr, observationReason(readErr))
 		p.OperationReason = observationReason(readErr)
 		if providerKind(readErr) != ProviderConflict {
 			p.ObservationError = observationReason(readErr)
@@ -90,6 +141,9 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 		stop()
 		p.ClearPending, p.PendingUnknown, p.Delay = false, mutationErr != nil, w.policy.RetryMin
 		if mutationErr != nil {
+			// The mutation failure is the original cause; persist failures below
+			// are a separate state.persist_failed on the same trace.
+			w.logProviderFailure(ctx, x, action, mutationErr, providerReason(mutationErr))
 			p.OperationReason, p.Backoff = providerReason(mutationErr), true
 			if providerKind(mutationErr) != ProviderUncertain {
 				p.ClearPending, p.PendingUnknown = true, false
