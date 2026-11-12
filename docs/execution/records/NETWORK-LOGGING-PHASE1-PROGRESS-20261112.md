@@ -58,8 +58,26 @@
 
 集成套件 `internal/data/network` 全量在 25m 超时；抽查的 DefaultEgress/VirtualSwitch/LB 用例在干净基线树上同样失败，判定为既有环境问题，**未记为 PASS**。
 
-## 六、本次补齐的三个自检缺陷
+## 六、CI 归因（PR #77）
 
+结论：**没有本 PR 新引入的失败**。逐项与 `main@71c2e8eb`（run 43209632269）比对：
+
+| 检查 | PR #77 | main | 判定 |
+|---|---|---|---|
+| `source` | `TestRuntimeLifecycle` | 同 | 既有 |
+| `network (lb)` | 6 个 LB 用例 | 6 个同名用例 | 既有（集合完全一致） |
+| `supply-chain` | govulncheck 65 条标准库告警 | 同 65 条、首条同 | 既有 |
+| `network (core)` | 上述两项 + 2 个 `internal/server` race | main CI 仅 1 项 | **需说明，见下** |
+| `image` | PASS | PASS | — |
+
+`network (core)` 多出的两个失败：
+
+- `TestClusterOpsRequestLoggingRedactsBody`、`TestImageRuntimeMTLSListener`
+- 均为 **data race**：测试主 goroutine 读 `bytes.Buffer.String()`，与 gRPC 服务端 goroutine 写同一 buffer 竞争；两个测试文件（`clusterops_test.go`、`image_runtime_test.go`）本 PR 未改
+- 在干净 `main@71c2e8eb` 独立树（`git archive`）上以 `-race` 复跑：**3/3 稳定失败**；本分支同样 **3/3 失败**。即确定性既有缺陷，与改动无关
+- main CI 未报，是它跑全包集合时该用例失败前先被其他因素中止；单跑必现
+
+## 七、本次补齐的三个自检缺陷
 进度自查时发现并修复，均已加回归测试或复验：
 
 1. **重复 JSON 键**：事件 helper 自带 `action`/`operation_id`/`resource_*`，与 lane 身份字段重复，会让 `verify_logs.py` 判 `duplicate JSON key`。已在 `networkEvent` 内按“首见为准”去重。
@@ -68,12 +86,12 @@
 
 补完第 3 项后重跑：合同校验器仍 PASS（20 条、0 issue），`go build`/`vet`/业务单测全绿。
 
-## 七、明确未做
+## 八、明确未做
 
 - 未部署、未在 10.10.1.66 或任何集群运行；NG01–NG28 真机项全部 NOT_RUN。
 - 未改 Proto / 状态机 / 租约 / 重试 / 幂等 / 授权；未新增 K8s 查询；未恢复退役观察循环与 node-facts；未给 `network_attachments` 加列。
 - 未向远端推送分支、未开 PR。
 
-## 八、详细记录
+## 九、详细记录
 
 逐条证据、行号锚点、集成失败对照表见 [2026-11-12-network-logging-phase1.md](2026-11-12-network-logging-phase1.md)。
