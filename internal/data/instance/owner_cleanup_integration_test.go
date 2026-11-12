@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // The worker, admissions, cleanup fact and retry event all use production
@@ -24,7 +26,7 @@ func TestInstanceOwnerCleanupOutboxDispatchWithoutACC(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &provider{failPVC: true}
-	worker, err := biz.NewWorker(f.repo, p, "owner-cleanup")
+	worker, err := biz.NewWorker(f.repo, p, "owner-cleanup", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +68,16 @@ func TestInstanceOwnerCleanupOutboxDispatchWithoutACC(t *testing.T) {
 	if err != nil || i.QuotaReturned {
 		t.Fatal("lost ACK settled the local ledger", i, err)
 	}
+	// A restarted adapter must also recover the delete's persisted trace from the
+	// outbox itself; no request context survives the restart.
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	const releaseTrace = "4bf92f3577b34da6a3ce929d0e0e4736"
+	if _, err := f.runtime.Exec(ctx, `UPDATE instance.instance_quota_release_outbox
+		SET telemetry_context=jsonb_build_object('traceparent',$3,'origin_trace_id',$4)
+		WHERE tenant_id=$1 AND instance_id=$2`, c.TenantID, c.ID,
+		"00-"+releaseTrace+"-00f067aa0ba902b7-01", releaseTrace); err != nil {
+		t.Fatal(err)
+	}
 	// A new delivery adapter has no Kubernetes provider and must recover only
 	// the persisted event. The retry's request must match the original event.
 	reporter, err = data.NewQuota(f.repo, remote)
@@ -86,6 +98,9 @@ func TestInstanceOwnerCleanupOutboxDispatchWithoutACC(t *testing.T) {
 	i, err = f.repo.Get(ctx, c.TenantID, c.ID)
 	if err != nil || !i.QuotaReturned || remote.calls != 2 || remote.applied != 1 || remote.request.ReleaseEventId != event || remote.request.CreateOperationId != c.OperationID {
 		t.Fatal("ALREADY_APPLIED did not settle the same original event", i, err, remote.calls)
+	}
+	if remote.traceID != releaseTrace {
+		t.Fatalf("restarted delivery did not restore the delete trace: got %q want %q", remote.traceID, releaseTrace)
 	}
 	op, err := f.repo.GetOperation(ctx, c.TenantID, i.LastOperationID)
 	if err != nil || op.State != "completed" {
@@ -119,7 +134,7 @@ func TestInstanceLegacyReleaseOutboxNeedsOwnerCleanupFact(t *testing.T) {
 				t.Fatal(err)
 			}
 			p := &provider{failPVC: true}
-			worker, err := biz.NewWorker(f.repo, p, "legacy-owner")
+			worker, err := biz.NewWorker(f.repo, p, "legacy-owner", discardLogger())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +231,7 @@ func TestInstanceLegacyCleanupFlagsCannotSealAfterFailedObservation(t *testing.T
 				t.Fatal(err)
 			}
 			p := &provider{obs: tc.observation, observeErr: tc.observeErr}
-			worker, err := biz.NewWorker(f.repo, p, "legacy-observation")
+			worker, err := biz.NewWorker(f.repo, p, "legacy-observation", discardLogger())
 			if err != nil {
 				t.Fatal(err)
 			}

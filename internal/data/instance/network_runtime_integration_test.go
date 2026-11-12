@@ -205,7 +205,7 @@ func TestInstanceNetworkOutageBlocksOriginalGPURefundUntilCleanup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker, err := biz.NewWorker(f.repo, &provider{}, "gpu-network-outage")
+	worker, err := biz.NewWorker(f.repo, &provider{}, "gpu-network-outage", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

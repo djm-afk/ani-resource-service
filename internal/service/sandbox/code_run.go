@@ -20,32 +20,32 @@ func codeRunResponse(intent biz.CodeRunIntent) *pb.CodeRun {
 
 func (s *Service) RunCode(ctx context.Context, r *pb.RunCodeRequest) (*pb.RunCodeResponse, error) {
 	if r == nil {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if s.config.CodeRunner == nil {
 		return nil, status.Error(codes.Unavailable, "SANDBOX_CODE_RUN_UNAVAILABLE")
 	}
 	spec, err := biz.NormalizeCodeRun(biz.CodeRunInput{Language: r.Language, Code: r.Code, Stdin: r.Stdin, TimeoutSeconds: int(r.TimeoutSeconds)})
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	intent, err := s.config.CodeRunner.Submit(ctx, biz.CodeRunCommand{TenantID: r.TenantId, SandboxID: r.SandboxId, RunID: r.RunId, IdempotencyKey: r.IdempotencyKey, ExpectedVersion: r.ExpectedVersion, Spec: spec})
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	return &pb.RunCodeResponse{Run: codeRunResponse(intent)}, nil
 }
 
 func (s *Service) GetCodeRun(ctx context.Context, r *pb.GetCodeRunRequest) (*pb.GetCodeRunResponse, error) {
 	if r == nil {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if s.config.CodeRunner == nil {
 		return nil, status.Error(codes.Unavailable, "SANDBOX_CODE_RUN_UNAVAILABLE")
 	}
 	intent, err := s.config.CodeRunner.Get(ctx, r.TenantId, r.SandboxId, r.RunId)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	return &pb.GetCodeRunResponse{Run: codeRunResponse(intent)}, nil
 }

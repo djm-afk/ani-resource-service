@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -27,6 +28,9 @@ type stateCache struct {
 	index      cache.Indexer
 	valid      bool // current standard List/Watch connection, not an expiring proof
 	connection uint64
+	// watchErr is the real cause reported by the reflector. It is cleared when a
+	// new watch connects, so an unavailable read can carry its actual cause.
+	watchErr error
 }
 
 // StateObservation uses standard informer List/Watch, independently of lifecycle
@@ -83,6 +87,9 @@ func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotif
 				r.connection++
 				connection := r.connection
 				r.valid = err == nil
+				if err == nil {
+					r.watchErr = nil
+				}
 				o.overflow = true
 				o.mu.Unlock()
 				if err != nil {
@@ -104,11 +111,12 @@ func newStateObservation(client dynamic.Interface, notifier biz.ObservationNotif
 			UpdateFunc: func(old, value any) { o.changed(r, old, value) },
 			DeleteFunc: func(value any) { o.changed(r, value, nil) },
 		})
-		_ = informer.SetWatchErrorHandler(func(_ *cache.Reflector, _ error) {
+		_ = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
 			o.mu.Lock()
 			// Reflector owns retries. Reads report known source unavailability
-			// until its standard List/Watch reconnects.
+			// until its standard List/Watch reconnects, and keep the real cause.
 			r.valid = false
+			r.watchErr = err
 			o.overflow = true
 			o.mu.Unlock()
 		})
@@ -438,8 +446,9 @@ func (o *StateObservation) ObserveState(ctx context.Context, v biz.VM) (biz.Obse
 	}
 	o.mu.Lock()
 	if !o.synced {
+		cause := o.watchErrorLocked()
 		o.mu.Unlock()
-		return unknown, biz.ErrObservationUnavailable
+		return unknown, observationUnavailable(cause)
 	}
 	key := v.Spec.Namespace + "/" + v.Native.Name
 	root, exists, _ := o.resources[0].index.GetByKey(key)
@@ -452,8 +461,12 @@ func (o *StateObservation) ObserveState(ctx context.Context, v biz.VM) (biz.Obse
 	x, err := runtimeObservation(v, root.(*unstructured.Unstructured), instance, pods)
 	for _, r := range o.resources {
 		if !r.valid {
+			cause := r.watchErr
+			if cause == nil {
+				cause = fmt.Errorf("watch for %s is not connected", r.gvr.Resource)
+			}
 			o.mu.Unlock()
-			return unknown, biz.ErrObservationUnavailable
+			return unknown, observationUnavailable(cause)
 		}
 	}
 	o.mu.Unlock()
@@ -462,6 +475,25 @@ func (o *StateObservation) ObserveState(ctx context.Context, v biz.VM) (biz.Obse
 	}
 	x.ObservedAt = time.Now().UTC()
 	return x, nil
+}
+
+// watchErrorLocked returns the first real reflector cause while o.mu is held.
+func (o *StateObservation) watchErrorLocked() error {
+	for _, r := range o.resources {
+		if !r.valid && r.watchErr != nil {
+			return r.watchErr
+		}
+	}
+	return nil
+}
+
+// observationUnavailable keeps the existing business classification while
+// carrying the actual List/Watch cause for the observer's read-error record.
+func observationUnavailable(cause error) error {
+	if cause == nil {
+		return biz.ErrObservationUnavailable
+	}
+	return fmt.Errorf("%w: %w", biz.ErrObservationUnavailable, cause)
 }
 
 func nativePowerState(phase string) string {

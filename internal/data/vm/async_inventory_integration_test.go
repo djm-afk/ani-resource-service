@@ -18,6 +18,7 @@ import (
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
+	"io"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/rest"
 	ktesting "k8s.io/client-go/testing"
+	"log/slog"
 )
 
 type inventoryTestCompute struct{ service.ComputeResolver }
@@ -152,7 +154,7 @@ func TestStoppedCreateInventoryRefreshAfterIndependentStart(t *testing.T) {
 			if _, err = db.Owner.Exec(ctx, "UPDATE vm.operations SET lease_until=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE tenant_id=$1 AND id=$2", v.TenantID, createID); err != nil {
 				t.Fatal(err)
 			}
-			worker, err := biz.NewWorker(p, native, powerVMNetwork{})
+			worker, err := biz.NewWorker(p, native, powerVMNetwork{}, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -221,7 +223,7 @@ func TestStoppedCreateInventoryRefreshAfterIndependentStart(t *testing.T) {
 			if err = observation.resources[1].index.Add(instance); err != nil {
 				t.Fatal(err)
 			}
-			observer, err := biz.NewObserver(p, observation)
+			observer, err := biz.NewObserver(p, observation, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -377,3 +379,5 @@ func TestObservationPreparationFencesRemapAndPreservesIntentFields(t *testing.T)
 		t.Fatal("old preparation replaced restore mapping", saved, err)
 	}
 }
+
+func discardLoggerVMLane() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

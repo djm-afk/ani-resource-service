@@ -306,7 +306,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 		t.Fatal(err)
 	}
 	configureVerticalPullSecret(t, f, c, boundary, notebook)
-	worker, err := biz.NewWorker(f.repo, notebook, "vertical-instance")
+	worker, err := biz.NewWorker(f.repo, notebook, "vertical-instance", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func runInstanceNetworkVertical(t *testing.T, confirmFaults bool) {
 		t.Fatal("automatic Pod recreation was not observed")
 	}
 	// Fresh workers consume the saved submission instead of rebuilding identity.
-	worker, err = biz.NewWorker(f.repo, notebook, "vertical-after-restart")
+	worker, err = biz.NewWorker(f.repo, notebook, "vertical-after-restart", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -81,7 +81,7 @@ func lifecycleVersionRetryFixture(t *testing.T, phase string) (*lifecycleDeadlin
 	}
 	repo.instance.RuntimeDesired = phaseTarget(op.Execution)
 	provider := &lifecycleVersionRetryProvider{base}
-	worker, err := NewWorker(repo, provider, "lifecycle-version-retry-worker")
+	worker, err := NewWorker(repo, provider, "lifecycle-version-retry-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,8 @@ func TestAdminServerRunsKratosMiddlewareChain(t *testing.T) {
 		&conf.Server_Admin{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(time.Second)},
 		readiness,
 		observability.Gatherer(),
-		observability.ServerMiddleware(logger)...,
+		logger,
+		observability.AdminMiddleware(logger)...,
 	)
 	router := admin.Route("/")
 	router.GET("metadata", func(ctx kratoshttp.Context) error {

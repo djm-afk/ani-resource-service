@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	"io"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 	ktesting "k8s.io/client-go/testing"
+	"log/slog"
 )
 
 // These tests compose the real Worker and KubernetesProvider. This repository
@@ -55,7 +57,7 @@ func (r *providerWorkerRepository) Finish(_ context.Context, _ biz.Work, progres
 func newProviderWorker(t *testing.T, provider *KubernetesProvider, s biz.Sandbox) (*biz.Worker, *providerWorkerRepository) {
 	t.Helper()
 	repo := &providerWorkerRepository{state: s}
-	worker, err := biz.NewWorker(repo, provider, "provider-worker-test", time.Minute)
+	worker, err := biz.NewWorker(repo, provider, "provider-worker-test", time.Minute, discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,3 +483,5 @@ func TestProviderWorkerPVListFailureStopsPodWithoutReplacingMissingWorkspace(t *
 		t.Fatalf("Resume replaced the missing original workspace: %#v", repo.state)
 	}
 }
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

@@ -65,7 +65,7 @@ func insertEgressAcceptance(ctx context.Context, q *sqlcgen.Queries, i biz.Egres
 	} else {
 		snat = meta.ID
 	}
-	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: i.TenantID, EipID: eip, SnatID: snat, OperationID: meta.LastOperationID, Kind: i.Kind, CreatedAt: now}); err != nil {
+	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: i.TenantID, EipID: eip, SnatID: snat, OperationID: meta.LastOperationID, Kind: i.Kind, CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return databaseFailure(err)
 	}
 	if newResource {
@@ -377,7 +377,7 @@ func deletionRecords(ctx context.Context, q *sqlcgen.Queries, tenant, id, kind, 
 	} else {
 		snat = id
 	}
-	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, EipID: eip, SnatID: snat, OperationID: opID, Kind: "delete_" + kind, CreatedAt: now}); err != nil {
+	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, EipID: eip, SnatID: snat, OperationID: opID, Kind: "delete_" + kind, CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return databaseFailure(err)
 	}
 	if err := affected(q.ScheduleDeletion(ctx, sqlcgen.ScheduleDeletionParams{TenantID: tenant, ResourceID: id})); err != nil {

@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 // VirtualSwitch is platform metadata. Its empty binding is a valid persisted
@@ -135,6 +137,11 @@ type VirtualSwitchWork struct {
 	Owner                    string
 	Epoch, ClaimedGeneration int64
 	Now                      time.Time
+	// TelemetryContext is the active operation's persisted trace. It is logging
+	// metadata only and never enters fingerprints or the resource snapshot.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error
 }
 
 type VirtualSwitchWorkRepository interface {

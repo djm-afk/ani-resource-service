@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 // DefaultVPCIdentity is a deployment guard. It is never populated from an API
@@ -95,6 +97,11 @@ type DefaultEgressWork struct {
 	Owner, EIPBindingID, SnatBindingID     string
 	Epoch, PoolRevision, ClaimedGeneration int64
 	Now                                    time.Time
+	// TelemetryContext is the active operation's persisted trace. Logging
+	// metadata only; it never enters fingerprints or the resource snapshot.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error
 }
 type DefaultEgressObservation struct {
 	EIPExists, SnatExists    bool

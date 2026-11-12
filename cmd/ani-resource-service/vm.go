@@ -179,7 +179,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 			return v.Spec.ClusterID, v.Spec.Namespace, true, nil
 		})
 	}
-	worker, e := biz.NewWorker(repo, native, networkPort)
+	worker, e := biz.NewWorker(repo, native, networkPort, slog.Default())
 	if e != nil {
 		return nil, nil, e
 	}
@@ -188,7 +188,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 	if e != nil {
 		return nil, nil, e
 	}
-	component.observer, e = biz.NewObserver(repo, component.observation)
+	component.observer, e = biz.NewObserver(repo, component.observation, slog.Default())
 	if e != nil {
 		return nil, nil, e
 	}

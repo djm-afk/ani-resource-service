@@ -191,14 +191,15 @@ type NetworkDefaultVpcEgressIdempotency struct {
 }
 
 type NetworkDefaultVpcEgressOperation struct {
-	OperationID string
-	ResourceID  string
-	Kind        string
-	State       string
-	Reason      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	Reason           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	TelemetryContext []byte
 }
 
 type NetworkDeviceAdoption struct {
@@ -504,23 +505,24 @@ type NetworkLoadBalancer struct {
 }
 
 type NetworkOperation struct {
-	TenantID       string
-	OperationID    string
-	VpcID          *string
-	Kind           string
-	State          string
-	Reason         string
-	Attempt        int32
-	ExecutionEpoch int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	CompletedAt    *time.Time
-	NextAttemptAt  *time.Time
-	SubnetID       *string
-	EipID          *string
-	SnatID         *string
-	LbID           *string
-	VnicID         *string
+	TenantID         string
+	OperationID      string
+	VpcID            *string
+	Kind             string
+	State            string
+	Reason           string
+	Attempt          int32
+	ExecutionEpoch   int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	NextAttemptAt    *time.Time
+	SubnetID         *string
+	EipID            *string
+	SnatID           *string
+	LbID             *string
+	VnicID           *string
+	TelemetryContext []byte
 }
 
 type NetworkPlatformHistory struct {
@@ -756,12 +758,13 @@ type NetworkSecurityGroupIdempotency struct {
 }
 
 type NetworkSecurityGroupOperation struct {
-	TenantID    string
-	OperationID string
-	ActorRef    string
-	CallerRef   string
-	Intent      []byte
-	Payload     []byte
+	TenantID         string
+	OperationID      string
+	ActorRef         string
+	CallerRef        string
+	Intent           []byte
+	Payload          []byte
+	TelemetryContext []byte
 }
 
 type NetworkSecurityGroupReconciliation struct {
@@ -889,14 +892,15 @@ type NetworkVirtualSwitchIdempotency struct {
 }
 
 type NetworkVirtualSwitchOperation struct {
-	OperationID string
-	ResourceID  string
-	Kind        string
-	State       string
-	Reason      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
+	OperationID      string
+	ResourceID       string
+	Kind             string
+	State            string
+	Reason           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
+	TelemetryContext []byte
 }
 
 type NetworkVirtualSwitchReconciliation struct {

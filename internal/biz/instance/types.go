@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var (
@@ -213,6 +215,11 @@ type Operation struct {
 	Version                                                           int64
 	ACK                                                               ACK
 	CreatedAt                                                         time.Time
+	// TelemetryContext is independent logging metadata restored by the worker.
+	// It never enters request hashes, ACKs or execution specs.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error
 }
 type Instance struct {
 	NetworkInterfaces                                                  []NetworkInterface

@@ -73,7 +73,7 @@ func TestSecurityGroupsWorkerRetainsCurrentAndReferencesUntilRuntimeConfirmed(t 
 	repo := &sgWorkerRepository{instance: i}
 	provider := &sgWorkerProvider{err: ErrVersion}
 	network := &sgWorkerNetwork{}
-	worker, err := NewWorker(repo, provider, "sg-test")
+	worker, err := NewWorker(repo, provider, "sg-test", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestSecurityGroupsWorkerDependencyFailureDoesNotMutateRuntime(t *testing.T)
 	repo := &sgWorkerRepository{instance: Instance{Spec: Spec{Network: &NetworkSelection{}}, ActiveOperation: &Operation{ID: "op", Action: "set-security-groups", Execution: &Execution{SchemaVersion: 1}}}}
 	provider := &sgWorkerProvider{}
 	network := &sgWorkerNetwork{syncErr: ErrNetworkNotFound}
-	worker, _ := NewWorker(repo, provider, "sg-test")
+	worker, _ := NewWorker(repo, provider, "sg-test", discardLogger())
 	_ = worker.UseSecurityGroups(network)
 	if _, err := worker.Step(context.Background()); err != nil {
 		t.Fatal(err)

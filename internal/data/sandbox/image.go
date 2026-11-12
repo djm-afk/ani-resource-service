@@ -2,11 +2,13 @@ package sandbox
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
 	image "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/image"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // ImageRuntime supplies the same image and pull material used by the provider.
@@ -35,7 +37,13 @@ func (i Image) ResolveSandboxImageID(ctx context.Context, tenant, id, scope stri
 	}
 	ctx = image.WithCaller(ctx, image.Caller{Kind: image.RuntimeCaller, Subject: "ani-resource-service", TenantID: tenant})
 	resolved, err := i.Runtime.ResolveImageForWorkload(ctx, image.ResolveImage{TenantID: tenant, ImageID: id, Scope: image.ImageScope(scope), TargetPlatform: image.ImagePlatform{OS: "linux", Architecture: "amd64"}})
-	return i.checkedImage(ctx, tenant, resolved, err)
+	ref, checked := i.checkedImage(ctx, tenant, resolved, err)
+	if checked != nil {
+		attrs := []any{"event", "step.failed", "step", "resolve_image", "result", "failed", "tenant", tenant, "image", id, "scope", scope}
+		attrs = append(attrs, logfields.ErrorFields(checked)...)
+		slog.Default().ErrorContext(ctx, "sandbox image resolution failed", attrs...)
+	}
+	return ref, checked
 }
 
 func (i Image) checkedImage(ctx context.Context, tenant string, resolved image.ResolvedImage, err error) (string, error) {

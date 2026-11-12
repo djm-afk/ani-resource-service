@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 // The row lock orders close with every provider-write intent, including a
@@ -41,7 +42,7 @@ func (p *Postgres) setTenantSpacePhase(ctx context.Context, tenant, operation st
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1::text,84015011))", tenant); err != nil {
 		return biz.TenantSpace{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO sandbox.tenant_spaces(tenant_id,operation_id,phase) VALUES($1,$2,$3) ON CONFLICT (tenant_id) DO NOTHING`, tenant, operation, phase); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO sandbox.tenant_spaces(tenant_id,operation_id,phase,telemetry_context) VALUES($1,$2,$3,$4) ON CONFLICT (tenant_id) DO NOTHING`, tenant, operation, phase, telemetryJSON(ctx)); err != nil {
 		return biz.TenantSpace{}, err
 	}
 	space, err := readTenantSpace(ctx, tx, tenant, true)
@@ -82,16 +83,25 @@ type tenantSpaceQuerier interface {
 }
 
 func readTenantSpace(ctx context.Context, q tenantSpaceQuerier, tenant string, lock bool) (biz.TenantSpace, error) {
-	query := `SELECT tenant_id::text,operation_id::text,phase,COALESCE(pending_id::text,''),COALESCE(pending_kind,''),COALESCE(namespace_uid,'') FROM sandbox.tenant_spaces WHERE tenant_id=$1`
+	query := `SELECT tenant_id::text,operation_id::text,phase,COALESCE(pending_id::text,''),COALESCE(pending_kind,''),COALESCE(namespace_uid,''),telemetry_context FROM sandbox.tenant_spaces WHERE tenant_id=$1`
 	if lock {
 		query += " FOR UPDATE"
 	}
 	var space biz.TenantSpace
-	err := q.QueryRow(ctx, query, tenant).Scan(&space.TenantID, &space.OperationID, &space.Phase, &space.PendingID, &space.PendingKind, &space.NamespaceUID)
+	var telemetryRaw []byte
+	err := q.QueryRow(ctx, query, tenant).Scan(&space.TenantID, &space.OperationID, &space.Phase, &space.PendingID, &space.PendingKind, &space.NamespaceUID, &telemetryRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return biz.TenantSpace{}, biz.ErrNotFound
 	}
-	return space, err
+	if err != nil {
+		return space, err
+	}
+	if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+		space.TelemetryContextError = te
+	} else {
+		space.TelemetryContext = tc
+	}
+	return space, nil
 }
 
 func (p *Postgres) GetTenantSpace(ctx context.Context, tenant string) (biz.TenantSpace, error) {

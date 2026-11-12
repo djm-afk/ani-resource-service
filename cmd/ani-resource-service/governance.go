@@ -22,6 +22,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	networkService "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // Explicit governance composition: full worker so tenant writes are executed,
@@ -106,7 +107,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	defer func() {
 		if err := observability.Shutdown(context.Background()); err != nil {
-			logger.Error("observability shutdown", "error", err)
+			logger.Error("observability shutdown", logfields.ErrorFields(err)...)
 		}
 	}()
 	if err = observability.RegisterObservation(observation); err != nil {
@@ -115,6 +116,9 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	worker, err := biz.NewWorker(repository, provider, uuid.NewString(), policy, func(ctx context.Context, work biz.Work, progress biz.Progress, err error) {
 		observability.ObserveWork(ctx, logger, work, progress, err)
 	})
+	if err == nil {
+		worker.SetLogger(logger)
+	}
 	if err != nil {
 		return err
 	}
@@ -127,7 +131,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 		return err
 	}
 	attachments := biz.NewAttachments(repository)
-	fallback, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint)
+	fallback, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint, logger)
 	if err != nil {
 		return err
 	}
@@ -142,6 +146,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	attachments.UseConsumerDirectory(networkConsumerDirectory(instances, vms))
 	defer vms.Close()
+	observability.SetAttachmentLogger(logger)
 	attachmentWorker, err := biz.NewAttachmentWorker(repository, consumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
 	if err != nil {
 		return err
@@ -152,12 +157,16 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	switchWorker.SetLogger(logger)
 
-	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy)
+	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy, logger)
 	if err != nil {
 		return err
 	}
 	securityGroups, securityGroupWorker, err := wireSecurityGroups(repository, provider, instances, vms, policy)
+	if err == nil {
+		securityGroupWorker.SetLogger(logger)
+	}
 	if err != nil {
 		return err
 	}
@@ -176,7 +185,8 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 		}
 	}
 	middlewares := observability.ServerMiddleware(logger)
-	gs, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, middlewares...)
+	adminMiddlewares := observability.AdminMiddleware(logger)
+	gs, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, logger, middlewares...)
 	if err != nil {
 		return err
 	}
@@ -217,12 +227,12 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	storagev1.RegisterStorageServiceServer(gs, storageComponents.service)
 	storageRecovery = storageComponents.worker
 	configured = true
-	admin := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), middlewares...)
+	admin := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), logger, adminMiddlewares...)
 	servers := []transport.Server{gs, admin, observation, execution}
 	if storageComponents.worker != nil {
 		servers = append(servers, storageComponents.worker)
 	}
-	imageRuntime, err := openImageRuntime(images, middlewares...)
+	imageRuntime, err := openImageRuntime(images, logger, middlewares...)
 	if err != nil {
 		return err
 	}
@@ -243,9 +253,18 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	return kratos.New(kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(servers...),
-		kratos.AfterStart(func(context.Context) error { readiness.Set(true); return nil }),
-		kratos.BeforeStop(func(context.Context) error { readiness.Set(false); return nil }),
+		kratos.AfterStart(func(context.Context) error {
+			readiness.Set(true)
+			logger.Info("service ready", "event", "process.ready")
+			return nil
+		}),
+		kratos.BeforeStop(func(context.Context) error {
+			readiness.Set(false)
+			logger.Info("service stopping", "event", "process.stopping")
+			return nil
+		}),
 		kratos.AfterStop(func(ctx context.Context) error {
+			logger.Info("service stopped", "event", "process.stopped")
 			repository.Close()
 			return nil
 		}),

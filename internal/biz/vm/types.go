@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var (
@@ -35,6 +37,16 @@ var (
 	// yet. It stays retryable and must never be treated as "cannot clone".
 	ErrCloneSourceNotReady = errors.New("VM_CLONE_SOURCE_NOT_READY")
 )
+
+// errWaitingDependency marks an expected wait for an old instance to exit. Its
+// message matches ErrDependency so the durable reason and the retry branch stay
+// unchanged; the worker only uses it to emit step.waiting instead of step.failed.
+var errWaitingDependency = &waitingDependencyError{}
+
+type waitingDependencyError struct{}
+
+func (*waitingDependencyError) Error() string { return ErrDependency.Error() }
+func (*waitingDependencyError) Unwrap() error { return ErrDependency }
 
 // NativeNotSubmittedError confirms that a native command did not reach its
 // submission boundary. It must never describe a lost or rejected PUT response.
@@ -126,7 +138,7 @@ type Spec struct {
 	Driver                                                                            *Source
 	Network                                                                           NetworkSelection
 	DNS                                                                               *DNS
-	BootDevice                                                                         string
+	BootDevice                                                                        string
 	StartAfterCreate                                                                  bool
 	InitialDisks                                                                      []Disk
 	GuestInitialization                                                               *GuestInitialization
@@ -216,6 +228,11 @@ type Operation struct {
 	Lease                                          string
 	LeaseUntil                                     time.Time
 	ObservedAt                                     time.Time
+	// TelemetryContext is independent logging metadata persisted in the
+	// operation record. It never enters the request digest or intent.
+	TelemetryContext telemetry.TelemetryContext `json:"telemetry_context,omitempty"`
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error `json:"-"`
 }
 type Mutation struct {
 	Action       string

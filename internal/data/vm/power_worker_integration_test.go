@@ -65,7 +65,7 @@ func TestVMPowerUnknownRecoveryDoesNotRepeatRestart(t *testing.T) {
 		t.Fatal(e)
 	}
 	native := &powerVMNative{ref: biz.ObjectRef{Kind: "VirtualMachine", UID: uuid.NewString(), Name: "vm-power"}}
-	w, e := biz.NewWorker(p, native, powerVMNetwork{})
+	w, e := biz.NewWorker(p, native, powerVMNetwork{}, discardLoggerVMLane())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -96,7 +96,7 @@ func TestVMPowerUnknownRecoveryDoesNotRepeatRestart(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer reopened.Close()
-	w, e = biz.NewWorker(reopened, native, powerVMNetwork{})
+	w, e = biz.NewWorker(reopened, native, powerVMNetwork{}, discardLoggerVMLane())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -162,7 +162,7 @@ func TestVMStartPreflightFailureRetriesOriginalOperation(t *testing.T) {
 			}
 			n := &preflightStartNative{failedStartNative: failedStartNative{ref: biz.ObjectRef{Kind: "VirtualMachine", Name: "vm-" + id, UID: uuid.NewString()}}, startErr: &biz.NativeNotSubmittedError{Err: biz.ErrBusy}}
 			n.observation = biz.Observation{VM: n.ref, State: "Stopped", Stopped: true}
-			w, err := biz.NewWorker(p, n, powerVMNetwork{})
+			w, err := biz.NewWorker(p, n, powerVMNetwork{}, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -202,7 +202,7 @@ func TestVMStartPreflightFailureRetriesOriginalOperation(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer reopened.Close()
-			w, err = biz.NewWorker(reopened, n, powerVMNetwork{})
+			w, err = biz.NewWorker(reopened, n, powerVMNetwork{}, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -261,7 +261,7 @@ func TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending(t *test
 			}
 			native := &failedStartNative{ref: biz.ObjectRef{Kind: "VirtualMachine", Namespace: "tenant-start", Name: "vm-" + id, UID: uuid.NewString()}}
 			native.observation = biz.Observation{VM: native.ref, Stopped: true, State: "Stopped"}
-			worker, err := biz.NewWorker(p, native, powerVMNetwork{})
+			worker, err := biz.NewWorker(p, native, powerVMNetwork{}, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -331,7 +331,7 @@ func TestVMStartTerminalFailureReleasesOriginalOperationWithoutResending(t *test
 				t.Fatal(err)
 			}
 			defer reopened.Close()
-			worker, err = biz.NewWorker(reopened, native, powerVMNetwork{})
+			worker, err = biz.NewWorker(reopened, native, powerVMNetwork{}, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}

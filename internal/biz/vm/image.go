@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var (
@@ -98,6 +100,13 @@ type Image struct {
 	AttemptCount                                            int
 	CreatedBy                                               string
 	CreatedAt, UpdatedAt                                    time.Time
+	// TelemetryContext is independent logging metadata restored by the image
+	// worker. It never enters the request digest, version or idempotency key.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker
+	// without affecting the business fields. It is memory-only and never
+	// serialized with the record.
+	TelemetryContextError error `json:"-"`
 }
 
 // ImageInitializationCapabilityFor is the single projection of the declared

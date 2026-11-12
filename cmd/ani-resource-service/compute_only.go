@@ -12,6 +12,7 @@ import (
 	computev1 "github.com/zhangzhe-ctrl/ani-resource-service/api/compute/v1"
 	conf "github.com/zhangzhe-ctrl/ani-resource-service/internal/conf/v1"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // Compute has no workload or network provider dependency. Its explicit
@@ -63,18 +64,19 @@ func buildComputeOnlyApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := obs.Shutdown(ctx); err != nil {
-				logger.Error("compute observability shutdown", "error", err)
+				logger.Error("compute observability shutdown", logfields.ErrorFields(err)...)
 			}
 		})
 	}
 	middlewares := obs.ServerMiddleware(logger)
-	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, middlewares...)
+	adminMiddlewares := obs.AdminMiddleware(logger)
+	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, logger, middlewares...)
 	if err != nil {
 		closeApp()
 		return nil, nil, err
 	}
 	computev1.RegisterComputePresetServiceServer(grpcServer, compute.service)
-	admin := server.NewAdminServer(bc.Server.Admin, readiness, obs.Gatherer(), middlewares...)
+	admin := server.NewAdminServer(bc.Server.Admin, readiness, obs.Gatherer(), logger, adminMiddlewares...)
 	app := kratos.New(
 		kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(grpcServer, admin),

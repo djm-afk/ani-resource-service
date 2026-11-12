@@ -19,6 +19,7 @@ import (
 	storagedata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/storage"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/service/sandbox"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/client-go/dynamic"
@@ -82,7 +83,7 @@ func openSandbox(ctx context.Context, network *conf.Network, compute *computeCom
 func openSandboxOnce(ctx context.Context, network *conf.Network, compute *computeComponents, images *imageComponents, logger *slog.Logger) (*sandboxComponents, error) {
 	unavailable := func(reason string, err error) (*sandboxComponents, error) {
 		if err != nil {
-			logger.Warn("sandbox unavailable", "reason", reason, "error", err)
+			logger.Warn("sandbox unavailable", append([]any{"reason", reason}, logfields.ErrorFields(err)...)...)
 		} else {
 			logger.Warn("sandbox unavailable", "reason", reason)
 		}
@@ -202,7 +203,7 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 		repo.Close()
 		return unavailable("sandbox service initialization failed", err)
 	}
-	worker, err := biz.NewWorker(repo, provider, uuid.NewString(), 45*time.Second)
+	worker, err := biz.NewWorker(repo, provider, uuid.NewString(), 45*time.Second, logger)
 	if err != nil {
 		repo.Close()
 		return unavailable("sandbox worker initialization failed", err)

@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 const (
@@ -160,6 +165,7 @@ type Worker struct {
 	owner      string
 	policy     WorkerPolicy
 	observer   func(context.Context, Work, Progress, error)
+	logger     *slog.Logger
 }
 
 func NewWorker(repository WorkRepository, provider ResourceProvider, owner string, policy WorkerPolicy, observers ...func(context.Context, Work, Progress, error)) (*Worker, error) {
@@ -178,6 +184,57 @@ func NewWorker(repository WorkRepository, provider ResourceProvider, owner strin
 	return worker, nil
 }
 
+// SetLogger attaches the structured logger used for telemetry-context events.
+// Logging must not be a construction requirement: an existing lane that has no
+// logger still runs, it just cannot report the metadata failure.
+func (w *Worker) SetLogger(logger *slog.Logger) { w.logger = logger }
+
+// logTelemetryUnavailable reports a missing/malformed persisted trace once. The
+// caller continues on the run span it just opened.
+func (w *Worker) logTelemetryUnavailable(ctx context.Context, work Work, event string, err error) {
+	logTelemetryEvent(ctx, w.logger, event, []any{"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID, "tenant_id", work.Resource.TenantID, "operation_id", work.Operation.ID}, err)
+}
+
+// logTelemetryEvent is the shared reporter for every network lane. Callers pass
+// the identity fields they actually hold; empty ones are dropped so no lane
+// invents an ID. A nil logger simply skips the record.
+func logTelemetryEvent(ctx context.Context, logger *slog.Logger, event string, identity []any, err error) {
+	if logger == nil || event == "" {
+		return
+	}
+	kv := []any{"event", event}
+	for i := 0; i+1 < len(identity); i += 2 {
+		key, ok := identity[i].(string)
+		if !ok {
+			continue
+		}
+		if value, ok := identity[i+1].(string); ok && value == "" {
+			continue
+		}
+		kv = append(kv, key, identity[i+1])
+	}
+	if event == "telemetry.context_invalid" {
+		kv = append(kv, "reason", "TELEMETRY_CONTEXT_INVALID")
+		if err != nil {
+			kv = append(kv, logfields.ErrorFields(err)...)
+		}
+	} else {
+		kv = append(kv, "reason", "TELEMETRY_CONTEXT_MISSING")
+	}
+	logger.ErrorContext(ctx, "network telemetry context unavailable", kv...)
+}
+
+// startNetworkRun resumes the accepted operation's trace only while that
+// operation is active. A terminal record is an independent observation and
+// starts a fresh trace so it never inherits the finished operation's.
+func startNetworkRun(ctx context.Context, work Work, runName string) (context.Context, trace.Span, string, error) {
+	if work.ActiveOperation {
+		return telemetry.Resume(ctx, work.Operation.TelemetryContext, work.Operation.TelemetryContextError, runName)
+	}
+	ctx, span := telemetry.StartRun(ctx, runName)
+	return ctx, span, "", nil
+}
+
 // Step advances at most one durable resource. Callers may stop forever after
 // this returns; unfinished work and its due time remain in the repository.
 func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
@@ -191,6 +248,20 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	work, found, err := w.repository.Claim(ctx, w.owner, w.policy.Lease)
 	if err != nil || !found {
 		return found, err
+	}
+	// An active operation resumes the trace captured when it was accepted; this
+	// pass still gets its own span. A missing/invalid value is reported on that
+	// new span and the original business work continues. A terminal record is an
+	// independent observation, so it starts a fresh trace instead of inheriting
+	// the finished operation's.
+	runName := "network." + work.Resource.Kind
+	if work.Resource.Kind == "" {
+		runName = "network.observe"
+	}
+	ctx, runSpan, telemetryEvent, telemetryErr := startNetworkRun(ctx, work, runName)
+	defer runSpan.End()
+	if telemetryEvent != "" {
+		w.logTelemetryUnavailable(ctx, work, telemetryEvent, telemetryErr)
 	}
 	if work.PlatformNetwork != nil {
 		return true, w.stepPlatformNetwork(ctx, work)

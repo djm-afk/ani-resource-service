@@ -98,7 +98,7 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 	if err != nil {
 		return biz.Subnet{}, databaseFailure(err)
 	}
-	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: intent.TenantID, SubnetID: id, OperationID: opID, Kind: "create_subnet", CreatedAt: now}); err != nil {
+	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: intent.TenantID, SubnetID: id, OperationID: opID, Kind: "create_subnet", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.Subnet{}, databaseFailure(err)
 	}
 	if err := q.InsertReconciliation(ctx, sqlcgen.InsertReconciliationParams{TenantID: intent.TenantID, SubnetID: id, NextRunAt: now}); err != nil {
@@ -222,7 +222,7 @@ func (p *Postgres) DeleteSubnet(ctx context.Context, tenant, id string) (biz.Sub
 		return biz.Subnet{}, databaseFailure(err)
 	}
 	opID := uuid.NewString()
-	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, SubnetID: id, OperationID: opID, Kind: "delete_subnet", CreatedAt: now}); err != nil {
+	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, SubnetID: id, OperationID: opID, Kind: "delete_subnet", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.Subnet{}, databaseFailure(err)
 	}
 	row, err = q.AdmitSubnetDeletion(ctx, sqlcgen.AdmitSubnetDeletionParams{TenantID: tenant, SubnetID: id, Version: row.Version, OperationID: opID})

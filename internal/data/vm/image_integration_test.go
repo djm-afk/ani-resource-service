@@ -125,7 +125,7 @@ func TestVMImageMigrateIsRepeatableAndGrantsRuntimeAccess(t *testing.T) {
 		versions = append(versions, v)
 	}
 	rows.Close()
-	wantVersions := []int64{1, 2, 3, 4, 6, 7, 8}
+	wantVersions := []int64{1, 2, 3, 4, 6, 7, 8, 9}
 	if !slices.Equal(versions, wantVersions) {
 		t.Fatalf("schema_version = %v, want %v", versions, wantVersions)
 	}

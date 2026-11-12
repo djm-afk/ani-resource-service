@@ -16,6 +16,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 type observedObjectKey struct {
@@ -84,7 +86,7 @@ func (p *KCProvider) EnableObservation(requestTimeout time.Duration) (*KCObserva
 		}
 		if err = informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
 			observer.watchErrors.Add(1)
-			slog.Warn("network object watch failed", "resource", gvr.String(), "error", err)
+			slog.Warn("network object watch failed", append([]any{"resource", gvr.String()}, logfields.ErrorFields(err)...)...)
 		}); err != nil {
 			observer.queue.ShutDown()
 			return nil, err

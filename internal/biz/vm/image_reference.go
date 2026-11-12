@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 const (
@@ -40,6 +42,7 @@ func NewReferenceWorker(repo ImageRepository, vm Repository, native ImageNativeP
 func (w *ReferenceWorker) Step(ctx context.Context) (bool, error) {
 	refs, e := w.reference.ListHeldReferences(ctx, 50)
 	if e != nil {
+		w.logReferenceFailed(ctx, "", "", "list_held_references", e)
 		return false, e
 	}
 	work := false
@@ -51,7 +54,8 @@ func (w *ReferenceWorker) Step(ctx context.Context) (bool, error) {
 			if errors.Is(e, ErrNotFound) || errors.Is(e, ErrDependency) || errors.Is(e, ErrLease) || errors.Is(e, ErrImageVersion) {
 				continue
 			}
-			w.logger.Warn("VM image reference check failed", "image_id", ref.ImageID, "vm_id", ref.VMID, "reason", imageFailureReason(e))
+			// An unexpected observation failure is a real error, not just a reason.
+			w.logReferenceFailed(ctx, ref.ImageID, ref.VMID, "settle_reference", e)
 			continue
 		}
 		if changed {
@@ -86,6 +90,8 @@ func (w *ReferenceWorker) settle(ctx context.Context, ref ImageReference) (bool,
 func (w *ReferenceWorker) settleClone(ctx context.Context, i Image, v VM, ref ImageReference) (bool, error) {
 	state, e := w.native.ObserveImageClone(ctx, v, i, ref)
 	if e != nil {
+		// Record the real cause before it collapses into ErrImageIdentity.
+		w.logReferenceFailed(ctx, ref.ImageID, ref.VMID, "observe_clone", e)
 		if errors.Is(e, ErrOwnership) || errors.Is(e, ErrImageIdentity) {
 			return false, ErrImageIdentity
 		}
@@ -122,6 +128,23 @@ func (w *ReferenceWorker) consumerAbsent(v VM, ref ImageReference) bool {
 		}
 	}
 	return true
+}
+
+// logReferenceFailed keeps the actionable provider cause and the existing
+// image/vm/reference identity; the periodic lane has no business operation.
+func (w *ReferenceWorker) logReferenceFailed(ctx context.Context, imageID, vmID, step string, err error) {
+	if w.logger == nil || err == nil {
+		return
+	}
+	attrs := []any{"event", "step.failed", "step", step, "result", "failed", "worker", "vm_image_reference"}
+	if imageID != "" {
+		attrs = append(attrs, "resource_type", "image", "resource_id", imageID, "image_id", imageID)
+	}
+	if vmID != "" {
+		attrs = append(attrs, "vm_id", vmID)
+	}
+	attrs = append(attrs, logfields.ErrorFields(err)...)
+	w.logger.ErrorContext(ctx, "VM image reference check failed", attrs...)
 }
 
 var _ = slog.Default

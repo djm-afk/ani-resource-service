@@ -14,6 +14,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/service/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // Explicit read composition: the real repository and use case, with no KC,
@@ -49,16 +50,17 @@ func runVPCRead(bc *conf.Bootstrap, logger *slog.Logger) error {
 	}
 	defer func() {
 		if err := obs.Shutdown(context.Background()); err != nil {
-			logger.Error("observability shutdown", "error", err)
+			logger.Error("observability shutdown", logfields.ErrorFields(err)...)
 		}
 	}()
 	middlewares := obs.ServerMiddleware(logger)
-	gs, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, true, middlewares...)
+	adminMiddlewares := obs.AdminMiddleware(logger)
+	gs, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, true, logger, middlewares...)
 	if err != nil {
 		return err
 	}
 	networkv1.RegisterNetworkServiceServer(gs, service.NewNetworkService(network))
-	admin := server.NewAdminServer(bc.Server.Admin, readiness, obs.Gatherer(), middlewares...)
+	admin := server.NewAdminServer(bc.Server.Admin, readiness, obs.Gatherer(), logger, adminMiddlewares...)
 	return kratos.New(kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(gs, admin),
 		kratos.AfterStart(func(context.Context) error { readiness.Set(true); return nil }),

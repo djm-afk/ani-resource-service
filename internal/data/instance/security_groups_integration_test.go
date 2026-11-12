@@ -84,7 +84,7 @@ func TestSecurityGroupsPersistentCommandReplayAndImmutableCreate(t *testing.T) {
 	}
 	runtime := &securityGroupRuntimeBoundary{}
 	refs := &securityGroupReferenceBoundary{}
-	worker, _ := biz.NewWorker(f.repo, runtime, "sg-persistence")
+	worker, _ := biz.NewWorker(f.repo, runtime, "sg-persistence", discardLogger())
 	_ = worker.UseSecurityGroups(refs)
 	got := step(t, f, worker, c)
 	if !reflect.DeepEqual(got.SecurityGroupIDs, []string{selected}) || !reflect.DeepEqual(got.Spec.SecurityGroupIDs, []string{old}) || got.Version != 2 || !got.SecurityGroupsInitialized || got.Pending != nil || refs.confirms != 1 {

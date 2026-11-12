@@ -23,11 +23,11 @@ SELECT fingerprint,response FROM network_security_group_idempotency WHERE tenant
 -- name: InsertSecurityGroupReplay :exec
 INSERT INTO network_security_group_idempotency(tenant_id,action,idempotency_key,fingerprint,response) VALUES($1,$2,$3,$4,$5);
 -- name: InsertSecurityGroupOperation :exec
-INSERT INTO network_security_group_operations(tenant_id,operation_id,payload,actor_ref,caller_ref,intent) VALUES($1,$2,$3,$4,$5,$6);
+INSERT INTO network_security_group_operations(tenant_id,operation_id,payload,actor_ref,caller_ref,intent,telemetry_context) VALUES($1,$2,$3,$4,$5,$6,$7);
 -- name: UpdateSecurityGroupOperation :execrows
 UPDATE network_security_group_operations SET payload=$3 WHERE tenant_id=$1 AND operation_id=$2 AND (payload->>'CompletedAt') IS NULL;
 -- name: GetSecurityGroupOperation :one
-SELECT payload FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2;
+SELECT payload,telemetry_context FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2;
 -- name: GetSecurityGroupTarget :one
 SELECT * FROM network_security_group_targets WHERE tenant_id=$1 AND target_type=$2 AND target_id=$3;
 -- name: LockSecurityGroupTarget :one

@@ -2,6 +2,8 @@ package instance
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -333,7 +335,7 @@ func lifecycleDeadlineFixture(t *testing.T) (*lifecycleDeadlineRepo, *lifecycleD
 	repo.instance.ActiveOperation.Execution.DeadlineAt = &deadline
 	repo.instance.ActiveOperation.Execution.PhaseSequence = 6
 	provider := &lifecycleDeadlineProvider{lifecycleNetworkProvider: networkWorker.provider.(*lifecycleNetworkProvider)}
-	worker, err := NewWorker(repo, provider, "lifecycle-deadline-worker")
+	worker, err := NewWorker(repo, provider, "lifecycle-deadline-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +416,7 @@ func lifecycleNetworkFixture(t *testing.T) (*lifecycleNetworkRepo, *lifecycleNet
 		PodExists: true, PodReady: true, PodUID: "new-pod", PodName: "notebook-0",
 	}}}
 	network := &lifecycleNetworkPort{version: 561, snapshot: 5, podUID: "new-pod"}
-	worker, err := NewWorker(repo, provider, "lifecycle-network-worker")
+	worker, err := NewWorker(repo, provider, "lifecycle-network-worker", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,3 +425,5 @@ func lifecycleNetworkFixture(t *testing.T) (*lifecycleNetworkRepo, *lifecycleNet
 	}
 	return repo, network, worker
 }
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

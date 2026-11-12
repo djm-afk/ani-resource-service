@@ -60,7 +60,7 @@ func TestRuntimeLifecycle(t *testing.T) {
 	grpc_health_v1.RegisterHealthServer(grpcServer, fixtureHealth{})
 	fixture := &runtimeFixture{}
 	registerRuntimeFixture(grpcServer, fixture)
-	adminServer := serverpkg.NewAdminServer(cfg.Server.Admin, readiness, observability.Gatherer(), middlewares...)
+	adminServer := serverpkg.NewAdminServer(cfg.Server.Admin, readiness, observability.Gatherer(), slog.New(slog.NewJSONHandler(io.Discard, nil)), middlewares...)
 	grpcEndpoint, err := grpcServer.Endpoint()
 	if err != nil {
 		t.Fatalf("gRPC Endpoint() error = %v", err)
@@ -132,7 +132,8 @@ func TestAdminReadinessUsesKratosErrorEncoding(t *testing.T) {
 		cfg.Server.Admin,
 		readiness,
 		observability.Gatherer(),
-		observability.ServerMiddleware(logger)...,
+		logger,
+		observability.AdminMiddleware(logger)...,
 	)
 
 	recorder := httptest.NewRecorder()

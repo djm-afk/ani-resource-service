@@ -41,10 +41,10 @@ func TestRuntimeLoggerIncludesProcessIdentityAndSource(t *testing.T) {
 		t.Fatalf("decode structured log: %v; output=%q", err, output.String())
 	}
 	for key, want := range map[string]string{
-		"msg":             "identity check",
-		"service.id":      "layout-test-instance",
-		"service.name":    "ani-resource-service",
-		"service.version": "layout-test-version",
+		"msg":                 "identity check",
+		"service.instance.id": "layout-test-instance",
+		"service.name":        "ani-resource-service",
+		"service.version":     "layout-test-version",
 	} {
 		if got, _ := record[key].(string); got != want {
 			t.Fatalf("log field %s = %q, want %q; record=%v", key, got, want, record)
@@ -53,9 +53,14 @@ func TestRuntimeLoggerIncludesProcessIdentityAndSource(t *testing.T) {
 	if timestamp, _ := record["time"].(string); timestamp == "" {
 		t.Fatalf("structured log has no timestamp: %v", record)
 	}
-	source, ok := record["source"].(map[string]any)
-	if !ok || source["file"] == "" || source["line"] == nil {
-		t.Fatalf("structured log has no caller source: %v", record)
+	// The caller location is the public `source` string (file:line), not the
+	// framework `caller` object.
+	source, ok := record["source"].(string)
+	if !ok || !strings.Contains(source, ":") {
+		t.Fatalf("structured log has no caller source string: %v", record)
+	}
+	if _, banned := record["caller"]; banned {
+		t.Fatalf("framework caller alias must not be emitted: %v", record)
 	}
 }
 

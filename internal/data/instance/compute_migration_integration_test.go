@@ -15,6 +15,8 @@ import (
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
 	computedata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/compute"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
+	"io"
+	"log/slog"
 )
 
 // The existing database helper creates both task-owned login roles with the
@@ -126,7 +128,7 @@ func TestComputeMigrationPG17FrozenLifecycleRowsSurvive(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				worker, err := biz.NewWorker(f.repo, p, "compute-migration-baseline")
+				worker, err := biz.NewWorker(f.repo, p, "compute-migration-baseline", discardLogger())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -236,3 +238,5 @@ func TestComputeMigrationPG17FrozenLifecycleRowsSurvive(t *testing.T) {
 		}
 	}
 }
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

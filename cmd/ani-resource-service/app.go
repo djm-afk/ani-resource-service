@@ -115,11 +115,14 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	worker, err := biz.NewWorker(repository, provider, uuid.NewString(), policy, func(ctx context.Context, work biz.Work, progress biz.Progress, err error) {
 		observability.ObserveWork(ctx, logger, work, progress, err)
 	})
+	if err == nil {
+		worker.SetLogger(logger)
+	}
 	if err != nil {
 		_ = observability.Shutdown(ctx)
 		return nil, err
 	}
-	consumer, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint)
+	consumer, err := data.NewInstanceConsumer(bc.Network.InstanceConsumerEndpoint, logger)
 	if err != nil {
 		_ = observability.Shutdown(ctx)
 		return nil, err
@@ -141,6 +144,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			vms.Close()
 		}
 	}()
+	observability.SetAttachmentLogger(logger)
 	attachmentWorker, err := biz.NewAttachmentWorker(repository, routedConsumer, provider, uuid.NewString(), policy, observability.ObserveAttachmentWork)
 	if err != nil {
 		consumer.Close()
@@ -158,12 +162,16 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	switchWorker.SetLogger(logger)
 
-	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy)
+	defaultService, defaultWorker, err := wireDefaultVPCEgress(repository, provider, bc.Network, policy, logger)
 	if err != nil {
 		return nil, err
 	}
 	securityGroups, securityGroupWorker, err := wireSecurityGroups(repository, provider, instances, vms, policy)
+	if err == nil {
+		securityGroupWorker.SetLogger(logger)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +190,8 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		}
 	}
 	middlewares := observability.ServerMiddleware(logger)
-	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, middlewares...)
+	adminMiddlewares := observability.AdminMiddleware(logger)
+	grpcServer, err := server.NewGRPCServer(bc.Server.Grpc, readiness, tlsConfig, false, logger, middlewares...)
 	if err != nil {
 		return nil, err
 	}
@@ -234,12 +243,12 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			vmv1.RegisterVMImageServiceServer(grpcServer, vms.imageService)
 		}
 	}
-	adminServer := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), middlewares...)
+	adminServer := server.NewAdminServer(bc.Server.Admin, readiness, observability.Gatherer(), logger, adminMiddlewares...)
 	servers := []transport.Server{grpcServer, adminServer, observation, execution}
 	if storageComponents.worker != nil {
 		servers = append(servers, storageComponents.worker)
 	}
-	imageRuntime, err := openImageRuntime(images, middlewares...)
+	imageRuntime, err := openImageRuntime(images, logger, middlewares...)
 	if err != nil {
 		return nil, err
 	}
@@ -261,9 +270,18 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	app := kratos.New(
 		kratos.ID(id), kratos.Name(Name), kratos.Version(Version), kratos.Logger(logger),
 		kratos.Server(servers...),
-		kratos.AfterStart(func(context.Context) error { readiness.Set(true); return nil }),
-		kratos.BeforeStop(func(context.Context) error { readiness.Set(false); return nil }),
+		kratos.AfterStart(func(context.Context) error {
+			readiness.Set(true)
+			logger.Info("service ready", "event", "process.ready")
+			return nil
+		}),
+		kratos.BeforeStop(func(context.Context) error {
+			readiness.Set(false)
+			logger.Info("service stopping", "event", "process.stopping")
+			return nil
+		}),
 		kratos.AfterStop(func(ctx context.Context) error {
+			logger.Info("service stopped", "event", "process.stopped")
 			clusterOps.Close()
 			sandboxes.Close()
 			vms.Close()

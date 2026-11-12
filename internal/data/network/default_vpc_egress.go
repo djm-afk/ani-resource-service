@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"strings"
 	"time"
 )
@@ -101,7 +102,7 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 	if err != nil {
 		return biz.DefaultVPCEgress{}, switchAdmissionFailure(err)
 	}
-	if err = q.InsertDefaultEgressOperation(ctx, sqlcgen.InsertDefaultEgressOperationParams{OperationID: op, ResourceID: id, Kind: "create_default_vpc_egress", CreatedAt: now}); err != nil {
+	if err = q.InsertDefaultEgressOperation(ctx, sqlcgen.InsertDefaultEgressOperationParams{OperationID: op, ResourceID: id, Kind: "create_default_vpc_egress", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
 	}
 	r, err := q.GetDefaultEgress(ctx, sqlcgen.GetDefaultEgressParams{ClusterID: p.identity.ClusterID, ResourceID: id})
@@ -166,7 +167,7 @@ func (p *DefaultVPCEgressPostgres) DeleteDefaultVPCEgress(ctx context.Context, i
 	if err = q.SupersedeDefaultEgressOperation(ctx, sqlcgen.SupersedeDefaultEgressOperationParams{ResourceID: id, OperationID: row.LastOperationID}); err != nil {
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
 	}
-	if err = q.InsertDefaultEgressOperation(ctx, sqlcgen.InsertDefaultEgressOperationParams{OperationID: op, ResourceID: id, Kind: "delete_default_vpc_egress", CreatedAt: now}); err != nil {
+	if err = q.InsertDefaultEgressOperation(ctx, sqlcgen.InsertDefaultEgressOperationParams{OperationID: op, ResourceID: id, Kind: "delete_default_vpc_egress", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 		return biz.DefaultVPCEgress{}, databaseFailure(err)
 	}
 	changed, err := q.AdmitDefaultEgressDelete(ctx, sqlcgen.AdmitDefaultEgressDeleteParams{ClusterID: p.identity.ClusterID, ResourceID: id, Version: row.Version, OperationID: op})
@@ -206,6 +207,12 @@ func (p *DefaultVPCEgressPostgres) ClaimDefaultVPCEgress(ctx context.Context, ow
 		return biz.DefaultEgressWork{}, false, databaseFailure(err)
 	}
 	x := biz.DefaultEgressWork{Egress: defaultEgressSnapshot(r.NetworkDefaultVpcEgress, r.OperationState), Owner: owner, Epoch: epoch.LeaseEpoch, ClaimedGeneration: epoch.RequestedGeneration, PoolRevision: r.NetworkDefaultVpcEgress.PoolRevision, EIPBindingID: r.NetworkDefaultVpcEgress.EipBindingID, SnatBindingID: r.NetworkDefaultVpcEgress.SnatBindingID, Now: now}
+	// Logging metadata decodes independently of the business claim.
+	if tc, te := telemetry.Decode(r.OperationTelemetryContext); te != nil {
+		x.TelemetryContextError = te
+	} else {
+		x.TelemetryContext = tc
+	}
 	return x, true, databaseFailure(tx.Commit(ctx))
 }
 func (p *DefaultVPCEgressPostgres) AssertDefaultVPCEgressLease(ctx context.Context, x biz.DefaultEgressWork) error {

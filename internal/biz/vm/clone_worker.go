@@ -152,6 +152,9 @@ func (w *Worker) clone(ctx context.Context, o *Operation, v *VM) error {
 	}
 	cp.UID, cp.Phase = state.UID, state.Phase
 	if state.Failed {
+		// The native producer reported a terminal failure. The operation only
+		// becomes failed after cleanup on a later tick, so record it here.
+		w.logStepFailedObserved(ctx, *o, *v, "clone_producer", state.Reason)
 		if state.Target.UID == "" && !CloneVolumesCovered(v.FrozenVolumeNames(), state.Outputs) {
 			// No usable target and no complete named output: keep the producer and
 			// the source HELD, and hand the residual case to explicit disposal.
@@ -483,6 +486,9 @@ func (w *Worker) cancelObservedClone(ctx context.Context, o *Operation, v *VM, n
 		cp.UID = state.UID
 	}
 	if state.Failed {
+		// The cancelled clone's native producer failed; the cleanup that follows
+		// returns nil on its own ticks, so the real reason is recorded here.
+		w.logStepFailedObserved(ctx, *o, *v, "clone_producer", state.Reason)
 		cp.PendingVolumes = mergeVolumeRefs(cp.PendingVolumes, state.Outputs)
 		if state.Target.UID != "" {
 			target := state.Target

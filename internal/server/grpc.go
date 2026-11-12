@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/go-kratos/kratos/v3/middleware"
@@ -21,7 +22,7 @@ import (
 // NewGRPCServer is the sole internal business listener constructor. Its
 // transport and caller policy are shared by full, governance and vpc-read
 // compositions; changing composition never enables a plaintext bypass.
-func NewGRPCServer(c *conf.Server_GRPC, readiness *Readiness, tlsConfig *tls.Config, readOnly bool, middlewares ...middleware.Middleware) (*kratosgrpc.Server, error) {
+func NewGRPCServer(c *conf.Server_GRPC, readiness *Readiness, tlsConfig *tls.Config, readOnly bool, logger *slog.Logger, middlewares ...middleware.Middleware) (*kratosgrpc.Server, error) {
 	if c == nil || tlsConfig == nil || tlsConfig.MinVersion < tls.VersionTLS13 ||
 		tlsConfig.ClientAuth != tls.RequireAndVerifyClientCert || tlsConfig.ClientCAs == nil ||
 		len(tlsConfig.Certificates) == 0 || tlsConfig.VerifyConnection == nil {
@@ -38,9 +39,15 @@ func NewGRPCServer(c *conf.Server_GRPC, readiness *Readiness, tlsConfig *tls.Con
 		kratosgrpc.TLSConfig(tlsConfig.Clone()),
 		kratosgrpc.UnaryInterceptor(governanceUnary(readOnly)),
 		kratosgrpc.StreamInterceptor(GovernanceStreams(readOnly)),
-		kratosgrpc.Options(grpc.UnknownServiceHandler(func(any, grpc.ServerStream) error {
-			return status.Error(codes.PermissionDenied, "internal RPC is not registered")
-		})),
+		// One Options call only: this version assigns (not appends) grpcOpts, so
+		// a second call would drop the security UnknownServiceHandler. The stats
+		// handler covers decode errors, unknown methods and early rejections.
+		kratosgrpc.Options(
+			grpc.UnknownServiceHandler(func(any, grpc.ServerStream) error {
+				return status.Error(codes.PermissionDenied, "internal RPC is not registered")
+			}),
+			grpc.StatsHandler(newServerStatsHandler(logger)),
+		),
 		kratosgrpc.Middleware(chain...),
 		kratosgrpc.DisableReflection(),
 	)

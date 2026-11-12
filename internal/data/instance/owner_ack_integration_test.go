@@ -18,7 +18,7 @@ func TestInstanceWorkerFinishPreservesCommittedReleaseACK(t *testing.T) {
 	if _, err := f.repo.AcceptCreate(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	w, err := biz.NewWorker(f.repo, &provider{}, "cleanup-before-ack")
+	w, err := biz.NewWorker(f.repo, &provider{}, "cleanup-before-ack", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

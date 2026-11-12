@@ -96,7 +96,7 @@ func TestVMDisksDurableWFFCReplayDetachAndDelete(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	w, _ := biz.NewWorker(p, n, preparingVMNetwork{})
+	w, _ := biz.NewWorker(p, n, preparingVMNetwork{}, discardLoggerVMLane())
 	if e = w.RunOnce(ctx); e != nil {
 		t.Fatal(e)
 	}
@@ -109,7 +109,7 @@ func TestVMDisksDurableWFFCReplayDetachAndDelete(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer p2.Close()
-	w, _ = biz.NewWorker(p2, n, preparingVMNetwork{})
+	w, _ = biz.NewWorker(p2, n, preparingVMNetwork{}, discardLoggerVMLane())
 	run := func(operation string) {
 		t.Helper()
 		deadline := time.Now().Add(4 * time.Second)

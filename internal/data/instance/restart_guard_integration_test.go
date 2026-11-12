@@ -195,7 +195,7 @@ func TestRestartGuardPGCurrentMountsAndAllProtectionStates(t *testing.T) {
 	}
 	assertProtected("pending")
 	p := newRestartGuardBoundary()
-	w, _ := biz.NewWorker(f.repo, p, "restart-guard-worker")
+	w, _ := biz.NewWorker(f.repo, p, "restart-guard-worker", discardLogger())
 	i := awaitRestartGuardOperation(t, f, w, c, c.OperationID)
 	assertProtected("active")
 	stop := acceptRestartGuardCommand(t, f, c, i, "stop", "")
@@ -252,7 +252,7 @@ func TestRestartGuardPGRuntimeDesiredSurvivesGetListClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := newRestartGuardBoundary()
-	w, _ := biz.NewWorker(f.repo, p, "restart-runtime-worker")
+	w, _ := biz.NewWorker(f.repo, p, "restart-runtime-worker", discardLogger())
 	i := awaitRestartGuardOperation(t, f, w, c, c.OperationID)
 	beforeUID, beforeApplied := i.PodUID, i.AppliedMountVersion
 	restart := acceptRestartGuardCommand(t, f, c, i, "restart", "")
@@ -335,7 +335,7 @@ func TestRestartGuardPGOccupiedVolumeRejectedUntilReleased(t *testing.T) {
 		t.Fatal(err)
 	}
 	pA := newRestartGuardBoundary()
-	wA, _ := biz.NewWorker(f.repo, pA, "restart-guard-occupied-a")
+	wA, _ := biz.NewWorker(f.repo, pA, "restart-guard-occupied-a", discardLogger())
 	iA := awaitRestartGuardOperation(t, f, wA, a, a.OperationID)
 
 	// 与 A 同租户/同集群/同 Namespace 的兄弟实例。
@@ -364,7 +364,7 @@ func TestRestartGuardPGOccupiedVolumeRejectedUntilReleased(t *testing.T) {
 		t.Fatal(err)
 	}
 	pC := newRestartGuardBoundary()
-	wC, _ := biz.NewWorker(f.repo, pC, "restart-guard-occupied-c")
+	wC, _ := biz.NewWorker(f.repo, pC, "restart-guard-occupied-c", discardLogger())
 	iC := awaitRestartGuardOperation(t, f, wC, c, c.OperationID)
 	stopC := acceptRestartGuardCommand(t, f, c, iC, "stop", "")
 	iC = awaitRestartGuardOperation(t, f, wC, c, stopC.OperationID)

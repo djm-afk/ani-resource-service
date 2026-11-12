@@ -121,7 +121,7 @@ func (q *Queries) GetIdempotency(ctx context.Context, arg GetIdempotencyParams) 
 }
 
 const getOperation = `-- name: GetOperation :one
-SELECT tenant_id, operation_id, vpc_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, subnet_id, eip_id, snat_id, lb_id, vnic_id FROM network_operations WHERE tenant_id = $1 AND operation_id = $2
+SELECT tenant_id, operation_id, vpc_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, subnet_id, eip_id, snat_id, lb_id, vnic_id, telemetry_context FROM network_operations WHERE tenant_id = $1 AND operation_id = $2
 `
 
 type GetOperationParams struct {
@@ -150,6 +150,7 @@ func (q *Queries) GetOperation(ctx context.Context, arg GetOperationParams) (Net
 		&i.SnatID,
 		&i.LbID,
 		&i.VnicID,
+		&i.TelemetryContext,
 	)
 	return i, err
 }
@@ -376,21 +377,22 @@ func (q *Queries) InsertIdempotency(ctx context.Context, arg InsertIdempotencyPa
 }
 
 const insertOperation = `-- name: InsertOperation :exec
-INSERT INTO network_operations (tenant_id,operation_id,vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id,kind,state,created_at,updated_at,next_attempt_at)
-VALUES ($1,$2,NULLIF($3::text,''),NULLIF($4::text,''),NULLIF($5::text,''),NULLIF($6::text,''),NULLIF($7::text,''),NULLIF($8::text,''),$9,'queued',$10,$10,$10)
+INSERT INTO network_operations (tenant_id,operation_id,vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id,kind,state,created_at,updated_at,next_attempt_at,telemetry_context)
+VALUES ($1,$2,NULLIF($3::text,''),NULLIF($4::text,''),NULLIF($5::text,''),NULLIF($6::text,''),NULLIF($7::text,''),NULLIF($8::text,''),$9,'queued',$10,$10,$10,$11)
 `
 
 type InsertOperationParams struct {
-	TenantID    string
-	OperationID string
-	VpcID       string
-	SubnetID    string
-	EipID       string
-	SnatID      string
-	LbID        string
-	VnicID      string
-	Kind        string
-	CreatedAt   time.Time
+	TenantID         string
+	OperationID      string
+	VpcID            string
+	SubnetID         string
+	EipID            string
+	SnatID           string
+	LbID             string
+	VnicID           string
+	Kind             string
+	CreatedAt        time.Time
+	TelemetryContext []byte
 }
 
 func (q *Queries) InsertOperation(ctx context.Context, arg InsertOperationParams) error {
@@ -405,6 +407,7 @@ func (q *Queries) InsertOperation(ctx context.Context, arg InsertOperationParams
 		arg.VnicID,
 		arg.Kind,
 		arg.CreatedAt,
+		arg.TelemetryContext,
 	)
 	return err
 }

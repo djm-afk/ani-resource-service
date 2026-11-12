@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type ResourceState string
@@ -71,6 +73,13 @@ type Operation struct {
 	CreatedAt, UpdatedAt                   time.Time
 	CompletedAt                            *time.Time
 	NextAttemptAt                          *time.Time
+	// TelemetryContext is independent logging metadata restored by the worker.
+	// It never enters idempotency fingerprints, intent hashes or resource specs,
+	// and must stay out of the business JSON that is written back and re-read.
+	TelemetryContext telemetry.TelemetryContext `json:"-"`
+	// TelemetryContextError carries a metadata decode failure to the worker
+	// without affecting the business fields. It is memory-only.
+	TelemetryContextError error `json:"-"`
 }
 
 // Attribution is unverified caller-supplied attribution during the agreed IAM

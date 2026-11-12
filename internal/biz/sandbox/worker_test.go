@@ -3,6 +3,8 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -66,7 +68,7 @@ func testWorker(t *testing.T, desired string) (*Worker, *workerRepo, *workerProv
 	t.Helper()
 	r := &workerRepo{work: &Work{Sandbox: Sandbox{Desired: desired, Version: 1, LastOperationID: "11111111-1111-4111-8111-111111111111"}}}
 	p := &workerProvider{repo: r}
-	w, err := NewWorker(r, p, "worker", 10*time.Second)
+	w, err := NewWorker(r, p, "worker", 10*time.Second, discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,3 +315,5 @@ func TestWorkerVolumeObservationDeadlineLeavesBudgetToStopPod(t *testing.T) {
 		t.Fatalf("deadline-bound PV failure prevented the original Pod stop: calls=%v progress=%+v", p.calls, r.progress)
 	}
 }
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

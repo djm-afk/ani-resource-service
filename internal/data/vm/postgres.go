@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	network "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/vm"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	migrations "github.com/zhangzhe-ctrl/ani-resource-service/migrations/vm"
 )
 
@@ -276,6 +277,24 @@ func Migrate(ctx context.Context, dsn, role string) error {
 	if e != nil {
 		return e
 	}
+	body, e = migrations.Files.ReadFile("009_logging_telemetry.sql")
+	if e != nil {
+		return e
+	}
+	h = sha256.Sum256(body)
+	checksum = hex.EncodeToString(h[:])
+	e = tx.QueryRow(ctx, "SELECT checksum FROM vm.schema_version WHERE version=9").Scan(&old)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if _, e = tx.Exec(ctx, string(body)); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO vm.schema_version VALUES(9,$1)", checksum)
+	} else if e == nil && old != checksum {
+		return fmt.Errorf("VM logging telemetry migration checksum differs")
+	}
+	if e != nil {
+		return e
+	}
 	if _, e = tx.Exec(ctx, "GRANT SELECT ON vm.schema_version TO "+pgx.Identifier{role}.Sanitize()); e != nil {
 		return e
 	}
@@ -306,9 +325,34 @@ func vmFrom(b []byte) (biz.VM, error) {
 	return v, err
 }
 func opFrom(b []byte) (biz.Operation, error) {
+	// Strip the logging metadata before the business decode so a malformed
+	// telemetry value cannot fail the whole operation record. A wrong type still
+	// surfaces through the typed field and is carried to the worker.
+	var fields map[string]json.RawMessage
+	if e := json.Unmarshal(b, &fields); e != nil {
+		return biz.Operation{}, e
+	}
+	var telemetryRaw json.RawMessage
+	if raw, ok := fields["telemetry_context"]; ok {
+		telemetryRaw = raw
+		delete(fields, "telemetry_context")
+	}
+	business, e := json.Marshal(fields)
+	if e != nil {
+		return biz.Operation{}, e
+	}
 	var v biz.Operation
-	e := json.Unmarshal(b, &v)
-	return v, e
+	if e := json.Unmarshal(business, &v); e != nil {
+		return v, e
+	}
+	if len(telemetryRaw) != 0 {
+		if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+			v.TelemetryContextError = te
+		} else {
+			v.TelemetryContext = tc
+		}
+	}
+	return v, nil
 }
 func notFound(e error) error {
 	if errors.Is(e, pgx.ErrNoRows) {
@@ -407,7 +451,7 @@ func (p *Postgres) AcceptCreate(ctx context.Context, a biz.Acceptance) (biz.Oper
 		v.Desired = "Running"
 	}
 	v.Native = biz.ObjectRef{Kind: "VirtualMachine", Namespace: a.Spec.Namespace, Name: "vm-" + a.VMID}
-	o := biz.Operation{TenantID: a.TenantID, ID: a.OperationID, VMID: a.VMID, Action: biz.CreateAction, Key: a.OperationID, RequestDigest: a.RequestDigest, Intent: a.Spec.Canonical, IntentVersion: 1, State: "accepted"}
+	o := biz.Operation{TenantID: a.TenantID, ID: a.OperationID, VMID: a.VMID, Action: biz.CreateAction, Key: a.OperationID, RequestDigest: a.RequestDigest, Intent: a.Spec.Canonical, IntentVersion: 1, State: "accepted", TelemetryContext: telemetry.Capture(ctx)}
 	_, e = tx.Exec(ctx, `INSERT INTO vm.virtual_machines(tenant_id,id,create_operation_id,request_digest,spec_digest,initial_spec,current_configuration,version) VALUES($1,$2,$3,$4,$5,$6,$7,1)`, v.TenantID, v.ID, v.CreateOperationID, a.RequestDigest, a.Spec.Digest, encode(a.Spec), encode(v))
 	if e != nil {
 		return biz.Operation{}, e
@@ -553,7 +597,7 @@ func (p *Postgres) accept(ctx context.Context, c biz.Command, id, createID strin
 	}
 	v.Version++
 	v.LastOperationID = id
-	o := biz.Operation{TenantID: c.TenantID, ID: id, VMID: c.VMID, Action: c.Action, Key: c.Key, RequestDigest: c.RequestDigest, Intent: c.Intent, IntentVersion: v.Version, State: "accepted"}
+	o := biz.Operation{TenantID: c.TenantID, ID: id, VMID: c.VMID, Action: c.Action, Key: c.Key, RequestDigest: c.RequestDigest, Intent: c.Intent, IntentVersion: v.Version, State: "accepted", TelemetryContext: telemetry.Capture(ctx)}
 	if c.Action == biz.DeleteAction && ((v.Network.AttachmentID == "" && v.Network.NADUID != "") || v.Spec.CloneSource != nil) {
 		// A completed first-round save alone has sent no Attachment. Carry only
 		// the existing second-round send checkpoint into Delete recovery.

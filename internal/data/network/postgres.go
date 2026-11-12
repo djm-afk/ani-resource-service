@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"github.com/zhangzhe-ctrl/ani-resource-service/migrations"
 )
 
@@ -186,6 +187,7 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 	}
 	if err := q.InsertOperation(ctx, sqlcgen.InsertOperationParams{
 		TenantID: intent.TenantID, OperationID: operationID, VpcID: vpcID, Kind: "create_vpc", CreatedAt: now,
+		TelemetryContext: telemetryJSON(ctx),
 	}); err != nil {
 		return biz.VPC{}, databaseFailure(err)
 	}
@@ -351,11 +353,33 @@ func operation(row sqlcgen.NetworkOperation) biz.Operation {
 	if row.LbID != nil {
 		resourceID, kind = *row.LbID, "load_balancer"
 	}
-	return biz.Operation{
+	op := biz.Operation{
 		ID: row.OperationID, TenantID: row.TenantID, ResourceID: resourceID, ResourceType: kind, Kind: row.Kind,
 		State: biz.OperationState(row.State), Reason: biz.Reason(row.Reason), CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt, NextAttemptAt: row.NextAttemptAt,
 	}
+	// Logging metadata decodes independently: a malformed value must not fail
+	// the business claim. The error rides along to the worker.
+	if tc, te := telemetry.Decode(row.TelemetryContext); te != nil {
+		op.TelemetryContextError = te
+	} else {
+		op.TelemetryContext = tc
+	}
+	return op
+}
+
+// telemetryJSON renders the logging metadata for an operation insert, or nil
+// when the context carries no captured trace.
+func telemetryJSON(ctx context.Context) []byte {
+	tc := telemetry.Capture(ctx)
+	if !tc.Valid() {
+		return nil
+	}
+	b, e := json.Marshal(tc)
+	if e != nil {
+		return nil
+	}
+	return b
 }
 
 func databaseFailure(err error) error {

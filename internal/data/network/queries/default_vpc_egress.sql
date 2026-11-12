@@ -23,7 +23,7 @@ WHERE r.cluster_id=$1 AND r.default_vpc_namespace=$2 AND r.default_vpc_name=$3 A
 SELECT sqlc.embed(r),o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id WHERE r.cluster_id=$1 AND r.resource_id=$2 FOR UPDATE OF r;
 
 -- name: InsertDefaultEgressOperation :exec
-INSERT INTO network_default_vpc_egress_operations(operation_id,resource_id,kind,state,created_at,updated_at) VALUES($1,$2,$3,'queued',$4,$4);
+INSERT INTO network_default_vpc_egress_operations(operation_id,resource_id,kind,state,created_at,updated_at,telemetry_context) VALUES($1,$2,$3,'queued',$4,$4,$5);
 
 -- name: InsertDefaultEgressHistory :exec
 INSERT INTO network_default_vpc_egress_history(history_id,resource_id,operation_id,event,actor_ref,caller_ref,detail,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp());
@@ -39,7 +39,7 @@ UPDATE network_default_vpc_egresses SET state='deleting',phase='delete_snat',rea
 SELECT count(*)::bigint FROM network_default_vpc_egresses WHERE cluster_id=$1 AND pool_id=$2 AND retired_at IS NULL;
 
 -- name: DueDefaultEgress :one
-SELECT sqlc.embed(r),o.state AS operation_state FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
+SELECT sqlc.embed(r),o.state AS operation_state,o.operation_id AS operation_id,o.telemetry_context AS operation_telemetry_context FROM network_default_vpc_egresses r JOIN network_default_vpc_egress_operations o ON o.resource_id=r.resource_id AND o.operation_id=r.last_operation_id
 WHERE r.cluster_id=$1 AND r.retired_at IS NULL AND r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp()) ORDER BY r.next_run_at,r.resource_id FOR UPDATE OF r SKIP LOCKED LIMIT 1;
 
 -- name: ClaimDefaultEgressLease :one

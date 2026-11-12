@@ -24,6 +24,7 @@ import (
 	computedata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/compute"
 	data "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/instance"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/instance"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -147,7 +148,7 @@ func TestCPUInstancePersistentLifecycleAndTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, _ := biz.NewWorker(f.repo, p, "cpu-worker")
+	w, _ := biz.NewWorker(f.repo, p, "cpu-worker", discardLogger())
 	var i biz.Instance
 	for n := 0; n < 3; n++ {
 		i = step(t, f, w, c)
@@ -238,7 +239,7 @@ func TestCPUDeleteFirstAndUnknownCreate(t *testing.T) {
 		t.Fatal("late CPU create did not receive its superseded ACK", err)
 	}
 	p := &provider{}
-	w, _ := biz.NewWorker(f.repo, p, "cpu-delete-first")
+	w, _ := biz.NewWorker(f.repo, p, "cpu-delete-first", discardLogger())
 	var i biz.Instance
 	for n := 0; n < 3; n++ {
 		i = step(t, f, w, c)
@@ -251,14 +252,14 @@ func TestCPUDeleteFirstAndUnknownCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = &provider{unknown: true}
-	w, _ = biz.NewWorker(f.repo, p, "cpu-before-restart")
+	w, _ = biz.NewWorker(f.repo, p, "cpu-before-restart", discardLogger())
 	step(t, f, w, c)
 	i = step(t, f, w, c)
 	d = biz.Delete{InstanceKind: biz.KindContainer, ComputeType: biz.TypeCPU, TenantID: c.TenantID, ID: c.ID, OperationID: uuid.NewString(), CreateOperationID: c.OperationID, RequestHash: strings.Repeat("e", 64), ExpectedVersion: i.Version}
 	if _, err := f.repo.AcceptDelete(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	w, _ = biz.NewWorker(f.repo, p, "cpu-after-restart")
+	w, _ = biz.NewWorker(f.repo, p, "cpu-after-restart", discardLogger())
 	for n := 0; n < 3; n++ {
 		i = step(t, f, w, c)
 	}
@@ -402,7 +403,7 @@ func TestInstancePersistentLifecycle(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	w, _ := biz.NewWorker(f.repo, p, "worker-1")
+	w, _ := biz.NewWorker(f.repo, p, "worker-1", discardLogger())
 	var i biz.Instance
 	for n := 0; n < 3; n++ {
 		i = step(t, f, w, c)
@@ -492,11 +493,11 @@ func TestInstancePersistentLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 	p2 := &provider{unknown: true}
-	w2, _ := biz.NewWorker(f.repo, p2, "before-restart")
+	w2, _ := biz.NewWorker(f.repo, p2, "before-restart", discardLogger())
 	step(t, f, w2, c2)
 	i = step(t, f, w2, c2)
 	command(t, f, c2, i, "delete")
-	w2, _ = biz.NewWorker(f.repo, p2, "after-restart")
+	w2, _ = biz.NewWorker(f.repo, p2, "after-restart", discardLogger())
 	for n := 0; n < 3; n++ {
 		i = step(t, f, w2, c2)
 	}
@@ -542,7 +543,7 @@ func TestInstanceDeleteFirstAndTenant(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	w, _ := biz.NewWorker(f.repo, p, "delete-first")
+	w, _ := biz.NewWorker(f.repo, p, "delete-first", discardLogger())
 	for n := 0; n < 3; n++ {
 		i = step(t, f, w, c)
 	}
@@ -570,10 +571,14 @@ type releaseEndpoint struct {
 	calls, applied   int
 	wrongReceipt     bool
 	immediateReceipt bool
+	traceID          string
 }
 
-func (q *releaseEndpoint) ReportResourceReleased(_ context.Context, r *quotapb.ReportResourceReleasedRequest, _ ...grpc.CallOption) (*quotapb.ReportResourceReleasedResponse, error) {
+func (q *releaseEndpoint) ReportResourceReleased(ctx context.Context, r *quotapb.ReportResourceReleasedRequest, _ ...grpc.CallOption) (*quotapb.ReportResourceReleasedResponse, error) {
 	q.calls++
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		q.traceID = sc.TraceID().String()
+	}
 	if q.request == nil {
 		q.request = proto.Clone(r).(*quotapb.ReportResourceReleasedRequest)
 		q.applied++
@@ -606,7 +611,7 @@ func TestInstanceReleaseRetryAndTerminalRevocation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	worker, _ := biz.NewWorker(f.repo, p, "initial-worker")
+	worker, _ := biz.NewWorker(f.repo, p, "initial-worker", discardLogger())
 	var i biz.Instance
 	for n := 0; n < 3; n++ {
 		i = step(t, f, worker, c)
@@ -748,7 +753,7 @@ func TestResourceReleaseRequiresMatchingAck(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &provider{}
-	worker, err := biz.NewWorker(f.repo, p, "wrong-ack-owner")
+	worker, err := biz.NewWorker(f.repo, p, "wrong-ack-owner", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -821,7 +826,7 @@ func TestGPUCreatedWithoutSeenPodClosesOnOwnerCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &provider{}
-	worker, err := biz.NewWorker(f.repo, p, "unallocated-owner")
+	worker, err := biz.NewWorker(f.repo, p, "unallocated-owner", discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

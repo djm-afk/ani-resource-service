@@ -53,6 +53,8 @@ sql:
       - migrations/0031_subnet_creation_options.sql
       - migrations/0032_network_management_simplification.sql
       - migrations/0033_platform_base_networks.sql
+      - migrations/0034_logging_telemetry.sql
+      - migrations/0035_logging_telemetry_lanes.sql
     queries: internal/data/network/queries
     gen:
       go:

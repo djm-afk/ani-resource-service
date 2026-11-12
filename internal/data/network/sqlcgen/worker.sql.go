@@ -438,7 +438,7 @@ UPDATE network_operations SET state='running', attempt=attempt+1,
     execution_epoch=$1, updated_at=clock_timestamp()
 WHERE tenant_id=$2 AND coalesce(vpc_id,subnet_id,eip_id,snat_id,lb_id,vnic_id)=$3::text
   AND operation_id=$4 AND state NOT IN ('succeeded','failed')
-RETURNING tenant_id, operation_id, vpc_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, subnet_id, eip_id, snat_id, lb_id, vnic_id
+RETURNING tenant_id, operation_id, vpc_id, kind, state, reason, attempt, execution_epoch, created_at, updated_at, completed_at, next_attempt_at, subnet_id, eip_id, snat_id, lb_id, vnic_id, telemetry_context
 `
 
 type RunOperationParams struct {
@@ -474,6 +474,7 @@ func (q *Queries) RunOperation(ctx context.Context, arg RunOperationParams) (Net
 		&i.SnatID,
 		&i.LbID,
 		&i.VnicID,
+		&i.TelemetryContext,
 	)
 	return i, err
 }

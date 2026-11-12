@@ -4,6 +4,8 @@ package instance_test
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -79,7 +81,7 @@ func TestComputeRPCUsesTrustedScopeAndPersistentCatalog(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	transport, e := server.NewGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(5 * time.Second)}, server.NewReadiness(), tls, false)
+	transport, e := server.NewGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: "127.0.0.1:0", Timeout: durationpb.New(5 * time.Second)}, server.NewReadiness(), tls, false, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -137,7 +137,7 @@ func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, 
 		}
 		return biz.VNic{}, databaseFailure(e)
 	}
-	if e = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: r.TenantID, VnicID: id, OperationID: op, Kind: "create_vnic", CreatedAt: now}); e != nil {
+	if e = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: r.TenantID, VnicID: id, OperationID: op, Kind: "create_vnic", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
 	if e = q.InsertReconciliation(ctx, sqlcgen.InsertReconciliationParams{TenantID: r.TenantID, VnicID: id, NextRunAt: now}); e != nil {
@@ -310,7 +310,7 @@ func (p *Postgres) DeleteVNic(ctx context.Context, tenant, id string) (biz.VNic,
 	if e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
-	if e = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, VnicID: id, OperationID: op, Kind: "delete_vnic", CreatedAt: now}); e != nil {
+	if e = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, VnicID: id, OperationID: op, Kind: "delete_vnic", CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); e != nil {
 		return biz.VNic{}, databaseFailure(e)
 	}
 	_, e = tx.Exec(ctx, `UPDATE network_vnics SET state='deleting',reason='',version=version+1,last_operation_id=$3,updated_at=clock_timestamp() WHERE tenant_id=$1 AND vnic_id=$2`, tenant, id, op)

@@ -3,10 +3,13 @@ package vm
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type Worker struct {
@@ -14,28 +17,52 @@ type Worker struct {
 	native         NativePort
 	network        NetworkPort
 	securityGroups SecurityGroupPort
+	logger         *slog.Logger
 }
 
-func NewWorker(r Repository, n NativePort, network NetworkPort) (*Worker, error) {
+func NewWorker(r Repository, n NativePort, network NetworkPort, logger *slog.Logger) (*Worker, error) {
 	if r == nil || n == nil || network == nil {
 		return nil, ErrInvalid
 	}
-	return &Worker{repo: r, native: n, network: network}, nil
+	return &Worker{repo: r, native: n, network: network, logger: logger}, nil
 }
 func (w *Worker) RunOnce(ctx context.Context) error {
 	o, v, e := w.repo.Claim(ctx, uuid.NewString(), 30*time.Second)
 	if e != nil {
 		return e
 	}
+	// Restore the accepted request's trace into a fresh worker context after the
+	// claim. The original HTTP deadline/cancel/credentials are not inherited.
+	restored, telemetryEvent, telemetryErr := w.restoreTelemetry(ctx, o, v)
+	// The restored trace belongs to the finished accepting request, so this pass
+	// opens its own span and keeps the same trace_id with a new span_id. A
+	// missing/invalid persisted context lands on a fresh span before it is
+	// reported, so the ERROR still carries a valid trace_id/span_id.
+	ctx, runSpan := telemetry.StartRun(restored, "vm.operation."+o.Action)
+	defer runSpan.End()
+	w.logTelemetryEvent(ctx, o, v, telemetryEvent, telemetryErr)
 	e = w.advance(ctx, &o, &v)
 	if e != nil {
-		o.Reason = e.Error()
+		// A known wait is logged as step.waiting where it is detected, never as a
+		// step failure. Record every other real failure at the point it becomes
+		// durable state: a Save that then succeeds returns nil below.
+		if !errors.Is(e, errWaitingDependency) {
+			w.logStepFailed(ctx, o, v, stepForAction(o.Action), e)
+		}
+		// The durable business reason keeps its existing text; logs use a stable
+		// classification and the redacted error fields for the cause.
+		reason := e.Error()
+		logReason := operationReason(e)
+		o.Reason = reason
 		if errors.Is(e, ErrUnknown) {
 			o.State = "unknown"
+			w.logOperationFailed(ctx, o, v, logReason, e)
 		} else if errors.Is(e, ErrOwnership) || errors.Is(e, ErrInvalid) || errors.Is(e, ErrChanged) || errors.Is(e, ErrStartFailed) || errors.Is(e, ErrCloneSourceUnavailable) {
 			o.State = "failed"
+			w.logOperationFailed(ctx, o, v, logReason, e)
 		} else {
 			o.State = "running"
+			w.logRetryScheduled(ctx, o, v, logReason, o.LeaseUntil)
 		}
 	} else {
 		o.Reason = ""
@@ -45,14 +72,70 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		if errors.Is(x, ErrVersion) || errors.Is(x, ErrLease) {
 			// A newer intent or lease already owns this work. Its durable
 			// state wins; losing the fence does not stop other VM workers.
+			w.logConflict(ctx, o, v, "VM_LEASE_LOST")
 			return nil
 		}
+		// The state write itself failed; keep it distinct from the business error.
+		w.logPersistFailed(ctx, o, v, x)
 		return x
 	}
 	// Native reconciliation failures are now durable operation outcomes.
 	// Returning them to the service supervisor would terminate the shared
 	// service whenever a dependency is still preparing or a result is unknown.
 	return nil
+}
+
+// restoreTelemetry restores o's saved trace onto ctx, binds the operation
+// identity, and returns the single telemetry.context_* event to report once the
+// run span exists ("" when the metadata is usable) together with the real
+// decode/validate error. The caller continues the original business path in
+// every case.
+func (w *Worker) restoreTelemetry(ctx context.Context, o Operation, v VM) (context.Context, string, error) {
+	business := telemetry.BusinessContext{
+		OperationID: o.ID, ResourceType: "vm", ResourceID: v.ID, TenantID: o.TenantID, Action: o.Action,
+	}
+	if o.TelemetryContextError != nil {
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", o.TelemetryContextError
+	}
+	if !o.TelemetryContext.Valid() {
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_missing", nil
+	}
+	restored, e := telemetry.Restore(ctx, o.TelemetryContext)
+	if e != nil {
+		return telemetry.WithBusiness(ctx, business), "telemetry.context_invalid", e
+	}
+	return telemetry.WithBusiness(restored, business), "", nil
+}
+
+func (w *Worker) logTelemetryEvent(ctx context.Context, o Operation, v VM, event string, err error) {
+	if w.logger == nil || event == "" {
+		return
+	}
+	attrs := []any{"event", event}
+	attrs = append(attrs, operationIdentity(o, v)...)
+	if event == "telemetry.context_missing" {
+		attrs = append(attrs, "reason", "TELEMETRY_CONTEXT_MISSING")
+	} else {
+		attrs = append(attrs, "reason", "TELEMETRY_CONTEXT_INVALID")
+		if err != nil {
+			attrs = append(attrs, errorAttrs(err)...)
+		}
+	}
+	w.logger.ErrorContext(ctx, "VM operation telemetry context unavailable", attrs...)
+}
+
+// stepForAction names the failing stage without inventing a new state machine.
+func stepForAction(action string) string {
+	switch action {
+	case "create":
+		return "ensure_vm"
+	case "delete":
+		return "delete_vm"
+	case "":
+		return "advance"
+	default:
+		return action
+	}
 }
 func (w *Worker) Step(ctx context.Context) (bool, error) {
 	e := w.RunOnce(ctx)
@@ -242,7 +325,8 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 					}
 					return w.native.Stop(ctx, *v, false)
 				}
-				return ErrDependency
+				w.logStepWaiting(ctx, *o, *v, o.Step, "VM_RESTART_WAITING_OLD_INSTANCE")
+				return errWaitingDependency
 			}
 			if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
 				return e
@@ -254,7 +338,12 @@ func (w *Worker) power(ctx context.Context, o *Operation, v *VM) error {
 	}
 	if (o.Action == "start" || o.Step == "network-starting") && PrimaryNetworkInterface(*v).PendingRestart() {
 		if !x.Stopped || x.VMI != nil || x.Launcher != nil || x.RelatedPodsPresent || len(x.StateChangeRequests) != 0 {
-			return ErrDependency
+			step := o.Step
+			if step == "" {
+				step = "network-starting"
+			}
+			w.logStepWaiting(ctx, *o, *v, step, "VM_START_WAITING_OLD_INSTANCE")
+			return errWaitingDependency
 		}
 		if e = w.applyNetworkTemplate(ctx, o, v); e != nil {
 			return e

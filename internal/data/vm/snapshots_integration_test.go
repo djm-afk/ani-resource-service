@@ -191,7 +191,7 @@ func snapshotPostgresRestore(t *testing.T, takeover bool) {
 	pv.SetUID(types.UID(retired.Cleanup[0].UID))
 	client := fake.NewSimpleDynamicClient(runtime.NewScheme(), ns, pv)
 	boundary := &snapshotDeleteBoundary{physical: NewNativeWithClients(client, nil)}
-	worker, err := biz.NewWorker(repo, boundary, snapshotDeleteNetwork{})
+	worker, err := biz.NewWorker(repo, boundary, snapshotDeleteNetwork{}, discardLoggerVMLane())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestSnapshotPostgresDeleteBeforeMappingAndLostCheckpoint(t *testing.T) {
 			pv.SetUID(types.UID(newDisk.Cleanup[0].UID))
 			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), ns, pv)
 			boundary := &snapshotDeleteBoundary{physical: NewNativeWithClients(client, nil), restored: []biz.Disk{newDisk}, restoreUID: restoreUID}
-			worker, err := biz.NewWorker(repo, boundary, snapshotDeleteNetwork{})
+			worker, err := biz.NewWorker(repo, boundary, snapshotDeleteNetwork{}, discardLoggerVMLane())
 			if err != nil {
 				t.Fatal(err)
 			}

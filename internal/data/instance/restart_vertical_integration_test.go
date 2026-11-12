@@ -123,7 +123,7 @@ func TestRestartVerticalPGPhasesReplayAndLostStartACK(t *testing.T) {
 				t.Fatal(err)
 			}
 			boundary := &lifecycleBoundary{lostStartACK: lostACK}
-			worker, _ := biz.NewWorker(f.repo, boundary, "restart-pg")
+			worker, _ := biz.NewWorker(f.repo, boundary, "restart-pg", discardLogger())
 			var i biz.Instance
 			for n := 0; n < 8; n++ {
 				i = step(t, f, worker, c)
@@ -252,7 +252,7 @@ func TestRestartVerticalPGDeleteInheritsUnknownStartAndUniqueFence(t *testing.T)
 				t.Fatal(err)
 			}
 			boundary := &delayedLifecycleBoundary{fenceOrder: order}
-			worker, _ := biz.NewWorker(f.repo, boundary, "delete-fence-pg")
+			worker, _ := biz.NewWorker(f.repo, boundary, "delete-fence-pg", discardLogger())
 			var i biz.Instance
 			for n := 0; n < 8; n++ {
 				i = step(t, f, worker, c)

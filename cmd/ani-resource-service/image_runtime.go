@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-func openImageRuntime(images *imageComponents, middlewares ...middleware.Middleware) (*kratosgrpc.Server, error) {
+func openImageRuntime(images *imageComponents, logger *slog.Logger, middlewares ...middleware.Middleware) (*kratosgrpc.Server, error) {
 	addr := os.Getenv("ANI_IMAGE_RUNTIME_ADDR")
 	if addr == "" {
 		for _, key := range []string{"ANI_IMAGE_RUNTIME_CA", "ANI_IMAGE_RUNTIME_CERT", "ANI_IMAGE_RUNTIME_KEY"} {
@@ -30,5 +31,5 @@ func openImageRuntime(images *imageComponents, middlewares ...middleware.Middlew
 	if err != nil {
 		return nil, err
 	}
-	return server.NewImageRuntimeGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: addr, Timeout: durationpb.New(45 * time.Second)}, tlsConfig, imageservice.NewRuntimeService(images.runtime), middlewares...)
+	return server.NewImageRuntimeGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: addr, Timeout: durationpb.New(45 * time.Second)}, tlsConfig, imageservice.NewRuntimeService(images.runtime), logger, middlewares...)
 }

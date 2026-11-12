@@ -2,12 +2,7 @@ package server
 
 import (
 	"context"
-	"log/slog"
-	"strings"
 
-	"github.com/go-kratos/kratos/v3/middleware"
-	"github.com/go-kratos/kratos/v3/middleware/logging"
-	"github.com/go-kratos/kratos/v3/transport"
 	imagev1 "github.com/zhangzhe-ctrl/ani-resource-service/api/image/v1"
 	imagebiz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/image"
 	"google.golang.org/grpc/codes"
@@ -39,29 +34,4 @@ func withImageGovernanceCaller(ctx context.Context, p governancePrincipal, reque
 		return nil, status.Error(codes.PermissionDenied, "image request tenant differs from authenticated scope")
 	}
 	return imagebiz.WithCaller(ctx, imagebiz.Caller{Kind: imagebiz.GovernanceCaller, Subject: p.Workload, Actor: p.Actor, TenantID: p.TenantID}), nil
-}
-
-type redactedImageRequest struct{}
-
-func (redactedImageRequest) Redact() string { return "[REDACTED]" }
-
-// Use the framework's logging and Redacter contract, keeping existing Network
-// logs intact. Sensitive requests reach the handler but never the logger.
-// Framework logging does not serialize replies.
-func requestLogging(logger *slog.Logger) middleware.Middleware {
-	normal := logging.Server(logger)
-	return func(handler middleware.Handler) middleware.Handler {
-		standard := normal(handler)
-		return func(ctx context.Context, req any) (any, error) {
-			info, ok := transport.FromServerContext(ctx)
-			if !ok || (!strings.HasPrefix(info.Operation(), "/image.v1.") &&
-				!strings.HasPrefix(info.Operation(), "/vm.v1.") &&
-				!strings.HasPrefix(info.Operation(), "/storage.v1.") &&
-				!strings.HasPrefix(info.Operation(), "/sandbox.v1.") &&
-				!strings.HasPrefix(info.Operation(), "/clusterops.v1.")) {
-				return standard(ctx, req)
-			}
-			return normal(func(ctx context.Context, _ any) (any, error) { return handler(ctx, req) })(ctx, redactedImageRequest{})
-		}
-	}
 }

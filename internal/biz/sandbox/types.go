@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/tenantnamespace"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var (
@@ -144,6 +146,10 @@ type Operation struct {
 	ID, TenantID, SandboxID, InstanceID, Action, IdempotencyKey, State, Reason string
 	IntentVersion                                                              int64
 	CreatedAt                                                                  time.Time
+	// TelemetryContext is independent logging metadata restored by the worker.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error
 }
 type Create struct {
 	TenantID, ID, InstanceID, OperationID, RequestDigest, IntentDigest string
@@ -197,6 +203,12 @@ type Work struct {
 	Sandbox    Sandbox
 	LeaseOwner string
 	LeaseEpoch int64
+	// TelemetryContext is restored from the claimed operation; OperationID is
+	// the existing sandbox operation identity.
+	TelemetryContext telemetry.TelemetryContext
+	// TelemetryContextError carries a metadata decode failure to the worker.
+	TelemetryContextError error
+	OperationID           string
 }
 type Progress struct {
 	Sandbox Sandbox

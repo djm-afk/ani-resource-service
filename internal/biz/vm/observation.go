@@ -3,9 +3,12 @@ package vm
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 // ErrObservationUnavailable describes a temporary source failure without
@@ -57,13 +60,14 @@ type ObservationRescanNotifier interface {
 type Observer struct {
 	repo   ObservationRepository
 	source ObservationSource
+	logger *slog.Logger
 }
 
-func NewObserver(repo ObservationRepository, source ObservationSource) (*Observer, error) {
+func NewObserver(repo ObservationRepository, source ObservationSource, logger *slog.Logger) (*Observer, error) {
 	if repo == nil || source == nil {
 		return nil, ErrInvalid
 	}
-	return &Observer{repo: repo, source: source}, nil
+	return &Observer{repo: repo, source: source, logger: logger}, nil
 }
 
 func (o *Observer) Step(ctx context.Context) (bool, error) {
@@ -83,6 +87,10 @@ func (o *Observer) Step(ctx context.Context) (bool, error) {
 	if err != nil {
 		return notified, errors.Join(notifyErr, err)
 	}
+	// A claimed observation is an independent pass with no user request behind
+	// it: open its own run span so the read/disk/save records all correlate.
+	ctx, runSpan := telemetry.StartRun(ctx, "vm.observe")
+	defer runSpan.End()
 	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	observed, readErr := o.source.ObserveState(readCtx, v)
 	cancel()
@@ -94,11 +102,43 @@ func (o *Observer) Step(ctx context.Context) (bool, error) {
 			stop()
 		}
 	}
+	// Record each real failure at its own point with the existing identity: the
+	// state read, the disk inventory read, and the observation save are distinct.
+	if readErr != nil {
+		o.logObserveFailed(ctx, v, "observe_state", readErr)
+	} else if inventoryErr != nil {
+		o.logObserveFailed(ctx, v, "observe_disk_preparation", inventoryErr)
+	}
 	// Dependency failures belong to this durable observation job. They must not
 	// stop the service supervisor or cancel an independent operation worker.
 	err = o.repo.SaveObservation(ctx, work, observed, readErr)
 	if errors.Is(err, ErrVersion) || errors.Is(err, ErrLease) {
 		return true, notifyErr
 	}
+	if err != nil {
+		o.logObserveFailed(ctx, v, "persist_observation", err)
+	}
 	return true, errors.Join(notifyErr, inventoryErr, err)
+}
+
+// logObserveFailed records a real observation failure. The observer is an
+// independent periodic lane with its own run trace, so no operation_id is
+// fabricated; resource_type/resource_id come from the observed VM.
+func (o *Observer) logObserveFailed(ctx context.Context, v VM, step string, err error) {
+	if o.logger == nil || err == nil {
+		return
+	}
+	attrs := []any{"event", "step.failed", "step", step, "result", "failed",
+		"resource_type", "vm", "resource_id", v.ID}
+	if v.TenantID != "" {
+		attrs = append(attrs, "tenant_id", v.TenantID)
+	}
+	if v.Native.Namespace != "" {
+		attrs = append(attrs, telemetry.Target{
+			ClusterID: v.Spec.ClusterID, Kind: v.Native.Kind, Namespace: v.Native.Namespace,
+			Name: v.Native.Name, UID: v.Native.UID,
+		}.KV()...)
+	}
+	attrs = append(attrs, logfields.ErrorFields(err)...)
+	o.logger.ErrorContext(ctx, "VM observation failed", attrs...)
 }

@@ -178,7 +178,7 @@ func (q *Queries) GetSecurityGroupConsumerAttachment(ctx context.Context, arg Ge
 }
 
 const getSecurityGroupOperation = `-- name: GetSecurityGroupOperation :one
-SELECT payload FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2
+SELECT payload,telemetry_context FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2
 `
 
 type GetSecurityGroupOperationParams struct {
@@ -186,11 +186,16 @@ type GetSecurityGroupOperationParams struct {
 	OperationID string
 }
 
-func (q *Queries) GetSecurityGroupOperation(ctx context.Context, arg GetSecurityGroupOperationParams) ([]byte, error) {
+type GetSecurityGroupOperationRow struct {
+	Payload          []byte
+	TelemetryContext []byte
+}
+
+func (q *Queries) GetSecurityGroupOperation(ctx context.Context, arg GetSecurityGroupOperationParams) (GetSecurityGroupOperationRow, error) {
 	row := q.db.QueryRow(ctx, getSecurityGroupOperation, arg.TenantID, arg.OperationID)
-	var payload []byte
-	err := row.Scan(&payload)
-	return payload, err
+	var i GetSecurityGroupOperationRow
+	err := row.Scan(&i.Payload, &i.TelemetryContext)
+	return i, err
 }
 
 const getSecurityGroupReplay = `-- name: GetSecurityGroupReplay :one
@@ -261,16 +266,17 @@ func (q *Queries) GetSecurityGroupTarget(ctx context.Context, arg GetSecurityGro
 }
 
 const insertSecurityGroupOperation = `-- name: InsertSecurityGroupOperation :exec
-INSERT INTO network_security_group_operations(tenant_id,operation_id,payload,actor_ref,caller_ref,intent) VALUES($1,$2,$3,$4,$5,$6)
+INSERT INTO network_security_group_operations(tenant_id,operation_id,payload,actor_ref,caller_ref,intent,telemetry_context) VALUES($1,$2,$3,$4,$5,$6,$7)
 `
 
 type InsertSecurityGroupOperationParams struct {
-	TenantID    string
-	OperationID string
-	Payload     []byte
-	ActorRef    string
-	CallerRef   string
-	Intent      []byte
+	TenantID         string
+	OperationID      string
+	Payload          []byte
+	ActorRef         string
+	CallerRef        string
+	Intent           []byte
+	TelemetryContext []byte
 }
 
 func (q *Queries) InsertSecurityGroupOperation(ctx context.Context, arg InsertSecurityGroupOperationParams) error {
@@ -281,6 +287,7 @@ func (q *Queries) InsertSecurityGroupOperation(ctx context.Context, arg InsertSe
 		arg.ActorRef,
 		arg.CallerRef,
 		arg.Intent,
+		arg.TelemetryContext,
 	)
 	return err
 }

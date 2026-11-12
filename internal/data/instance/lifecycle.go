@@ -11,18 +11,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/instance"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 type querier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
-const operationSelect = `SELECT tenant_id::text,operation_id::text,instance_id::text,action,idempotency_key,request_hash,version,ack,state,reason,created_at,execution FROM instance.instance_operations WHERE tenant_id=$1 AND operation_id=$2`
+const operationSelect = `SELECT tenant_id::text,operation_id::text,instance_id::text,action,idempotency_key,request_hash,version,ack,state,reason,created_at,execution,telemetry_context FROM instance.instance_operations WHERE tenant_id=$1 AND operation_id=$2`
 
 func scanOperation(row scanner) (biz.Operation, error) {
 	var o biz.Operation
-	var ack, execution []byte
-	err := row.Scan(&o.TenantID, &o.ID, &o.InstanceID, &o.Action, &o.Key, &o.RequestHash, &o.Version, &ack, &o.State, &o.Reason, &o.CreatedAt, &execution)
+	var ack, execution, telemetryRaw []byte
+	err := row.Scan(&o.TenantID, &o.ID, &o.InstanceID, &o.Action, &o.Key, &o.RequestHash, &o.Version, &ack, &o.State, &o.Reason, &o.CreatedAt, &execution, &telemetryRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return o, biz.ErrNotFound
 	}
@@ -40,6 +41,13 @@ func scanOperation(row scanner) (biz.Operation, error) {
 		if o.Execution.SchemaVersion != 1 {
 			return o, biz.ErrInvalid
 		}
+	}
+	// Logging metadata decodes independently; a malformed value never fails
+	// the business read.
+	if tc, te := telemetry.Decode(telemetryRaw); te != nil {
+		o.TelemetryContextError = te
+	} else {
+		o.TelemetryContext = tc
 	}
 	return o, nil
 }
@@ -134,7 +142,8 @@ func insertOperation(ctx context.Context, tx pgx.Tx, i biz.Instance, id, action,
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO instance.instance_operations(tenant_id,operation_id,instance_id,action,idempotency_key,request_hash,version,ack,execution) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, i.TenantID, id, i.ID, action, key, hash, i.Version, raw, stored)
+	_, err = tx.Exec(ctx, `INSERT INTO instance.instance_operations(tenant_id,operation_id,instance_id,action,idempotency_key,request_hash,version,ack,execution,telemetry_context) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		i.TenantID, id, i.ID, action, key, hash, i.Version, raw, stored, telemetryJSON(ctx))
 	return err
 }
 func saveProgressOperation(ctx context.Context, tx pgx.Tx, w biz.Work, p biz.Progress) error {
@@ -627,4 +636,18 @@ func lockReleaseGuards(ctx context.Context, tx pgx.Tx, tenant, id string) error 
 		}
 	}
 	return nil
+}
+
+// telemetryJSON renders the logging metadata for an operation insert, or nil
+// when the context carries no captured trace.
+func telemetryJSON(ctx context.Context) []byte {
+	tc := telemetry.Capture(ctx)
+	if !tc.Valid() {
+		return nil
+	}
+	b, e := json.Marshal(tc)
+	if e != nil {
+		return nil
+	}
+	return b
 }

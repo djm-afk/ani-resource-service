@@ -58,7 +58,7 @@ func (p *Postgres) acceptBaseConnectivity(ctx context.Context, q *sqlcgen.Querie
 		} else {
 			snat = child.id
 		}
-		if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, EipID: eip, SnatID: snat, OperationID: child.op, Kind: child.kind, CreatedAt: now}); err != nil {
+		if err = q.InsertOperation(ctx, sqlcgen.InsertOperationParams{TenantID: tenant, EipID: eip, SnatID: snat, OperationID: child.op, Kind: child.kind, CreatedAt: now, TelemetryContext: telemetryJSON(ctx)}); err != nil {
 			return databaseFailure(err)
 		}
 		if err = q.InsertBinding(ctx, sqlcgen.InsertBindingParams{TenantID: tenant, EipID: eip, SnatID: snat, BindingID: uuid.NewString(), ClusterID: p.placement.ClusterID, Namespace: namespace, ProviderName: strings.Replace(child.id, "_", "-", 1)}); err != nil {

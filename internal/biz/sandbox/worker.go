@@ -3,10 +3,14 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 )
 
 type Worker struct {
@@ -14,19 +18,36 @@ type Worker struct {
 	provider Provider
 	owner    string
 	lease    time.Duration
+	logger   *slog.Logger
 }
 
-func NewWorker(repo WorkerRepository, provider Provider, owner string, lease time.Duration) (*Worker, error) {
+func NewWorker(repo WorkerRepository, provider Provider, owner string, lease time.Duration, logger *slog.Logger) (*Worker, error) {
 	if repo == nil || provider == nil || owner == "" || lease <= 5*time.Second {
 		return nil, ErrInvalid
 	}
-	return &Worker{repo: repo, provider: provider, owner: owner, lease: lease}, nil
+	return &Worker{repo: repo, provider: provider, owner: owner, lease: lease, logger: logger}, nil
 }
 func (w *Worker) Step(ctx context.Context) (bool, error) {
 	work, err := w.repo.Claim(ctx, w.owner, w.lease)
-	if err != nil || work == nil {
+	if err != nil {
+		claimCtx, claimSpan := telemetry.StartRun(ctx, "sandbox.claim")
+		attrs := []any{"event", "dependency.failed", "dependency", "postgresql", "action", "sandbox.claim", "result", "failed"}
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+		w.logger.ErrorContext(claimCtx, "sandbox claim failed", attrs...)
+		w.logSandboxRetryScheduled(claimCtx, nil, "SANDBOX_CLAIM_FAILED")
+		claimSpan.End()
 		return false, err
 	}
+	if work == nil {
+		return false, nil
+	}
+	// Restore the claimed record's trace; missing/invalid is recorded and work continues.
+	restored, telemetryEvent, telemetryErr := w.restoreSandboxContext(ctx, work)
+	// The restored trace belongs to the finished accepting request, so this pass
+	// opens its own span and keeps the same trace_id with a new span_id.
+	ctx, runSpan := telemetry.StartRun(restored, "sandbox.step")
+	defer runSpan.End()
+	w.logSandboxTelemetry(ctx, work, telemetryEvent, telemetryErr)
 	// Reserve the last five seconds for recording the result, including an
 	// unknown result when the provider call exhausts its own deadline.
 	callCtx, cancel := context.WithTimeout(ctx, w.lease-5*time.Second)
@@ -35,7 +56,11 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 	finish := func() (bool, error) {
 		persistCtx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer done()
-		return true, w.repo.Finish(persistCtx, *work, p)
+		if e := w.repo.Finish(persistCtx, *work, p); e != nil {
+			w.logSandboxPersistFailed(persistCtx, work, "persist_operation", e)
+			return true, e
+		}
+		return true, nil
 	}
 	// A PV read can consume its entire observation deadline after the Pod has
 	// already been verified. Reserve a separate part of the lease budget for
@@ -44,6 +69,8 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 	obs, observeErr := w.provider.Observe(observeCtx, work.Sandbox)
 	observeCancel()
 	if observeErr != nil {
+		// Record the real provider error before it becomes a fixed reason.
+		w.logSandboxStepFailed(ctx, work, "observe", observeErr)
 		p.Sandbox.Observed, p.Sandbox.Reason = ObservedUnknown, "PROVIDER_OBSERVATION_FAILED"
 		if errors.Is(observeErr, ErrClusterMismatch) {
 			p.Sandbox.Reason = ErrClusterMismatch.Error()
@@ -72,6 +99,8 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 			}
 		}
 		if mutateErr != nil || result.Outcome != MutationApplied {
+			// A real provider mutation failure is recorded before the state change.
+			w.logSandboxStepFailed(ctx, work, "apply", mutateErr)
 			p.Sandbox.Observed, p.Sandbox.Reason = ObservedUnknown, result.Reason
 			if p.Sandbox.Reason == "" {
 				p.Sandbox.Reason = "PROVIDER_MUTATION_FAILED"
@@ -107,6 +136,7 @@ func (w *Worker) Step(ctx context.Context) (bool, error) {
 			retry.Attempt++
 			retry.PreviousUncertain = true
 			if err = w.repo.PrepareMutation(callCtx, *work, retry); err != nil {
+				w.logSandboxPersistFailed(ctx, work, "prepare_mutation", err)
 				return true, err
 			}
 			p.Sandbox.Pending = &retry
