@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 	pb "github.com/zhangzhe-ctrl/ani-resource-service/api/sandbox/v1"
 	compute "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/compute"
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/sandbox"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry/logfields"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -151,7 +153,7 @@ func (s *Service) validateRuntimeClass(ctx context.Context, class string) error 
 	}
 	return nil
 }
-func rpcError(err error) error {
+func rpcErrorCtx(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -187,6 +189,11 @@ func rpcError(err error) error {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return status.FromContextError(err).Err()
 	default:
+		// Keep the client-visible code stable, but never drop the real cause:
+		// operators need the underlying dependency/IO error to diagnose the lane.
+		attrs := []any{"event", "step.failed", "step", "accept", "result", "failed"}
+		attrs = append(attrs, logfields.ErrorFields(err)...)
+		slog.Default().ErrorContext(ctx, "sandbox request failed", attrs...)
 		return status.Error(codes.Unavailable, "SANDBOX_DEPENDENCY_UNAVAILABLE")
 	}
 }
@@ -251,20 +258,20 @@ func hasUnknown(m protoreflect.Message) bool {
 }
 func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpecRequest) (*pb.ResolveCreateSpecResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) || r.Data == nil || hasUnknown(r.Data.ProtoReflect()) || r.ContractVersion != 1 || r.InstanceId != "" || strings.TrimSpace(r.Data.Name) == "" || len([]rune(r.Data.Name)) > 80 || !biz.UUID(r.Data.PresetId) {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if err := biz.RequireTenant(ctx, r.TenantId); err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	namespace, err := s.namespace(r.TenantId)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	name := strings.TrimSpace(r.Data.Name)
 	var imageRef string
 	if r.Data.ImageId != "" || r.Data.ImageScope != "" {
 		if r.Data.ImageReference != "" {
-			return nil, rpcError(biz.ErrInvalid)
+			return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 		}
 		imageRef, err = s.resolveImageID(ctx, r.TenantId, r.Data.ImageId, r.Data.ImageScope)
 	} else {
@@ -272,45 +279,45 @@ func (s *Service) ResolveCreateSpec(ctx context.Context, r *pb.ResolveCreateSpec
 		imageRef, err = s.resolveImage(ctx, r.TenantId, strings.TrimSpace(r.Data.ImageReference))
 	}
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	digest, _ := biz.ImageDigest(imageRef)
 	runtimeClass, err := s.runtimeClass(ctx)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	sel, err := s.compute.Resolve(ctx, r.TenantId, r.Data.PresetId, compute.Sandbox)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	workspace := r.Data.WorkspaceSize
 	if workspace == "" {
 		workspace = s.config.WorkspaceSize
 	}
 	if !validWorkspaceSize(workspace) || sel.PresetID != r.Data.PresetId || sel.ComputeType != "cpu" || sel.GPU != nil {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	selDigest, err := selectionDigest(sel)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	// Tenant-space provisioning owns namespace creation. Sandbox resolution is
 	// read-only so a delayed request cannot create a namespace after closure.
 	namespaceUID, err := s.config.NamespaceResolver.ResolveSandboxNamespaceUID(ctx, r.TenantId)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	if namespaceUID == "" {
-		return nil, rpcError(biz.ErrDependencyUnavailable)
+		return nil, rpcErrorCtx(ctx, biz.ErrDependencyUnavailable)
 	}
 	storageClass, err := s.storageClass(ctx, r.TenantId)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	out := &pb.ResolveCreateSpecResponse{Name: name, ImageId: r.Data.ImageId, ImageScope: r.Data.ImageScope, ImageReference: imageRef, ImageDigest: digest, PresetId: sel.PresetID, PresetCode: sel.Code, PresetName: sel.Name, ComputeType: sel.ComputeType, CpuMillis: sel.CPUMillis, MemoryMib: sel.MemoryMiB, SelectionDigest: selDigest, ClusterId: s.config.ClusterID, Namespace: namespace, NamespaceUid: namespaceUID, RuntimeClass: runtimeClass, Workspace: &pb.WorkspaceSpec{MountPath: "/workspace", Size: workspace, StorageClass: storageClass, ReclaimPolicy: "Delete"}, ContractVersion: 1}
 	out.SpecDigest, err = frozenSpecDigest(out)
 	if err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	return out, nil
 }
@@ -322,22 +329,22 @@ func frozenSnapshot(v biz.CreateSpec) biz.Snapshot {
 }
 func (s *Service) AcceptCreate(ctx context.Context, r *pb.AcceptCreateRequest) (*pb.AcceptCreateResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) || r.Context == nil || r.Spec == nil || !biz.UUID(r.Context.ResourceId) || !biz.UUID(r.Context.OperationId) || len([]rune(r.InstanceId)) > 128 || r.Spec.ContractVersion != 1 || r.Spec.Workspace == nil {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if err := biz.RequireTenant(ctx, r.Context.TenantId); err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	if r.CreateIntentDigest != "" {
 		decoded, err := hex.DecodeString(r.CreateIntentDigest)
 		if err != nil || len(decoded) != 32 || hex.EncodeToString(decoded) != r.CreateIntentDigest {
-			return nil, rpcError(biz.ErrInvalid)
+			return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 		}
 	}
 	requestDigest, digestErr := pb.CommandDigest(r.Context, r.InstanceId, r.Spec, r.CreateIntentDigest)
 	selDigest, selErr := selectionDigest(compute.Selection{PresetID: r.Spec.PresetId, Code: r.Spec.PresetCode, Name: r.Spec.PresetName, ComputeType: r.Spec.ComputeType, CPUMillis: r.Spec.CpuMillis, MemoryMiB: r.Spec.MemoryMib})
 	specDigest, specErr := frozenSpecDigest(r.Spec)
 	if got, ok := biz.ImageDigest(r.Spec.ImageReference); !ok || got != r.Spec.ImageDigest || r.Spec.NamespaceUid == "" || strings.TrimSpace(r.Spec.ImageReference) != r.Spec.ImageReference || strings.TrimSpace(r.Spec.Name) == "" || len([]rune(r.Spec.Name)) > 80 || !biz.UUID(r.Spec.PresetId) || !biz.UUID(r.Spec.ClusterId) || r.Spec.CpuMillis <= 0 || r.Spec.MemoryMib <= 0 || digestErr != nil || requestDigest != r.Context.RequestDigest || selErr != nil || r.Spec.SelectionDigest != selDigest || specErr != nil || r.Spec.SpecDigest != specDigest {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	create := biz.Create{TenantID: r.Context.TenantId, ID: r.Context.ResourceId, InstanceID: r.InstanceId, OperationID: r.Context.OperationId, RequestDigest: r.Context.RequestDigest, IntentDigest: r.CreateIntentDigest, Spec: specValue(r.Spec)}
 	// Exact accepted commands replay against their original facts before any
@@ -345,24 +352,24 @@ func (s *Service) AcceptCreate(ctx context.Context, r *pb.AcceptCreateRequest) (
 	existing, err := s.repo.Get(ctx, create.TenantID, create.ID)
 	if err == nil {
 		if existing.InstanceID != create.InstanceID || existing.CreateOperationID != create.OperationID || existing.CreateRequestDigest != create.RequestDigest || existing.CreateIntentDigest != create.IntentDigest || existing.Snapshot != frozenSnapshot(create.Spec) {
-			return nil, rpcError(biz.ErrConflict)
+			return nil, rpcErrorCtx(ctx, biz.ErrConflict)
 		}
 		return &pb.AcceptCreateResponse{Ack: ackProto(biz.ACK{OperationID: existing.CreateOperationID, ResourceID: existing.ID, Accepted: true, Replayed: true})}, nil
 	}
 	if !errors.Is(err, biz.ErrNotFound) {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	if r.InstanceId != "" {
 		// The former parent field is accepted only to replay an already persisted
 		// historical command above. It cannot create new linked resources.
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	namespaceUID, namespaceUIDErr := s.config.NamespaceResolver.ResolveSandboxNamespaceUID(ctx, r.Context.TenantId)
 	if namespaceUIDErr != nil {
-		return nil, rpcError(namespaceUIDErr)
+		return nil, rpcErrorCtx(ctx, namespaceUIDErr)
 	}
 	if namespaceUID == "" || namespaceUID != r.Spec.NamespaceUid {
-		return nil, rpcError(biz.ErrOwnership)
+		return nil, rpcErrorCtx(ctx, biz.ErrOwnership)
 	}
 	var imageRef string
 	var imageErr error
@@ -372,76 +379,76 @@ func (s *Service) AcceptCreate(ctx context.Context, r *pb.AcceptCreateRequest) (
 		imageRef, imageErr = s.resolveImage(ctx, r.Context.TenantId, r.Spec.ImageReference)
 	}
 	if imageErr != nil {
-		return nil, rpcError(imageErr)
+		return nil, rpcErrorCtx(ctx, imageErr)
 	}
 	storageClass, storageErr := s.storageClass(ctx, r.Context.TenantId)
 	if storageErr != nil {
-		return nil, rpcError(storageErr)
+		return nil, rpcErrorCtx(ctx, storageErr)
 	}
 	if err := s.validateRuntimeClass(ctx, r.Spec.RuntimeClass); err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	namespace, namespaceErr := s.namespace(r.Context.TenantId)
 	if namespaceErr != nil || imageRef != r.Spec.ImageReference || r.Spec.ClusterId != s.config.ClusterID || r.Spec.Namespace != namespace || r.Spec.Workspace.MountPath != "/workspace" || !validWorkspaceSize(r.Spec.Workspace.Size) || r.Spec.Workspace.StorageClass != storageClass || r.Spec.Workspace.ReclaimPolicy != "Delete" {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	ack, err := s.repo.AcceptCreate(ctx, create)
-	return &pb.AcceptCreateResponse{Ack: ackProto(ack)}, rpcError(err)
+	return &pb.AcceptCreateResponse{Ack: ackProto(ack)}, rpcErrorCtx(ctx, err)
 }
 func (s *Service) GetSandbox(ctx context.Context, r *pb.GetSandboxRequest) (*pb.GetSandboxResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) || !biz.UUID(r.SandboxId) || r.InstanceId != "" {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if err := biz.RequireTenant(ctx, r.TenantId); err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	v, err := s.repo.Get(ctx, r.TenantId, r.SandboxId)
-	return &pb.GetSandboxResponse{Sandbox: toProto(v)}, rpcError(err)
+	return &pb.GetSandboxResponse{Sandbox: toProto(v)}, rpcErrorCtx(ctx, err)
 }
 func (s *Service) ListSandboxes(ctx context.Context, r *pb.ListSandboxesRequest) (*pb.ListSandboxesResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) || r.InstanceId != "" {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if err := biz.RequireTenant(ctx, r.TenantId); err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	xs, total, err := s.repo.List(ctx, r.TenantId, biz.ListFilter{Page: r.Page, PageSize: r.PageSize})
 	out := &pb.ListSandboxesResponse{Total: total}
 	for _, x := range xs {
 		out.Items = append(out.Items, toProto(x))
 	}
-	return out, rpcError(err)
+	return out, rpcErrorCtx(ctx, err)
 }
 func (s *Service) GetOperation(ctx context.Context, r *pb.GetOperationRequest) (*pb.GetOperationResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) || !biz.UUID(r.OperationId) || r.InstanceId != "" {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	if err := biz.RequireTenant(ctx, r.TenantId); err != nil {
-		return nil, rpcError(err)
+		return nil, rpcErrorCtx(ctx, err)
 	}
 	op, err := s.repo.GetOperation(ctx, r.TenantId, r.OperationId)
-	return &pb.GetOperationResponse{Operation: operationProto(op)}, rpcError(err)
+	return &pb.GetOperationResponse{Operation: operationProto(op)}, rpcErrorCtx(ctx, err)
 }
 func (s *Service) Pause(ctx context.Context, r *pb.PauseRequest) (*pb.PauseResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	a, err := s.change(ctx, r.GetTenantId(), r.GetSandboxId(), r.GetInstanceId(), r.GetIdempotencyKey(), r.GetExpectedVersion(), "pause")
-	return &pb.PauseResponse{Ack: ackProto(a)}, rpcError(err)
+	return &pb.PauseResponse{Ack: ackProto(a)}, rpcErrorCtx(ctx, err)
 }
 func (s *Service) Resume(ctx context.Context, r *pb.ResumeRequest) (*pb.ResumeResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	a, err := s.change(ctx, r.GetTenantId(), r.GetSandboxId(), r.GetInstanceId(), r.GetIdempotencyKey(), r.GetExpectedVersion(), "resume")
-	return &pb.ResumeResponse{Ack: ackProto(a)}, rpcError(err)
+	return &pb.ResumeResponse{Ack: ackProto(a)}, rpcErrorCtx(ctx, err)
 }
 func (s *Service) Delete(ctx context.Context, r *pb.DeleteRequest) (*pb.DeleteResponse, error) {
 	if r == nil || hasUnknown(r.ProtoReflect()) {
-		return nil, rpcError(biz.ErrInvalid)
+		return nil, rpcErrorCtx(ctx, biz.ErrInvalid)
 	}
 	a, err := s.change(ctx, r.GetTenantId(), r.GetSandboxId(), r.GetInstanceId(), r.GetIdempotencyKey(), r.GetExpectedVersion(), "delete")
-	return &pb.DeleteResponse{Ack: ackProto(a)}, rpcError(err)
+	return &pb.DeleteResponse{Ack: ackProto(a)}, rpcErrorCtx(ctx, err)
 }
 func (s *Service) change(ctx context.Context, tenant, id, instance, key string, version int64, action string) (biz.ACK, error) {
 	if err := biz.RequireTenant(ctx, tenant); err != nil {
