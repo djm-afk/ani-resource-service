@@ -8,7 +8,7 @@
 
 ## Network 日志整改一期（2026-11-12）
 
-状态：**代码完成、离线门禁通过；未部署、未真机验收。** 分支 `feat/network-logging-phase1`，基线 `origin/main=71c2e8eb`。执行包 `docs/00-实施/ANI-Res-Network-Logging-Main-v1.0/` 的 N00–N07 已落地：§2 十处偏差全部关闭、§3 业务事件补齐（含 §6.1 全 step 成功侧）、平台第五张表新增迁移 `0036`、NG29/NG30 通过。产出 20 类事件经 `tools/verify_logs.py` 实测 PASS（0 issue）；`make verify` 其余步骤通过，仅 `tests/runtime::TestRuntimeLifecycle` 失败，该失败在干净 `origin/main` 上同样复现，属既有基线。`internal/data/network` 集成套件的失败在基线树上同样存在，未记为通过。真机项 NG01–NG28 因未部署全部 NOT_RUN。详见[实施进度](records/NETWORK-LOGGING-PHASE1-PROGRESS-20261112.md)与[实施底稿](records/2026-11-12-network-logging-phase1.md)。
+状态：**代码完成、离线门禁通过、真机验收完成（覆盖部署 + 独立库，验收后已还原）。** 分支 `feat/network-logging-phase1`，基线 `origin/main=71c2e8eb`。执行包 `docs/00-实施/ANI-Res-Network-Logging-Main-v1.0/` 的 N00–N07 已落地：§2 十处偏差全部关闭、§3 业务事件补齐（含 §6.1 全 step 成功侧）、平台第五张表新增迁移 `0036`、NG29/NG30 通过。产出 20 类事件经 `tools/verify_logs.py` 实测 PASS（0 issue）；`make verify` 其余步骤通过，仅 `tests/runtime::TestRuntimeLifecycle` 失败，该失败在干净 `origin/main` 上同样复现，属既有基线。`internal/data/network` 集成套件的失败在基线树上同样存在，未记为通过。真机已跑 11 项（NG01/02/03/05/06/07/15/17/20/25/30）全部 PASS，累计 65 条真机 JSONL 过合同校验器 0 issue；其余 NG 项 NOT_RUN 并已注明原因。详见[实施进度](records/NETWORK-LOGGING-PHASE1-PROGRESS-20261112.md)与[实施底稿](records/2026-11-12-network-logging-phase1.md)。
 
 <a id="vm-image-init-pr71-followup-20261109"></a>
 ## PR #71 镜像初始化声明剩余修复（2026-11-09）

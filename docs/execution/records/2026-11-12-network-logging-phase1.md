@@ -75,7 +75,14 @@
 
 ## 6 未执行（NOT_RUN）
 
-以下真机项需要已部署的 Res 进程与授权测试集群，本任务未部署、未在 10.10.1.66 或任何集群运行，故**全部 NOT_RUN**，不以单测或本地推演冒充：NG01–NG05、NG07–NG17、NG19–NG28 中除已单测覆盖分支外的真机观测；特别是 NG10/NG11（远端 consumer 可达性）、NG15/NG16（同 trace 端到端与重启）、NG17（真 RBAC 403 经 ProviderError）、NG20/NG21（真 watch 与通知故障）、NG27（导出真实 JSONL 跑 `tools/verify_logs.py` 并比对 K8s 调用次数）。
+本底稿成稿时未部署。**2026-11-13 已补做真机验收**（覆盖部署 + 独立库，验收后已还原），结果与证据见[实施进度 §十](NETWORK-LOGGING-PHASE1-PROGRESS-20261112.md)：NG01/02/03/05/06/07/15/17/20/25/30 共 11 项 PASS，累计 65 条真机 JSONL 过 `tools/verify_logs.py` 为 0 issue。
+
+仍为 NOT_RUN 的部分与原因：
+
+- **NG10 / NG11 / NG12**：独立库无附件数据，构造需先建 instance/sandbox，超出 Network 域。
+- **NG21**：通知失败需精确命中 `NotifyObservedObject` 执行瞬间的 DB 断连，两次尝试未命中。
+- **NG04 / NG08 / NG09 / NG14 / NG16 / NG18 / NG19 / NG22 / NG23 / NG24 / NG26 / NG27 / NG28**：需专门故障注入或未构造场景。其中 NG18 已有定向单测（四条路径 + 终态不继承），但单测不等同真机，仍记 NOT_RUN。
+- **NG27 的 K8s 调用次数比对**：合同校验部分已 PASS，调用次数未做基线对照。
 
 ## 7 交接
 

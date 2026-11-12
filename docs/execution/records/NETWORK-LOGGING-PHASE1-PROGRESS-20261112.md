@@ -1,11 +1,11 @@
 # Res Network 日志整改一期 — 实施进度
 
-更新：2026-11-12。分支 `feat/network-logging-phase1`（基于 `origin/main = 71c2e8eb`）。
-**当前状态：代码完成 + 离线门禁通过；未部署、未真机验收。**
+更新：2026-11-13。分支 `feat/network-logging-phase1`（基于 `origin/main = 71c2e8eb`）。PR [#77](https://github.com/zhangzhe-ctrl/ani-resource-service/pull/77)。
+**当前状态：代码完成 + 离线门禁通过 + 真机验收（覆盖部署 + 独立库）已完成并已还原。**
 
 ## 一、一句话结论
 
-执行包 `docs/00-实施/ANI-Res-Network-Logging-Main-v1.0/` 的 N00–N07 已全部落地（§2 十处偏差 + §3 业务事件 + 平台第五张表 + NG29/NG30），N08 的真机部分因未部署全部 NOT_RUN。产出 20 类事件经合同校验器 `verify_logs.py` 实测 **PASS（0 issue）**。唯一红项 `tests/runtime::TestRuntimeLifecycle` 在干净 `origin/main` 上同样失败，属既有基线。
+执行包 `docs/00-实施/ANI-Res-Network-Logging-Main-v1.0/` 的 N00–N08 已全部落地（§2 十处偏差 + §3 业务事件 + 平台第五张表 + NG29/NG30 + 真机验收）。产出 20 类事件经合同校验器 `verify_logs.py` 实测 **PASS（0 issue）**；真机以「覆盖主 Deployment + 独立库」方式跑通 11 项 NG，累计 65 条真机 JSONL 过校验器 **0 issue**，验收后已完整还原。唯一红项 `tests/runtime::TestRuntimeLifecycle` 在干净 `origin/main` 上同样失败，属既有基线。
 
 ## 二、进度总表
 
@@ -19,7 +19,7 @@
 | N05 | Switch / SG / DefaultEgress | 完成 | 三个 `*_worker.go` |
 | N06 | 观察链（仅 watch + notify） | 完成 | `kc_observation.go` |
 | N07 | 门禁 + NG29/NG30 | 完成 | 见 §5；只有既有基线红 |
-| N08 | 真机验收 | **未开始（NOT_RUN）** | 未部署、无集群授权 |
+| N08 | 真机验收 | 完成（11 项 PASS，其余 NOT_RUN 已分栏） | 覆盖部署 + 独立库，验收后已还原；见 §10 |
 
 ## 三、关闭的偏差（§2）
 
@@ -95,3 +95,62 @@
 ## 九、详细记录
 
 逐条证据、行号锚点、集成失败对照表见 [2026-11-12-network-logging-phase1.md](2026-11-12-network-logging-phase1.md)。
+
+## 十、真机验收（2026-11-13）
+
+### 10.1 方式与还原
+
+采用**覆盖主 Deployment + 独立库**（与 Gov-Res 包第二轮同一路径），不是旁挂副本：只有这样才能让 Gov 流量与真实 Service 端口进入验证。
+
+| 项 | 值 |
+|---|---|
+| 实测镜像 | `ani-resource-service:netlog-20261112`，digest `sha256:5258e5b1…` |
+| 镜像自证 | `crane export` 取出的二进制 sha256 `bf28e3bf…` 与本地构建一致；`strings` 命中 `operation.lease_lost`/`notify_observed_object`/`network-default-egress-worker` |
+| 数据库 | 独立库 `ani_resource_netlog`，network **36** / instance 11 / sandbox 9 / vm 9 / compute 2 / image 1 |
+| 覆盖前备份 | `.tmp/deploy-backup-20261112/`（Deployment + Secret + `rollback.sh`） |
+| 还原 | 镜像回 `15f2d94c…`；Secret 15 键与备份逐键一致；独立库与 4 个角色已 DROP；迁移 Job/Secret/客户端 Pod 已删；1/1 Ready |
+
+切换顺序为「先 patch DSN、后换镜像」，中间态必然不可用（旧镜像迁移集合到 network 0033，独立库是 36），因此一步内完成。
+
+### 10.2 结果
+
+| ID | 结果 | 关键证据 |
+|---|---|---|
+| NG01 | **PASS** | 单行 JSON，非 JSON 行 0；`process.starting`（`log_format=json`、`log_level=INFO`）+ `process.ready` |
+| NG02 | **PASS** | `ANI_LOG_LEVEL=debug` 下健康路径 DEBUG，INFO/WARN 等级与内容不变 |
+| NG03 | **PASS** | `ANI_LOG_LEVEL=warn` → `process.start_failed` ERROR、`step=logger`、真实原因，进程退出 |
+| NG05 | **PASS** | CreateVPC 返回 VPC/operation；VPC 实际落到 K8s（`vpc-5619a80a…`，10.128.0.0/16，Ready）；同 trace `operation.accepted` |
+| NG06 | **PASS** | 非法参数 → `rpc.code=InvalidArgument` WARN/rejected；`operation.rejected` WARN 带 `reason=INVALID_ARGUMENT`；无 accepted |
+| NG07 | **PASS** | 未知方法 → `rpc.server.completed` `PermissionDenied`/WARN/rejected，恰一条；`UnknownServiceHandler` 原行为保留 |
+| NG15 | **PASS** | RPC 与后台同 trace `76978bff…`、span 不同；`operation_id` 贯穿 |
+| NG17 | **PASS** | 经 `ProviderError` 包装的真实 403：`http.status_code=403`、`error_code=Forbidden`、`error` 为完整原始 message（含 verb/resource/namespace/身份） |
+| NG20 | **PASS** | watch 403 → **ERROR** `dependency.failed`（未降 WARN），`error_source=kubernetes`，保留 GVR 与原错 |
+| NG25 | **PASS** | `/healthz` `/readyz` `/metrics` 成功 DEBUG；404 → WARN/真实 code 并带 `http.status_code`、`duration_ms` |
+| NG30 | **PASS** | 五张 operation 表 `telemetry_context` 均为可空 jsonb（真库） |
+| 合同校验 | **PASS** | 累计 65 条真机 JSONL，`verify_logs.py` `issue_count=0` |
+
+**附带强证据（原 §2#5/#12 的直接验证）**：VPC 操作完成后，终态周期观察轮次的 `trace_id` 从受理 trace `76978bff…` 切换为新 trace `9995060b…`，证明「终态不继承创建 trace」在真机生效，且该轮未报 `telemetry.context_missing`。
+
+### 10.3 NOT_RUN 与原因
+
+| 项 | 原因 |
+|---|---|
+| NG10 / NG11 / NG12 | 独立库 `network_attachments` 为空，无 workload 产生附件；构造需先建 instance/sandbox，超出 Network 域 |
+| NG21 | 通知失败需精确命中 `NotifyObservedObject` 执行瞬间的 DB 断连；两次以 `pg_terminate_backend` 尝试均在连接池自动重连后才轮到通知，未命中 |
+| NG04 / NG08 / NG09 / NG14 / NG16 / NG18 / NG19 / NG22 / NG23 / NG24 / NG26 / NG27 / NG28 | 需专门故障注入（panic、解码失败、重启恢复、并发临界）或未构造的场景，本轮未做 |
+
+其中 NG18 已由定向单测覆盖（四条路径 + 终态不继承），但**单测不等同真机**，仍记 NOT_RUN。
+
+### 10.4 故障注入与还原
+
+| 注入 | 还原校验 |
+|---|---|
+| `ClusterRole/ani-network-egress` 移除 `vpcs` 的 `create`（NG17） | rules 指纹回到 `5a6b213dab43b9d7`；`auth can-i create` = yes |
+| 同上移除 `vpcs` 的 `watch`（NG20） | 同上；watch/create/delete 全 yes |
+| `ANI_LOG_LEVEL=debug`（NG02）/ `=warn`（NG03） | env 已移除，回到默认 INFO |
+
+注入前备份与还原脚本在 `.tmp/inject-backup-20261113/`（含 rules 指纹与 `restore.sh`）。还原时 `kubectl apply` 会因 `resourceVersion` 冲突失败，改用 `kubectl replace --force` 并以「rules 指纹一致 + `auth can-i` 恢复」作为验收判据。
+
+### 10.5 与历史做法的差异
+
+Gov-Res 第二轮（2026-11-11）同样是覆盖部署 + 独立库。本轮额外确认：现网旧镜像的迁移集合止于 network 0033 且不含任何 `logging_telemetry` 迁移，因此**切库后旧镜像必然启动失败**，不能把「先切库、让旧镜像跑一会儿」当作可行中间态。
