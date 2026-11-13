@@ -61,6 +61,14 @@ func executeBaseConnectivityCommand(ctx context.Context, repository *data.Postgr
 		}
 		return encoder.Encode(value)
 	}
+	if baseConnectivityAction == "dispatch" {
+		// This command is the only admission path outside the service process, so
+		// the global TracerProvider and propagator the service installs never run
+		// here. Without them StartRun/Capture produce empty telemetry context and
+		// every admitted operation is persisted without a trace.
+		shutdown := telemetry.InstallDefault()
+		defer func() { _ = shutdown(ctx) }()
+	}
 	switch baseConnectivityAction {
 	case "plan":
 		return write(repository.PlanBaseBackfill(ctx, data.BaseBackfillPlanInput{RunID: baseConnectivityRun, PoolID: baseConnectivityPool, Interval: baseConnectivityInterval}))

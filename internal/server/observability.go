@@ -191,7 +191,10 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 		conflict := kind == biz.ProviderConflict || kind == biz.ProviderInUse
 		event, level := biz.EventStepFailed, slog.LevelError
 		if conflict {
-			event = biz.EventOperationConflict
+			// The contract fixes operation.conflict at WARN; carrying the ERROR
+			// level over from step.failed would misreport a normal concurrency
+			// outcome as a fault.
+			event, level = biz.EventOperationConflict, slog.LevelWarn
 		}
 		attrs := []any{"event", event, "worker", biz.WorkerMain,
 			"step", providerFailureStep(work), "dependency", "kubernetes",
@@ -233,6 +236,12 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", work.Resource.Kind)))
 	}
 	o.workerAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result), attribute.String("kind", work.Resource.Kind)))
+	// The worker already recorded the lost lease at the write that lost it. A
+	// second record as step.failed (fixed at ERROR) would report a concurrency
+	// outcome as a fault and contradict the WARN on the same trace.
+	if errors.Is(err, biz.ErrLeaseLost) {
+		return
+	}
 	if !work.ActiveOperation && err == nil && work.Resource.State == progress.State && work.Resource.Reason == progress.Reason {
 		return
 	}
@@ -289,7 +298,10 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 func providerFailureStep(work biz.Work) string {
 	switch kind := work.Operation.Kind; {
 	case strings.HasPrefix(kind, "create_"), kind == "bind_snat":
-		return biz.StepEnsureVPC
+		// A create_<kind> operation belongs to that resource kind's own stage;
+		// mapping every create_* to ensure_vpc blamed the VPC for subnet and
+		// egress failures.
+		return biz.StepForResourceKind(work.Resource.Kind)
 	case kind == "set_snat_enabled":
 		return biz.StepUpdateEgress
 	case strings.HasPrefix(kind, "delete_"):
@@ -382,6 +394,11 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 		o.providerReachable.Record(ctx, reachable, metric.WithAttributes(attribute.String("kind", "virtual_switch")))
 	}
 	if err == nil && work.Switch.BindingState == progress.BindingState && work.Switch.Reason == progress.Reason {
+		return
+	}
+	// A lost lease is already recorded by the write that lost it; restating it
+	// as step.failed would turn a concurrency outcome into an ERROR fault.
+	if errors.Is(err, biz.ErrLeaseLost) {
 		return
 	}
 	event, level := biz.EventStepSucceeded, slog.LevelInfo
@@ -492,11 +509,11 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 		if event == biz.EventStepFailed {
 			attrs = append(attrs, "dependency", "kubernetes", "result", "failed")
 		}
-		// Only a Pod that was actually resolved carries Pod coordinates; while the
-		// read failed before the object existed, an empty target is correct.
-		if p.PodName != "" || p.PodUID != "" {
-			attrs = append(attrs, telemetry.Target{Kind: "Pod",
-				Namespace: work.Plan.Namespace, Name: p.PodName, UID: p.PodUID}.KV()...)
+		// Only an object the reader actually addressed carries coordinates. The
+		// stage reads the Pod and may then fail on its VNic, so guessing "Pod"
+		// from the step would point at a healthy object.
+		if t := p.FailureTarget; t.Kind != "" {
+			attrs = append(attrs, telemetry.Target{Kind: t.Kind, Namespace: t.Namespace, Name: t.Name, UID: t.UID}.KV()...)
 		}
 		if cause != nil {
 			attrs = append(attrs, logfields.ErrorFields(cause)...)

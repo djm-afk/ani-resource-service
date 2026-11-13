@@ -175,7 +175,29 @@ func operationConflict(ctx context.Context, logger *slog.Logger, worker, step st
 }
 
 func operationLeaseLost(ctx context.Context, logger *slog.Logger, worker, step string, identity []any) {
+	// operation.lease_lost requires an operation_id. A lane pass that owns no
+	// operation (a pure terminal reconciliation) still lost a lease, and that is
+	// a concurrency outcome rather than a fault, so it is recorded as the
+	// contract's conflict event instead of fabricating an operation.
+	if !identityHas(identity, "operation_id") {
+		operationConflict(ctx, logger, worker, step, identity, LeaseLost, nil)
+		return
+	}
 	networkEvent(ctx, logger, slog.LevelWarn, EventOperationLease, append([]any{"worker", worker, "step", step, "reason", string(LeaseLost)}, identity...)...)
+}
+
+// identityHas reports whether the identity list carries a non-empty value for
+// key. The event helper drops empty strings later, so the check must happen on
+// the source values.
+func identityHas(identity []any, key string) bool {
+	for i := 0; i+1 < len(identity); i += 2 {
+		if name, ok := identity[i].(string); ok && name == key {
+			if value, ok := identity[i+1].(string); ok && value != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // operationFailed keeps the real cause: an observed failure without an error is
@@ -286,11 +308,27 @@ func (w DefaultEgressWork) eventIdentity() []any {
 // observed. Persistence succeeding says nothing about the provider result: a
 // saved backoff is still a failed or waiting observation, and calling it
 // step.succeeded contradicts the error recorded on the same trace.
+// StepForResourceKind names the provider mutation stage that owns a resource
+// kind. The step vocabulary is fixed, so an unknown kind falls back to the VPC
+// create stage rather than inventing a name.
+func StepForResourceKind(kind string) string {
+	switch kind {
+	case "subnet":
+		return StepEnsureSubnet
+	case "eip", "snat":
+		return StepEnsureEgress
+	default:
+		return StepEnsureVPC
+	}
+}
+
 func reportStageOutcome(ctx context.Context, logger *slog.Logger, worker, step string, identity []any, t k8sTarget, progress Progress, stageErr error) {
 	switch {
 	case stageErr != nil && errors.Is(stageErr, ErrLeaseLost):
-		// A lost lease is a concurrency outcome, not a failed stage.
-		operationLeaseLost(ctx, logger, worker, step, identity)
+		// The write that lost the lease already recorded operation.lease_lost;
+		// repeating it here would double-count one concurrency outcome, and
+		// step.failed (fixed at ERROR) would misreport it as a fault.
+		return
 	case stageErr != nil:
 		stepFailed(ctx, logger, worker, step, identity, t, stageErr, ReasonOf(stageErr))
 	case progress.ProviderError != nil:

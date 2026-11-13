@@ -94,6 +94,75 @@ func TestWorkerDiagnosticsLogProviderCauseAndResourceContext(t *testing.T) {
 	}
 }
 
+// A lost lease is recorded once, at the write that lost it. The observers must
+// not restate it as step.failed (fixed at ERROR) or as a second lease_lost.
+func TestObserversDoNotRestateLostLease(t *testing.T) {
+	o, err := NewObservability("test-lease", "test", NewReadiness(func() bool { return true }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Shutdown(context.Background())
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	work := biz.Work{Resource: biz.ResourceWork{Kind: "vpc", ID: "vpc-id"}, Operation: biz.Operation{ID: "operation-id"}, ActiveOperation: true}
+	o.ObserveWork(context.Background(), logger, work, biz.Progress{State: biz.Available}, biz.ErrLeaseLost)
+	o.ObserveVirtualSwitchWork(context.Background(),
+		logger,
+		biz.VirtualSwitchWork{Switch: biz.VirtualSwitch{EgressMetadata: biz.EgressMetadata{ID: "switch-id", LastOperationID: "operation-id"}}},
+		biz.VirtualSwitchProgress{BindingState: "configured"}, biz.ErrLeaseLost)
+	for _, forbidden := range []string{`"event":"step.failed"`, `"event":"operation.lease_lost"`, `"event":"state.persist_failed"`} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Fatalf("observer restated a lost lease as %s: %s", forbidden, output.String())
+		}
+	}
+}
+
+// A create_<kind> operation belongs to that kind's own stage. Mapping every
+// create_* to ensure_vpc blamed the VPC for a subnet or egress failure.
+func TestProviderFailureStepFollowsTheResourceKind(t *testing.T) {
+	for _, tc := range []struct{ kind, operation, want string }{
+		{kind: "vpc", operation: "create_vpc", want: biz.StepEnsureVPC},
+		{kind: "subnet", operation: "create_subnet", want: biz.StepEnsureSubnet},
+		{kind: "eip", operation: "create_eip", want: biz.StepEnsureEgress},
+		{kind: "snat", operation: "create_snat", want: biz.StepEnsureEgress},
+		{kind: "snat", operation: "set_snat_enabled", want: biz.StepUpdateEgress},
+		{kind: "subnet", operation: "delete_subnet", want: biz.StepDeleteProvider},
+	} {
+		work := biz.Work{Resource: biz.ResourceWork{Kind: tc.kind}, Operation: biz.Operation{Kind: tc.operation}}
+		if got := providerFailureStep(work); got != tc.want {
+			t.Errorf("%s/%s -> %s, want %s", tc.kind, tc.operation, got, tc.want)
+		}
+	}
+}
+
+// The address stage reads the Pod and may then fail on its VNic; a Pod target in
+// that case points an operator at a healthy object.
+func TestAttachmentFailureTargetUsesTheObjectThatFailed(t *testing.T) {
+	o, err := NewObservability("test-attachment-target", "test", NewReadiness(func() bool { return true }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Shutdown(context.Background())
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	work := biz.AttachmentWork{Attachment: biz.Attachment{ID: "att-1", SubmissionID: "sub-1", TenantID: "t-1"}, Plan: biz.PodPrimaryPlan{Namespace: "tenant-a"}}
+	o.logAttachmentFailure(logger, context.Background(), work, biz.AttachmentProgress{
+		ProviderError:    &biz.ProviderError{Kind: biz.ProviderTemporary, Cause: errors.New("vnic get failed")},
+		ObservationError: biz.ProviderUnavailable,
+		FailureStep:      biz.StepObserveAttachment,
+		PodName:          "pod-1", PodUID: "pod-uid",
+		FailureTarget: biz.AttachmentObject{Kind: "VNic", Namespace: "tenant-a", Name: "vnic-1"},
+	}, nil)
+	for _, want := range []string{`"kind":"VNic"`, `"name":"vnic-1"`} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing failing-object coordinate %q: %s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), `"kind":"Pod"`) {
+		t.Fatalf("healthy Pod reported as the failing object: %s", output.String())
+	}
+}
+
 func TestVirtualSwitchDiagnosticsLogNodeCauseWithoutClaimingObservation(t *testing.T) {
 	o, err := NewObservability("test-virtual-switch", "test", NewReadiness(func() bool { return true }))
 	if err != nil {

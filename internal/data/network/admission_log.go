@@ -180,8 +180,14 @@ func NewPostgresOnPoolForTest(pool *pgxpool.Pool, clusterID string) *Postgres {
 // receipt for this intent. It is the operation the original acceptance created,
 // which for a pool verification differs from the resource's last operation.
 func (p *Postgres) replayOperationID(ctx context.Context, i biz.PlatformIntent) string {
-	prior, err := p.queries.GetPlatformIdempotency(ctx, sqlcgen.GetPlatformIdempotencyParams{
-		ClusterID: p.placement.ClusterID, OperationKind: i.Kind, IdempotencyKey: i.IdempotencyKey,
+	return replayOperationIDOn(ctx, p.queries, p.placement.ClusterID, i)
+}
+
+// replayOperationIDOn reads through the caller's queries handle so a replay that
+// already holds a transaction connection never borrows a second one.
+func replayOperationIDOn(ctx context.Context, q *sqlcgen.Queries, cluster string, i biz.PlatformIntent) string {
+	prior, err := q.GetPlatformIdempotency(ctx, sqlcgen.GetPlatformIdempotencyParams{
+		ClusterID: cluster, OperationKind: i.Kind, IdempotencyKey: i.IdempotencyKey,
 	})
 	if err != nil {
 		return ""

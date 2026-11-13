@@ -69,7 +69,9 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) (Progress, err
 		if w.observer != nil {
 			w.observer(ctx, work, p, err)
 		}
-		return lbLeaseResult(err)
+		// A lost lease is returned as-is so the stage records it instead of
+		// reporting success; Step's own boundary digests it afterwards.
+		return err
 	}
 	if work.CancelUnsent {
 		p.State, p.OperationState, p.ClearPending, p.Reason = Deleted, Succeeded, true, ""
@@ -199,7 +201,13 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) (Progress, err
 				break
 			}
 			if err = repository.BeginLoadBalancerMutation(ctx, work, c, action, v.Identity); err != nil {
-				return p, lbLeaseResult(err)
+				if errors.Is(err, ErrLeaseLost) {
+					// This path never reaches Finish, so the stage that lost the
+					// lease is the only place the outcome can be recorded. Step's
+					// outward boundary still digests the error afterwards.
+					operationLeaseLost(ctx, w.logger, WorkerMain, StepLoadBalancer, work.eventIdentity())
+				}
+				return p, err
 			}
 			if v.Identity != "" {
 				c.Identity = v.Identity
@@ -277,12 +285,6 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) (Progress, err
 	}
 	p.LoadBalancer = &o
 	return p, finish()
-}
-func lbLeaseResult(err error) error {
-	if errors.Is(err, ErrLeaseLost) {
-		return nil
-	}
-	return err
 }
 func lbComponentObservation(o LoadBalancerObservation, id string) (LoadBalancerComponentObservation, bool) {
 	for _, v := range o.Components {

@@ -122,7 +122,9 @@ func TestLBWorkerRepositoryUnsentCancellationAvoidsProvider(t *testing.T) {
 	repository := &deferredLBWorkerRepository{finishError: ErrLeaseLost}
 	provider := &deferredLBWorkerProvider{}
 	worker := &Worker{repository: repository, provider: provider, policy: DefaultWorkerPolicy()}
-	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	// The stage reports the lost lease so it is recorded; only Step's outward
+	// boundary treats it as a benign concurrency outcome.
+	if _, err := worker.stepLoadBalancer(context.Background(), work); !errors.Is(err, ErrLeaseLost) {
 		t.Fatal(err)
 	}
 	if provider.observations != 0 || repository.progress.State != Deleted {

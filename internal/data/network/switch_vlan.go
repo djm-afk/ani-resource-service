@@ -40,6 +40,13 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 		return biz.PlatformResource{}, databaseFailure(err)
 	}
 	if v, found, err := platformReplay(ctx, q, p.placement.ClusterID, i); found || err != nil {
+		if err == nil {
+			// The pre-lock check already reported a replay; a concurrent admission
+			// that won the key before this transaction locked it lands here, and
+			// without this record its replay would be invisible.
+			replayOp := replayOperationIDOn(ctx, q, p.placement.ClusterID, i)
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: replayOp, replayed: true, originTraceID: platformOriginTraceOn(ctx, q, replayOp)})
+		}
 		return v, err
 	}
 	if err = q.LockPlatformCluster(ctx, sqlcgen.LockPlatformClusterParams{ClusterID: p.placement.ClusterID}); err != nil {

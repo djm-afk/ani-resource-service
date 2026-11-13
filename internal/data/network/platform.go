@@ -245,7 +245,10 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	}
 	if v, found, err := platformReplay(ctx, q, p.placement.ClusterID, i); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: platformOriginTraceOn(ctx, q, v.LastOperationID)})
+			// Same receipt operation as the pre-lock path: a pool verification's
+			// resource still points at its create operation.
+			replayOp := replayOperationIDOn(ctx, q, p.placement.ClusterID, i)
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: replayOp, replayed: true, originTraceID: platformOriginTraceOn(ctx, q, replayOp)})
 		}
 		return v, err
 	}

@@ -260,6 +260,14 @@ func (p *KCProvider) PrepareVMNetwork(ctx context.Context, target biz.ProviderTa
 	}
 	binding, err := p.binding(ctx, target)
 	if err != nil {
+		// binding reads PostgreSQL before any Kubernetes call. Reporting that read
+		// as a provider failure made the caller attribute a database outage to
+		// Kubernetes; only the read error is re-tagged, the ownership conflict
+		// keeps its provider identity.
+		var failure *biz.ProviderError
+		if errors.As(err, &failure) && failure.Kind == biz.ProviderTemporary && failure.Cause != nil {
+			return databaseFailure(failure.Cause)
+		}
 		return err
 	}
 	selected, err := p.repository.ResolveAcceptedNetworkSelection(ctx, biz.NetworkSelection{TenantID: binding.TenantID, VPCID: target.VPCID, SubnetID: target.ResourceID, ClusterID: binding.ClusterID, Namespace: binding.Namespace})

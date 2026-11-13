@@ -80,6 +80,7 @@ func (p *KCProvider) ObserveAttachmentAddresses(ctx context.Context, a biz.Attac
 		return biz.AttachmentAddressObservation{CurrentIPs: []string{}}, nil
 	}
 	if err != nil {
+		previous.Failure = &biz.AttachmentObject{Kind: "Pod", Namespace: a.Namespace, Name: a.PodName, UID: a.PodUID}
 		return previous, readFailure(err)
 	}
 	if a.PodUID != "" && string(pod.GetUID()) != a.PodUID {
@@ -152,6 +153,9 @@ func (p *KCProvider) ObserveAttachmentAddresses(ctx context.Context, a biz.Attac
 				value.CurrentIPs = previous.CurrentIPs
 			}
 		}
+		// The Pod succeeded; this failure belongs to the VNic read. Reporting the
+		// Pod as the failing object would point an operator at a healthy object.
+		value.Failure = &biz.AttachmentObject{Kind: "VNic", Namespace: namespace, Name: name}
 		return value, readFailure(err)
 	}
 	facts := vnicFacts(vnic)

@@ -245,11 +245,12 @@ func TestStageOutcomeNeverReportsSuccessForAFailedObservation(t *testing.T) {
 	identity := []any{"resource_type", "vpc", "resource_id", "vpc-1"}
 
 	cases := []struct {
-		name     string
-		progress Progress
-		stageErr error
-		want     string
-		notWant  string
+		name      string
+		progress  Progress
+		stageErr  error
+		want      string
+		notWant   string
+		wantEmpty bool
 	}{
 		{
 			name:     "provider failure with saved backoff",
@@ -270,11 +271,13 @@ func TestStageOutcomeNeverReportsSuccessForAFailedObservation(t *testing.T) {
 			notWant:  "step.succeeded",
 		},
 		{
-			name:     "lost lease is not a failed stage",
-			progress: Progress{},
-			stageErr: ErrLeaseLost,
-			want:     "operation.lease_lost",
-			notWant:  "step.failed",
+			// The write that lost the lease already emitted operation.lease_lost;
+			// restating it here would double-count one outcome, and step.failed
+			// (fixed at ERROR) would report it as a fault.
+			name:      "lost lease is already recorded by the losing write",
+			progress:  Progress{},
+			stageErr:  ErrLeaseLost,
+			wantEmpty: true,
 		},
 		{
 			name:     "a clean observation succeeds",
@@ -287,6 +290,12 @@ func TestStageOutcomeNeverReportsSuccessForAFailedObservation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			buf.Reset()
 			reportStageOutcome(context.Background(), logger, WorkerMain, StepPlatformNetwork, identity, k8sTarget{}, tc.progress, tc.stageErr)
+			if tc.wantEmpty {
+				if buf.Len() != 0 {
+					t.Fatalf("unexpected record: %s", buf.String())
+				}
+				return
+			}
 			var r map[string]any
 			if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &r); err != nil {
 				t.Fatalf("decode: %v", err)
@@ -296,6 +305,38 @@ func TestStageOutcomeNeverReportsSuccessForAFailedObservation(t *testing.T) {
 			}
 			if tc.notWant != "" && r["event"] == tc.notWant {
 				t.Errorf("emitted %s, which contradicts the recorded result", tc.notWant)
+			}
+		})
+	}
+}
+
+// A lane pass without an operation still loses leases (a terminal
+// reconciliation). operation.lease_lost requires an operation_id, so that case
+// must use the contract's conflict event instead of a blank required field.
+func TestOperationLeaseLostWithoutAnOperationUsesConflict(t *testing.T) {
+	cases := []struct {
+		name     string
+		identity []any
+		want     string
+	}{
+		{name: "with an operation", identity: []any{"operation_id", "op-1"}, want: "operation.lease_lost"},
+		{name: "empty operation id", identity: []any{"operation_id", ""}, want: "operation.conflict"},
+		{name: "no operation key", identity: []any{"resource_id", "vpc-1"}, want: "operation.conflict"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			operationLeaseLost(context.Background(), logger, WorkerMain, StepPersistProgress, tc.identity)
+			var record map[string]any
+			if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &record); err != nil {
+				t.Fatalf("decode: %v %s", err, buf.String())
+			}
+			if record["event"] != tc.want {
+				t.Fatalf("event = %v, want %v: %s", record["event"], tc.want, buf.String())
+			}
+			if record["level"] != "WARN" || record["reason"] != string(LeaseLost) {
+				t.Fatalf("lost lease must stay WARN with the lease reason: %s", buf.String())
 			}
 		})
 	}

@@ -26,7 +26,15 @@ type AttachmentWork struct {
 type AttachmentAddressObservation struct {
 	CurrentVNicName, CurrentVNicUID, CurrentMACAddress string
 	CurrentIPs                                         []string
+	// Failure names the object whose read failed. The stage reads the Pod first
+	// and may then fail on its VNic, so the caller must not assume the Pod is
+	// the failing object just because the stage is the address observation.
+	Failure *AttachmentObject
 }
+
+// AttachmentObject is a Kubernetes coordinate the address reader addressed. It
+// is only set on a read error, so no successful observation invents one.
+type AttachmentObject struct{ Kind, Namespace, Name, UID string }
 
 // AttachmentAddressReader reads display data for the current registered
 // consumer. On a read error it returns the last values for the unchanged source;
@@ -47,8 +55,12 @@ type AttachmentProgress struct {
 	FailureStep                     string
 	ProviderError                   error
 	PodName, PodUID, FinalizationID string
-	Observed, Backoff               bool
-	NextDelay                       time.Duration
+	// FailureTarget is the object the failing observation addressed, when the
+	// address reader reported one.
+	FailureTarget AttachmentObject
+	Observed      bool
+	Backoff       bool
+	NextDelay     time.Duration
 }
 
 type AttachmentWorkRepository interface {
@@ -203,10 +215,17 @@ func (w *AttachmentWorker) Step(ctx context.Context) (worked bool, err error) {
 	stop()
 	progress.Addresses = &addresses
 	if addressErr != nil {
+		failure := addresses.Failure
+		if failure == nil {
+			// The Pod is the first object the stage reads; without a reported
+			// failure object it is the only coordinate the caller knows.
+			failure = &AttachmentObject{Kind: "Pod", Namespace: work.Plan.Namespace, Name: current.PodName, UID: current.PodUID}
+		}
 		dependencyFailed(ctx, w.logger, WorkerAttachment, "kubernetes", "attach", identity,
-			k8sTarget{kind: "Pod", namespace: work.Plan.Namespace, name: current.PodName, uid: current.PodUID}, addressErr)
+			k8sTarget{kind: failure.Kind, namespace: failure.Namespace, name: failure.Name, uid: failure.UID}, addressErr)
 		progress.ObservationError, progress.ProviderError, progress.Backoff = ProviderUnavailable, addressErr, true
 		progress.FailureStep = StepObserveAttachment
+		progress.FailureTarget = *failure
 	} else {
 		stepSucceeded(ctx, w.logger, WorkerAttachment, StepObserveAttachment, identity)
 	}

@@ -435,6 +435,17 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	return true, err
 }
 
+// beginMutation dispatches the durable mutation record. These paths return
+// before Finish, so the mutation that loses the lease is the only place the
+// outcome can be recorded; Step's boundary still digests the error.
+func (w *Worker) beginMutation(ctx context.Context, work Work, action, knownIdentity, step string) error {
+	err := w.repository.BeginMutation(ctx, work, action, knownIdentity)
+	if errors.Is(err, ErrLeaseLost) {
+		operationLeaseLost(ctx, w.logger, WorkerMain, step, work.eventIdentity())
+	}
+	return err
+}
+
 // Completion still uses the original resource version and execution lease even
 // when service shutdown cancelled the provider call.
 func (w *Worker) finish(ctx context.Context, work Work, progress Progress) (finishErr error) {
@@ -488,11 +499,11 @@ func (w *Worker) ensure(ctx context.Context, work Work, target ProviderTarget, o
 		}
 		// The name and binding are fixed. Retrying an unknown same-name POST
 		// is idempotent; a saved original UID is never recreated this way.
-		if err := w.repository.BeginMutation(ctx, work, "create", ""); err != nil {
+		if err := w.beginMutation(ctx, work, "create", "", StepForResourceKind(target.Kind)); err != nil {
 			return progress, err
 		}
 		identity := work.eventIdentity()
-		createStep := ensureStepForKind(target.Kind)
+		createStep := StepForResourceKind(target.Kind)
 		stepStarted(ctx, w.logger, WorkerMain, createStep, identity)
 		callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 		var value ProviderObservation
@@ -551,15 +562,15 @@ func (w *Worker) ensure(ctx context.Context, work Work, target ProviderTarget, o
 			return progress, nil
 		}
 		if manualCreate || (work.Operation.Kind == "set_snat_enabled" && target.Kind == "snat") {
-			if err := w.repository.BeginMutation(ctx, work, "update", observed.Identity); err != nil {
-				return progress, err
-			}
-			target.KnownIdentity = observed.Identity
-			identity := work.eventIdentity()
 			updateStep := StepUpdateEgress
 			if manualCreate {
 				updateStep = StepEnsureVPC
 			}
+			if err := w.beginMutation(ctx, work, "update", observed.Identity, updateStep); err != nil {
+				return progress, err
+			}
+			target.KnownIdentity = observed.Identity
+			identity := work.eventIdentity()
 			stepStarted(ctx, w.logger, WorkerMain, updateStep, identity)
 			callCtx, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 			var value ProviderObservation
@@ -654,7 +665,7 @@ func (w *Worker) delete(ctx context.Context, work Work, target ProviderTarget, o
 		return progress, nil
 	}
 	target.KnownIdentity = observed.Identity
-	if err := w.repository.BeginMutation(ctx, work, "delete", observed.Identity); err != nil {
+	if err := w.beginMutation(ctx, work, "delete", observed.Identity, StepDeleteProvider); err != nil {
 		return progress, err
 	}
 	identity := work.eventIdentity()
@@ -685,19 +696,6 @@ func (w *Worker) delete(ctx context.Context, work Work, target ProviderTarget, o
 	// again, letting its controller finish its normal finalizers.
 	progress.Reason, progress.OperationReason = CleanupPending, CleanupPending
 	return progress, nil
-}
-
-// ensureStepForKind names the provider mutation stage for a resource kind. The
-// step vocabulary is fixed; unknown kinds fall back to the VPC create stage.
-func ensureStepForKind(kind string) string {
-	switch kind {
-	case "subnet":
-		return StepEnsureSubnet
-	case "eip", "snat":
-		return StepEnsureEgress
-	default:
-		return StepEnsureVPC
-	}
 }
 
 func providerKind(err error) ProviderFailure {

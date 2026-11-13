@@ -127,6 +127,13 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 			w.logPersistFailed(ctx, x, err)
 		default:
 			stepSucceeded(ctx, w.logger, WorkerDefaultEgress, StepPersistDefaultEG, identity)
+			// Retry scheduling is only a fact once the write succeeded; announcing
+			// it before persistence would claim a retry that a failed save never
+			// recorded.
+			if active && p.Backoff {
+				networkEvent(ctx, w.logger, slog.LevelWarn, EventOperationRetry,
+					"operation_id", e.LastOperationID, "reason", string(p.OperationReason))
+			}
 			// Only now is the failed terminal a fact: the row is committed and
 			// the lease was not lost.
 			if active && p.OperationState == OpFailed {
@@ -152,10 +159,6 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 			operationConflict(ctx, w.logger, WorkerDefaultEgress, StepObserveDefaultEG, identity, observationReason(readErr), nil)
 		}
 		p.Backoff, p.Delay = true, w.policy.RetryMin
-		if active {
-			networkEvent(ctx, w.logger, slog.LevelWarn, EventOperationRetry,
-				"operation_id", e.LastOperationID, "reason", string(p.OperationReason))
-		}
 		return finish()
 	}
 	stepSucceeded(ctx, w.logger, WorkerDefaultEgress, StepObserveDefaultEG, identity)
@@ -167,10 +170,18 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 		return finish()
 	}
 	mutate := func(action string) (bool, error) {
+		// These two writes return before finish(), so a lost lease here has no
+		// other record; Step's outward boundary still digests the error.
 		if err := w.repository.BeginDefaultVPCEgressMutation(ctx, x, action); err != nil {
+			if errors.Is(err, ErrLeaseLost) {
+				operationLeaseLost(ctx, w.logger, WorkerDefaultEgress, StepApplyDefaultEG, identity)
+			}
 			return true, err
 		}
 		if err := w.repository.AssertDefaultVPCEgressLease(ctx, x); err != nil {
+			if errors.Is(err, ErrLeaseLost) {
+				operationLeaseLost(ctx, w.logger, WorkerDefaultEgress, StepApplyDefaultEG, identity)
+			}
 			return true, err
 		}
 		call, stop := context.WithTimeout(ctx, w.policy.RequestTimeout)

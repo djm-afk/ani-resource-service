@@ -96,3 +96,43 @@ func TestDefaultEgressLogsProviderAndPersistFailures(t *testing.T) {
 		t.Errorf("persist failure lost the database cause: %v", persistFailure["error"])
 	}
 }
+
+// worker.retry_scheduled claims a retry the database now records. Announcing it
+// before the write would claim a retry a failed save never persisted.
+func TestDefaultEgressSchedulesRetryOnlyAfterTheWriteCommits(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		finishErr error
+		want      bool
+	}{
+		{name: "committed write schedules the retry", want: true},
+		{name: "failed write schedules nothing", finishErr: errors.New("write failed: SQLSTATE 40001")},
+		{name: "lost lease schedules nothing", finishErr: ErrLeaseLost},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			repo := &loggingEgressRepo{
+				work: DefaultEgressWork{Egress: DefaultVPCEgress{
+					EgressMetadata: EgressMetadata{ID: "eg-1", LastOperationID: "op-1"},
+					Identity:       DefaultVPCIdentity{ClusterID: "cluster-1"},
+				}},
+				finishErr: tc.finishErr,
+			}
+			provider := &loggingEgressProvider{observeErr: errors.New("apiserver unreachable")}
+			worker, err := NewDefaultVPCEgressWorker(repo, provider, uuid.NewString(), DefaultWorkerPolicy())
+			if err != nil {
+				t.Fatal(err)
+			}
+			worker.SetLogger(logger)
+			_, _ = worker.Step(context.Background())
+
+			if got := strings.Contains(buf.String(), `"event":"operation.retry_scheduled"`); got != tc.want {
+				t.Fatalf("retry_scheduled emitted=%v, want %v: %s", got, tc.want, buf.String())
+			}
+			if errors.Is(tc.finishErr, ErrLeaseLost) && strings.Contains(buf.String(), `"event":"operation.lease_lost"`) == false {
+				t.Fatalf("a lost lease must still be recorded: %s", buf.String())
+			}
+		})
+	}
+}
