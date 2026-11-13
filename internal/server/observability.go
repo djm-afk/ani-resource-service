@@ -458,7 +458,11 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 	if work.Attachment.TenantID != "" {
 		identity = append(identity, "tenant_id", work.Attachment.TenantID)
 	}
-	if p.ProviderError != nil || p.ObservationError != "" {
+	// Only the address observation belongs to this observer. A submission-read
+	// failure was already recorded by the worker at the point of the read, with
+	// its real dependency, so restating it here would duplicate the event and
+	// point at the wrong system.
+	if (p.ProviderError != nil || p.ObservationError != "") && p.FailureStep != biz.StepGetSubmission {
 		level := slog.LevelError
 		cause := error(p.ProviderError)
 		kind := biz.ProviderFailure("")

@@ -36,10 +36,15 @@ type AttachmentAddressReader interface {
 }
 
 type AttachmentProgress struct {
-	ConsumerSnapshot                *ConsumerSubmission
-	Addresses                       *AttachmentAddressObservation
-	State                           AttachmentState
-	Reason, ObservationError        Reason
+	ConsumerSnapshot         *ConsumerSubmission
+	Addresses                *AttachmentAddressObservation
+	State                    AttachmentState
+	Reason, ObservationError Reason
+	// FailureStep names the stage that produced ProviderError: get_submission
+	// (an in-process or remote read) or observe_attachment (a Kubernetes
+	// address lookup). The observer records only the latter, because the worker
+	// already records the former where the read actually happened.
+	FailureStep                     string
 	ProviderError                   error
 	PodName, PodUID, FinalizationID string
 	Observed, Backoff               bool
@@ -132,6 +137,7 @@ func (w *AttachmentWorker) Step(ctx context.Context) (worked bool, err error) {
 		// only record of the read; the observer below owns the address step.
 		stepFailed(ctx, w.logger, WorkerAttachment, StepGetSubmission, identity, k8sTarget{}, err, ConsumerUnavailable)
 		progress.ObservationError, progress.ProviderError, progress.Backoff = ConsumerUnavailable, err, true
+		progress.FailureStep = StepGetSubmission
 		return w.finish(ctx, work, progress)
 	}
 	stepSucceeded(ctx, w.logger, WorkerAttachment, StepGetSubmission, identity)
@@ -200,6 +206,7 @@ func (w *AttachmentWorker) Step(ctx context.Context) (worked bool, err error) {
 		dependencyFailed(ctx, w.logger, WorkerAttachment, "kubernetes", "attach", identity,
 			k8sTarget{kind: "Pod", namespace: work.Plan.Namespace, name: current.PodName, uid: current.PodUID}, addressErr)
 		progress.ObservationError, progress.ProviderError, progress.Backoff = ProviderUnavailable, addressErr, true
+		progress.FailureStep = StepObserveAttachment
 	} else {
 		stepSucceeded(ctx, w.logger, WorkerAttachment, StepObserveAttachment, identity)
 	}
