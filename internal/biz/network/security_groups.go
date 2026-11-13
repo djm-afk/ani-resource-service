@@ -347,14 +347,6 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 		if providerKind(applyErr) == ProviderConflict {
 			operationConflict(step, w.logger, WorkerSecurityGroup, StepApplySecurityGrp, identity, providerReason(applyErr), nil)
 		}
-		if work.ActiveOperation && SecurityGroupOperationTerminal(work, result, applyErr) {
-			// Only the case the repository actually persists as failed: an
-			// accepted write Kubernetes rejected, on a non-deleting target and
-			// with no observation error. Deletions and observation failures stay
-			// blocked or retrying, so announcing failure there would contradict
-			// the stored state.
-			operationFailed(step, w.logger, WorkerSecurityGroup, identity, work.Operation.ID, result.OperationReason, applyErr)
-		}
 	} else {
 		stepSucceeded(step, w.logger, WorkerSecurityGroup, StepApplySecurityGrp, identity)
 	}
@@ -377,6 +369,13 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 		persistFailed(step, w.logger, WorkerSecurityGroup, "finish_security_group", StepPersistSecGrp, identity, err)
 	default:
 		stepSucceeded(step, w.logger, WorkerSecurityGroup, StepPersistSecGrp, identity)
+		// The failed terminal is announced only now: the row is committed, the
+		// lease was not lost, and the repository used the same rule to decide
+		// that this attempt ends in failed. Announcing it before the write left
+		// a false terminal behind whenever the write rolled back.
+		if work.ActiveOperation && SecurityGroupOperationTerminal(work, result, applyErr) {
+			operationFailed(step, w.logger, WorkerSecurityGroup, identity, work.Operation.ID, result.OperationReason, applyErr)
+		}
 	}
 	runCompleted(step, w.logger, WorkerSecurityGroup, identity, time.Since(startedAt))
 	return true, err

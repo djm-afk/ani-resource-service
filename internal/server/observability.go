@@ -238,14 +238,15 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 	}
 	// The reconciliation record uses the contract's step/operation vocabulary;
 	// the removed resource_state/attempt_result had no schema entry.
+	// Operation-level terminal events belong to the step that owns the write: it
+	// knows whether the state was actually persisted and keeps the provider
+	// cause. This observer reports only the stage outcome, so a failed save is
+	// never restated as a failed operation and a stored success is not shadowed
+	// by an observer that cannot see the cause.
 	event, level, failingStep := biz.EventStepSucceeded, slog.LevelInfo, biz.StepPersistProgress
 	switch {
 	case err != nil:
 		event, level = biz.EventStepFailed, slog.LevelError
-	case progress.OperationState == biz.OpFailed:
-		event, level = biz.EventOperationFailed, slog.LevelError
-	case progress.OperationState == biz.Succeeded:
-		event, level = biz.EventOperationSuccess, slog.LevelInfo
 	case progress.Backoff || progress.OperationState == biz.Blocked:
 		event, level = biz.EventStepWaiting, slog.LevelInfo
 	}

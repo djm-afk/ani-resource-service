@@ -106,6 +106,9 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 		logTelemetryEvent(ctx, w.logger, telemetryEvent, []any{"resource_type", "default_vpc_egress", "resource_id", e.ID, "cluster_id", e.Identity.ClusterID}, telemetryErr)
 	}
 	p := DefaultEgressProgress{State: e.State, Phase: e.Phase, Reason: e.Reason, PendingUnknown: e.PendingUnknown, Delay: w.policy.ObserveEvery}
+	// providerCause keeps the original mutation error for the terminal event,
+	// which is emitted only after the write that records OpFailed succeeds.
+	var providerCause error
 	if active {
 		p.OperationState = Retrying
 		networkEvent(ctx, w.logger, slog.LevelInfo, EventOperationStarted,
@@ -124,6 +127,11 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 			w.logPersistFailed(ctx, x, err)
 		default:
 			stepSucceeded(ctx, w.logger, WorkerDefaultEgress, StepPersistDefaultEG, identity)
+			// Only now is the failed terminal a fact: the row is committed and
+			// the lease was not lost.
+			if active && p.OperationState == OpFailed {
+				operationFailed(ctx, w.logger, WorkerDefaultEgress, identity, e.LastOperationID, p.OperationReason, providerCause)
+			}
 		}
 		runCompleted(ctx, w.logger, WorkerDefaultEgress, identity, time.Since(startedAt))
 		return true, err
@@ -186,7 +194,7 @@ func (w *DefaultVPCEgressWorker) Step(ctx context.Context) (worked bool, err err
 					p.OperationState = Blocked
 				} else {
 					p.OperationState = OpFailed
-					operationFailed(ctx, w.logger, WorkerDefaultEgress, identity, e.LastOperationID, p.OperationReason, mutationErr)
+					providerCause = mutationErr
 				}
 			}
 		} else {

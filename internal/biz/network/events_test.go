@@ -328,3 +328,68 @@ func TestSecurityGroupTerminalMatchesPersistedState(t *testing.T) {
 		})
 	}
 }
+
+// TestTerminalOutcomeRequiresACommittedWrite is review finding P1: a failed
+// finish leaves the operation retrying in the database, so reporting
+// operation.failed there contradicts the row; and a stored failure must carry
+// the provider cause instead of a blank error.
+func TestTerminalOutcomeRequiresACommittedWrite(t *testing.T) {
+	cases := []struct {
+		name       string
+		progress   Progress
+		finishErr  error
+		wantEvent  string
+		wantHasErr bool
+	}{
+		{
+			name:       "stored failure keeps the provider cause",
+			progress:   Progress{OperationState: OpFailed, OperationReason: ProviderRejected, ProviderError: &ProviderError{Kind: ProviderReject, Cause: errText("quota denied")}},
+			wantEvent:  "operation.failed",
+			wantHasErr: true,
+		},
+		{
+			name:      "failed save is not a failed operation",
+			progress:  Progress{OperationState: OpFailed, OperationReason: ProviderRejected, ProviderError: &ProviderError{Kind: ProviderReject}},
+			finishErr: errText("SQLSTATE 40001"),
+			wantEvent: "",
+		},
+		{
+			name:      "stored success emits succeeded",
+			progress:  Progress{OperationState: Succeeded},
+			wantEvent: "operation.succeeded",
+		},
+		{
+			name:      "retrying is not terminal",
+			progress:  Progress{OperationState: Retrying, Backoff: true},
+			wantEvent: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			terminalOutcome(context.Background(), logger, WorkerMain, "op-1", []any{"resource_type", "vpc", "resource_id", "vpc-1"}, tc.progress, tc.finishErr)
+			out := strings.TrimSpace(buf.String())
+			if tc.wantEvent == "" {
+				if out != "" {
+					t.Fatalf("expected no event, got %s", out)
+				}
+				return
+			}
+			var r map[string]any
+			if err := json.Unmarshal([]byte(out), &r); err != nil {
+				t.Fatalf("decode: %v (%s)", err, out)
+			}
+			if r["event"] != tc.wantEvent {
+				t.Errorf("event = %v, want %v", r["event"], tc.wantEvent)
+			}
+			_, hasErr := r["error"]
+			if hasErr != tc.wantHasErr {
+				t.Errorf("error present = %v, want %v (%v)", hasErr, tc.wantHasErr, r)
+			}
+			if tc.wantHasErr && !strings.Contains(r["error"].(string), "quota denied") {
+				t.Errorf("provider cause lost: %v", r["error"])
+			}
+		})
+	}
+}

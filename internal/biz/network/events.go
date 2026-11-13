@@ -348,3 +348,28 @@ func reportPreparationFailure(ctx context.Context, logger *slog.Logger, worker, 
 	attrs = append(attrs, logfields.ErrorFields(cause)...)
 	networkEvent(ctx, logger, slog.LevelError, EventDependencyFailed, attrs...)
 }
+
+// terminalOutcome reports the operation's terminal state, and only after the
+// write that records it succeeded. Two things must never happen here:
+//
+//   - a persistence failure must not be reported as a business failure: when
+//     finishErr is set the operation is still retrying in the database, so the
+//     only correct record is the state.persist_failed the caller already wrote;
+//   - a failed terminal must carry the real provider cause. The provider error
+//     lives on the progress, not on finishErr, so an observer that reads only
+//     the return value loses it.
+func terminalOutcome(ctx context.Context, logger *slog.Logger, worker, operationID string, identity []any, progress Progress, finishErr error) {
+	if logger == nil || finishErr != nil {
+		return
+	}
+	switch progress.OperationState {
+	case OpFailed:
+		// The provider cause is required so the event keeps the actionable
+		// message; a terminal failure without one is reported as unavailable
+		// rather than as a blank error.
+		cause := progress.ProviderError
+		operationFailed(ctx, logger, worker, identity, operationID, progress.OperationReason, cause)
+	case Succeeded:
+		operationSucceeded(ctx, logger, worker, identity, operationID)
+	}
+}

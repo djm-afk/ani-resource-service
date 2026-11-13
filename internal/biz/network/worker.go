@@ -424,15 +424,13 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 			}
 		}
 	}
-	// A lost lease is a concurrency outcome already reported as WARN by finish;
-	// it must never be restated as a failed operation. The real provider cause
-	// travels with the event so operation.failed keeps the actionable message.
-	if err != nil && work.ActiveOperation && !errors.Is(err, ErrLeaseLost) {
-		cause := progress.ProviderError
-		if cause == nil {
-			cause = err
-		}
-		operationFailed(ctx, w.logger, WorkerMain, identity, work.Operation.ID, progress.OperationReason, cause)
+	// The terminal operation event is decided by the persisted state, and only
+	// once the write that records it succeeded. A finish error leaves the
+	// operation retrying in the database, so reporting it as failed here would
+	// contradict the row; the state.persist_failed recorded by finish is the
+	// record for that case.
+	if work.ActiveOperation {
+		terminalOutcome(ctx, w.logger, WorkerMain, work.Operation.ID, identity, progress, err)
 	}
 	return true, err
 }
