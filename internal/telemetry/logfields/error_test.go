@@ -104,6 +104,12 @@ func TestRedactAuthorizationHeader(t *testing.T) {
 		{`Authorization: Bearer abcdefghijklmnop`, `abcdefghijklmnop`},
 		{`Authorization: Digest username="u", response="deadbeef"`, `deadbeef`},
 		{`Authorization: dXNlcjpwYXNz`, `dXNlcjpwYXNz`},
+		// Quoted whole-value forms: these leaked in the previous revision
+		// because the scheme forms could not start with a quote.
+		{`Authorization="Basic dXNlcjpwYXNz"`, `dXNlcjpwYXNz`},
+		{`Authorization='Basic dXNlcjpwYXNz'`, `dXNlcjpwYXNz`},
+		{`Authorization: "Basic dXNlcjpwYXNz"`, `dXNlcjpwYXNz`},
+		{`authorization = "Bearer dXNlcjpwYXNz"`, `dXNlcjpwYXNz`},
 	}
 	for _, tc := range cases {
 		out := Redact(tc.in)

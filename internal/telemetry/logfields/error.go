@@ -218,7 +218,11 @@ var (
 	// The scheme word is kept so the log stays readable; everything after it is
 	// replaced up to the value boundary. This must run before credentialPair,
 	// which would otherwise redact only the scheme and leave the credential.
-	authHeader     = regexp.MustCompile(`(?i)\b(authorization)(\s*[=:]\s*)(?:(?:basic|bearer|negotiate|ntlm|apikey|token)\s+[^\s,;&}\]"']+|digest\s+[^\r\n]+|[^\s,;&}\]"']+)`)
+	// Quotes around the whole value are common in structured logs and config
+	// dumps, so a quoted blob is matched before the scheme forms. Without that
+	// branch the scheme token is followed by a quote, no alternative matches,
+	// and the credential survives untouched.
+	authHeader     = regexp.MustCompile(`(?i)\b(authorization)(\s*[=:]\s*)("[^"]*"|'[^']*'|(?:basic|bearer|negotiate|ntlm|apikey|token)\s+[^\s,;&}\]"']+|digest\s+[^\r\n]+|[^\s,;&}\]"']+)`)
 	credentialPair = regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|cookie|credential|client[_-]?secret)\b(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&}\]"']+)`)
 	urlUserinfo    = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+@`)
 	bearerToken    = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}`)
