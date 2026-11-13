@@ -146,8 +146,19 @@ func safeErrorMessage(err error) (string, bool, int) {
 	if size <= errorOutputCap {
 		return raw, false, size
 	}
+	// The marker counts against the cap: head+marker+tail must stay within
+	// errorOutputCap, so the marker's length is taken out of the tail budget
+	// before slicing. The tail keeps at least one byte so a marker alone is
+	// never produced for a record that still had content to show.
 	head := trimToRuneBoundary(raw[:errorHeadBytes], false)
-	tail := trimToRuneBoundary(raw[size-errorTailBytes:], true)
+	tailBudget := errorOutputCap - len(head) - len(errorTruncatedOn)
+	if tailBudget > errorTailBytes {
+		tailBudget = errorTailBytes
+	}
+	if tailBudget < 1 {
+		tailBudget = 1
+	}
+	tail := trimToRuneBoundary(raw[size-tailBudget:], true)
 	return head + errorTruncatedOn + tail, true, size
 }
 
@@ -202,7 +213,13 @@ func trimToRuneBoundary(s string, fromStart bool) string {
 }
 
 var (
-	credentialPair = regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|authorization|cookie|credential|client[_-]?secret)\b(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&}\]"']+)`)
+	// A whole Authorization header carries the credential after its scheme
+	// token: Basic/Bearer take one opaque value, Digest takes a parameter list.
+	// The scheme word is kept so the log stays readable; everything after it is
+	// replaced up to the value boundary. This must run before credentialPair,
+	// which would otherwise redact only the scheme and leave the credential.
+	authHeader     = regexp.MustCompile(`(?i)\b(authorization)(\s*[=:]\s*)(?:(?:basic|bearer|negotiate|ntlm|apikey|token)\s+[^\s,;&}\]"']+|digest\s+[^\r\n]+|[^\s,;&}\]"']+)`)
+	credentialPair = regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|cookie|credential|client[_-]?secret)\b(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&}\]"']+)`)
 	urlUserinfo    = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+@`)
 	bearerToken    = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}`)
 	pemKey         = regexp.MustCompile(`(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----`)
@@ -218,6 +235,7 @@ func Redact(s string) string {
 	}
 	s = pemKey.ReplaceAllString(s, "[redacted private key]")
 	s = urlUserinfo.ReplaceAllString(s, "$1[redacted]@")
+	s = authHeader.ReplaceAllString(s, "$1$2[redacted]")
 	s = bearerToken.ReplaceAllString(s, "$1 [redacted]")
 	s = sigV4Pair.ReplaceAllString(s, "$1=[redacted]")
 	s = credentialPair.ReplaceAllStringFunc(s, func(match string) string {

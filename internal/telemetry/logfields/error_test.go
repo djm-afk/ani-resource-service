@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel"
@@ -90,5 +91,75 @@ func TestTruncation(t *testing.T) {
 	f := fields(errors.New(strings.Repeat("y", 40*1024)))
 	if f["error_truncated"] != true || f["error_original_bytes"].(int) != 40*1024 {
 		t.Errorf("truncation metadata wrong: %v", f)
+	}
+}
+
+// TestRedactAuthorizationHeader covers review finding P1: the whole header value
+// is a credential, not just its scheme token. Only the scheme word must survive
+// so the log stays readable as "an Authorization header was present".
+func TestRedactAuthorizationHeader(t *testing.T) {
+	cases := []struct{ in, secret string }{
+		{`Authorization: Basic dXNlcjpwYXNzd29yZA==`, `dXNlcjpwYXNzd29yZA==`},
+		{`authorization=Basic YWJjOmRlZg==`, `YWJjOmRlZg==`},
+		{`Authorization: Bearer abcdefghijklmnop`, `abcdefghijklmnop`},
+		{`Authorization: Digest username="u", response="deadbeef"`, `deadbeef`},
+		{`Authorization: dXNlcjpwYXNz`, `dXNlcjpwYXNz`},
+	}
+	for _, tc := range cases {
+		out := Redact(tc.in)
+		if strings.Contains(out, tc.secret) {
+			t.Errorf("credential leaked from %q: %s", tc.in, out)
+		}
+		if !strings.Contains(strings.ToLower(out), "authorization") {
+			t.Errorf("header name should stay readable: %s", out)
+		}
+	}
+}
+
+// TestWrappedErrorRedactsAuthorization proves the shared extractor scrubs the
+// marker even when the credential sits inside a wrapped cause, which is the
+// path review finding P1 described.
+func TestWrappedErrorRedactsAuthorization(t *testing.T) {
+	const marker = "c3VwZXItc2VjcmV0LW1hcmtlcg=="
+	inner := fmt.Errorf(`api call failed: Authorization: Basic %s`, marker)
+	wrapped := fmt.Errorf("network provider: temporary: %w", inner)
+	f := fields(wrapped)
+	msg, _ := f["error"].(string)
+	if strings.Contains(msg, marker) {
+		t.Fatalf("wrapped credential leaked: %s", msg)
+	}
+	if !strings.Contains(msg, "api call failed") {
+		t.Errorf("outer action lost while redacting: %s", msg)
+	}
+}
+
+// TestTruncatedErrorStaysWithinCap is NG28: the marker counts against the
+// 32 KiB cap, so the emitted string must not exceed it.
+func TestTruncatedErrorStaysWithinCap(t *testing.T) {
+	for _, n := range []int{33 * 1024, 40 * 1024, 100 * 1024} {
+		f := fields(errors.New(strings.Repeat("a", n)))
+		msg := f["error"].(string)
+		if len(msg) > 32*1024 {
+			t.Errorf("n=%d: emitted %d bytes, exceeds 32768", n, len(msg))
+		}
+		if f["error_truncated"] != true || f["error_original_bytes"].(int) != n {
+			t.Errorf("n=%d: truncation metadata wrong", n)
+		}
+		if !utf8.ValidString(msg) {
+			t.Errorf("n=%d: truncated output is not valid UTF-8", n)
+		}
+	}
+}
+
+// TestTruncationKeepsUTF8Boundary checks the head/tail cut never splits a rune
+// once the marker takes part of the budget.
+func TestTruncationKeepsUTF8Boundary(t *testing.T) {
+	f := fields(errors.New(strings.Repeat("错", 20000)))
+	msg := f["error"].(string)
+	if !utf8.ValidString(msg) {
+		t.Fatal("truncated multi-byte output is not valid UTF-8")
+	}
+	if len(msg) > 32*1024 {
+		t.Fatalf("emitted %d bytes, exceeds 32768", len(msg))
 	}
 }
