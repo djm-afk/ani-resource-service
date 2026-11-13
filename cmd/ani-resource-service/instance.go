@@ -27,7 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 type instanceSettings struct {
@@ -82,7 +82,7 @@ func (c *instanceComponents) Close() {
 		c.repo.Close()
 	}
 }
-func openInstance(ctx context.Context, network *conf.Network, images *imageComponents, compute *computeComponents, logger *slog.Logger) (*instanceComponents, error) {
+func openInstance(ctx context.Context, network *conf.Network, images *imageComponents, compute *computeComponents, logger *slog.Logger, target ...*rest.Config) (*instanceComponents, error) {
 	path := os.Getenv("ANI_INSTANCE_CONFIG_FILE")
 	if path == "" {
 		return nil, nil
@@ -100,6 +100,9 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 	decoder.DisallowUnknownFields()
 	if e = decoder.Decode(&cfg); e != nil || decoder.Decode(new(any)) != io.EOF {
 		return nil, fmt.Errorf("invalid instance configuration")
+	}
+	if network == nil || cfg.Service.ClusterID != network.ClusterId {
+		return nil, fmt.Errorf("instance cluster differs from target kube-system UID")
 	}
 	if e = requireInstanceCompute(compute, cfg); e != nil {
 		return nil, e
@@ -132,7 +135,7 @@ func openInstance(ctx context.Context, network *conf.Network, images *imageCompo
 			c.Close()
 		}
 	}()
-	kube, e := clientcmd.BuildConfigFromFlags("", network.Kubeconfig)
+	kube, e := resolvedKubernetesConfig(network, target...)
 	if e != nil {
 		return nil, fmt.Errorf("instance Kubernetes configuration invalid")
 	}

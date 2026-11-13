@@ -31,7 +31,7 @@ func (c *computeComponents) Close() {
 
 // Compute is independently configured and constructed. No image, Notebook,
 // namespace, instance runtime or workload environment is required.
-func openCompute(ctx context.Context) (*computeComponents, error) {
+func openCompute(ctx context.Context, expectedCluster ...string) (*computeComponents, error) {
 	path := os.Getenv("ANI_COMPUTE_CONFIG_FILE")
 	if path == "" {
 		return nil, nil
@@ -46,6 +46,9 @@ func openCompute(ctx context.Context) (*computeComponents, error) {
 	decoder.DisallowUnknownFields()
 	if e = decoder.Decode(&cfg); e != nil || decoder.Decode(new(any)) != io.EOF || !filepath.IsAbs(cfg.DatabaseDSNFile) || !biz.UUID(cfg.ClusterID) {
 		return nil, fmt.Errorf("invalid compute configuration")
+	}
+	if len(expectedCluster) > 1 || (len(expectedCluster) == 1 && cfg.ClusterID != expectedCluster[0]) {
+		return nil, fmt.Errorf("compute cluster differs from target kube-system UID")
 	}
 	raw, e := readImagePrivateFile(cfg.DatabaseDSNFile)
 	if e != nil {

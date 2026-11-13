@@ -40,7 +40,7 @@ def verify(root):
     require(manifest.get("schema_version") == 1, "unsupported provenance manifest")
     entries = manifest["modules"]
     inventory = {entry["module"]: entry for entry in entries}
-    require(len(entries) == 3 and len(inventory) == 3, "exactly three reviewed module identities are required")
+    require(len(entries) == 4 and len(inventory) == 4, "exactly four reviewed module identities are required")
     go_mod = go_json(root, ["mod", "edit", "-json"])
     require(not go_mod.get("Replace"), "replacement modules are not published provenance")
     requirements = {item["Path"]: item["Version"] for item in go_mod["Require"]}

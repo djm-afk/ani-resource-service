@@ -125,6 +125,9 @@ type ClaimVirtualSwitchRow struct {
 	OperationKind             string
 }
 
+// The projection is limited to the unfinished operation, so a claim can tell an
+// active operation from a terminal record: operation_id is NULL once the last
+// operation completed, which is what the worker's active-run decision needs.
 func (q *Queries) ClaimVirtualSwitch(ctx context.Context) (ClaimVirtualSwitchRow, error) {
 	row := q.db.QueryRow(ctx, claimVirtualSwitch)
 	var i ClaimVirtualSwitchRow

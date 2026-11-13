@@ -8,18 +8,26 @@ import (
 )
 
 type UseCase struct {
-	clusterID string
-	kube      KubernetesPort
-	policy    *NamespacePolicy
-	logSlots  chan struct{}
-	logBudget logBudget
+	clusterID   string
+	displayName string
+	kube        KubernetesPort
+	policy      *NamespacePolicy
+	logSlots    chan struct{}
+	logBudget   logBudget
 }
 
-func NewUseCase(clusterID string, kube KubernetesPort, policy *NamespacePolicy) (*UseCase, error) {
+func NewUseCase(clusterID string, kube KubernetesPort, policy *NamespacePolicy, displayName ...string) (*UseCase, error) {
 	if strings.TrimSpace(clusterID) == "" || kube == nil || policy == nil {
 		return nil, NewError("INVALID_ARGUMENT")
 	}
-	return &UseCase{clusterID: clusterID, kube: kube, policy: policy, logSlots: make(chan struct{}, 100), logBudget: productionLogBudget}, nil
+	name := clusterID
+	if len(displayName) > 1 {
+		return nil, NewError("INVALID_ARGUMENT")
+	}
+	if len(displayName) == 1 && strings.TrimSpace(displayName[0]) != "" {
+		name = strings.TrimSpace(displayName[0])
+	}
+	return &UseCase{displayName: name, clusterID: clusterID, kube: kube, policy: policy, logSlots: make(chan struct{}, 100), logBudget: productionLogBudget}, nil
 }
 func (u *UseCase) cluster(ctx context.Context, id string) error {
 	if err := RequirePlatform(ctx); err != nil {
@@ -103,7 +111,7 @@ func (u *UseCase) ListClusters(ctx context.Context) ([]Cluster, error) {
 	if err := RequirePlatform(ctx); err != nil {
 		return nil, err
 	}
-	return []Cluster{{ClusterID: u.clusterID, DisplayName: u.clusterID}}, nil
+	return []Cluster{{ClusterID: u.clusterID, DisplayName: u.displayName}}, nil
 }
 func (u *UseCase) ListResourceTypes(ctx context.Context, cluster string) ([]ResourceDescriptor, error) {
 	if err := u.cluster(ctx, cluster); err != nil {

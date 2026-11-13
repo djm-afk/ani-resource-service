@@ -63,6 +63,9 @@ UPDATE network_virtual_switches SET state=sqlc.arg(state),binding_state=sqlc.arg
  last_operation_id=sqlc.arg(operation_id),updated_at=clock_timestamp()
  WHERE resource_id=sqlc.arg(resource_id) AND version=sqlc.arg(version) AND state NOT IN ('deleting','deleted') RETURNING *;
 
+-- The projection is limited to the unfinished operation, so a claim can tell an
+-- active operation from a terminal record: operation_id is NULL once the last
+-- operation completed, which is what the worker's active-run decision needs.
 -- name: ClaimVirtualSwitch :one
 SELECT sqlc.embed(s), o.operation_id AS operation_id, o.telemetry_context AS operation_telemetry_context, coalesce(o.kind,'')::text AS operation_kind
 FROM network_virtual_switches s

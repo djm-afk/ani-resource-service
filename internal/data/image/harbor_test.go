@@ -94,6 +94,14 @@ func TestHarborTransportBoundary(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("client timeout without parent deadline", func(t *testing.T) {
+		h := testHarbor(t, func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
+		h.client.Timeout = 30 * time.Millisecond
+		_, err := h.GetProjectByID(context.Background(), 1)
+		if biz.ReasonOf(err) != biz.DeadlineExceeded {
+			t.Fatal(err)
+		}
+	})
 	t.Run("body limit", func(t *testing.T) {
 		h := testHarbor(t, func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, strings.Repeat("x", maxHarborBody+1))

@@ -12,7 +12,7 @@ import (
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/clusterops"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+
 	"strings"
 )
 
@@ -29,19 +29,13 @@ func (c *clusterOpsComponents) Close() {
 func (c *clusterOpsComponents) Register(s grpc.ServiceRegistrar) {
 	pb.RegisterPlatformClusterOpsServiceServer(s, c.service)
 }
-func openClusterOps(ctx context.Context, cfg *conf.Network, network *networkdata.Postgres, compute *computeComponents) (*clusterOpsComponents, error) {
+func openClusterOps(ctx context.Context, cfg *conf.Network, network *networkdata.Postgres, compute *computeComponents, target ...*rest.Config) (*clusterOpsComponents, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("clusterops requires managed cluster configuration")
 	}
-	var config *rest.Config
-	var err error
-	if cfg.Kubeconfig == "" {
-		config, err = rest.InClusterConfig()
-	} else {
-		config, err = clientcmd.BuildConfigFromFlags("", cfg.Kubeconfig)
-	}
+	config, err := resolvedKubernetesConfig(cfg, target...)
 	if err != nil {
-		return nil, fmt.Errorf("clusterops Kubernetes configuration unavailable")
+		return nil, err
 	}
 	kube, err := data.NewKubernetes(config)
 	if err != nil {
@@ -64,7 +58,7 @@ func openClusterOps(ctx context.Context, cfg *conf.Network, network *networkdata
 		}
 		clear(raw)
 	}
-	uc, err := biz.NewUseCase(cfg.ClusterId, kube, biz.NewNamespacePolicy(networkSource, sandboxSource))
+	uc, err := biz.NewUseCase(cfg.ClusterId, kube, biz.NewNamespacePolicy(networkSource, sandboxSource), cfg.ClusterDisplayName)
 	if err != nil {
 		result.Close()
 		return nil, err

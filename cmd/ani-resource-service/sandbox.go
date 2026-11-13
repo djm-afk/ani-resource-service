@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 type sandboxComponents struct {
@@ -58,11 +58,11 @@ func (c *sandboxComponents) Close() {
 // Sandbox shares the Resource listener and existing infrastructure. Missing
 // dependencies leave its methods explicitly unavailable without disabling
 // unrelated Resource services or discarding already persisted work.
-func openSandbox(ctx context.Context, network *conf.Network, compute *computeComponents, images *imageComponents, logger *slog.Logger) (*sandboxComponents, error) {
+func openSandbox(ctx context.Context, network *conf.Network, compute *computeComponents, images *imageComponents, logger *slog.Logger, target ...*rest.Config) (*sandboxComponents, error) {
 	attempt := func(ctx context.Context) (*sandboxComponents, error) {
 		attemptCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return openSandboxOnce(attemptCtx, network, compute, images, logger)
+		return openSandboxOnce(attemptCtx, network, compute, images, logger, target...)
 	}
 	initial, err := attempt(ctx)
 	if err != nil || initial.repo != nil || compute == nil || compute.resolver == nil || network == nil || network.ClusterId != compute.settings.ClusterID {
@@ -80,7 +80,7 @@ func openSandbox(ctx context.Context, network *conf.Network, compute *computeCom
 	return &sandboxComponents{service: retry, execution: retry, retry: retry}, nil
 }
 
-func openSandboxOnce(ctx context.Context, network *conf.Network, compute *computeComponents, images *imageComponents, logger *slog.Logger) (*sandboxComponents, error) {
+func openSandboxOnce(ctx context.Context, network *conf.Network, compute *computeComponents, images *imageComponents, logger *slog.Logger, target ...*rest.Config) (*sandboxComponents, error) {
 	unavailable := func(reason string, err error) (*sandboxComponents, error) {
 		if err != nil {
 			logger.Warn("sandbox unavailable", append([]any{"reason", reason}, logfields.ErrorFields(err)...)...)
@@ -107,7 +107,7 @@ func openSandboxOnce(ctx context.Context, network *conf.Network, compute *comput
 	if err != nil {
 		return unavailable("sandbox database schema is not ready", err)
 	}
-	rest, err := clientcmd.BuildConfigFromFlags("", network.Kubeconfig)
+	rest, err := resolvedKubernetesConfig(network, target...)
 	if err != nil {
 		repo.Close()
 		return unavailable("shared Kubernetes configuration is invalid", err)

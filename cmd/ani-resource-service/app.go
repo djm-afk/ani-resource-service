@@ -25,6 +25,14 @@ import (
 )
 
 func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
+	target, err := resolveTargetCluster(context.Background(), bc.GetNetwork())
+	if err != nil {
+		return nil, err
+	}
+	pullTarget, err := resolvePullSecretTarget(context.Background(), bc.GetImage(), bc.GetNetwork(), target)
+	if err != nil {
+		return nil, err
+	}
 	if err := bc.Validate(); err != nil {
 		return nil, err
 	}
@@ -41,25 +49,25 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	images, err := openImage(context.Background(), bc.Image)
+	images, err := openImage(context.Background(), bc.Image, pullTarget)
 	if err != nil {
 		repository.Close()
 		return nil, err
 	}
-	compute, err := openCompute(context.Background())
+	compute, err := openCompute(context.Background(), bc.Network.ClusterId)
 	if err != nil {
 		images.Close()
 		repository.Close()
 		return nil, err
 	}
-	instances, err := openInstance(context.Background(), bc.Network, images, compute, logger)
+	instances, err := openInstance(context.Background(), bc.Network, images, compute, logger, target)
 	if err != nil {
 		compute.Close()
 		images.Close()
 		repository.Close()
 		return nil, err
 	}
-	sandboxes, err := openSandbox(context.Background(), bc.Network, compute, images, logger)
+	sandboxes, err := openSandbox(context.Background(), bc.Network, compute, images, logger, target)
 	if err != nil {
 		instances.Close()
 		compute.Close()
@@ -77,7 +85,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			repository.Close()
 		}
 	}()
-	clusterOps, err := openClusterOps(context.Background(), bc.Network, repository, compute)
+	clusterOps, err := openClusterOps(context.Background(), bc.Network, repository, compute, target)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +94,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 			clusterOps.Close()
 		}
 	}()
-	provider, observation, err := openNetworkProvider(repository, bc.Network)
+	provider, observation, err := openNetworkProvider(repository, bc.Network, target)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +145,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		_ = observability.Shutdown(ctx)
 		return nil, err
 	}
-	vms, routedConsumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, routedConsumer, network)
+	vms, routedConsumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, routedConsumer, network, target)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +211,7 @@ func buildApp(bc *conf.Bootstrap, logger *slog.Logger) (*kratos.App, error) {
 		return nil, err
 	}
 	clusterOps.Register(grpcServer)
-	storageComponents, err := openStorage(ctx, bc, instances)
+	storageComponents, err := openStorage(ctx, bc, instances, target)
 	if err != nil {
 		return nil, err
 	}

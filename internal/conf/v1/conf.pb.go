@@ -549,6 +549,7 @@ func (x *PullSecretCaller) GetRequireTenantLabel() bool {
 
 type Network struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
+	ClusterDisplayName  string                 `protobuf:"bytes,13,opt,name=cluster_display_name,json=clusterDisplayName,proto3" json:"cluster_display_name,omitempty"`
 	PlatformBaseNetwork *PlatformBaseNetwork   `protobuf:"bytes,12,opt,name=platform_base_network,json=platformBaseNetwork,proto3" json:"platform_base_network,omitempty"`
 	DatabaseDsn         string                 `protobuf:"bytes,1,opt,name=database_dsn,json=databaseDsn,proto3" json:"database_dsn,omitempty"`
 	// Empty uses Kubernetes in-cluster service account credentials.
@@ -600,6 +601,13 @@ func (x *Network) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Network.ProtoReflect.Descriptor instead.
 func (*Network) Descriptor() ([]byte, []int) {
 	return file_conf_v1_conf_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Network) GetClusterDisplayName() string {
+	if x != nil {
+		return x.ClusterDisplayName
+	}
+	return ""
 }
 
 func (x *Network) GetPlatformBaseNetwork() *PlatformBaseNetwork {
@@ -1544,8 +1552,9 @@ const file_conf_v1_conf_proto_rawDesc = "" +
 	"namespaces\x18\x03 \x03(\tR\n" +
 	"namespaces\x12!\n" +
 	"\fowner_labels\x18\x04 \x03(\tR\vownerLabels\x120\n" +
-	"\x14require_tenant_label\x18\x05 \x01(\bR\x12requireTenantLabel\"\xea\x04\n" +
-	"\aNetwork\x12P\n" +
+	"\x14require_tenant_label\x18\x05 \x01(\bR\x12requireTenantLabel\"\x9c\x05\n" +
+	"\aNetwork\x120\n" +
+	"\x14cluster_display_name\x18\r \x01(\tR\x12clusterDisplayName\x12P\n" +
 	"\x15platform_base_network\x18\f \x01(\v2\x1c.conf.v1.PlatformBaseNetworkR\x13platformBaseNetwork\x12!\n" +
 	"\fdatabase_dsn\x18\x01 \x01(\tR\vdatabaseDsn\x12\x1e\n" +
 	"\n" +

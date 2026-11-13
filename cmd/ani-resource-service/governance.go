@@ -30,6 +30,14 @@ import (
 // authorization gate every call before business code. It never
 // falls back to the legacy listener.
 func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
+	target, err := resolveTargetCluster(context.Background(), bc.GetNetwork())
+	if err != nil {
+		return err
+	}
+	pullTarget, err := resolvePullSecretTarget(context.Background(), bc.GetImage(), bc.GetNetwork(), target)
+	if err != nil {
+		return err
+	}
 	if err := bc.Validate(); err != nil {
 		return err
 	}
@@ -37,22 +45,22 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	images, err := openImage(context.Background(), bc.Image)
+	images, err := openImage(context.Background(), bc.Image, pullTarget)
 	if err != nil {
 		return err
 	}
 	defer images.Close()
-	compute, err := openCompute(context.Background())
+	compute, err := openCompute(context.Background(), bc.Network.ClusterId)
 	if err != nil {
 		return err
 	}
 	defer compute.Close()
-	instances, err := openInstance(context.Background(), bc.Network, images, compute, logger)
+	instances, err := openInstance(context.Background(), bc.Network, images, compute, logger, target)
 	if err != nil {
 		return err
 	}
 	defer instances.Close()
-	sandboxes, err := openSandbox(context.Background(), bc.Network, compute, images, logger)
+	sandboxes, err := openSandbox(context.Background(), bc.Network, compute, images, logger, target)
 	if err != nil {
 		return err
 	}
@@ -75,12 +83,12 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	// Writes need the same provider access as full mode; the governance
 	// boundary is enforced by service registration and the allowlist, not by
 	// removing the worker.
-	clusterOps, err := openClusterOps(context.Background(), bc.Network, repository, compute)
+	clusterOps, err := openClusterOps(context.Background(), bc.Network, repository, compute, target)
 	if err != nil {
 		return err
 	}
 	defer clusterOps.Close()
-	provider, observation, err := openNetworkProvider(repository, bc.Network)
+	provider, observation, err := openNetworkProvider(repository, bc.Network, target)
 	if err != nil {
 		return err
 	}
@@ -143,7 +151,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	vms, consumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, consumer, networkUC)
+	vms, consumer, err := wireVM(context.Background(), bc.Network, compute, repository, provider, attachments, instances, consumer, networkUC, target)
 	if err != nil {
 		return err
 	}
@@ -231,7 +239,7 @@ func runGovernance(bc *conf.Bootstrap, logger *slog.Logger) error {
 			vmv1.RegisterVMImageServiceServer(gs, vms.imageService)
 		}
 	}
-	storageComponents, err := openStorage(context.Background(), bc, instances)
+	storageComponents, err := openStorage(context.Background(), bc, instances, target)
 	if err != nil {
 		return err
 	}

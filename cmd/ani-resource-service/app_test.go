@@ -39,6 +39,11 @@ func TestBuildAppRunsProductionComposition(t *testing.T) {
 	t.Setenv("ANI_NETWORK_TLS_KEY", tlsFixture.KeyFile)
 	fixture := testenv.NewDatabase(t)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/namespaces/kube-system" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"kube-system","uid":"11111111-1111-4111-8111-111111111111"}}`))
+			return
+		}
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer provider.Close()
@@ -53,7 +58,7 @@ func TestBuildAppRunsProductionComposition(t *testing.T) {
 	for adminAddress == grpcAddress {
 		adminAddress = reserveAddress(t)
 	}
-	bc := &conf.Bootstrap{Network: &conf.Network{DatabaseDsn: fixture.RuntimeDSN, Kubeconfig: kubeconfig, ClusterId: "test-cluster", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{
+	bc := &conf.Bootstrap{Network: &conf.Network{DatabaseDsn: fixture.RuntimeDSN, Kubeconfig: kubeconfig, ClusterId: "11111111-1111-4111-8111-111111111111", CursorSigningKey: testenv.SigningKey(), Worker: &conf.Worker{
 		Lease: durationpb.New(20 * time.Second), RequestTimeout: durationpb.New(5 * time.Second), ObserveEvery: durationpb.New(10 * time.Second), StaleAfter: durationpb.New(time.Minute), RetryMin: durationpb.New(time.Second), RetryMax: durationpb.New(time.Minute), PollInterval: durationpb.New(100 * time.Millisecond),
 	}}, Server: &conf.Server{
 		Grpc:            &conf.Server_GRPC{Network: "tcp", Addr: grpcAddress, Timeout: durationpb.New(time.Second)},

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -138,7 +137,7 @@ func TestImageRuntimeMTLSListener(t *testing.T) {
 	}
 	addr := listen.Addr().String()
 	listen.Close()
-	var logs bytes.Buffer
+	var logs safeLogBuffer
 	s, err := NewImageRuntimeGRPCServer(&conf.Server_GRPC{Network: "tcp", Addr: addr, Timeout: durationpb.New(time.Second)}, serverTLS, imageservice.NewRuntimeService(runtimeTransportProbe{}), slog.New(slog.NewJSONHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)

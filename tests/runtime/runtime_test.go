@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -108,14 +107,11 @@ func TestRuntimeLifecycle(t *testing.T) {
 	if readiness.Ready() {
 		t.Fatal("runtime remained ready after stop")
 	}
-	if !strings.Contains(logOutput.String(), `"msg":"server request"`) {
-		t.Fatalf("Kratos server logging middleware did not emit request log: %s", logOutput.String())
-	}
-	if !regexp.MustCompile(`"trace_id":"[0-9a-f]{32}"`).MatchString(logOutput.String()) {
-		t.Fatalf("Kratos tracing middleware did not correlate request log: %s", logOutput.String())
-	}
-	if !regexp.MustCompile(`"span_id":"[0-9a-f]{16}"`).MatchString(logOutput.String()) {
-		t.Fatalf("Kratos tracing middleware did not correlate request span: %s", logOutput.String())
+	// This synthetic listener installs only ServerMiddleware. Production's native
+	// stats handler owns RPC completion/span records and has dedicated coverage
+	// in internal/server/rpc_observability_test.go.
+	if !strings.Contains(logOutput.String(), `"event":"process.panic"`) {
+		t.Fatalf("recovery middleware did not emit its process event: %s", logOutput.String())
 	}
 }
 
@@ -149,6 +145,9 @@ func TestAdminReadinessUsesKratosErrorEncoding(t *testing.T) {
 }
 
 func TestCommittedConfigLoadsAsGeneratedType(t *testing.T) {
+	// This raw configuration validation supplies the identity that online
+	// composition resolves before Validate; command-entry discovery is tested in cmd.
+	t.Setenv("ANI_NETWORK_CLUSTER_ID", "11111111-1111-4111-8111-111111111111")
 	t.Setenv("ANI_NETWORK_DATABASE_DSN", "postgres://runtime@127.0.0.1/network")
 	t.Setenv("ANI_NETWORK_CURSOR_SIGNING_KEY", testenv.SigningKey())
 	t.Setenv("ANI_SERVER_GRPC_ADDR", "127.0.0.1:29090")

@@ -57,6 +57,14 @@ func NewPullSecrets(clusterID, kubeconfig string) (*PullSecrets, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pull secret writer Kubernetes configuration unavailable")
 	}
+	return NewPullSecretsForConfig(clusterID, config)
+}
+
+// NewPullSecretsForConfig reuses the composition root's verified target connection.
+func NewPullSecretsForConfig(clusterID string, config *rest.Config) (*PullSecrets, error) {
+	if clusterID == "" || config == nil {
+		return nil, fmt.Errorf("pull secret writer requires a configured target")
+	}
 	copy := rest.CopyConfig(config)
 	copy.Timeout = pullSecretRequestBudget
 	copy.UserAgent = pullSecretWriterIdentity

@@ -288,7 +288,7 @@ func TestClusterOpsRealGRPCSlowClientReleasesHandlerReaderSlotAndSender(t *testi
 	}
 }
 func TestClusterOpsRequestLoggingRedactsBody(t *testing.T) {
-	var logs bytes.Buffer
+	var logs safeLogBuffer
 	conn := clusterOpsListener(t, false, slowClusterOpsProbe{}, slog.New(slog.NewJSONHandler(&logs, nil)))
 	err := conn.Invoke(clusterOpsContext(), pb.PlatformClusterOpsService_CreateResource_FullMethodName, &pb.CreateResourceRequest{ManifestYaml: "private-manifest-sentinel"}, &pb.MutationResponse{})
 	if status.Code(err) != codes.Unimplemented {
