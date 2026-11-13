@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"k8s.io/client-go/rest"
 	"net/url"
 	"os"
 	"strings"
@@ -65,7 +66,7 @@ func readImagePrivateFile(path string) ([]byte, error) {
 	return body, nil
 }
 
-func openImage(ctx context.Context, c *conf.Image) (*imageComponents, error) {
+func openImage(ctx context.Context, c *conf.Image, target ...*rest.Config) (*imageComponents, error) {
 	if c == nil || !c.Enabled {
 		return nil, nil
 	}
@@ -163,7 +164,13 @@ func openImage(ctx context.Context, c *conf.Image) (*imageComponents, error) {
 		return nil, err
 	}
 	if c.PullSecretClusterId != "" {
-		writer, err := imagedata.NewPullSecrets(c.PullSecretClusterId, c.PullSecretKubeconfig)
+		var writer *imagedata.PullSecrets
+		var err error
+		if len(target) == 1 && target[0] != nil {
+			writer, err = imagedata.NewPullSecretsForConfig(c.PullSecretClusterId, target[0])
+		} else {
+			writer, err = imagedata.NewPullSecrets(c.PullSecretClusterId, c.PullSecretKubeconfig)
+		}
 		if err != nil {
 			return nil, err
 		}

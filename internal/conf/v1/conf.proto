@@ -73,6 +73,7 @@ message PullSecretCaller {
 }
 
 message Network {
+  string cluster_display_name = 13;
   PlatformBaseNetwork platform_base_network = 12;
   string database_dsn = 1;
   // Empty uses Kubernetes in-cluster service account credentials.

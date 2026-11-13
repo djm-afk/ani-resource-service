@@ -14,7 +14,7 @@ network:
   vpc_cidr_presets: []
   database_dsn: "${NETWORK_DATABASE_DSN:}"
   kubeconfig: "${NETWORK_KUBECONFIG:}"
-  cluster_id: "${NETWORK_CLUSTER_ID:primary}"
+  cluster_id: "${NETWORK_CLUSTER_ID:}"
   instance_consumer_endpoint: "${NETWORK_INSTANCE_CONSUMER_ENDPOINT:}"
   cursor_signing_key: "${NETWORK_CURSOR_SIGNING_KEY:}"
   worker:

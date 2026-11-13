@@ -65,8 +65,7 @@ UPDATE network_virtual_switches SET state=sqlc.arg(state),binding_state=sqlc.arg
 
 -- name: ClaimVirtualSwitch :one
 SELECT sqlc.embed(s),
- (SELECT o.operation_id FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id) AS operation_id,
- (SELECT o.telemetry_context FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id) AS operation_telemetry_context
+ (SELECT o.telemetry_context FROM network_virtual_switch_operations o WHERE o.resource_id=s.resource_id AND o.operation_id=s.last_operation_id AND o.completed_at IS NULL) AS operation_telemetry_context
 FROM network_virtual_switches s JOIN network_virtual_switch_reconciliations r USING(resource_id)
  WHERE r.next_run_at<=clock_timestamp() AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
  AND s.state<>'deleted' ORDER BY r.next_run_at,s.resource_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED;

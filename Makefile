@@ -25,7 +25,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 IMAGE ?=
 PLATFORM ?= linux/amd64
 TARGET ?= service
-BUILDER_IMAGE ?= golang:1.26.10-bookworm
+BUILDER_IMAGE ?= golang:1.26.11-bookworm
 RUNTIME_IMAGE ?= gcr.io/distroless/static-debian12:nonroot
 GOPROXY ?= https://goproxy.cn,https://proxy.golang.org,direct
 LDFLAGS := -X main.Name=$(SERVICE_NAME) -X main.Version=$(VERSION)

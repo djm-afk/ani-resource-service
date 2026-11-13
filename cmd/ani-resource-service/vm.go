@@ -22,7 +22,7 @@ import (
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/server"
 	service "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/vm"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 type vmSettings struct {
@@ -70,7 +70,7 @@ func runVMMigration() error {
 	defer cancel()
 	return data.Migrate(ctx, strings.TrimSpace(string(raw)), os.Getenv("ANI_VM_RUNTIME_ROLE"))
 }
-func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, repository *networkdata.Postgres, provider *networkdata.KCProvider, attachments *networkbiz.Attachments, instances *instanceComponents, legacy networkbiz.InstanceConsumer, manualNetwork *networkbiz.Network) (*vmComponents, networkbiz.InstanceConsumer, error) {
+func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, repository *networkdata.Postgres, provider *networkdata.KCProvider, attachments *networkbiz.Attachments, instances *instanceComponents, legacy networkbiz.InstanceConsumer, manualNetwork *networkbiz.Network, target ...*rest.Config) (*vmComponents, networkbiz.InstanceConsumer, error) {
 	path := os.Getenv("ANI_VM_CONFIG_FILE")
 	if path == "" {
 		return nil, networkbiz.NewVMConsumerRouter(legacy, nil), nil
@@ -121,7 +121,7 @@ func wireVM(ctx context.Context, c *conf.Network, compute *computeComponents, re
 			return nil, nil, e
 		}
 	}
-	clientConfig, e := clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+	clientConfig, e := resolvedKubernetesConfig(c, target...)
 	if e != nil {
 		return nil, nil, e
 	}

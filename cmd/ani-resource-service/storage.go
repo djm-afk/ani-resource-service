@@ -13,7 +13,7 @@ import (
 	datastorage "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/storage"
 	servicestorage "github.com/zhangzhe-ctrl/ani-resource-service/internal/service/storage"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 const storageDownloadTTL = 10 * time.Minute
@@ -25,8 +25,8 @@ type storageComponents struct {
 
 // openStorage 装配 Storage 用例。Kubernetes 客户端复用现有 kubeconfig 配置；
 // 对象存储未配置 endpoint 时只关闭对象浏览，不影响 PVC 管理。
-func openStorage(_ context.Context, bc *conf.Bootstrap, instances *instanceComponents) (*storageComponents, error) {
-	kube, err := clientcmd.BuildConfigFromFlags("", bc.GetNetwork().GetKubeconfig())
+func openStorage(_ context.Context, bc *conf.Bootstrap, instances *instanceComponents, target ...*rest.Config) (*storageComponents, error) {
+	kube, err := resolvedKubernetesConfig(bc.GetNetwork(), target...)
 	if err != nil {
 		return nil, fmt.Errorf("storage Kubernetes configuration invalid")
 	}

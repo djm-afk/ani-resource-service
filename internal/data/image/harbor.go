@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -115,7 +116,8 @@ func (h *Harbor) doJSON(ctx context.Context, method, path string, in, out any) (
 		req.Header.Set("X-Resource-Name-In-Location", "false")
 		res, err := h.client.Do(req)
 		if err != nil {
-			if ctx.Err() != nil {
+			var timeout net.Error
+			if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
 				return nil, biz.Fail(biz.DeadlineExceeded, "registry request canceled or expired")
 			}
 			return nil, harborUnavailable()

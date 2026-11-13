@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	kratostracing "github.com/go-kratos/kratos/contrib/otel/v3/tracing"
+	kratoslog "github.com/go-kratos/kratos/v3/log"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -152,5 +156,40 @@ func TestAdminFilter404Warn(t *testing.T) {
 	done := recs[len(recs)-1]
 	if done["level"] != "WARN" || done["result"] != "rejected" {
 		t.Errorf("404 completion = %v", done)
+	}
+}
+
+// Exercise the production factory with its real OTel delegate. The separate
+// lifecycle fixture intentionally installs only framework recovery/validation.
+func TestNativeServerStatsHandlerRetainsSingleTraceAndCompletion(t *testing.T) {
+	observability, err := NewObservability("native-stats-test", "test", NewReadiness())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observability.Shutdown(context.Background())
+	recorder := tracetest.NewSpanRecorder()
+	observability.tracerProvider.RegisterSpanProcessor(recorder)
+	var output bytes.Buffer
+	logger := slog.New(kratoslog.NewHandler(kratoslog.WithWriter(&output), kratoslog.WithFormat(kratoslog.FormatJSON), kratoslog.WithExtractor(kratostracing.TraceAttrs)))
+	handler := newServerStatsHandler(logger)
+	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/fixture.Runtime/Check"})
+	handler.HandleRPC(ctx, &stats.Begin{BeginTime: time.Now()})
+	handler.HandleRPC(ctx, &stats.End{EndTime: time.Now()})
+	records := decodeRecords(t, &output)
+	if len(records) != 1 || records[0]["event"] != "rpc.server.completed" {
+		t.Fatalf("completion records=%v", records)
+	}
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("server spans=%d, want exactly one", len(spans))
+	}
+	for field, pattern := range map[string]string{"trace_id": "^[0-9a-f]{32}$", "span_id": "^[0-9a-f]{16}$"} {
+		value, _ := records[0][field].(string)
+		if !regexp.MustCompile(pattern).MatchString(value) {
+			t.Fatalf("%s=%q", field, value)
+		}
+	}
+	if records[0]["trace_id"] != spans[0].SpanContext().TraceID().String() || records[0]["span_id"] != spans[0].SpanContext().SpanID().String() {
+		t.Fatal("completion is not correlated to the native server span")
 	}
 }

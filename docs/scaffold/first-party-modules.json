@@ -3,13 +3,13 @@
   "modules": [
     {
       "module": "github.com/zhangzhe-ctrl/ani-accelerator-service",
-      "version": "v0.0.0-20261017194326-24820240a6b0",
-      "sum": "h1:xfAEkRpW7gvKvU0RAPdIgIaMoUCoJ4TV2uP4rAGAOzk=",
-      "go_mod_sum": "h1:88qTWpamcj3AopZ5MDK0NVO1KFhp0gWjZUTcJ4RVvdQ=",
+      "version": "v1.6.1-0.20261110145729-1825ddeb2a79",
+      "sum": "h1:UWO163TakF9jMBVbnP5e56twKNlFTpzGuXWjeF04+u0=",
+      "go_mod_sum": "h1:PdWn/4ikefPLQkkC9L8EtkUbBOdbyDdqTYR9zbtDg4A=",
       "origin": {
         "VCS": "git",
         "URL": "https://github.com/zhangzhe-ctrl/ani-accelerator-service",
-        "Hash": "24820240a6b02bc82f922e98448b32a1451b81f8"
+        "Hash": "1825ddeb2a79fbcb4d1f554e0caee7777944fa1d"
       },
       "license_status": "UNDECLARED"
     },
@@ -36,6 +36,19 @@
         "URL": "https://github.com/zhangzhe-ctrl/ani-resource-service",
         "Subdir": "api/instance/terminal",
         "Hash": "0937f5aa9c6cc21e5ee7d72e7aa2ba82dfc73717"
+      },
+      "license_status": "UNDECLARED"
+    },
+    {
+      "module": "github.com/zhangzhe-ctrl/ani-resource-service/api/vm/console",
+      "version": "v0.0.0-20261023185414-0a53b99c8d9f",
+      "sum": "h1:dC5v8SPszcnt5W0pl5rBOSCL85nDJnQJkjy1YcWFZLs=",
+      "go_mod_sum": "h1:aFsjlMnejbYpMPxuooE0xAmyzwcjyDRjZAjS2YoroE8=",
+      "origin": {
+        "VCS": "git",
+        "URL": "https://github.com/zhangzhe-ctrl/ani-resource-service",
+        "Subdir": "api/vm/console",
+        "Hash": "0a53b99c8d9f126fd02e6cdde2841c8fbea9046b"
       },
       "license_status": "UNDECLARED"
     }

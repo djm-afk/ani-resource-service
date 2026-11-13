@@ -1832,3 +1832,16 @@ API 独立提交为 `4052512d6a5112784248bb87690da2aab7fb8aaa`；正式锁定 AC
 定向验证 **pass**：`go test ./internal/data/instance ./scripts/ops/gpu-contract-v11 -run '^(TestPodDefaultEphemeralStorageKeepsRuntimeReady|TestPodStorageDefaultPreservesComputeResourceGuards|TestPresetConversionPreservesOriginalBusinessValues|TestPodQuantityNormalizationKeepsFrozenContract|TestCPUNotebookProjectionAndPodBinding)$' -count=1`。独占本地 PostgreSQL 17.11 的 `TestPGPresetConversionRejectsDeviceDriftWithoutChangingOriginal`、`TestPGStaticReferenceUpgradeAndCPUOriginalReplay` **pass**：2 卡转换被拒且原行完全不变，保持 1 卡的转换及旧 CPU 重放通过；临时容器与凭据已清理。
 
 主程序与离线工具 `go build ./cmd/ani-resource-service ./scripts/ops/gpu-contract-v11`、`./scripts/verify-boundaries`、`git diff --check` **pass**。本轮未运行完整门禁、未修改四条已豁免 CI；本段为本机软件和数据库结果，不代表 47 集群部署或设备验收通过。
+
+
+## Single target cluster identity — 2026-11-12
+
+Implementation and local verification details: [record](records/cluster-identity-20261112.md).
+Full/governance resolve and validate the actual namespace UID before side effects;
+offline modes retain their dependencies. The 47 deployment and acceptance remain
+separate cross-service release facts in Governance's cutover record.
+
+
+## cluster-identity-review-20261113
+
+PR #78 的三项 review 问题已修复：Image 独立凭据、空 UID 默认发现、虚拟交换机仅关联未完成 operation 的 telemetry。`make verify` 及隔离 PostgreSQL 的 CREATE 完成后首次 VLAN 绑定回归通过；[修复与验证记录](records/cluster-identity-review-20261113.md)。本轮未部署 47，47 仍使用此前发布版本。

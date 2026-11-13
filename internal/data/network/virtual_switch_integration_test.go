@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	"go.opentelemetry.io/otel/trace"
 	"strings"
 	"sync"
 	"testing"
@@ -381,5 +382,44 @@ func TestVirtualSwitchScopePagingAndAtomicConcurrentVlan(t *testing.T) {
 		if err = f.owner.QueryRow(f.ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != want {
 			t.Fatal(table, count, err)
 		}
+	}
+}
+
+func TestVirtualSwitchClaimExcludesCompletedCreateTelemetry(t *testing.T) {
+	f, _ := switchEgress(t)
+	tid, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	sid, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	ctx := trace.ContextWithSpanContext(f.ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid, TraceFlags: trace.FlagsSampled}))
+	sw, err := f.e.CreateVirtualSwitch(ctx, biz.VirtualSwitchIntent{Name: "telemetry-group", IdempotencyKey: "telemetry-create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Persist the logging metadata explicitly so the test does not depend on the
+	// process-wide OTel propagator configuration.
+	raw := `{"traceparent":"00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01","origin_trace_id":"0af7651916cd43dd8448eb211c80319c"}`
+	if _, err = f.owner.Exec(ctx, `UPDATE network_virtual_switch_operations SET telemetry_context=$1::jsonb WHERE operation_id=$2`, raw, sw.LastOperationID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.e.CreatePlatform(f.ctx, biz.PlatformIntent{Kind: "create_vlan", Name: "first", IdempotencyKey: "telemetry-vlan", Vlan: &biz.VlanConfig{VlanID: 0, ClusterID: "test-cluster", VirtualSwitchID: sw.ID, DeviceName: "ens35"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	work, found, err := f.p.ClaimVirtualSwitch(f.ctx, uuid.NewString(), time.Second)
+	if err != nil || !found {
+		t.Fatalf("claim=%+v found=%v err=%v", work, found, err)
+	}
+	if work.TelemetryContext.Valid() || work.TelemetryContextError != nil {
+		t.Fatalf("completed CREATE trace leaked into binding work: %+v", work)
+	}
+	// An active operation must still propagate its stored trace.
+	if _, err = f.owner.Exec(ctx, `UPDATE network_virtual_switch_operations SET state='queued',completed_at=NULL WHERE operation_id=$1`, sw.LastOperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.owner.Exec(ctx, `UPDATE network_virtual_switch_reconciliations SET lease_owner=NULL,lease_until=NULL WHERE resource_id=$1`, sw.ID); err != nil {
+		t.Fatal(err)
+	}
+	work, found, err = f.p.ClaimVirtualSwitch(f.ctx, uuid.NewString(), time.Second)
+	if err != nil || !found || !work.TelemetryContext.Valid() || work.TelemetryContext.OriginTraceID != tid.String() {
+		t.Fatalf("active trace lost: %+v found=%v err=%v", work, found, err)
 	}
 }

@@ -84,6 +84,11 @@ func TestBuildAppRegistersSandboxFromSharedConfiguration(t *testing.T) {
 	t.Setenv("ANI_NETWORK_TLS_CERT", tlsFixture.CertFile)
 	t.Setenv("ANI_NETWORK_TLS_KEY", tlsFixture.KeyFile)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/namespaces/kube-system" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"kube-system","uid":"11111111-1111-4111-8111-111111111111"}}`))
+			return
+		}
 		http.Error(w, "fixture Kubernetes endpoint unavailable", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(provider.Close)
@@ -183,6 +188,11 @@ func TestBuildAppRecoversSandboxAfterMigration(t *testing.T) {
 	t.Setenv("ANI_NETWORK_TLS_CERT", tlsFixture.CertFile)
 	t.Setenv("ANI_NETWORK_TLS_KEY", tlsFixture.KeyFile)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/namespaces/kube-system" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"kube-system","uid":"11111111-1111-4111-8111-111111111111"}}`))
+			return
+		}
 		http.Error(w, "fixture Kubernetes endpoint unavailable", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(provider.Close)

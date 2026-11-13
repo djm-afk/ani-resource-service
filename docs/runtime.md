@@ -60,3 +60,32 @@ Provider 读错不等同于服务无法持久受理；资源状态、operation �
 ## 检查与发布
 
 文档修改只检查链接和格式。涉及实现时按实际改动运行[运行验证](runtime-verification.md)中的必要检查，在当前任务确认的环境记录源码、命令与结果；不从历史远程入口取得执行授权。生成镜像、推送、部署及业务验收分别记录，不能以 Ready 或构建成功替代真实业务通过。
+
+## Single target identity
+
+Full (including the empty mode) and governance resolve the managed Kubernetes
+connection before database access or worker assembly. The identity is the UUID
+in `kube-system.metadata.uid`; nonempty `network.cluster_id` must match it.
+An empty configuration value is populated for this process. Identity failure or
+mismatch aborts startup. `network.cluster_display_name` is optional and affects
+only the display name; it never selects a cluster.
+
+An explicit `network.kubeconfig` is used as configured; an empty path uses
+in-cluster credentials for every active Kubernetes client. Modules reuse private
+copies of that resolved connection with their existing timeouts/rate budgets.
+Compute, Instance, VM and an enabled Image pull-secret writer must use the same
+rendered UUID. An independently configured Image Kubernetes connection is read
+once and must match. Disabled Image does not add a dependency.
+
+The identity credential needs only `get` on the named core namespace
+`kube-system` in addition to its existing feature permissions; see
+[the narrow role](../deployments/ani-system/cluster-identity-rbac.yaml). Bind it to
+the deployment's actual existing identity. No default account is assumed.
+
+`vpc-read`, compute-only and independent database migration commands retain
+their original offline dependencies and consume the deployment-rendered identity.
+A running full/governance process keeps its target for its lifetime. To replace a
+target, stop its writers, update configuration and restart before reopening writes.
+New target configuration does not itself migrate retained owner records. The
+cross-service owner migration procedure lives in Governance's
+`docs/operations/cluster-identity-cutover.md`.

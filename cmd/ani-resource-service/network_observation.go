@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"k8s.io/client-go/rest"
 	"time"
 
 	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
@@ -10,12 +11,14 @@ import (
 )
 
 // Both runtime modes use the same request budgets and observation lifecycle.
-func openNetworkProvider(repository *data.Postgres, network *conf.Network) (*data.KCProvider, *data.KCObservation, error) {
+func openNetworkProvider(repository *data.Postgres, network *conf.Network, target *rest.Config) (*data.KCProvider, *data.KCObservation, error) {
 	clientPolicy := data.KCClientPolicy{QPS: 5, Burst: 10}
 	if o := network.Observation; o != nil {
 		clientPolicy = data.KCClientPolicy{QPS: float32(o.RequestQps), Burst: int(o.RequestBurst)}
 	}
-	provider, err := data.OpenKCProvider(repository, network.Kubeconfig, clientPolicy)
+	config := rest.CopyConfig(target)
+	config.QPS, config.Burst = clientPolicy.QPS, clientPolicy.Burst
+	provider, err := data.NewKCProvider(repository, config)
 	if err != nil {
 		return nil, nil, err
 	}

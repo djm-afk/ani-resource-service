@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -67,7 +68,15 @@ func TestRuntimeLoggerIncludesProcessIdentityAndSource(t *testing.T) {
 func TestMainProcessHandlesSignalAndClosesListeners(t *testing.T) {
 	tlsFixture := testenv.NewServiceTLS(t)
 	fixture := testenv.NewDatabase(t)
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "unavailable", 503) }))
+	const targetUID = "11111111-1111-4111-8111-111111111111"
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/namespaces/kube-system" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"apiVersion":"v1","kind":"Namespace","metadata":{"uid":"`+targetUID+`"}}`)
+			return
+		}
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
 	defer provider.Close()
 	kubeconfig := testenv.Kubeconfig(t, provider.URL)
 
@@ -104,7 +113,7 @@ func TestMainProcessHandlesSignalAndClosesListeners(t *testing.T) {
 		"ANI_NETWORK_MODE=full",
 		"ANI_NETWORK_DATABASE_DSN="+fixture.RuntimeDSN,
 		"ANI_NETWORK_KUBECONFIG="+kubeconfig,
-		"ANI_NETWORK_CLUSTER_ID=test-cluster",
+		"ANI_NETWORK_CLUSTER_ID="+targetUID,
 		"ANI_NETWORK_CURSOR_SIGNING_KEY="+testenv.SigningKey(),
 		"ANI_SERVER_GRPC_ADDR="+grpcAddress,
 		"ANI_SERVER_ADMIN_ADDR="+adminAddress,
