@@ -35,7 +35,7 @@ func TestLBObservationFailurePreservesLastConfirmedState(t *testing.T) {
 			old := time.Now().Add(-5 * time.Minute)
 			work.Resource.ObservedAt = &old
 			worker.provider = unavailableLBProvider{err: tc.err}
-			if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+			if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 				t.Fatal(err)
 			}
 			p := repository.progress

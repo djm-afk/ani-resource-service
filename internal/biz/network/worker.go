@@ -285,24 +285,21 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	}
 	if work.PlatformNetwork != nil {
 		stepStarted(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity)
-		err := w.stepPlatformNetwork(ctx, work)
+		progress, err := w.stepPlatformNetwork(ctx, work)
+		// The observe result, not the persistence result, decides the event: a
+		// saved backoff is still a failed or waiting observation.
+		reportStageOutcome(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity,
+			k8sTarget{clusterID: work.PlatformNetwork.ClusterID, kind: work.PlatformNetwork.Kind, namespace: work.PlatformNetwork.Namespace, name: work.PlatformNetwork.Name, uid: work.PlatformNetwork.UID},
+			progress, err)
 		if err != nil {
-			stepFailed(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity, k8sTarget{clusterID: work.PlatformNetwork.ClusterID, kind: work.PlatformNetwork.Kind, namespace: work.PlatformNetwork.Namespace, name: work.PlatformNetwork.Name, uid: work.PlatformNetwork.UID}, err, ReasonOf(err))
 			return true, err
 		}
-		stepSucceeded(ctx, w.logger, WorkerMain, StepPlatformNetwork, identity)
 		return true, nil
 	}
 	if work.Resource.Kind == "load_balancer" {
 		stepStarted(ctx, w.logger, WorkerMain, StepLoadBalancer, identity)
-		err := w.stepLoadBalancer(ctx, work)
-		if err != nil && !errors.Is(err, ErrLeaseLost) {
-			stepFailed(ctx, w.logger, WorkerMain, StepLoadBalancer, identity, k8sTarget{}, err, ReasonOf(err))
-			return true, err
-		}
-		if err == nil {
-			stepSucceeded(ctx, w.logger, WorkerMain, StepLoadBalancer, identity)
-		}
+		progress, err := w.stepLoadBalancer(ctx, work)
+		reportStageOutcome(ctx, w.logger, WorkerMain, StepLoadBalancer, identity, k8sTarget{}, progress, err)
 		return true, err
 	}
 	progress := Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity, NextDelay: w.policy.ObserveEvery}
@@ -376,12 +373,14 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 	if progress.Backoff {
 		progress.NextDelay = w.retryDelay(work.Attempt)
 	}
-	if work.ActiveOperation && progress.Backoff {
-		networkEvent(ctx, w.logger, slog.LevelWarn, EventOperationRetry,
-			append([]any{"operation_id", work.Operation.ID, "reason", string(progress.OperationReason)}, identity...)...)
-	}
 	if err == nil {
 		err = w.finish(ctx, work, progress)
+	}
+	// Retry scheduling is only a fact once the write succeeded; announcing it
+	// before persistence would claim a retry that a failed save never recorded.
+	if err == nil && work.ActiveOperation && progress.Backoff {
+		networkEvent(ctx, w.logger, slog.LevelWarn, EventOperationRetry,
+			append([]any{"operation_id", work.Operation.ID, "reason", string(progress.OperationReason)}, identity...)...)
 	}
 	if err == nil && work.Resource.Kind == "subnet" && progress.State != Deleting && progress.State != Deleted {
 		if preparer, ok := w.provider.(VMNetworkPreparer); ok {
@@ -405,8 +404,15 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 			}
 		}
 	}
-	if err != nil && work.ActiveOperation {
-		operationFailed(ctx, w.logger, WorkerMain, identity, work.Operation.ID, progress.OperationReason, err)
+	// A lost lease is a concurrency outcome already reported as WARN by finish;
+	// it must never be restated as a failed operation. The real provider cause
+	// travels with the event so operation.failed keeps the actionable message.
+	if err != nil && work.ActiveOperation && !errors.Is(err, ErrLeaseLost) {
+		cause := progress.ProviderError
+		if cause == nil {
+			cause = err
+		}
+		operationFailed(ctx, w.logger, WorkerMain, identity, work.Operation.ID, progress.OperationReason, cause)
 	}
 	return true, err
 }

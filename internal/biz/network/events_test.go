@@ -235,3 +235,96 @@ func TestStepFailureAndWaitingAlwaysCarryReason(t *testing.T) {
 		})
 	}
 }
+
+// TestStageOutcomeNeverReportsSuccessForAFailedObservation is review finding P1:
+// the persistence result used to decide the stage event, so a saved backoff
+// emitted step.succeeded on the same trace that carried the provider error.
+func TestStageOutcomeNeverReportsSuccessForAFailedObservation(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	identity := []any{"resource_type", "vpc", "resource_id", "vpc-1"}
+
+	cases := []struct {
+		name     string
+		progress Progress
+		stageErr error
+		want     string
+		notWant  string
+	}{
+		{
+			name:     "provider failure with saved backoff",
+			progress: Progress{ProviderError: &ProviderError{Kind: ProviderTemporary, Cause: errText("apiserver 403")}, OperationReason: ProviderUnavailable, Backoff: true},
+			want:     "step.failed",
+			notWant:  "step.succeeded",
+		},
+		{
+			name:     "conflict is a warn concurrency outcome",
+			progress: Progress{ProviderError: &ProviderError{Kind: ProviderConflict}, OperationReason: ProviderOwnership, Backoff: true},
+			want:     "operation.conflict",
+			notWant:  "step.succeeded",
+		},
+		{
+			name:     "backoff without a provider error is waiting",
+			progress: Progress{OperationReason: ProviderNotReady, Backoff: true},
+			want:     "step.waiting",
+			notWant:  "step.succeeded",
+		},
+		{
+			name:     "lost lease is not a failed stage",
+			progress: Progress{},
+			stageErr: ErrLeaseLost,
+			want:     "operation.lease_lost",
+			notWant:  "step.failed",
+		},
+		{
+			name:     "a clean observation succeeds",
+			progress: Progress{Observed: true},
+			want:     "step.succeeded",
+			notWant:  "step.failed",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf.Reset()
+			reportStageOutcome(context.Background(), logger, WorkerMain, StepPlatformNetwork, identity, k8sTarget{}, tc.progress, tc.stageErr)
+			var r map[string]any
+			if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &r); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if r["event"] != tc.want {
+				t.Errorf("event = %v, want %v", r["event"], tc.want)
+			}
+			if tc.notWant != "" && r["event"] == tc.notWant {
+				t.Errorf("emitted %s, which contradicts the recorded result", tc.notWant)
+			}
+		})
+	}
+}
+
+// TestSecurityGroupTerminalMatchesPersistedState is review finding P1: the worker
+// used to announce operation.failed for every ProviderReject, while the
+// repository persists deleting targets as blocked and observation failures as
+// retrying.
+func TestSecurityGroupTerminalMatchesPersistedState(t *testing.T) {
+	reject := &ProviderError{Kind: ProviderReject}
+	cases := []struct {
+		name   string
+		work   SecurityGroupWork
+		result SecurityGroupResult
+		err    error
+		want   bool
+	}{
+		{"create rejected", SecurityGroupWork{TargetType: "security_group", Group: SecurityGroup{}}, SecurityGroupResult{}, reject, true},
+		{"deleting target stays blocked", SecurityGroupWork{TargetType: "security_group", Group: SecurityGroup{EgressMetadata: EgressMetadata{State: Deleting}}}, SecurityGroupResult{}, reject, false},
+		{"observation error stays retrying", SecurityGroupWork{TargetType: "security_group"}, SecurityGroupResult{ObservationError: ProviderUnavailable}, reject, false},
+		{"conflict is not a failure", SecurityGroupWork{TargetType: "security_group"}, SecurityGroupResult{}, &ProviderError{Kind: ProviderConflict}, false},
+		{"no error", SecurityGroupWork{TargetType: "security_group"}, SecurityGroupResult{}, nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SecurityGroupOperationTerminal(tc.work, tc.result, tc.err); got != tc.want {
+				t.Errorf("terminal = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

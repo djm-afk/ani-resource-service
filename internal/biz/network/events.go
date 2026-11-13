@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -279,4 +280,38 @@ func (w SecurityGroupWork) eventIdentity() []any {
 func (w DefaultEgressWork) eventIdentity() []any {
 	return []any{"resource_type", "default_vpc_egress", "resource_id", w.Egress.ID,
 		"operation_id", w.Egress.LastOperationID, "cluster_id", w.Egress.Identity.ClusterID}
+}
+
+// reportStageOutcome emits the event that matches what the stage actually
+// observed. Persistence succeeding says nothing about the provider result: a
+// saved backoff is still a failed or waiting observation, and calling it
+// step.succeeded contradicts the error recorded on the same trace.
+func reportStageOutcome(ctx context.Context, logger *slog.Logger, worker, step string, identity []any, t k8sTarget, progress Progress, stageErr error) {
+	switch {
+	case stageErr != nil && errors.Is(stageErr, ErrLeaseLost):
+		// A lost lease is a concurrency outcome, not a failed stage.
+		operationLeaseLost(ctx, logger, worker, step, identity)
+	case stageErr != nil:
+		stepFailed(ctx, logger, worker, step, identity, t, stageErr, ReasonOf(stageErr))
+	case progress.ProviderError != nil:
+		if providerKind(progress.ProviderError) == ProviderConflict || providerKind(progress.ProviderError) == ProviderInUse {
+			operationConflict(ctx, logger, worker, step, identity, progress.OperationReason, progress.ProviderError)
+			return
+		}
+		stepFailed(ctx, logger, worker, step, identity, t, progress.ProviderError, progress.OperationReason)
+	case progress.Backoff:
+		stepWaiting(ctx, logger, worker, step, identity, stageReason(progress))
+	default:
+		stepSucceeded(ctx, logger, worker, step, identity)
+	}
+}
+
+func stageReason(p Progress) Reason {
+	if p.OperationReason != "" {
+		return p.OperationReason
+	}
+	if p.Reason != "" {
+		return p.Reason
+	}
+	return ProviderNotReady
 }

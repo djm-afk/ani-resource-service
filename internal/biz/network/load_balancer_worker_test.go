@@ -57,7 +57,7 @@ func TestLBWorkerClearingLastBackendDeletesOwnDeclarationsInOrder(t *testing.T) 
 	work.Resource.LoadBalancer.Components = append(work.Resource.LoadBalancer.Components, LoadBalancerComponent{ID: "proxy", Kind: "envoy_proxy", Identity: "uid-proxy"})
 	provider.observation.Components = append(provider.observation.Components, LoadBalancerComponentObservation{ID: "proxy", Identity: "uid-proxy", Exists: true})
 	for step, index := range []int{1, 0, 2, 3} {
-		if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+		if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 			t.Fatal(err)
 		}
 		want := []string{"route:delete", "gateway:delete", "backend:delete", "envoy_proxy:delete"}[step]
@@ -66,7 +66,7 @@ func TestLBWorkerClearingLastBackendDeletesOwnDeclarationsInOrder(t *testing.T) 
 		}
 		provider.observation.Components[index].Exists = false
 	}
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	if repository.progress.OperationState != Succeeded || repository.progress.LoadBalancer.ConfigurationState != "waiting_for_backends" {
@@ -80,7 +80,7 @@ func TestLBWorkerAuthoritativeAbsenceFinishesPendingCreateDeletion(t *testing.T)
 	work.Resource.LoadBalancer.Components = []LoadBalancerComponent{{ID: "gateway", Kind: "gateway", PendingAction: "create", CreateDispatched: true}}
 	work.KnownIdentity = ""
 	provider.observation.Components = []LoadBalancerComponentObservation{{ID: "gateway"}}
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	if repository.progress.State != Deleted || repository.progress.OperationState != Succeeded || len(provider.mutations) != 0 {
@@ -93,7 +93,7 @@ func TestLBWorkerPureDBVersionDoesNotAdvanceAppliedTarget(t *testing.T) {
 	work.Resource.LoadBalancer.LoadBalancer = LoadBalancer{DesiredVersion: 3, ProviderTargetVersion: 2, AppliedVersion: 2, Listeners: []LoadBalancerListener{{ID: "runtime", Name: "runtime", Protocol: "HTTP", Backends: []LoadBalancerBackend{{ID: "member", Weight: 0}}}, {ID: "waiting", Name: "waiting", Protocol: "TCP"}}}
 	work.Resource.LoadBalancer.Components = []LoadBalancerComponent{{ID: "envoy-proxy", Kind: "envoy_proxy", Identity: "uid-proxy"}, {ID: "gateway", Kind: "gateway", Identity: "uid-gateway"}, {ID: "route", Kind: "route", ListenerID: "runtime", Identity: "uid-route"}, {ID: "policy", Kind: "policy", ListenerID: "runtime", Identity: "uid-policy"}, {ID: "backend", Kind: "backend", MemberID: "member", Identity: "uid-backend"}}
 	provider.observation = LoadBalancerObservation{Components: []LoadBalancerComponentObservation{{ID: "envoy-proxy", Identity: "uid-proxy", Exists: true, Matches: true, Ready: lbReportedReady(true)}, {ID: "gateway", Identity: "uid-gateway", Exists: true, Matches: true, Ready: lbReportedReady(true)}, {ID: "route", Identity: "uid-route", Exists: true, Matches: true, Ready: lbReportedReady(true)}, {ID: "policy", Identity: "uid-policy", Exists: true, Matches: true, Ready: lbReportedReady(true)}, {ID: "backend", Identity: "uid-backend", Exists: true, Matches: true, Ready: lbReportedReady(true)}}, Members: []LoadBalancerMemberObservation{{ID: "member", Eligible: true}}}
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	if len(provider.mutations) != 0 || repository.progress.State != Available || repository.progress.LoadBalancer.AppliedVersion != 2 {
@@ -106,7 +106,7 @@ func TestLBWorkerPureDBVersionDoesNotAdvanceAppliedTarget(t *testing.T) {
 	}
 	provider.observation.Members[0].Eligible = false
 	provider.observation.Components[2].Matches = false
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	if repository.progress.Reason != BackendIdentityMismatch || repository.progress.LoadBalancer.ConfigurationState == "waiting_for_backends" {
@@ -122,14 +122,14 @@ func TestLBWorkerRepositoryUnsentCancellationAvoidsProvider(t *testing.T) {
 	repository := &deferredLBWorkerRepository{finishError: ErrLeaseLost}
 	provider := &deferredLBWorkerProvider{}
 	worker := &Worker{repository: repository, provider: provider, policy: DefaultWorkerPolicy()}
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	if provider.observations != 0 || repository.progress.State != Deleted {
 		t.Fatal(repository.progress)
 	}
 	repository.finishError = errors.New("database unavailable")
-	if err := worker.stepLoadBalancer(context.Background(), work); !errors.Is(err, repository.finishError) {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); !errors.Is(err, repository.finishError) {
 		t.Fatal(err)
 	}
 }
@@ -139,7 +139,7 @@ func TestLBWorkerRuntimeRequiresEveryProjectedComponent(t *testing.T) {
 	work.Resource.LoadBalancer.LoadBalancer.Listeners[0].Backends = []LoadBalancerBackend{{ID: "member", Weight: 1}}
 	work.Resource.LoadBalancer.Components = []LoadBalancerComponent{{ID: "gateway", Kind: "gateway", Identity: "uid-gateway"}}
 	provider.observation = LoadBalancerObservation{Components: []LoadBalancerComponentObservation{{ID: "gateway", Identity: "uid-gateway", Exists: true, Matches: true, Ready: lbReportedReady(true)}}, Members: []LoadBalancerMemberObservation{{ID: "member", Eligible: true}}}
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	if repository.progress.OperationState == Succeeded || repository.progress.LoadBalancer.ConfigurationState == "configured" {
@@ -153,7 +153,7 @@ func TestLBReadErrorPreservesLastProjection(t *testing.T) {
 	work, repository, provider, worker := deferredLBWorkerFixture()
 	work.Resource.Reason = Reason("LAST_REPORTED_REASON")
 	provider.readErr = &ProviderError{Kind: ProviderTemporary}
-	if err := worker.stepLoadBalancer(context.Background(), work); err != nil {
+	if _, err := worker.stepLoadBalancer(context.Background(), work); err != nil {
 		t.Fatal(err)
 	}
 	p := repository.progress

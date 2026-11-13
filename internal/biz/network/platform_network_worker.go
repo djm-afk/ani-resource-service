@@ -14,8 +14,8 @@ type PlatformNetworkFacts struct {
 	SubnetIPRanges
 }
 
-func (w *Worker) stepPlatformNetwork(ctx context.Context, work Work) (err error) {
-	progress := Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity}
+func (w *Worker) stepPlatformNetwork(ctx context.Context, work Work) (progress Progress, err error) {
+	progress = Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity}
 	defer func() {
 		if w.observer != nil {
 			w.observer(ctx, work, progress, err)
@@ -62,5 +62,5 @@ func (w *Worker) stepPlatformNetwork(ctx context.Context, work Work) (err error)
 	if progress.Backoff {
 		progress.NextDelay = w.retryDelay(work.Attempt + 1)
 	}
-	return w.finish(ctx, work, progress)
+	return progress, w.finish(ctx, work, progress)
 }

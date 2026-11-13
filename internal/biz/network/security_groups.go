@@ -347,9 +347,12 @@ func (w *SecurityGroupWorker) Step(ctx context.Context) (bool, error) {
 		if providerKind(applyErr) == ProviderConflict {
 			operationConflict(step, w.logger, WorkerSecurityGroup, StepApplySecurityGrp, identity, providerReason(applyErr), nil)
 		}
-		if work.ActiveOperation && providerKind(applyErr) == ProviderReject {
-			// An accepted create that Kubernetes rejected reaches failed; keep
-			// the original cause on the operation record.
+		if work.ActiveOperation && SecurityGroupOperationTerminal(work, result, applyErr) {
+			// Only the case the repository actually persists as failed: an
+			// accepted write Kubernetes rejected, on a non-deleting target and
+			// with no observation error. Deletions and observation failures stay
+			// blocked or retrying, so announcing failure there would contradict
+			// the stored state.
 			operationFailed(step, w.logger, WorkerSecurityGroup, identity, work.Operation.ID, result.OperationReason, applyErr)
 		}
 	} else {
@@ -386,4 +389,23 @@ func validateSecurityGroupKey(key string) error {
 
 func DefaultSecurityGroupRule() SecurityGroupRule {
 	return SecurityGroupRule{ID: "sgr_default_ingress_drop", Direction: "ingress", Protocol: "all", Action: "drop", Priority: 1, IsDefault: true}
+}
+
+// SecurityGroupOperationTerminal reports whether this attempt finishes the
+// operation with a failed terminal. It mirrors the repository's own state rules
+// so the worker only announces operation.failed for the case that actually
+// persists it: a rejected management write that is not a deletion and had no
+// observation error. Everything else stays retrying or blocked.
+func SecurityGroupOperationTerminal(work SecurityGroupWork, result SecurityGroupResult, applyErr error) bool {
+	if applyErr == nil {
+		return false
+	}
+	var provider *ProviderError
+	if !errors.As(applyErr, &provider) || provider.Kind != ProviderReject {
+		return false
+	}
+	if work.TargetType == "security_group" && work.Group.State == Deleting {
+		return false
+	}
+	return result.ObservationError == ""
 }

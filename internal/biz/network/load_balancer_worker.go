@@ -51,11 +51,11 @@ type LoadBalancerWorkRepository interface {
 	BeginLoadBalancerMutation(context.Context, Work, LoadBalancerComponent, string, string) error
 }
 
-func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
+func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) (Progress, error) {
 	provider, ok := w.provider.(LoadBalancerProvider)
 	repository, repoOK := w.repository.(LoadBalancerWorkRepository)
 	if !ok || !repoOK || work.Resource.LoadBalancer == nil {
-		return errors.New("LB lifecycle dependencies unavailable")
+		return Progress{}, errors.New("LB lifecycle dependencies unavailable")
 	}
 	p := Progress{State: work.Resource.State, Reason: work.Resource.Reason, Identity: work.KnownIdentity, NextDelay: w.policy.ObserveEvery}
 	if work.ActiveOperation {
@@ -73,7 +73,7 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 	}
 	if work.CancelUnsent {
 		p.State, p.OperationState, p.ClearPending, p.Reason = Deleted, Succeeded, true, ""
-		return finish()
+		return p, finish()
 	}
 	call, cancel := context.WithTimeout(ctx, w.policy.RequestTimeout)
 	o, err := provider.ObserveLoadBalancer(call, work)
@@ -86,7 +86,7 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 		if work.ActiveOperation {
 			p.OperationState = Blocked
 		}
-		return finish()
+		return p, finish()
 	}
 	p.Observed = true
 	lb := work.Resource.LoadBalancer.LoadBalancer
@@ -199,7 +199,7 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 				break
 			}
 			if err = repository.BeginLoadBalancerMutation(ctx, work, c, action, v.Identity); err != nil {
-				return lbLeaseResult(err)
+				return p, lbLeaseResult(err)
 			}
 			if v.Identity != "" {
 				c.Identity = v.Identity
@@ -276,7 +276,7 @@ func (w *Worker) stepLoadBalancer(ctx context.Context, work Work) error {
 		}
 	}
 	p.LoadBalancer = &o
-	return finish()
+	return p, finish()
 }
 func lbLeaseResult(err error) error {
 	if errors.Is(err, ErrLeaseLost) {
