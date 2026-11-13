@@ -186,15 +186,21 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 				cause = failure.Cause
 			}
 		}
-		level := slog.LevelError
-		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
-			level = slog.LevelWarn
+		// A confirmed concurrency/ownership conflict is the contract's WARN
+		// event; step.failed is fixed at ERROR, so it cannot carry this case.
+		conflict := kind == biz.ProviderConflict || kind == biz.ProviderInUse
+		event, level := biz.EventStepFailed, slog.LevelError
+		if conflict {
+			event = biz.EventOperationConflict
 		}
-		attrs := []any{"event", biz.EventStepFailed, "worker", biz.WorkerMain,
+		attrs := []any{"event", event, "worker", biz.WorkerMain,
 			"step", providerFailureStep(work), "dependency", "kubernetes",
 			"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
 			"reason", stepReason(progress.Reason, progress.OperationReason),
-			"result", "failed", "epoch", int(work.Epoch)}
+			"epoch", int(work.Epoch)}
+		if !conflict {
+			attrs = append(attrs, "result", "failed")
+		}
 		if work.Operation.ID != "" {
 			attrs = append(attrs, "operation_id", work.Operation.ID)
 		}
@@ -328,13 +334,15 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 				cause = failure.Cause
 			}
 		}
+		conflict := kind == biz.ProviderConflict || kind == biz.ProviderInUse
 		level := slog.LevelError
-		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
-			level = slog.LevelWarn
+		event := biz.EventStepFailed
+		if conflict {
+			event, level = biz.EventOperationConflict, slog.LevelWarn
 		}
 		// Node identity is a real Kubernetes coordinate; the removed
 		// node_name/node_uid/binding_state/provider_failure fields have no schema.
-		attrs := []any{"event", biz.EventStepFailed, "worker", biz.WorkerVirtualSwitch,
+		attrs := []any{"event", event, "worker", biz.WorkerVirtualSwitch,
 			"step", switchStep(progress.Action), "dependency", "kubernetes", "action", progress.Action,
 			"resource_type", "virtual_switch", "resource_id", work.Switch.ID,
 			"reason", string(progress.Reason), "cluster_id", work.Switch.ClusterID}
@@ -467,13 +475,21 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 		if cause == nil && p.ObservationError != "" {
 			cause = errors.New(string(p.ObservationError))
 		}
-		step := biz.StepGetSubmission
-		if p.Addresses != nil || p.Observed {
-			step = biz.StepObserveAttachment
+		// The worker already records the submission read at its own layer; this
+		// observer only owns the address observation, so it must not restate the
+		// same step with a guessed dependency.
+		event := biz.EventStepFailed
+		if kind == biz.ProviderConflict || kind == biz.ProviderInUse {
+			event = biz.EventOperationConflict
 		}
-		attrs := append([]any{"event", biz.EventStepFailed, "step", step, "dependency", "kubernetes", "action", "attach",
-			"reason", stepReason(p.Reason, p.ObservationError), "result", "failed"}, identity...)
-		if work.Plan.Namespace != "" || p.PodName != "" {
+		attrs := append([]any{"event", event, "step", biz.StepObserveAttachment,
+			"action", "attach", "reason", stepReason(p.Reason, p.ObservationError)}, identity...)
+		if event == biz.EventStepFailed {
+			attrs = append(attrs, "dependency", "kubernetes", "result", "failed")
+		}
+		// Only a Pod that was actually resolved carries Pod coordinates; while the
+		// read failed before the object existed, an empty target is correct.
+		if p.PodName != "" || p.PodUID != "" {
 			attrs = append(attrs, telemetry.Target{Kind: "Pod",
 				Namespace: work.Plan.Namespace, Name: p.PodName, UID: p.PodUID}.KV()...)
 		}

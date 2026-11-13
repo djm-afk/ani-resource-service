@@ -315,3 +315,36 @@ func stageReason(p Progress) Reason {
 	}
 	return ProviderNotReady
 }
+
+// OrReason normalises an optional reason so required fields are never blank.
+func OrReason(r Reason) Reason {
+	if r == "" {
+		return ProviderNotReady
+	}
+	return r
+}
+
+// reportPreparationFailure records a VM network preparation failure under the
+// dependency that actually produced it. The stage reads PostgreSQL, validates
+// locally and only then calls Kubernetes, so attributing every error to
+// kubernetes would point an operator at the wrong system.
+func reportPreparationFailure(ctx context.Context, logger *slog.Logger, worker, action string, identity []any, cause error) {
+	if logger == nil || cause == nil {
+		return
+	}
+	// The data layer already tags each failure with its origin: Kubernetes reads
+	// come back as *ProviderError and PostgreSQL ones carry a DependencyUnavailable
+	// biz reason. Reading those keeps the domain free of driver/k8s imports.
+	dependency, source := "local", "local"
+	var provider *ProviderError
+	switch {
+	case errors.As(cause, &provider):
+		dependency, source = "kubernetes", "kubernetes"
+	case ReasonOf(cause) == DependencyUnavailable:
+		dependency, source = "postgresql", "postgresql"
+	}
+	attrs := append([]any{"event", EventDependencyFailed, "worker", worker, "dependency", dependency,
+		"action", action, "step", StepPrepareVMNetwork, "error_source", source}, identity...)
+	attrs = append(attrs, logfields.ErrorFields(cause)...)
+	networkEvent(ctx, logger, slog.LevelError, EventDependencyFailed, attrs...)
+}

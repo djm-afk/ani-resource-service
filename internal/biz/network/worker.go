@@ -391,11 +391,31 @@ func (w *Worker) Step(ctx context.Context) (worked bool, stepErr error) {
 			prepareErr := preparer.PrepareVMNetwork(prepareCtx, target)
 			cancel()
 			if prepareErr != nil {
-				dependencyFailed(ctx, w.logger, WorkerMain, "kubernetes", work.Operation.Kind, identity, k8sTarget{kind: "NetworkAttachmentDefinition"}, prepareErr)
+				// The preparation reads PostgreSQL and validates locally before it
+				// touches Kubernetes, so the dependency is taken from the real
+				// cause instead of being hard-coded to kubernetes.
+				reportPreparationFailure(ctx, w.logger, WorkerMain, work.Operation.Kind, identity, prepareErr)
 				if retry, ok := w.repository.(VMNetworkPreparationRepository); ok {
 					retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.policy.RequestTimeout)
-					err = retry.RetryVMNetworkPreparation(retryCtx, work, w.retryDelay(work.Attempt))
+					retryErr := retry.RetryVMNetworkPreparation(retryCtx, work, w.retryDelay(work.Attempt))
 					cancel()
+					switch {
+					case retryErr == nil:
+						// One row updated: the retry is durably scheduled.
+						networkEvent(ctx, w.logger, slog.LevelWarn, EventRetryScheduled,
+							"worker", WorkerMain, "reason", string(OrReason(ProviderNotReady)),
+							"operation_id", work.Operation.ID, "resource_type", work.Resource.Kind,
+							"resource_id", work.Resource.ID, "step", StepPrepareVMNetwork)
+						err = nil
+					case errors.Is(retryErr, ErrLeaseLost):
+						operationLeaseLost(ctx, w.logger, WorkerMain, StepPrepareVMNetwork, identity)
+						err = nil
+					default:
+						// The scheduling write itself failed: separate from the
+						// preparation error recorded above.
+						persistFailed(ctx, w.logger, WorkerMain, "retry_vm_network_preparation", StepPrepareVMNetwork, identity, retryErr)
+						err = retryErr
+					}
 				} else {
 					err = prepareErr
 				}

@@ -128,7 +128,8 @@ func (w *AttachmentWorker) Step(ctx context.Context) (worked bool, err error) {
 	stop()
 	if err != nil {
 		// The consumer error keeps its real source: the two in-process readers
-		// report a local failure and produce no rpc.client.completed.
+		// report a local failure and produce no rpc.client.completed. This is the
+		// only record of the read; the observer below owns the address step.
 		stepFailed(ctx, w.logger, WorkerAttachment, StepGetSubmission, identity, k8sTarget{}, err, ConsumerUnavailable)
 		progress.ObservationError, progress.ProviderError, progress.Backoff = ConsumerUnavailable, err, true
 		return w.finish(ctx, work, progress)
@@ -208,6 +209,14 @@ func (w *AttachmentWorker) Step(ctx context.Context) (worked bool, err error) {
 func (w *AttachmentWorker) finish(ctx context.Context, work AttachmentWork, progress AttachmentProgress) (bool, error) {
 	previous := work.Attachment.State
 	err := w.repository.FinishAttachment(ctx, work, progress)
+	// A recorded backoff is a scheduled retry: the write succeeded and the row
+	// now carries retry_not_before. Only report it for that case.
+	if err == nil && progress.Backoff {
+		networkEvent(ctx, w.logger, slog.LevelWarn, EventRetryScheduled,
+			"worker", WorkerAttachment, "reason", string(attachmentReason(progress)),
+			"resource_type", "attachment", "resource_id", work.Attachment.ID,
+			"attachment_id", work.Attachment.ID, "tenant_id", work.Attachment.TenantID)
+	}
 	if w.observer != nil {
 		w.observer(ctx, work, progress, err)
 	}
@@ -220,7 +229,8 @@ func (w *AttachmentWorker) finish(ctx context.Context, work AttachmentWork, prog
 			"tenant_id", work.Attachment.TenantID, "action", "observe_attachment", "result", "succeeded")
 	}
 	if errors.Is(err, ErrLeaseLost) {
-		operationConflict(ctx, w.logger, WorkerAttachment, StepPersistAttachment, work.eventIdentity(), LeaseLost, nil)
+		// The observer records this concurrency outcome once; repeating it here
+		// would emit the same WARN twice for one event.
 		err = nil
 	}
 	return true, err
@@ -242,4 +252,16 @@ func validConsumer(a Attachment, c ConsumerSubmission) bool {
 		}
 	}
 	return validConsumerState(a, c)
+}
+
+// attachmentReason picks the durable reason for this attempt, never blank so the
+// retry event satisfies the contract's required field.
+func attachmentReason(p AttachmentProgress) Reason {
+	if p.Reason != "" {
+		return p.Reason
+	}
+	if p.ObservationError != "" {
+		return p.ObservationError
+	}
+	return ProviderNotReady
 }
