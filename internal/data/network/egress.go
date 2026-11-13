@@ -162,7 +162,7 @@ func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attr
 			}
 		}
 		intent := biz.SecurityGroupIntent{TenantID: i.TenantID, Action: "create_eip_security_groups", ID: row.EipID, SecurityGroupIDs: slices.Clone(i.SecurityGroupIDs)}
-		if err = q.InsertSecurityGroupOperation(ctx, sqlcgen.InsertSecurityGroupOperationParams{TenantID: i.TenantID, OperationID: op.ID, Payload: sgJSON(op), ActorRef: a.Actor, CallerRef: a.DirectCaller, Intent: sgJSON(intent)}); err != nil {
+		if err = q.InsertSecurityGroupOperation(ctx, sqlcgen.InsertSecurityGroupOperationParams{TenantID: i.TenantID, OperationID: op.ID, Payload: sgJSON(op), ActorRef: a.Actor, CallerRef: a.DirectCaller, Intent: sgJSON(intent), TelemetryContext: telemetryJSON(ctx)}); err != nil {
 			return biz.EIP{}, databaseFailure(err)
 		}
 		if err = q.ScheduleSecurityGroup(ctx, sqlcgen.ScheduleSecurityGroupParams{TenantID: i.TenantID, TargetType: "eip", TargetID: row.EipID, RequestedVersion: binding.Version}); err != nil {
