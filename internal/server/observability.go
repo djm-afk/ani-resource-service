@@ -193,7 +193,8 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 		attrs := []any{"event", biz.EventStepFailed, "worker", biz.WorkerMain,
 			"step", providerFailureStep(work), "dependency", "kubernetes",
 			"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
-			"reason", string(progress.Reason), "epoch", int(work.Epoch)}
+			"reason", stepReason(progress.Reason, progress.OperationReason),
+			"result", "failed", "epoch", int(work.Epoch)}
 		if work.Operation.ID != "" {
 			attrs = append(attrs, "operation_id", work.Operation.ID)
 		}
@@ -246,11 +247,29 @@ func (o *Observability) ObserveWork(ctx context.Context, logger *slog.Logger, wo
 		"resource_type", work.Resource.Kind, "resource_id", work.Resource.ID,
 		"operation_id", work.Operation.ID, "tenant_id", work.Resource.TenantID,
 		"action", work.Operation.Kind, "epoch", int(work.Epoch), "attempt", int(work.Attempt)}
+	// step.waiting/step.failed require reason; step.waiting also fixes
+	// result=waiting and step.failed fixes result=failed.
 	if event == biz.EventOperationSuccess || event == biz.EventStepSucceeded {
 		attrs = append(attrs, "result", "succeeded")
 	}
-	if progress.Reason != "" {
-		attrs = append(attrs, "reason", string(progress.Reason))
+	reason := progress.Reason
+	if reason == "" {
+		reason = progress.OperationReason
+	}
+	if reason == "" && (event == biz.EventStepWaiting || event == biz.EventStepFailed) {
+		// Both events require a non-blank reason; a backed-off reconciliation
+		// always has a durable state, so the provider-not-ready state is used
+		// only when neither field carried one.
+		reason = biz.ProviderNotReady
+	}
+	if reason != "" {
+		attrs = append(attrs, "reason", string(reason))
+	}
+	switch event {
+	case biz.EventStepWaiting:
+		attrs = append(attrs, "result", "waiting")
+	case biz.EventStepFailed:
+		attrs = append(attrs, "result", "failed")
 	}
 	if err != nil {
 		attrs = append(attrs, logfields.ErrorFields(err)...)
@@ -366,14 +385,43 @@ func (o *Observability) ObserveVirtualSwitchWork(ctx context.Context, logger *sl
 		"resource_type", "virtual_switch", "resource_id", work.Switch.ID,
 		"operation_id", work.Switch.LastOperationID, "binding_id", work.Switch.BindingID,
 		"cluster_id", work.Switch.ClusterID, "action", progress.Action,
-		"epoch", int(work.Epoch), "reason", string(progress.Reason)}
-	if event == biz.EventStepSucceeded {
+		"epoch", int(work.Epoch)}
+	// step.waiting/step.failed require a non-blank reason; the empty-string
+	// filter in the contract handler would otherwise drop the field entirely.
+	reason := progress.Reason
+	if reason == "" {
+		reason = progress.OperationReason
+	}
+	if reason == "" && (event == biz.EventStepWaiting || event == biz.EventStepFailed) {
+		reason = biz.ProviderNotReady
+	}
+	if reason != "" {
+		attrs = append(attrs, "reason", string(reason))
+	}
+	switch event {
+	case biz.EventStepSucceeded:
 		attrs = append(attrs, "result", "succeeded")
+	case biz.EventStepWaiting:
+		attrs = append(attrs, "result", "waiting")
+	case biz.EventStepFailed:
+		attrs = append(attrs, "result", "failed")
 	}
 	if err != nil {
 		attrs = append(attrs, logfields.ErrorFields(err)...)
 	}
 	logger.Log(ctx, level, "virtual switch reconciliation", attrs...)
+}
+
+// stepReason returns a non-blank reason for step.waiting/step.failed, which the
+// contract marks required. The empty-string filter in the handler would
+// otherwise drop the field and fail validation.
+func stepReason(values ...biz.Reason) string {
+	for _, v := range values {
+		if v != "" {
+			return string(v)
+		}
+	}
+	return string(biz.ProviderNotReady)
 }
 
 // switchStep maps the persisted switch action to the fixed step vocabulary.
@@ -423,10 +471,8 @@ func (o *Observability) logAttachmentFailure(logger *slog.Logger, ctx context.Co
 		if p.Addresses != nil || p.Observed {
 			step = biz.StepObserveAttachment
 		}
-		attrs := append([]any{"event", biz.EventStepFailed, "step", step, "dependency", "kubernetes", "action", "attach"}, identity...)
-		if p.Reason != "" {
-			attrs = append(attrs, "reason", string(p.Reason))
-		}
+		attrs := append([]any{"event", biz.EventStepFailed, "step", step, "dependency", "kubernetes", "action", "attach",
+			"reason", stepReason(p.Reason, p.ObservationError), "result", "failed"}, identity...)
 		if work.Plan.Namespace != "" || p.PodName != "" {
 			attrs = append(attrs, telemetry.Target{Kind: "Pod",
 				Namespace: work.Plan.Namespace, Name: p.PodName, UID: p.PodUID}.KV()...)

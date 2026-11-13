@@ -139,10 +139,11 @@ func stepSucceeded(ctx context.Context, logger *slog.Logger, worker, step string
 // stepFailed keeps the real cause; an empty cause still records the reason so a
 // failure is never invisible.
 func stepFailed(ctx context.Context, logger *slog.Logger, worker, step string, identity []any, t k8sTarget, cause error, reason Reason) {
-	attrs := append([]any{"worker", worker, "step", step}, identity...)
-	if reason != "" {
-		attrs = append(attrs, "reason", string(reason))
+	// step.failed requires a non-blank reason and fixes result=failed.
+	if reason == "" {
+		reason = ProviderNotReady
 	}
+	attrs := append([]any{"worker", worker, "step", step, "reason", string(reason), "result", "failed"}, identity...)
 	attrs = append(attrs, t.kv()...)
 	if cause != nil {
 		attrs = append(attrs, logfields.ErrorFields(cause)...)
@@ -196,7 +197,12 @@ func operationSucceeded(ctx context.Context, logger *slog.Logger, worker string,
 }
 
 func stepWaiting(ctx context.Context, logger *slog.Logger, worker, step string, identity []any, reason Reason) {
-	networkEvent(ctx, logger, slog.LevelInfo, EventStepWaiting, append([]any{"worker", worker, "step", step, "reason", string(reason)}, identity...)...)
+	// step.waiting requires a non-blank reason and fixes result=waiting.
+	if reason == "" {
+		reason = ProviderNotReady
+	}
+	networkEvent(ctx, logger, slog.LevelInfo, EventStepWaiting,
+		append([]any{"worker", worker, "step", step, "reason", string(reason), "result", "waiting"}, identity...)...)
 }
 
 // target is the known Kubernetes identity, filled only from already loaded

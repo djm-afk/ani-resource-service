@@ -187,3 +187,51 @@ func hasDuplicateKey(line string) (string, error) {
 type errText string
 
 func (e errText) Error() string { return string(e) }
+
+// TestStepFailureAndWaitingAlwaysCarryReason is a real-machine regression:
+// step.waiting/step.failed require reason per the contract, and the handler
+// drops empty strings, so an omitted reason produced a validation failure.
+func TestStepFailureAndWaitingAlwaysCarryReason(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	identity := []any{"resource_type", "vpc", "resource_id", "vpc-1"}
+
+	cases := []struct {
+		name  string
+		emit  func()
+		wants map[string]any
+	}{
+		{
+			name: "step.failed with blank reason",
+			emit: func() {
+				stepFailed(context.Background(), logger, WorkerMain, StepEnsureVPC, identity, k8sTarget{}, errText("boom"), "")
+			},
+			wants: map[string]any{"event": "step.failed", "result": "failed"},
+		},
+		{
+			name: "step.waiting with blank reason",
+			emit: func() {
+				stepWaiting(context.Background(), logger, WorkerMain, StepObserveProvider, identity, "")
+			},
+			wants: map[string]any{"event": "step.waiting", "result": "waiting"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf.Reset()
+			tc.emit()
+			var r map[string]any
+			if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &r); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if reason, _ := r["reason"].(string); reason == "" {
+				t.Fatalf("required reason missing: %v", r)
+			}
+			for k, want := range tc.wants {
+				if r[k] != want {
+					t.Errorf("%s = %v, want %v", k, r[k], want)
+				}
+			}
+		})
+	}
+}
