@@ -146,7 +146,13 @@ func (p *Postgres) acceptSwitchVlan(ctx context.Context, i biz.PlatformIntent, a
 	if err = q.InsertVirtualSwitchHistory(ctx, sqlcgen.InsertVirtualSwitchHistoryParams{HistoryID: uuid.NewString(), ResourceID: s.ResourceID, Event: "vlan_accepted", ActorRef: a.Actor, CallerRef: a.DirectCaller, Detail: []byte(`{"vlan_id":"` + id + `"}`)}); err != nil {
 		return v, databaseFailure(err)
 	}
-	return v, databaseFailure(tx.Commit(ctx))
+	if err = tx.Commit(ctx); err != nil {
+		return biz.PlatformResource{}, databaseFailure(err)
+	}
+	// The VLAN is a platform resource with its own operation; record its
+	// acceptance like every other admission instead of returning silently.
+	p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID})
+	return v, nil
 }
 
 func sameSwitchMembers(a, b []biz.VirtualSwitchNode) bool {

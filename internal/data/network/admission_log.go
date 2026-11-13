@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
@@ -173,4 +174,17 @@ func NewPostgresOnPoolForTest(pool *pgxpool.Pool, clusterID string) *Postgres {
 		return nil
 	}
 	return &Postgres{pool: pool, queries: sqlcgen.New(pool), placement: Placement{ClusterID: clusterID, NamespacePrefix: "tenant-"}}
+}
+
+// replayOperationID returns the operation id stored on the platform idempotency
+// receipt for this intent. It is the operation the original acceptance created,
+// which for a pool verification differs from the resource's last operation.
+func (p *Postgres) replayOperationID(ctx context.Context, i biz.PlatformIntent) string {
+	prior, err := p.queries.GetPlatformIdempotency(ctx, sqlcgen.GetPlatformIdempotencyParams{
+		ClusterID: p.placement.ClusterID, OperationKind: i.Kind, IdempotencyKey: i.IdempotencyKey,
+	})
+	if err != nil {
+		return ""
+	}
+	return prior.OperationID
 }

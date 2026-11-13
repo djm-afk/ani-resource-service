@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
+	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
 
 var baseConnectivityAction string
@@ -81,6 +82,11 @@ func executeBaseConnectivityCommand(ctx context.Context, repository *data.Postgr
 		if baseConnectivityMax < 1 || baseConnectivityMax > 10000 {
 			return fmt.Errorf("base-max must be within 1..10000")
 		}
+		// This admin command has no inbound request to inherit a trace from, so it
+		// opens its own run span. Without it the ensure_vpc_base_connectivity
+		// operations it admits would be persisted without any telemetry context.
+		ctx, span := telemetry.StartRun(ctx, "network.base_connectivity.dispatch")
+		defer span.End()
 		for count := 0; count < baseConnectivityMax; {
 			result, err := repository.AdmitNextBaseBackfill(ctx, baseConnectivityRun)
 			if err != nil {

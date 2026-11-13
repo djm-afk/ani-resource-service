@@ -219,7 +219,11 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	// before the write transaction, then admission rechecks the key and parents.
 	if v, found, err := platformReplay(ctx, p.queries, p.placement.ClusterID, i); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: platformOriginTraceOn(ctx, p.queries, v.LastOperationID)})
+			// The receipt's own operation id, not the resource's last operation:
+			// for a pool verification the resource still points at its create.
+			if replayOp := p.replayOperationID(ctx, i); replayOp != "" {
+				p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: replayOp, replayed: true, originTraceID: platformOriginTraceOn(ctx, p.queries, replayOp)})
+			}
 		}
 		return v, err
 	}
@@ -429,7 +433,14 @@ func (p *Postgres) acceptPoolChange(ctx context.Context, tx pgx.Tx, q *sqlcgen.Q
 		if err = q.InsertPlatformHistory(ctx, sqlcgen.InsertPlatformHistoryParams{HistoryID: uuid.NewString(), ResourceID: v.ID, OperationID: &archiveID, Event: "verification_recorded", ResourceState: string(v.State), ActorRef: a.Actor, CallerRef: a.DirectCaller, CreatedAt: now}); err != nil {
 			return v, databaseFailure(err)
 		}
-		return v, databaseFailure(tx.Commit(ctx))
+		if err = tx.Commit(ctx); err != nil {
+			return biz.PlatformResource{}, databaseFailure(err)
+		}
+		// The verification is its own accepted operation: it has its own archive
+		// operation id, so it must be recorded rather than folded into the pool's
+		// earlier create.
+		p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: archiveID})
+		return v, nil
 	}
 
 	op, err := q.GetPlatformOperation(ctx, sqlcgen.GetPlatformOperationParams{ClusterID: p.placement.ClusterID, OperationID: row.LastOperationID})

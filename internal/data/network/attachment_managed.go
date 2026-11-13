@@ -77,6 +77,8 @@ func (p *Postgres) confirmManagedAttachment(ctx context.Context, tx pgx.Tx, q *s
 		return biz.Attachment{}, databaseFailure(err)
 	}
 	if confirmedRevision == r.ExpectedSnapshotRevision && confirmedUID == r.PodUID && a.State == biz.Attached && a.PodUID == r.PodUID && a.PodName == r.PodName {
+		// The same Pod re-confirming an already applied snapshot is a replay.
+		p.logResourceMutation(ctx, true, "confirm_attachment", a.ID, a.TenantID)
 		return a, nil
 	}
 	if row.Version != r.ExpectedVersion && (confirmedRevision != r.ExpectedSnapshotRevision || confirmedUID != r.PodUID) {
@@ -100,5 +102,9 @@ func (p *Postgres) confirmManagedAttachment(ctx context.Context, tx pgx.Tx, q *s
 	if err = tx.Commit(ctx); err != nil {
 		return biz.Attachment{}, databaseFailure(err)
 	}
-	return managedAttachment(ctx, p.pool, row)
+	value, err := managedAttachment(ctx, p.pool, row)
+	if err == nil {
+		p.logResourceMutation(ctx, false, "confirm_attachment", value.ID, value.TenantID)
+	}
+	return value, err
 }
