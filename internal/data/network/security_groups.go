@@ -189,7 +189,7 @@ func (p *Postgres) MutateSecurityGroup(ctx context.Context, i biz.SecurityGroupI
 	}
 	if v, found, e := sgReplay(ctx, q, i); e != nil || found {
 		if e == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: v.Operation.Kind, resourceType: v.Operation.ResourceType, resourceID: v.Operation.ResourceID, tenantID: v.Operation.TenantID, operationID: v.Operation.ID, replayed: true, originTraceID: p.storedSecurityGroupOriginTrace(ctx, v.Operation.TenantID, v.Operation.ID)})
+			p.logAcceptance(ctx, acceptedEvent{action: v.Operation.Kind, resourceType: v.Operation.ResourceType, resourceID: v.Operation.ResourceID, tenantID: v.Operation.TenantID, operationID: v.Operation.ID, replayed: true, originTraceID: securityGroupOriginTraceOn(ctx, q, v.Operation.TenantID, v.Operation.ID)})
 		}
 		return v, e
 	}

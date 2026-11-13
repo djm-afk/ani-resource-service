@@ -160,7 +160,7 @@ func (p *Postgres) AcceptVPC(ctx context.Context, intent biz.VPCIntent, attribut
 		}
 		value.OwnerScope = biz.OwnerScopeTenant
 		value.CanManage, value.CanUse = networkManagementOpen(string(value.State), string(value.Reason)), networkManagementOpen(string(value.State), string(value.Reason))
-		p.logAcceptance(ctx, acceptedEvent{action: "create_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
+		p.logAcceptance(ctx, acceptedEvent{action: "create_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: originTraceOn(ctx, q, value.TenantID, value.LastOperationID)})
 		return value, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {

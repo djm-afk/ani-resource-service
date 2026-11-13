@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network/sqlcgen"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 )
@@ -76,15 +78,19 @@ func (p *Postgres) logResourceMutation(ctx context.Context, replayed bool, actio
 // lane runs identically without telemetry.
 func (p *Postgres) SetLogger(logger *slog.Logger) { p.logger = logger }
 
-// storedOriginTrace reads the trace persisted when an operation was first
-// accepted. A replay reports that value as origin_trace_id; when the row is
-// legacy (no metadata) or unreadable, the field is simply omitted rather than
-// being filled with the replaying request's own trace.
+// storedOriginTrace reads through the pool. Callers that already hold a
+// transaction connection must use traceReaderOn so the lookup reuses that same
+// connection: a second Acquire while the first is held can deadlock the 8-conn
+// pool when several replays run concurrently.
 func (p *Postgres) storedOriginTrace(ctx context.Context, tenantID, operationID string) string {
+	return originTraceOn(ctx, p.queries, tenantID, operationID)
+}
+
+func originTraceOn(ctx context.Context, q *sqlcgen.Queries, tenantID, operationID string) string {
 	if operationID == "" {
 		return ""
 	}
-	row, err := p.queries.GetOperationTelemetry(ctx, sqlcgen.GetOperationTelemetryParams{
+	row, err := q.GetOperationTelemetry(ctx, sqlcgen.GetOperationTelemetryParams{
 		TenantID: tenantID, OperationID: operationID,
 	})
 	if err != nil {
@@ -97,14 +103,8 @@ func (p *Postgres) storedOriginTrace(ctx context.Context, tenantID, operationID 
 	return tc.OriginTraceID
 }
 
-func (p *Postgres) storedPlatformOriginTrace(ctx context.Context, operationID string) string {
-	if operationID == "" {
-		return ""
-	}
-	raw, err := p.queries.GetPlatformOperationTelemetry(ctx, sqlcgen.GetPlatformOperationTelemetryParams{OperationID: operationID})
-	if err != nil {
-		return ""
-	}
+// decodeOriginTrace turns one stored telemetry column into its origin trace.
+func decodeOriginTrace(raw []byte) string {
 	tc, err := telemetry.Decode(raw)
 	if err != nil {
 		return ""
@@ -112,54 +112,65 @@ func (p *Postgres) storedPlatformOriginTrace(ctx context.Context, operationID st
 	return tc.OriginTraceID
 }
 
-func (p *Postgres) storedSwitchOriginTrace(ctx context.Context, operationID string) string {
+// Each lane reads through the caller's queries handle so a replay that already
+// holds a transaction connection never borrows a second one.
+func platformOriginTraceOn(ctx context.Context, q *sqlcgen.Queries, operationID string) string {
 	if operationID == "" {
 		return ""
 	}
-	raw, err := p.queries.GetVirtualSwitchOperationTelemetry(ctx, sqlcgen.GetVirtualSwitchOperationTelemetryParams{OperationID: operationID})
+	raw, err := q.GetPlatformOperationTelemetry(ctx, sqlcgen.GetPlatformOperationTelemetryParams{OperationID: operationID})
 	if err != nil {
 		return ""
 	}
-	tc, err := telemetry.Decode(raw)
-	if err != nil {
-		return ""
-	}
-	return tc.OriginTraceID
+	return decodeOriginTrace(raw)
 }
 
-func (p *Postgres) storedSecurityGroupOriginTrace(ctx context.Context, tenantID, operationID string) string {
+func switchOriginTraceOn(ctx context.Context, q *sqlcgen.Queries, operationID string) string {
 	if operationID == "" {
 		return ""
 	}
-	raw, err := p.queries.GetSecurityGroupOperationTelemetry(ctx, sqlcgen.GetSecurityGroupOperationTelemetryParams{
+	raw, err := q.GetVirtualSwitchOperationTelemetry(ctx, sqlcgen.GetVirtualSwitchOperationTelemetryParams{OperationID: operationID})
+	if err != nil {
+		return ""
+	}
+	return decodeOriginTrace(raw)
+}
+
+func securityGroupOriginTraceOn(ctx context.Context, q *sqlcgen.Queries, tenantID, operationID string) string {
+	if operationID == "" {
+		return ""
+	}
+	raw, err := q.GetSecurityGroupOperationTelemetry(ctx, sqlcgen.GetSecurityGroupOperationTelemetryParams{
 		TenantID: tenantID, OperationID: operationID,
 	})
 	if err != nil {
 		return ""
 	}
-	tc, err := telemetry.Decode(raw)
-	if err != nil {
-		return ""
-	}
-	return tc.OriginTraceID
+	return decodeOriginTrace(raw)
 }
 
-func (p *Postgres) storedDefaultEgressOriginTrace(ctx context.Context, operationID string) string {
+func defaultEgressOriginTraceOn(ctx context.Context, q *sqlcgen.Queries, operationID string) string {
 	if operationID == "" {
 		return ""
 	}
-	raw, err := p.queries.GetDefaultEgressOperationTelemetry(ctx, sqlcgen.GetDefaultEgressOperationTelemetryParams{OperationID: operationID})
+	raw, err := q.GetDefaultEgressOperationTelemetry(ctx, sqlcgen.GetDefaultEgressOperationTelemetryParams{OperationID: operationID})
 	if err != nil {
 		return ""
 	}
-	tc, err := telemetry.Decode(raw)
-	if err != nil {
-		return ""
-	}
-	return tc.OriginTraceID
+	return decodeOriginTrace(raw)
 }
 
 // StoredOriginTraceForTest exposes the replay lookup to integration tests.
 func (p *Postgres) StoredOriginTraceForTest(ctx context.Context, tenantID, operationID string) string {
-	return p.storedOriginTrace(ctx, tenantID, operationID)
+	return originTraceOn(ctx, p.queries, tenantID, operationID)
+}
+
+// NewPostgresOnPoolForTest builds a repository over a caller-supplied pool so an
+// integration test can constrain its size. Production wiring still uses
+// OpenPostgres.
+func NewPostgresOnPoolForTest(pool *pgxpool.Pool, clusterID string) *Postgres {
+	if pool == nil {
+		return nil
+	}
+	return &Postgres{pool: pool, queries: sqlcgen.New(pool), placement: Placement{ClusterID: clusterID, NamespacePrefix: "tenant-"}}
 }

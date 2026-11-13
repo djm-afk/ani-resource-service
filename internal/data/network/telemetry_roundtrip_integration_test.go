@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	biz "github.com/zhangzhe-ctrl/ani-resource-service/internal/biz/network"
+	networkdata "github.com/zhangzhe-ctrl/ani-resource-service/internal/data/network"
 	"github.com/zhangzhe-ctrl/ani-resource-service/internal/telemetry"
 	"github.com/zhangzhe-ctrl/ani-resource-service/tests/testenv"
 )
@@ -304,5 +308,85 @@ func TestReplayOriginTraceComesFromStoredOperation(t *testing.T) {
 	laterCtx := trace.ContextWithSpanContext(ctx, laterSC)
 	if got := db.Repository.StoredOriginTraceForTest(laterCtx, tenant, opID); got != originID.String() {
 		t.Fatalf("replay reported the request trace instead of the stored origin: %q", got)
+	}
+}
+
+// TestReplayDoesNotNeedASecondConnection is review finding P1: while a replay
+// holds the transaction connection and the idempotency lock, reading the origin
+// trace must reuse that same connection. Borrowing a second one deadlocks a pool
+// whose only connection is already held.
+//
+// The probe narrows the pool to one connection and drives the real AcceptVPC
+// replay path; with the bug it blocks until the context deadline.
+func TestReplayDoesNotNeedASecondConnection(t *testing.T) {
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	db := testenv.NewDatabase(t)
+	base := context.Background()
+
+	tenant := "88888888-8888-4888-8888-888888888888"
+	vpcID := "vpc_12121212121241212121212121212121"
+	opID := "13131313-1313-4313-8313-131313131313"
+	key := "single-conn-replay"
+	intent := biz.VPCIntent{TenantID: tenant, Name: "single-conn", CIDR: "10.50.0.0/16", IdempotencyKey: key}
+
+	// Seed an accepted VPC plus its idempotency receipt so the next call replays.
+	body, err := json.Marshal(biz.VPC{ID: vpcID, TenantID: tenant, Name: "single-conn", CIDR: "10.50.0.0/16", State: biz.Available, LastOperationID: opID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	// The VPC's last_operation_id FK is deferrable, so both rows commit together.
+	tx, err := db.Owner.Begin(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(base, `INSERT INTO network_vpcs(tenant_id,vpc_id,name,description,cidr,state,created_at,updated_at,last_operation_id)
+		VALUES($1,$2,'single-conn','','10.50.0.0/16','available',$3,$3,$4)`, tenant, vpcID, now, opID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(base, `INSERT INTO network_operations(tenant_id,operation_id,vpc_id,kind,state,created_at,updated_at)
+		VALUES($1,$2,$3,'create_vpc','queued',$4,$4)`, tenant, opID, vpcID, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(base); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Owner.Exec(base, `INSERT INTO network_idempotency(tenant_id,operation_kind,idempotency_key,fingerprint,fingerprint_version,vpc_id,operation_id,response,created_at)
+		VALUES($1,'create_vpc',$2,$3,1,$4,$5,$6,$7)`, tenant, key, intent.Fingerprint(), vpcID, opID, body, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// The repository used by the probe only ever gets one connection.
+	cfg, err := pgxpool.ParseConfig(db.RuntimeDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxConns = 1
+	single, err := pgxpool.NewWithConfig(base, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer single.Close()
+	// The probe must run against the narrowed pool, otherwise a second Acquire
+	// always succeeds and the test proves nothing.
+	narrow := networkdata.NewPostgresOnPoolForTest(single, "test-cluster")
+	if narrow == nil {
+		t.Fatal("could not build repository on the narrowed pool")
+	}
+
+	ctx, cancel := context.WithTimeout(base, 15*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := narrow.AcceptVPC(ctx, intent, biz.Attribution{})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("replay on a one-connection budget failed: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("replay blocked while holding the only pool connection (origin-trace lookup acquired a second one)")
 	}
 }
