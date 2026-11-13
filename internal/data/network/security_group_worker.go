@@ -51,7 +51,7 @@ func (p *Postgres) SetEIPSecurityGroups(ctx context.Context, i biz.SecurityGroup
 	}
 	if v, found, e := sgReplay(ctx, q, i); e != nil || found {
 		if e == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: v.Operation.Kind, resourceType: v.Operation.ResourceType, resourceID: v.Operation.ResourceID, tenantID: v.Operation.TenantID, operationID: v.Operation.ID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: v.Operation.Kind, resourceType: v.Operation.ResourceType, resourceID: v.Operation.ResourceID, tenantID: v.Operation.TenantID, operationID: v.Operation.ID, replayed: true, originTraceID: p.storedSecurityGroupOriginTrace(ctx, v.Operation.TenantID, v.Operation.ID)})
 		}
 		return v, e
 	}

@@ -155,6 +155,22 @@ func (q *Queries) GetOperation(ctx context.Context, arg GetOperationParams) (Net
 	return i, err
 }
 
+const getOperationTelemetry = `-- name: GetOperationTelemetry :one
+SELECT telemetry_context FROM network_operations WHERE tenant_id=$1 AND operation_id=$2
+`
+
+type GetOperationTelemetryParams struct {
+	TenantID    string
+	OperationID string
+}
+
+func (q *Queries) GetOperationTelemetry(ctx context.Context, arg GetOperationTelemetryParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getOperationTelemetry, arg.TenantID, arg.OperationID)
+	var telemetry_context []byte
+	err := row.Scan(&telemetry_context)
+	return telemetry_context, err
+}
+
 const getTenantNamespace = `-- name: GetTenantNamespace :one
 SELECT namespace FROM network_tenant_namespaces WHERE tenant_id=$1 AND cluster_id=$2 AND namespace_uid IS NOT NULL AND btrim(namespace_uid) <> ''
 `

@@ -198,6 +198,22 @@ func (q *Queries) GetSecurityGroupOperation(ctx context.Context, arg GetSecurity
 	return i, err
 }
 
+const getSecurityGroupOperationTelemetry = `-- name: GetSecurityGroupOperationTelemetry :one
+SELECT telemetry_context FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2
+`
+
+type GetSecurityGroupOperationTelemetryParams struct {
+	TenantID    string
+	OperationID string
+}
+
+func (q *Queries) GetSecurityGroupOperationTelemetry(ctx context.Context, arg GetSecurityGroupOperationTelemetryParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getSecurityGroupOperationTelemetry, arg.TenantID, arg.OperationID)
+	var telemetry_context []byte
+	err := row.Scan(&telemetry_context)
+	return telemetry_context, err
+}
+
 const getSecurityGroupReplay = `-- name: GetSecurityGroupReplay :one
 SELECT fingerprint,response FROM network_security_group_idempotency WHERE tenant_id=$1 AND action=$2 AND idempotency_key=$3
 `

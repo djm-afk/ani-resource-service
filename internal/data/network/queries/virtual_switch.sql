@@ -102,3 +102,6 @@ UPDATE network_virtual_switch_reconciliations SET lease_owner=NULL,lease_until=N
    WHEN requested_generation>sqlc.arg(claimed_generation)::bigint THEN sqlc.arg(now)::timestamptz
    WHEN sqlc.arg(park)::boolean THEN 'infinity'::timestamptz ELSE sqlc.arg(now)::timestamptz+sqlc.arg(delay_micros)::bigint*interval '1 microsecond' END
  WHERE resource_id=sqlc.arg(resource_id) AND lease_owner=sqlc.arg(owner)::uuid AND lease_epoch=sqlc.arg(epoch) AND lease_until>clock_timestamp();
+
+-- name: GetVirtualSwitchOperationTelemetry :one
+SELECT telemetry_context FROM network_virtual_switch_operations WHERE operation_id=$1;

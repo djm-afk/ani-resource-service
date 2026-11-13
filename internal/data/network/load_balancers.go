@@ -243,7 +243,7 @@ func (p *Postgres) AcceptLoadBalancer(ctx context.Context, i biz.LoadBalancerInt
 	ctx = context.WithValue(ctx, admissionQueriesKey{}, q)
 	if result, found, err := lbReplay(ctx, q, i); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "load_balancer", resourceID: result.LoadBalancer.ID, tenantID: result.LoadBalancer.TenantID, operationID: result.Operation.ID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "load_balancer", resourceID: result.LoadBalancer.ID, tenantID: result.LoadBalancer.TenantID, operationID: result.Operation.ID, replayed: true, originTraceID: p.storedOriginTrace(ctx, result.LoadBalancer.TenantID, result.Operation.ID)})
 		}
 		return result, err
 	}

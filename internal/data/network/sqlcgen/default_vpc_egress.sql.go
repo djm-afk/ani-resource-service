@@ -436,6 +436,21 @@ func (q *Queries) GetDefaultEgress(ctx context.Context, arg GetDefaultEgressPara
 	return i, err
 }
 
+const getDefaultEgressOperationTelemetry = `-- name: GetDefaultEgressOperationTelemetry :one
+SELECT telemetry_context FROM network_default_vpc_egress_operations WHERE operation_id=$1
+`
+
+type GetDefaultEgressOperationTelemetryParams struct {
+	OperationID string
+}
+
+func (q *Queries) GetDefaultEgressOperationTelemetry(ctx context.Context, arg GetDefaultEgressOperationTelemetryParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getDefaultEgressOperationTelemetry, arg.OperationID)
+	var telemetry_context []byte
+	err := row.Scan(&telemetry_context)
+	return telemetry_context, err
+}
+
 const getDefaultEgressReplay = `-- name: GetDefaultEgressReplay :one
 SELECT cluster_id, idempotency_key, fingerprint, resource_id, operation_id, response, created_at FROM network_default_vpc_egress_idempotency WHERE cluster_id=$1 AND idempotency_key=$2
 `

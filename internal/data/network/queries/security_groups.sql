@@ -85,3 +85,6 @@ SELECT security_group_id FROM network_security_groups WHERE tenant_id=sqlc.arg(t
 UPDATE network_security_group_reconciliations SET next_run_at='infinity'::timestamptz,
  lease_owner=NULL,lease_until=NULL,lease_epoch=lease_epoch+1,processed_generation=requested_generation
 WHERE tenant_id=sqlc.arg(tenant_id) AND target_type=sqlc.arg(target_type) AND target_id=sqlc.arg(target_id);
+
+-- name: GetSecurityGroupOperationTelemetry :one
+SELECT telemetry_context FROM network_security_group_operations WHERE tenant_id=$1 AND operation_id=$2;

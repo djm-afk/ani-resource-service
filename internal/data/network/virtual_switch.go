@@ -73,7 +73,7 @@ func (p *Postgres) CreateVirtualSwitch(ctx context.Context, i biz.VirtualSwitchI
 	}
 	if v, found, err := switchReplay(ctx, q, i); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: "create_virtual_switch", resourceType: "virtual_switch", resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: "create_virtual_switch", resourceType: "virtual_switch", resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: p.storedSwitchOriginTrace(ctx, v.LastOperationID)})
 		}
 		return v, err
 	}
@@ -163,7 +163,7 @@ func (p *Postgres) DeleteVirtualSwitch(ctx context.Context, id string, a biz.Att
 		if err != nil {
 			return value, err
 		}
-		p.logAcceptance(ctx, acceptedEvent{action: "delete_virtual_switch", resourceType: "virtual_switch", resourceID: value.ID, operationID: value.LastOperationID, replayed: true})
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_virtual_switch", resourceType: "virtual_switch", resourceID: value.ID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedSwitchOriginTrace(ctx, value.LastOperationID)})
 		return value, nil
 	}
 	blocked, err := q.VirtualSwitchDependencies(ctx, sqlcgen.VirtualSwitchDependenciesParams{ResourceID: id})

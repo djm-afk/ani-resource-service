@@ -257,3 +257,52 @@ func TestPlatformOperationTelemetryRoundTrip(t *testing.T) {
 		t.Errorf("platform business fields lost: %+v", broken)
 	}
 }
+
+// TestReplayOriginTraceComesFromStoredOperation is NG15's replay half: a replayed
+// admission must report the trace stored when the operation was first accepted,
+// never the replaying request's own trace.
+func TestReplayOriginTraceComesFromStoredOperation(t *testing.T) {
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	db := testenv.NewDatabase(t)
+	ctx := context.Background()
+
+	originID, _ := trace.TraceIDFromHex("0af7651916cd43dd8448eb211c80319c")
+	spanID, _ := trace.SpanIDFromHex("b7ad6b7169203331")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: originID, SpanID: spanID, TraceFlags: trace.FlagsSampled})
+	stored, err := json.Marshal(telemetry.Capture(trace.ContextWithSpanContext(ctx, sc)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tenant, opID := "44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"
+	vpcID := "vpc_77777777777747778777777777777777"
+	tx, err := db.Owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO network_vpcs(tenant_id,vpc_id,name,description,cidr,state,created_at,updated_at,last_operation_id)
+		VALUES($1,$2,'replay-origin','','10.46.0.0/16','available',now(),now(),$3)`, tenant, vpcID, opID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO network_operations(tenant_id,operation_id,vpc_id,kind,state,created_at,updated_at,telemetry_context)
+		VALUES($1,$2,$3,'create_vpc','queued',now(),now(),$4)`, tenant, opID, vpcID, stored); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// The lookup used by every replay branch must return the stored trace.
+	got := db.Repository.StoredOriginTraceForTest(ctx, tenant, opID)
+	if got != originID.String() {
+		t.Fatalf("stored origin trace = %q, want %q", got, originID)
+	}
+	// A different, later request trace must not leak in.
+	laterID, _ := trace.TraceIDFromHex("1bf8651916cd43dd8448eb211c80319d")
+	laterSpan, _ := trace.SpanIDFromHex("c7ad6b7169203332")
+	laterSC := trace.NewSpanContext(trace.SpanContextConfig{TraceID: laterID, SpanID: laterSpan, TraceFlags: trace.FlagsSampled})
+	laterCtx := trace.ContextWithSpanContext(ctx, laterSC)
+	if got := db.Repository.StoredOriginTraceForTest(laterCtx, tenant, opID); got != originID.String() {
+		t.Fatalf("replay reported the request trace instead of the stored origin: %q", got)
+	}
+}

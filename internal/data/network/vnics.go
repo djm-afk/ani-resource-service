@@ -48,7 +48,7 @@ func vnicReplay(ctx context.Context, tx interface {
 func (p *Postgres) AcceptVNic(ctx context.Context, r biz.CreateVNic) (biz.VNic, error) {
 	if v, found, e := vnicReplay(ctx, p.pool, r); found || e != nil {
 		if e == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: "create_vnic", resourceType: "vnic", resourceID: v.ID, tenantID: v.TenantID, operationID: v.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: "create_vnic", resourceType: "vnic", resourceID: v.ID, tenantID: v.TenantID, operationID: v.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, v.TenantID, v.LastOperationID)})
 		}
 		return v, e
 	}

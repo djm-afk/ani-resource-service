@@ -104,7 +104,7 @@ func (p *Postgres) AcceptEIP(ctx context.Context, i biz.EgressIntent, a biz.Attr
 	var replay biz.EIP
 	if found, err := egressReplay(ctx, q, i, &replay); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "eip", resourceID: replay.ID, tenantID: replay.TenantID, operationID: replay.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "eip", resourceID: replay.ID, tenantID: replay.TenantID, operationID: replay.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, replay.TenantID, replay.LastOperationID)})
 		}
 		return replay, err
 	}
@@ -253,7 +253,7 @@ func (p *Postgres) AcceptSnat(ctx context.Context, i biz.EgressIntent, a biz.Att
 	var replay biz.VPCSnatBinding
 	if found, err := egressReplay(ctx, q, i, &replay); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "snat", resourceID: replay.ID, tenantID: replay.TenantID, operationID: replay.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: "snat", resourceID: replay.ID, tenantID: replay.TenantID, operationID: replay.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, replay.TenantID, replay.LastOperationID)})
 		}
 		return replay, err
 	}
@@ -409,7 +409,7 @@ func (p *Postgres) DeleteEIP(ctx context.Context, tenant, id string, a biz.Attri
 	}
 	if row.State == "deleting" || row.State == "deleted" {
 		value := eipResource(row)
-		p.logAcceptance(ctx, acceptedEvent{action: "delete_eip", resourceType: "eip", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_eip", resourceType: "eip", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
 		return value, nil
 	}
 	count, err := q.BlockingSnatForEIP(ctx, sqlcgen.BlockingSnatForEIPParams{TenantID: tenant, EipID: id})
@@ -471,7 +471,7 @@ func (p *Postgres) DeleteSnat(ctx context.Context, tenant, id string, a biz.Attr
 	}
 	if row.State == "deleting" || row.State == "deleted" {
 		value := snatResource(row, eip.Address)
-		p.logAcceptance(ctx, acceptedEvent{action: "delete_snat", resourceType: "snat", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_snat", resourceType: "snat", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
 		return value, nil
 	}
 	if row.VpcID != ref.VpcID || row.EipID != ref.EipID {

@@ -65,7 +65,7 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 	// Exact accepted keys replay before current external prerequisites are read.
 	if v, found, err := p.replay(ctx, p.base.queries, i); found || err != nil {
 		if err == nil {
-			p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+			p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: p.base.storedDefaultEgressOriginTrace(ctx, v.LastOperationID)})
 		}
 		return v, err
 	}
@@ -84,7 +84,7 @@ func (p *DefaultVPCEgressPostgres) CreateDefaultVPCEgress(ctx context.Context, i
 	}
 	if v, found, err := p.replay(ctx, q, i); found || err != nil {
 		if err == nil {
-			p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+			p.base.logAcceptance(ctx, acceptedEvent{action: "create_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: p.base.storedDefaultEgressOriginTrace(ctx, v.LastOperationID)})
 		}
 		return v, err
 	}
@@ -168,7 +168,7 @@ func (p *DefaultVPCEgressPostgres) DeleteDefaultVPCEgress(ctx context.Context, i
 	row := r.NetworkDefaultVpcEgress
 	if row.State == "deleted" || row.State == "deleting" {
 		value := defaultEgressSnapshot(row, r.OperationState)
-		p.base.logAcceptance(ctx, acceptedEvent{action: "delete_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: value.ID, operationID: value.LastOperationID, replayed: true})
+		p.base.logAcceptance(ctx, acceptedEvent{action: "delete_default_vpc_egress", resourceType: "default_vpc_egress", resourceID: value.ID, operationID: value.LastOperationID, replayed: true, originTraceID: p.base.storedDefaultEgressOriginTrace(ctx, value.LastOperationID)})
 		return value, nil
 	}
 	now, err := q.DatabaseTime(ctx)

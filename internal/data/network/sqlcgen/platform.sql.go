@@ -481,6 +481,21 @@ func (q *Queries) GetPlatformOperation(ctx context.Context, arg GetPlatformOpera
 	return i, err
 }
 
+const getPlatformOperationTelemetry = `-- name: GetPlatformOperationTelemetry :one
+SELECT telemetry_context FROM network_platform_operations WHERE operation_id=$1
+`
+
+type GetPlatformOperationTelemetryParams struct {
+	OperationID string
+}
+
+func (q *Queries) GetPlatformOperationTelemetry(ctx context.Context, arg GetPlatformOperationTelemetryParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getPlatformOperationTelemetry, arg.OperationID)
+	var telemetry_context []byte
+	err := row.Scan(&telemetry_context)
+	return telemetry_context, err
+}
+
 const getPublicPool = `-- name: GetPublicPool :one
 SELECT resource_id, cluster_id, kind, mode, gateway_id, cidr, ovn_gateway_ip, excluded_ips, vlan_network_id, upstream_gateway_ip, allocation_enabled, config_revision, verification, verification_expires_at, retired, scope, default_vpc_name, default_vpc_uid, intranet_networks, managed_gateway FROM network_public_pools WHERE cluster_id=$1 AND resource_id=$2
 `

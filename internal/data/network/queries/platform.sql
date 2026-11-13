@@ -200,3 +200,6 @@ SELECT count(*) FROM network_platform_resources r JOIN network_public_pools p ON
 -- name: PlatformPoolVPCOverlaps :one
 SELECT count(*)::bigint FROM network_vpcs v JOIN network_provider_bindings b ON b.tenant_id=v.tenant_id AND b.vpc_id=v.vpc_id AND b.resource_kind='vpc'
 WHERE b.cluster_id=$1 AND v.state<>'deleted' AND v.cidr::cidr && sqlc.arg(cidr)::cidr;
+
+-- name: GetPlatformOperationTelemetry :one
+SELECT telemetry_context FROM network_platform_operations WHERE operation_id=$1;

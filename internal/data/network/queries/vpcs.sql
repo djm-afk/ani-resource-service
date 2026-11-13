@@ -100,3 +100,6 @@ SELECT count(*) FROM network_vpcs v
 WHERE v.tenant_id = sqlc.arg(tenant_id)
  AND (sqlc.arg(name_filter)::text = '' OR v.name = sqlc.arg(name_filter))
  AND ((sqlc.arg(state_filter)::text = '' AND v.state <> 'deleted') OR v.state = sqlc.arg(state_filter));
+
+-- name: GetOperationTelemetry :one
+SELECT telemetry_context FROM network_operations WHERE tenant_id=$1 AND operation_id=$2;

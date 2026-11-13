@@ -77,3 +77,6 @@ WHERE cluster_id=sqlc.arg(cluster_id) AND resource_id=sqlc.arg(resource_id) AND 
 
 -- name: FinishDefaultEgressOperation :exec
 UPDATE network_default_vpc_egress_operations SET state=sqlc.arg(state),reason=sqlc.arg(reason),updated_at=clock_timestamp(),completed_at=CASE WHEN sqlc.arg(state) IN('succeeded','failed') THEN clock_timestamp() ELSE NULL END WHERE resource_id=sqlc.arg(resource_id) AND operation_id=sqlc.arg(operation_id) AND completed_at IS NULL;
+
+-- name: GetDefaultEgressOperationTelemetry :one
+SELECT telemetry_context FROM network_default_vpc_egress_operations WHERE operation_id=$1;

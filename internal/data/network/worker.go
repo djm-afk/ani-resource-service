@@ -308,7 +308,7 @@ func (p *Postgres) DeleteVPC(ctx context.Context, tenant, id string) (biz.VPC, e
 	}
 	if row.State == string(biz.Deleting) || row.State == string(biz.Deleted) {
 		value := vpc(row)
-		p.logAcceptance(ctx, acceptedEvent{action: "delete_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_vpc", resourceType: "vpc", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
 		return value, nil
 	}
 	lbCount, err := q.BlockingLBForVPC(ctx, sqlcgen.BlockingLBForVPCParams{TenantID: tenant, VpcID: id})

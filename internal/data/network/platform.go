@@ -219,7 +219,7 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	// before the write transaction, then admission rechecks the key and parents.
 	if v, found, err := platformReplay(ctx, p.queries, p.placement.ClusterID, i); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: p.storedPlatformOriginTrace(ctx, v.LastOperationID)})
 		}
 		return v, err
 	}
@@ -241,7 +241,7 @@ func (p *Postgres) AcceptPlatform(ctx context.Context, i biz.PlatformIntent, a b
 	}
 	if v, found, err := platformReplay(ctx, q, p.placement.ClusterID, i); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: i.Kind, resourceType: v.Kind, resourceID: v.ID, operationID: v.LastOperationID, replayed: true, originTraceID: p.storedPlatformOriginTrace(ctx, v.LastOperationID)})
 		}
 		return v, err
 	}
@@ -567,7 +567,7 @@ func (p *Postgres) DeletePlatform(ctx context.Context, kind, id string, a biz.At
 		if err != nil {
 			return value, err
 		}
-		p.logAcceptance(ctx, acceptedEvent{action: "delete_" + kind, resourceType: value.Kind, resourceID: value.ID, operationID: value.LastOperationID, replayed: true})
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_" + kind, resourceType: value.Kind, resourceID: value.ID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedPlatformOriginTrace(ctx, value.LastOperationID)})
 		return value, nil
 	}
 	op, err := q.GetPlatformOperation(ctx, sqlcgen.GetPlatformOperationParams{ClusterID: p.placement.ClusterID, OperationID: row.LastOperationID})

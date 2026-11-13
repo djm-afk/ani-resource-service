@@ -41,7 +41,7 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 	// The durable replay is checked before any dynamic parent or address rule.
 	if value, found, err := subnetReplay(ctx, p.queries, intent); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
 		}
 		return value, err
 	}
@@ -66,7 +66,7 @@ func (p *Postgres) AcceptSubnet(ctx context.Context, intent biz.SubnetIntent, at
 	}
 	if value, found, err := subnetReplay(ctx, q, intent); found || err != nil {
 		if err == nil {
-			p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+			p.logAcceptance(ctx, acceptedEvent{action: "create_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
 		}
 		return value, err
 	}
@@ -195,7 +195,7 @@ func (p *Postgres) DeleteSubnet(ctx context.Context, tenant, id string) (biz.Sub
 	}
 	if row.State == string(biz.Deleting) || row.State == string(biz.Deleted) {
 		value := subnet(row)
-		p.logAcceptance(ctx, acceptedEvent{action: "delete_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true})
+		p.logAcceptance(ctx, acceptedEvent{action: "delete_subnet", resourceType: "subnet", resourceID: value.ID, tenantID: value.TenantID, operationID: value.LastOperationID, replayed: true, originTraceID: p.storedOriginTrace(ctx, value.TenantID, value.LastOperationID)})
 		return value, nil
 	}
 	var manualCount int64

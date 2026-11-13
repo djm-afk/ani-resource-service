@@ -285,6 +285,21 @@ func (q *Queries) GetVirtualSwitchOperation(ctx context.Context, arg GetVirtualS
 	return i, err
 }
 
+const getVirtualSwitchOperationTelemetry = `-- name: GetVirtualSwitchOperationTelemetry :one
+SELECT telemetry_context FROM network_virtual_switch_operations WHERE operation_id=$1
+`
+
+type GetVirtualSwitchOperationTelemetryParams struct {
+	OperationID string
+}
+
+func (q *Queries) GetVirtualSwitchOperationTelemetry(ctx context.Context, arg GetVirtualSwitchOperationTelemetryParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getVirtualSwitchOperationTelemetry, arg.OperationID)
+	var telemetry_context []byte
+	err := row.Scan(&telemetry_context)
+	return telemetry_context, err
+}
+
 const getVirtualSwitchReplay = `-- name: GetVirtualSwitchReplay :one
 SELECT operation_kind, idempotency_key, fingerprint, resource_id, operation_id, response, created_at FROM network_virtual_switch_idempotency WHERE operation_kind='create_virtual_switch' AND idempotency_key=$1
 `
